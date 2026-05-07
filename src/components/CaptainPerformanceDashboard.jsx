@@ -31,7 +31,7 @@ export default function CaptainPerformanceDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Top Performer" value={ranked[0]?.name ?? "-"} />
         <Stat label="Highest Sales" value={`₹${ranked[0]?.sales?.toLocaleString?.() ?? 0}`} />
         <Stat label="Best Rating" value={Math.max(...ranked.map((x) => x.rating), 0).toFixed(1)} />
@@ -45,43 +45,66 @@ export default function CaptainPerformanceDashboard() {
         <>
           <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4">
             <h4 className="mb-2 font-semibold">Sales Comparison</h4>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={ranked}>
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="sales" fill="#E53935" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="h-[220px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={ranked}>
+                  <XAxis dataKey="name" tick={{fontSize: 10}} />
+                  <YAxis tick={{fontSize: 10}} />
+                  <Tooltip />
+                  <Bar dataKey="sales" fill="#E53935" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4">
-            <h4 className="mb-2 font-semibold">Leaderboard</h4>
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#FFCDD2]">
-                  <th>Rank</th><th>Name</th><th>Assigned Tables</th><th>Orders</th><th>Sales</th><th>Upsell</th><th>Rating</th><th>Stars</th><th>Shift</th><th>Speed</th><th>Badge</th><th>Trend</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ranked.map((captain) => (
-                  <tr key={captain.name} className="border-b border-[#FFEBEE]">
-                    <td className="py-2 font-bold">#{captain.rank}</td>
-                    <td>{captain.name}</td>
-                    <td>{captain.tables.join(", ")}</td>
-                    <td>{captain.orders}</td>
-                    <td>₹{captain.sales.toLocaleString()}</td>
-                    <td>{captain.upsell}%</td>
-                    <td>{captain.rating}</td>
-                    <td>{"★".repeat(captain.stars)}</td>
-                    <td>{captain.shift}</td>
-                    <td>{captain.speed} min</td>
-                    <td><span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-xs">{captain.badge}</span></td>
-                    <td>{captain.trend === "up" ? "📈" : "➖"}</td>
+            <h4 className="mb-4 font-semibold text-sm md:text-base">Captain Performance Leaderboard</h4>
+            <div className="overflow-x-auto -mx-4 px-4 scrollbar-thin scrollbar-thumb-red-200">
+              <table className="w-full min-w-[900px] text-left text-xs md:text-sm">
+                <thead>
+                  <tr className="border-b border-[#FFCDD2] text-[#B71C1C] uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-2">Rank</th>
+                    <th className="py-3 px-2">Name</th>
+                    <th className="py-3 px-2">Tables</th>
+                    <th className="py-3 px-2 text-center">Orders</th>
+                    <th className="py-3 px-2 text-right">Sales</th>
+                    <th className="py-3 px-2 text-center">Upsell</th>
+                    <th className="py-3 px-2 text-center">Rating</th>
+                    <th className="py-3 px-2">Stars</th>
+                    <th className="py-3 px-2">Shift</th>
+                    <th className="py-3 px-2 text-center">Speed</th>
+                    <th className="py-3 px-2 text-center">Badge</th>
+                    <th className="py-3 px-2 text-center">Trend</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#FFEBEE]">
+                  {ranked.map((captain) => (
+                    <tr key={captain.name} className="hover:bg-[#FFF5F5] transition-colors">
+                      <td className="py-3 px-2 font-black text-[#E53935]">#{captain.rank}</td>
+                      <td className="py-3 px-2 font-bold">{captain.name}</td>
+                      <td className="py-3 px-2 text-[#6B6B6B]">{captain.tables.join(", ")}</td>
+                      <td className="py-3 px-2 text-center font-semibold">{captain.orders}</td>
+                      <td className="py-3 px-2 text-right font-black">₹{captain.sales.toLocaleString()}</td>
+                      <td className="py-3 px-2 text-center text-blue-600 font-bold">{captain.upsell}%</td>
+                      <td className="py-3 px-2 text-center">
+                        <span className="font-bold text-[#F57F17]">{captain.rating}</span>
+                      </td>
+                      <td className="py-3 px-2 text-[#F57F17]">{"★".repeat(captain.stars)}</td>
+                      <td className="py-3 px-2 text-[#6B6B6B]">{captain.shift}</td>
+                      <td className="py-3 px-2 text-center">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono">{captain.speed}m</span>
+                      </td>
+                      <td className="py-3 px-2 text-center">
+                        <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[9px] font-black text-[#B71C1C] uppercase tracking-tighter border border-[#EF9A9A]">
+                          {captain.badge}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-center text-lg">{captain.trend === "up" ? "📈" : "➖"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}

@@ -64,23 +64,45 @@ function Login({ onLogin }) {
     return () => clearTimeout(t);
   }, []);
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#FFF5F5] p-6">
-      <div className="w-full max-w-xl rounded-[10px] border border-[#FFCDD2] bg-white p-8">
-        <h1 className="text-center text-4xl font-bold text-[#E53935]">softshape.ai</h1>
-        <p className="mt-2 text-center text-[#6B6B6B]">Where AI shapes your business</p>
-        <div className="my-6 flex items-center justify-center gap-3">
-          {!merge ? ["Designer", "Accountant", "Captain", "Surveillance"].map((r, i) => (
-            <div key={r} className="h-16 w-16 animate-pulse rounded-full bg-[#FFEBEE] text-center text-[10px] font-semibold text-[#B71C1C] flex items-center justify-center">
-              {r}
+    <div className="flex min-h-screen items-center justify-center bg-[#FFF5F5] p-4 md:p-6">
+      <div className="w-full max-w-lg rounded-2xl border border-[#FFCDD2] bg-white p-6 md:p-10 shadow-xl">
+        <div className="text-center">
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[#E53935]">softshape<span className="text-[#EF9A9A]">.ai</span></h1>
+          <p className="mt-2 text-sm md:text-base font-medium text-[#6B6B6B]">Where AI shapes your business</p>
+        </div>
+        
+        <div className="my-8 flex items-center justify-center gap-4">
+          {!merge ? (
+            <div className="flex gap-2 md:gap-3 flex-wrap justify-center">
+              {["Designer", "Accountant", "Captain", "Surveillance"].map((r) => (
+                <div key={r} className="h-14 w-14 md:h-16 md:w-16 animate-pulse rounded-full bg-[#FFEBEE] p-2 text-center text-[10px] font-bold text-[#B71C1C] flex items-center justify-center border border-[#EF9A9A]">
+                  {r}
+                </div>
+              ))}
             </div>
-          )) : (
-            <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#E53935] bg-[#FFEBEE] font-bold text-[#E53935]">Spire.ai</div>
+          ) : (
+            <div className="relative group cursor-pointer">
+              <div className="absolute -inset-1 bg-gradient-to-r from-[#E53935] to-[#EF9A9A] rounded-full blur opacity-40 group-hover:opacity-75 transition duration-1000"></div>
+              <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-4 border-[#E53935] bg-[#FFEBEE] font-black text-[#E53935] shadow-lg animate-bounce-slow text-lg">Spire.ai</div>
+            </div>
           )}
         </div>
-        <div className="space-y-3">
-          <input className={input} defaultValue="admin@raviskitchen.com" />
-          <input className={input} defaultValue="••••••••" type="password" />
-          <button onClick={onLogin} className={`${btn} w-full`}>Login to Dashboard</button>
+
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] ml-1">Email Address</label>
+            <input className={input + " h-11"} defaultValue="admin@raviskitchen.com" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] ml-1">Password</label>
+            <input className={input + " h-11"} defaultValue="••••••••" type="password" />
+          </div>
+          <button onClick={onLogin} className={`${btn} w-full h-12 text-base shadow-lg shadow-red-100 mt-2`}>
+            Enter Dashboard
+          </button>
+          <div className="pt-2 text-center">
+            <button className="text-xs font-semibold text-[#B71C1C] hover:underline">Forgot password?</button>
+          </div>
         </div>
       </div>
     </div>
@@ -96,9 +118,10 @@ function App() {
   const [incident, setIncident] = useState(false);
   const [poOpen, setPoOpen] = useState(false);
   const [generated, setGenerated] = useState(false);
-  const [posted, setPosted] = useState(false);
   const [upload, setUpload] = useState(null);
   const [dishModalOpen, setDishModalOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [posted, setPosted] = useState(false);
   const uploadRef = useRef(null);
 
   const title = useMemo(() => navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard", [page]);
@@ -106,38 +129,60 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A]">
-      <aside className="fixed left-0 top-0 flex h-screen w-[220px] flex-col justify-between bg-[#B71C1C] p-4 text-white">
-        <div>
-          <div className="text-2xl font-bold">softshape<span className="text-[#EF9A9A]">.ai</span></div>
-          <div className="mt-1 flex items-center gap-2 text-xs"><span className="h-2 w-2 animate-pulse rounded-full bg-white" />Spire.ai is ready ✦</div>
-          <div className="mt-5 space-y-1">
+      {/* Mobile Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-30 bg-black/50 md:hidden" 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      <aside className={`fixed left-0 top-0 z-40 flex h-[100dvh] w-[240px] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className="flex flex-col flex-grow overflow-hidden p-4">
+          <div className="flex items-center justify-between flex-shrink-0">
+            <div className="text-2xl font-bold">softshape<span className="text-[#EF9A9A]">.ai</span></div>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[10px] opacity-80 flex-shrink-0"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />Spire.ai is ready ✦</div>
+          
+          <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1">
             {navItems.map(([k, label, Icon]) => (
-              <button key={k} onClick={() => setPage(k)} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-[#d64a46]"}`}>
+              <button key={k} onClick={() => { setPage(k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-[#d64a46]"}`}>
                 <Icon size={16} /> {label}
               </button>
             ))}
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-md border border-[#EF9A9A] p-2">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-white/20" />
-            <div className="text-xs">Ravi's Kitchen</div>
+        <div className="p-4 border-t border-white/10 bg-black/5 flex-shrink-0">
+          <div className="flex items-center justify-between rounded-lg border border-white/20 p-2">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="h-7 w-7 rounded-full bg-white/20 flex-shrink-0" />
+              <div className="text-[10px] font-bold truncate">Ravi's Kitchen</div>
+            </div>
+            <LogOut size={14} className="flex-shrink-0 cursor-pointer hover:text-[#EF9A9A] transition-colors" />
           </div>
-          <LogOut size={16} />
         </div>
       </aside>
 
-      <div className="ml-[220px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-6">
-          <div className="text-xl font-bold">{title}</div>
-          <div className="text-sm text-[#6B6B6B]">Wednesday, 7 May 2025</div>
-          <div className="flex items-center gap-3">
-            <button className="relative rounded-md border border-[#FFCDD2] p-2"><Bell size={16} /><span className="absolute -right-2 -top-2 rounded-full bg-[#E53935] px-1 text-[10px] text-white">3</span></button>
-            <button className="rounded-md border border-[#FFCDD2] p-2"><Search size={16} /></button>
-            <div className="h-8 w-8 rounded-full bg-[#FFEBEE]" />
+      <div className="flex flex-col md:ml-[240px] h-[100dvh] overflow-hidden">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6">
+          <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
+            <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
+              <LayoutDashboard size={18} />
+            </button>
+            <div className="text-base md:text-xl font-bold truncate">{title}</div>
+          </div>
+          <div className="hidden lg:block text-sm text-[#6B6B6B]">Wednesday, 7 May 2025</div>
+          <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
+            <button className="relative rounded-md border border-[#FFCDD2] p-1.5 md:p-2">
+              <Bell size={16} />
+              <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#E53935] px-1 text-[9px] font-bold text-white shadow-sm">3</span>
+            </button>
+            <button className="rounded-md border border-[#FFCDD2] p-1.5 md:p-2"><Search size={16} /></button>
+            <div className="h-7 w-7 md:h-8 md:w-8 rounded-full bg-[#FFEBEE]" />
           </div>
         </header>
-        <main className="page-enter p-6">
+        <main className="page-enter flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
           {page === "dashboard" && <Dashboard />}
           {page === "pos" && <Pos />}
           {page === "tables" && <Tables onOpen={setTableDetail} />}
@@ -157,7 +202,7 @@ function App() {
       <button onClick={() => setSpireOpen((v) => !v)} className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-[#E53935] px-4 py-3 text-white hover:bg-[#c62828]">
         <Bot size={16} /> Ask Spire ✦
       </button>
-      {spireOpen && <SpirePanel />}
+      {spireOpen && <SpirePanel onClose={() => setSpireOpen(false)} />}
 
       {tableDetail && <Modal title={`Table ${tableDetail.id} Details`} onClose={() => setTableDetail(null)}>
         <p className="text-sm text-[#6B6B6B]">{tableDetail.items}</p>
@@ -196,34 +241,72 @@ function App() {
 }
 
 function Modal({ title, onClose, children }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><div className="w-full max-w-lg rounded-[10px] border border-[#FFCDD2] bg-white p-4"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">{title}</h3><button onClick={onClose}>✕</button></div>{children}</div></div>;
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-2 sm:p-4">
+      <div className="relative mx-auto my-4 sm:my-8 w-full max-w-lg rounded-[15px] border border-[#FFCDD2] bg-white p-4 md:p-6 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold">{title}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-[#FFEBEE] rounded-full transition-colors">✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function Dashboard() {
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4">
-    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4">Good morning, Ravi! 🍽 Today looks busy — 142 orders expected. Chicken Biriyani is trending. 3 staff marked absent.</div>
-    <div className="grid grid-cols-4 gap-4">
+    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base">Good morning, Ravi! 🍽 Today looks busy — 142 orders expected. Chicken Biriyani is trending. 3 staff marked absent.</div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       {[
         { label: "Today's Revenue", value: "₹47,350", sub: "↑12%", color: "text-[#2E7D32]" },
-        { label: "Total Orders", value: "89", sub: "live count", color: "text-[#1A1A1A]" },
-        { label: "Tables Occupied", value: "14/20", sub: "active tables", color: "text-[#1A1A1A]" },
+        { label: "Total Orders", value: "89", sub: "live", color: "text-[#1A1A1A]" },
+        { label: "Tables Occupied", value: "14/20", sub: "active", color: "text-[#1A1A1A]" },
         { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
       ].map((x) => (
-        <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-4"}>
-          <p className="text-xs tracking-wide text-[#6B6B6B]">{x.label}</p>
-          <div className="mt-2 flex items-end gap-2">
-            <p className="text-3xl font-extrabold leading-none text-[#1A1A1A]">{x.value}</p>
-            <p className={`text-sm font-bold ${x.color}`}>{x.sub}</p>
+        <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-3 md:p-4 min-w-0 shadow-sm"}>
+          <p className="text-[10px] md:text-xs font-bold uppercase tracking-tight text-[#6B6B6B] truncate">{x.label}</p>
+          <div className="mt-1 md:mt-2 flex flex-col sm:flex-row sm:items-baseline gap-1 overflow-hidden">
+            <p className="text-xl md:text-2xl lg:text-3xl font-black text-[#1A1A1A] whitespace-nowrap">{x.value}</p>
+            <p className={`text-[10px] md:text-xs font-bold ${x.color} whitespace-nowrap`}>{x.sub}</p>
           </div>
         </div>
       ))}
     </div>
-    <div className="grid grid-cols-2 gap-4">
-      <div className={card + " p-4"}><h3 className="mb-3 font-semibold">Sales - Last 7 days</h3><ResponsiveContainer width="100%" height={220}><BarChart data={sales}><XAxis dataKey="d" /><YAxis /><Tooltip /><Bar dataKey="v" fill="#E53935" /></BarChart></ResponsiveContainer></div>
-      <div className={card + " p-4"}><h3 className="mb-3 font-semibold">Top selling items today</h3>{["Chicken Biriyani — 50 plates — ₹18,750", "Mutton Curry — 28 plates — ₹11,200", "Prawn Fry — 22 plates — ₹8,800", "Veg Biriyani — 19 plates — ₹5,700", "Lassi — 45 glasses — ₹3,150"].map((r) => <div key={r} className="mb-2 flex items-center justify-between rounded-md border border-[#FFCDD2] p-2 text-sm"><span>{r.split("—")[0]}</span><span className="rounded-full bg-[#FFEBEE] px-2">{r.split("—")[1]}</span><span>{r.split("—")[2]}</span></div>)}</div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={card + " p-4 overflow-hidden"}>
+        <h3 className="mb-3 font-semibold text-sm md:text-base">Sales - Last 7 days</h3>
+        <div className="h-[220px] w-full min-h-[220px]">
+          <ResponsiveContainer width="100%" height="100%" debounce={50}>
+            <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <XAxis dataKey="d" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+              <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{fill: '#FFEBEE'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+              <Bar dataKey="v" fill="#E53935" radius={[4, 4, 0, 0]} barSize={24} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      <div className={card + " p-4"}>
+        <h3 className="mb-3 font-semibold text-sm md:text-base">Top selling items today</h3>
+        <div className="space-y-2">
+          {["Chicken Biriyani — 50 plates — ₹18,750", "Mutton Curry — 28 plates — ₹11,200", "Prawn Fry — 22 plates — ₹8,800", "Veg Biriyani — 19 plates — ₹5,700", "Lassi — 45 glasses — ₹3,150"].map((r) => {
+            const [name, qty, price] = r.split(" — ");
+            return (
+              <div key={r} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-md border border-[#FFCDD2] p-2 text-sm transition-colors hover:bg-[#FFF5F5]">
+                <span className="font-medium">{name}</span>
+                <div className="flex items-center justify-between sm:justify-end gap-3">
+                  <span className="flex h-5 min-w-[32px] items-center justify-center rounded-full bg-[#FFEBEE] px-2 text-[10px] font-bold text-[#B71C1C]">{qty}</span>
+                  <span className="font-bold text-[#1A1A1A] whitespace-nowrap">{price}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Recent Orders</h3><p className="text-sm">Order#1042 Table 7 ₹850 Preparing</p><p className="text-sm">Order#1041 Table 3 ₹1,200 Served</p><p className="text-sm">Order#1040 Takeaway ₹650 Ready</p><p className="text-sm">Order#1039 Table 12 ₹2,100 Served</p><p className="text-sm">Order#1038 Delivery ₹890 Dispatched</p></div>
       <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Spire.ai Alerts</h3><p className="text-sm">⚠ Zone violation at Kitchen 14:32</p><p className="text-sm">✦ Post scheduled for Instagram 6PM</p><p className="text-sm">✓ Payroll calculated for May — 21 staff</p></div>
       <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Inventory Quick View</h3><p className="text-sm">Chicken 35kg remaining</p><p className="text-sm">Rice 80kg</p><p className="text-sm">Mutton 12kg <span className="rounded bg-[#FFEBEE] px-2 text-[#B71C1C]">LOW</span></p><p className="text-sm">Prawns 8kg</p><p className="text-sm">Oil 40L</p></div>
@@ -233,21 +316,73 @@ function Dashboard() {
 
 function Pos() {
   const items = [["Chicken Biriyani", 375, "non"], ["Mutton Biriyani", 450, "non"], ["Veg Biriyani", 300, "veg"], ["Prawn Biriyani", 550, "non"], ["Chicken Curry", 280, "non"], ["Mutton Curry", 400, "non"], ["Chicken 65", 320, "non"], ["Prawn Fry", 400, "non"], ["Paneer Tikka", 350, "veg"], ["Lassi", 70, "veg"], ["Soft Drinks", 50, "veg"], ["Gulab Jamun", 80, "veg"]];
-  return <div className="grid grid-cols-5 gap-4">
-    <div className="col-span-3 space-y-4">
-      <div className="flex gap-2">{["All", "Biriyani", "Curry", "Starters", "Drinks", "Desserts"].map((x, i) => <button key={x} className={`rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
-      <div className="grid grid-cols-3 gap-3">{items.map((x) => <div key={x[0]} className={card + " p-3"}><p className="font-semibold text-sm">{x[0]}</p><p className="text-sm">₹{x[1]}</p><div className="mt-2 flex items-center justify-between"><span className={`h-3 w-3 rounded-full ${x[2] === "veg" ? "bg-green-600" : "bg-red-600"}`} /><button className={btn + " px-2 py-1 text-xs"}>+Add</button></div></div>)}</div>
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <div className="lg:col-span-3 space-y-4">
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+          {["All", "Biriyani", "Curry", "Starters", "Drinks", "Desserts"].map((x, i) => (
+            <button key={x} className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-xs font-bold transition-all ${i === 0 ? "border-[#E53935] bg-[#E53935] text-white shadow-md shadow-red-100" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>
+              {x}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
+          {items.map((x) => (
+            <div key={x[0]} className={card + " p-3 flex flex-col justify-between transition-transform active:scale-95 cursor-pointer group hover:border-[#E53935]"}>
+              <div>
+                <p className="font-bold text-sm md:text-base text-[#1A1A1A] line-clamp-1 group-hover:text-[#E53935]">{x[0]}</p>
+                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">₹{x[1]}</p>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <div className={`h-4 w-4 rounded-sm border flex items-center justify-center ${x[2] === "veg" ? "border-green-600" : "border-red-600"}`}>
+                  <div className={`h-1.5 w-1.5 rounded-full ${x[2] === "veg" ? "bg-green-600" : "bg-red-600"}`} />
+                </div>
+                <button className={btn + " px-3 py-1 text-[10px] md:text-xs rounded-full"}>Add</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={"lg:col-span-2 space-y-4"}>
+        <div className={card + " p-4 h-fit lg:sticky lg:top-20 shadow-lg shadow-red-50/50"}>
+          <div className="flex items-center justify-between border-b border-[#FFCDD2] pb-3 mb-3">
+            <h3 className="font-bold text-[#1A1A1A]">Order <span className="text-[#B71C1C]">#1043</span></h3>
+            <span className="text-xs bg-[#FFEBEE] text-[#B71C1C] px-2 py-0.5 rounded-full font-bold">Table 8</span>
+          </div>
+          <div className="space-y-3 max-h-[35vh] lg:max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+            {[["Chicken Biriyani", 2, 750], ["Mutton Curry", 1, 400], ["Lassi", 2, 140]].map(([name, qty, price]) => (
+              <div key={name} className="flex justify-between items-center text-sm">
+                <div className="flex flex-col">
+                  <span className="font-medium">{name}</span>
+                  <span className="text-[10px] text-[#6B6B6B]">Qty: {qty}</span>
+                </div>
+                <span className="font-bold">₹{price}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 border-t border-[#FFCDD2] pt-3 space-y-1">
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹1,290.00</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>₹64.50</span></div>
+            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹1,354.50</span></div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {["Cash", "Card", "UPI"].map((x, i) => (
+              <button key={x} className={`rounded-md border py-2 text-xs font-bold transition-all ${i === 2 ? "border-[#E53935] bg-[#FFEBEE] text-[#B71C1C]" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>
+                {x}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 space-y-2">
+            <button className={`${btn} w-full py-3 text-sm shadow-md`}>Complete & Print Bill</button>
+            <div className="grid grid-cols-2 gap-2">
+              <button className="rounded-md border border-[#FFCDD2] py-2 text-xs font-bold hover:bg-[#FFF5F5]">New Order</button>
+              <button className="rounded-md bg-[#B71C1C] text-white py-2 text-xs font-bold hover:bg-[#8e1515]">Send to KOT</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div className={"col-span-2 " + card + " p-4"}>
-      <h3 className="font-semibold">Order #1043, Table 8</h3>
-      <p className="mt-2 text-sm">Chicken Biriyani × 2 = ₹750</p><p className="text-sm">Mutton Curry × 1 = ₹400</p><p className="text-sm">Lassi × 2 = ₹140</p>
-      <div className="mt-3 border-t border-[#FFCDD2] pt-2 text-sm"><p>Subtotal: ₹1,290</p><p>GST 5%: ₹64.50</p><p className="font-semibold">Total: ₹1,354.50</p></div>
-      <div className="mt-3 flex gap-2">{["Cash", "Card", "UPI"].map((x, i) => <button key={x} className={`rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
-      <button className={`${btn} mt-3 w-full`}>Print Bill</button>
-      <button className="mt-2 w-full rounded-md border border-[#FFCDD2] px-3 py-2 text-sm">New Order</button>
-      <button className={`${btn} mt-2 w-full`}>Send to Kitchen</button>
-    </div>
-  </div>;
+  );
 }
 
 function Tables({ onOpen }) {
@@ -274,21 +409,69 @@ function Tables({ onOpen }) {
     { id: 20, status: "occupied", details: "2 guests — ₹720 — 18 min" },
   ];
   return <div className="space-y-4">
-    <div className="flex items-center justify-between"><h3 className="font-semibold">Floor Plan — Main Hall</h3><select className={input + " max-w-52"}><option>Main Hall</option><option>Terrace</option></select></div>
-    <div className="grid grid-cols-4 gap-3">{data.map((t) => {
-      const bg = t.status === "occupied" ? "bg-[#B71C1C] text-white border-[#B71C1C]" : t.status === "reserved" ? "bg-[#FFF3E0] text-[#8D4E00]" : "bg-[#E8F5E9] text-[#1B5E20]";
-      const label = t.status === "occupied" ? `Occupied — ${t.details}` : t.status === "reserved" ? `Reserved — ${t.details}` : "Available";
-      return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Biriyani x2, Mutton Curry x1, Lassi x2", time: "Seated 45 min ago", bill: "₹1,850" })} className={`${card} ${bg} min-h-[96px] p-3 text-left`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-xs font-semibold">{label}</p></button>;
-    })}</div>
-    <p className="text-sm text-[#6B6B6B]">Legend: Red = Occupied | Green = Available | Amber = Reserved</p>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <h3 className="font-semibold">Floor Plan — Main Hall</h3>
+      <select className={input + " w-full sm:max-w-52"}><option>Main Hall</option><option>Terrace</option></select>
+    </div>
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+      {data.map((t) => {
+        const bg = t.status === "occupied" ? "bg-[#B71C1C] text-white border-[#B71C1C]" : t.status === "reserved" ? "bg-[#FFF3E0] text-[#8D4E00]" : "bg-[#E8F5E9] text-[#1B5E20]";
+        const label = t.status === "occupied" ? `Occupied — ${t.details}` : t.status === "reserved" ? `Reserved — ${t.details}` : "Available";
+        return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Biriyani x2, Mutton Curry x1, Lassi x2", time: "Seated 45 min ago", bill: "₹1,850" })} className={`${card} ${bg} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
+      })}
+    </div>
+    <div className="flex flex-wrap items-center gap-4 rounded-lg bg-white p-3 border border-[#FFCDD2] shadow-sm">
+      <span className="text-xs font-bold text-[#6B6B6B] uppercase tracking-wider">Status:</span>
+      <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#B71C1C]" /><span className="text-xs font-medium">Occupied</span></div>
+      <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#E8F5E9] border border-[#1B5E20]" /><span className="text-xs font-medium">Available</span></div>
+      <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#FFF3E0] border border-[#8D4E00]" /><span className="text-xs font-medium">Reserved</span></div>
+    </div>
   </div>;
 }
 
 function MenuPage({ onAddDish }) {
   const items = ["Chicken Biriyani", "Mutton Biriyani", "Veg Biriyani", "Prawn Biriyani", "Chicken Curry", "Mutton Curry", "Chicken 65", "Prawn Fry", "Paneer Tikka", "Lassi", "Soft Drinks", "Gulab Jamun"];
   return <div className={card + " p-4"}>
-    <div className="mb-3 flex justify-end"><button className={btn} onClick={onAddDish}>+ Add Item</button></div>
-    <table className="w-full text-left text-sm"><thead><tr className="border-b border-[#FFCDD2]"><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Veg/Non-Veg</th><th>Available</th><th>Action</th></tr></thead><tbody>{items.map((i, idx) => <tr key={i} className="border-b border-[#FFEBEE]"><td><div className="h-8 w-8 rounded bg-[#EF9A9A]" /></td><td>{i}</td><td>{idx < 4 ? "Biriyani" : idx < 8 ? "Starters/Curry" : "Drinks/Dessert"}</td><td>₹{[375, 450, 300, 550, 280, 400, 320, 400, 350, 70, 50, 80][idx]}</td><td>{idx === 2 || idx > 7 ? "Veg" : "Non-Veg"}</td><td><span className="rounded-full bg-green-100 px-2 py-1 text-xs">Available</span></td><td>✏️ 🗑️</td></tr>)}</tbody></table>
+    <div className="mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <h3 className="font-semibold text-lg">Menu Items</h3>
+      <button className={btn} onClick={onAddDish}>+ Add Item</button>
+    </div>
+    <div className="overflow-x-auto -mx-4 sm:mx-0">
+      <div className="inline-block min-w-full align-middle">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead>
+            <tr className="border-b border-[#FFCDD2]">
+              <th className="px-4 py-2">Image</th>
+              <th className="px-4 py-2">Name</th>
+              <th className="px-4 py-2">Category</th>
+              <th className="px-4 py-2">Price</th>
+              <th className="px-4 py-2">Veg/Non</th>
+              <th className="px-4 py-2">Available</th>
+              <th className="px-4 py-2">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((i, idx) => (
+              <tr key={i} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+                <td className="px-4 py-2"><div className="h-10 w-10 rounded-md bg-[#EF9A9A]" /></td>
+                <td className="px-4 py-2 font-medium">{i}</td>
+                <td className="px-4 py-2">{idx < 4 ? "Biriyani" : idx < 8 ? "Starters/Curry" : "Drinks/Dessert"}</td>
+                <td className="px-4 py-2">₹{[375, 450, 300, 550, 280, 400, 320, 400, 350, 70, 50, 80][idx]}</td>
+                <td className="px-4 py-2">
+                  <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${idx === 2 || idx > 7 ? "bg-green-600" : "bg-red-600"}`} />
+                  {idx === 2 || idx > 7 ? "Veg" : "Non-Veg"}
+                </td>
+                <td className="px-4 py-2"><span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">Available</span></td>
+                <td className="px-4 py-2">
+                  <button className="text-blue-600 mr-3">✏️</button>
+                  <button className="text-red-600">🗑️</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>;
 }
 
@@ -297,8 +480,52 @@ function Orders() {
   return <div className="space-y-4">
     <UnifiedOrdersDashboard />
     <div className="flex gap-2">{["Dine-In (48)", "Takeaway (23)", "Delivery (18)", "All (89)"].map((x, i) => <button key={x} className={`rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
-    <div className="flex gap-2"><select className={input + " max-w-52"}><option>All Status</option><option>Preparing</option></select><input className={input} placeholder="Search order..." /></div>
-    <div className={card + " overflow-hidden"}><table className="w-full text-left text-sm"><thead className="bg-[#FFEBEE]"><tr><th className="p-2">Order ID</th><th>Type</th><th>Table/Customer</th><th>Items</th><th>Amount</th><th>Status</th><th>Time</th><th>Action</th></tr></thead><tbody>{rows.map((r) => <tr key={r[0]} className="border-b border-[#FFEBEE]"><td className="p-2">{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]} items</td><td>{r[4]}</td><td><span className="rounded-full bg-[#FFEBEE] px-2 py-1 text-xs">{r[5]}</span></td><td>{r[6]}</td><td><button className="text-[#B71C1C]">{r[7]}</button></td></tr>)}</tbody></table></div>
+    <div className="flex flex-col sm:flex-row gap-2">
+      <select className={input + " w-full sm:max-w-[150px]"}><option>All Status</option><option>Preparing</option></select>
+      <div className="relative flex-grow">
+        <input className={input + " pl-9"} placeholder="Search order ID or customer..." />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" size={16} />
+      </div>
+    </div>
+    <div className={card + " overflow-x-auto -mx-4 sm:mx-0"}>
+      <div className="inline-block min-w-full align-middle">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-[#FFEBEE]">
+            <tr>
+              <th className="p-3">Order ID</th>
+              <th className="p-3">Type</th>
+              <th className="p-3">Customer/Table</th>
+              <th className="p-3">Items</th>
+              <th className="p-3">Amount</th>
+              <th className="p-3">Status</th>
+              <th className="p-3">Time</th>
+              <th className="p-3">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r[0]} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+                <td className="p-3 font-semibold">{r[0]}</td>
+                <td className="p-3">{r[1]}</td>
+                <td className="p-3">{r[2]}</td>
+                <td className="p-3">{r[3]} items</td>
+                <td className="p-3 font-bold">{r[4]}</td>
+                <td className="p-3">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] md:text-xs font-semibold ${
+                    r[5] === "Preparing" ? "bg-orange-100 text-orange-700" :
+                    r[5] === "Ready" ? "bg-green-100 text-green-700" :
+                    r[5] === "Dispatched" ? "bg-blue-100 text-blue-700" :
+                    "bg-[#FFEBEE] text-[#B71C1C]"
+                  }`}>{r[5]}</span>
+                </td>
+                <td className="p-3 text-[#6B6B6B]">{r[6]}</td>
+                <td className="p-3"><button className="font-semibold text-[#B71C1C] hover:underline">{r[7]}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>;
 }
 
@@ -306,41 +533,225 @@ function Reports() {
   const trend = Array.from({ length: 30 }).map((_, i) => ({ day: i + 1, rev: 8000 + ((i * 977) % 15000) }));
   const pie = [{ name: "Dine-In", value: 55 }, { name: "Delivery", value: 27 }, { name: "Takeaway", value: 18 }];
   return <div className="space-y-4">
-    <div className="flex items-center justify-between"><div className="flex gap-2">{["Today", "This Week", "This Month", "Custom"].map((x, i) => <button key={x} className={`rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div><div className="flex gap-2"><button className="rounded-md border border-[#E53935] px-3 py-2 text-sm text-[#B71C1C]">Download PDF</button><button className="rounded-md border border-[#E53935] px-3 py-2 text-sm text-[#B71C1C]">Download CSV</button></div></div>
-    <div className="grid grid-cols-4 gap-4">{["Total Revenue|₹3,47,250", "Total Orders|624", "Avg Order Value|₹556", "Top Item|Chicken Biriyani"].map((x) => <div key={x} className={card + " p-3"}><p className="text-xs text-[#6B6B6B]">{x.split("|")[0]}</p><p className="font-semibold">{x.split("|")[1]}</p></div>)}</div>
-    <div className="grid grid-cols-2 gap-4">
-      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Revenue Trend</h3><ResponsiveContainer width="100%" height={220}><AreaChart data={trend}><XAxis dataKey="day" /><YAxis /><Tooltip /><Area dataKey="rev" stroke="#E53935" fill="#FFEBEE" /></AreaChart></ResponsiveContainer></div>
-      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Order Type</h3><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={pie} dataKey="value" cx="50%" cy="50%" outerRadius={72}>{pie.map((_, i) => <Cell key={i} fill={["#E53935", "#EF9A9A", "#FFCDD2"][i]} />)}</Pie></PieChart></ResponsiveContainer><p className="text-sm">Dine-In 55% | Delivery 27% | Takeaway 18%</p></div>
+    <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+      <div className="flex gap-2 overflow-x-auto pb-1 w-full sm:w-auto">{["Today", "This Week", "This Month", "Custom"].map((x, i) => <button key={x} className={`whitespace-nowrap rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
+      <div className="flex gap-2 w-full sm:w-auto">
+        <button className="flex-1 sm:flex-none rounded-md border border-[#E53935] px-3 py-2 text-sm text-[#B71C1C] font-semibold">Download PDF</button>
+        <button className="flex-1 sm:flex-none rounded-md border border-[#E53935] px-3 py-2 text-sm text-[#B71C1C] font-semibold">Download CSV</button>
+      </div>
     </div>
-    <div className="grid grid-cols-2 gap-4">
-      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Top 5 Items</h3><p className="text-sm">Chicken Biriyani | 280 | ₹1,05,000 | 30%</p><p className="text-sm">Mutton Curry | 220 | ₹88,000 | 25%</p><p className="text-sm">Prawn Fry | 180 | ₹72,000 | 20%</p><p className="text-sm">Veg Biriyani | 150 | ₹45,000 | 13%</p><p className="text-sm">Lassi | 320 | ₹22,400 | 12%</p></div>
-      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Peak Hours</h3><p className="text-sm">12PM-2PM (Very High)</p><p className="text-sm">7PM-10PM (Very High)</p><p className="text-sm">3PM-5PM (Low)</p></div>
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      {["Total Revenue|₹3,47,250", "Total Orders|624", "Avg Order Value|₹556", "Top Item|Chicken Biriyani"].map((x) => (
+        <div key={x} className={card + " p-3 border-l-4 border-l-[#E53935] min-w-0"}>
+          <p className="text-[10px] uppercase tracking-wider text-[#6B6B6B] truncate">{x.split("|")[0]}</p>
+          <p className="mt-1 font-bold text-sm md:text-lg truncate">{x.split("|")[1]}</p>
+        </div>
+      ))}
     </div>
-    <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Staff Performance</h3><table className="w-full text-sm"><thead><tr><th>Name</th><th>Orders Handled</th><th>Avg Rating</th><th>Present Days</th></tr></thead><tbody><tr><td>Raju</td><td>210</td><td>4.8</td><td>28/30</td></tr><tr><td>Meena</td><td>185</td><td>4.6</td><td>30/30</td></tr><tr><td>Suresh</td><td>160</td><td>4.4</td><td>26/30</td></tr><tr><td>Lakshmi</td><td>190</td><td>4.9</td><td>29/30</td></tr></tbody></table></div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={card + " p-4 overflow-hidden"}>
+        <h3 className="mb-4 font-semibold text-sm md:text-base">Revenue Trend</h3>
+        <div className="h-[220px] w-full min-h-[220px]">
+          <ResponsiveContainer width="100%" height="100%" debounce={50}>
+            <AreaChart data={trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <XAxis dataKey="day" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+              <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+              <Area type="monotone" dataKey="rev" stroke="#E53935" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" />
+              <defs><linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#E53935" stopOpacity={0.2}/><stop offset="95%" stopColor="#E53935" stopOpacity={0}/></linearGradient></defs>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      <div className={card + " p-4 flex flex-col justify-center"}>
+        <h3 className="mb-4 font-semibold text-sm md:text-base">Order Type Distribution</h3>
+        <div className="h-[180px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={pie} dataKey="value" cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={5}>
+                {pie.map((_, i) => <Cell key={i} fill={["#E53935", "#EF9A9A", "#FFCDD2"][i]} />)}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-4 flex flex-wrap justify-center gap-4 text-xs font-medium">
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#E53935]" /> Dine-In 55%</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#EF9A9A]" /> Delivery 27%</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#FFCDD2]" /> Takeaway 18%</span>
+        </div>
+      </div>
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={card + " p-4"}>
+        <h3 className="mb-4 font-semibold text-sm md:text-base">Top 5 Items (Revenue)</h3>
+        <div className="space-y-3">
+          {[
+            { n: "Chicken Biriyani", q: "280", r: "₹1,05,000", p: "30%" },
+            { n: "Mutton Curry", q: "220", r: "₹88,000", p: "25%" },
+            { n: "Prawn Fry", q: "180", r: "₹72,000", p: "20%" },
+            { n: "Veg Biriyani", q: "150", r: "₹45,000", p: "13%" },
+            { n: "Lassi", q: "320", r: "₹22,400", p: "12%" }
+          ].map((item) => (
+            <div key={item.n} className="flex items-center justify-between text-xs sm:text-sm gap-2">
+              <div className="flex flex-col min-w-0">
+                <span className="font-medium truncate">{item.n}</span>
+                <span className="text-[10px] text-[#6B6B6B]">{item.q} sold</span>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <div className="font-bold">{item.r}</div>
+                <div className="text-[10px] text-[#2E7D32]">{item.p} share</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={card + " p-4"}>
+        <h3 className="mb-4 font-semibold text-sm md:text-base">Peak Hours Traffic</h3>
+        <div className="space-y-4">
+          {["12PM-2PM", "7PM-10PM", "11AM-12PM", "3PM-5PM"].map((time, i) => (
+            <div key={time} className="space-y-1">
+              <div className="flex justify-between text-xs">
+                <span>{time}</span>
+                <span className="font-semibold">{[95, 88, 45, 20][i]}% capacity</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-[#FFEBEE]">
+                <div className="h-2 rounded-full bg-[#E53935]" style={{ width: `${[95, 88, 45, 20][i]}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+    <div className={card + " overflow-x-auto -mx-4 sm:mx-0"}>
+      <div className="inline-block min-w-full align-middle">
+        <h3 className="p-4 font-semibold border-b border-[#FFCDD2]">Staff Performance Metrics</h3>
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-[#FFEBEE]">
+            <tr>
+              <th className="p-3">Staff Name</th>
+              <th className="p-3 text-center">Orders Handled</th>
+              <th className="p-3 text-center">Avg Rating</th>
+              <th className="p-3 text-center">Attendance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[["Raju", 210, 4.8, "28/30"], ["Meena", 185, 4.6, "30/30"], ["Suresh", 160, 4.4, "26/30"], ["Lakshmi", 190, 4.9, "29/30"]].map((s) => (
+              <tr key={s[0]} className="border-b border-[#FFEBEE]">
+                <td className="p-3 font-medium">{s[0]}</td>
+                <td className="p-3 text-center">{s[1]}</td>
+                <td className="p-3 text-center">
+                  <span className="flex items-center justify-center gap-1 text-[#F57F17] font-bold">★ {s[2]}</span>
+                </td>
+                <td className="p-3 text-center text-[#6B6B6B]">{s[3]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>;
 }
 
 function Payroll({ onPayslip }) {
   const staff = ["Raju Kumar|Head Chef|₹18,000|28|2|₹1,200|₹16,800|Paid ✓", "Meena Devi|Waiter|₹12,000|30|0|₹0|₹12,000|Paid ✓", "Suresh Babu|Cook|₹14,000|26|4|₹1,867|₹12,133|Pending", "Lakshmi R|Cashier|₹13,000|29|1|₹433|₹12,567|Paid ✓", "Arjun K|Delivery|₹10,000|25|5|₹1,667|₹8,333|Pending", "Priya S|Helper|₹9,000|30|0|₹0|₹9,000|Paid ✓", "Kiran T|Waiter|₹12,000|27|3|₹1,200|₹10,800|Pending", ...Array.from({ length: 14 }).map((_, i) => `Staff ${i + 8}|Support|₹11,000|28|2|₹733|₹10,267|Paid ✓`)];
-  return <div className="space-y-4">
-    <div className="rounded-[10px] bg-[#E53935] p-4 text-white">🤖 Spire.ai — Your Accountant</div>
-    <div className="flex items-center gap-3"><select className={input + " max-w-52"}><option>May 2025</option></select><button className={btn}>Calculate Payroll</button></div>
-    <div className="grid grid-cols-3 gap-4">
-      <div className={card + " border-t-2 border-t-[#E53935] p-4"}>
-        <p className="text-sm uppercase text-[#6B6B6B]">Total Payroll</p>
-        <p className="mt-1 text-5xl font-extrabold text-[#1A1A1A]">₹2,35,233</p>
+  return <div className="space-y-6">
+    <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+      <div>
+        <h2 className="text-xl font-bold text-[#1A1A1A]">Staff Payroll Management</h2>
+        <p className="text-xs text-[#6B6B6B]">Automated salary calculation & payslip generation</p>
       </div>
-      <div className={card + " border-t-2 border-t-[#E53935] p-4"}>
-        <p className="text-sm uppercase text-[#6B6B6B]">Paid</p>
-        <p className="mt-1 text-5xl font-extrabold text-[#2E7D32]">₹1,75,467</p>
-      </div>
-      <div className={card + " border-t-2 border-t-[#E53935] p-4"}>
-        <p className="text-sm uppercase text-[#6B6B6B]">Pending</p>
-        <p className="mt-1 text-5xl font-extrabold text-[#F57F17]">₹59,766</p>
+      <div className="flex items-center gap-3 w-full md:w-auto">
+        <select className={input + " w-full md:w-40"}><option>May 2025</option><option>April 2025</option></select>
+        <button className={btn + " whitespace-nowrap"}>Run Payroll</button>
       </div>
     </div>
-    <div className={card + " overflow-auto"}><table className="w-full min-w-[980px] text-left text-sm"><thead className="bg-[#FFEBEE]"><tr><th className="p-2">Name</th><th>Role</th><th>Base Salary</th><th>Days Present</th><th>Absent</th><th>Deductions</th><th>Net Pay</th><th>Status</th><th>Action</th></tr></thead><tbody>{staff.map((s) => { const c = s.split("|"); return <tr key={s} className="border-b border-[#FFEBEE]"><td className="p-2">{c[0]}</td><td>{c[1]}</td><td>{c[2]}</td><td>{c[3]}</td><td>{c[4]}</td><td>{c[5]}</td><td>{c[6]}</td><td>{c[7]}</td><td><button className="text-[#B71C1C]" onClick={() => onPayslip(c[0])}>Payslip PDF</button></td></tr>; })}</tbody></table></div>
-    <div className="rounded-md border border-[#FFCDD2] bg-[#FFEBEE] p-3 text-sm">Total Payroll ₹2,45,600 | Paid: ₹1,68,400 | Pending: ₹77,200</div>
+
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
+      <div className={card + " p-3 md:p-4 border-l-4 border-l-[#E53935] shadow-sm min-w-0"}>
+        <p className="text-[9px] md:text-[10px] uppercase font-bold tracking-widest text-[#6B6B6B] truncate">Total Payroll</p>
+        <p className="mt-1 text-lg md:text-2xl font-black text-[#1A1A1A] truncate">₹2,35,233</p>
+        <p className="text-[9px] md:text-[10px] text-[#2E7D32] font-bold mt-1">21 Staff</p>
+      </div>
+      <div className={card + " p-3 md:p-4 border-l-4 border-l-[#2E7D32] shadow-sm min-w-0"}>
+        <p className="text-[9px] md:text-[10px] uppercase font-bold tracking-widest text-[#6B6B6B] truncate">Total Paid</p>
+        <p className="mt-1 text-lg md:text-2xl font-black text-[#2E7D32] truncate">₹1,75,467</p>
+        <div className="mt-2 h-1 w-full bg-gray-100 rounded-full overflow-hidden hidden sm:block">
+          <div className="h-full bg-[#2E7D32]" style={{width: '74%'}} />
+        </div>
+      </div>
+      <div className={card + " p-3 md:p-4 border-l-4 border-l-[#F57F17] shadow-sm min-w-0 col-span-2 sm:col-span-1"}>
+        <p className="text-[9px] md:text-[10px] uppercase font-bold tracking-widest text-[#6B6B6B] truncate">Total Pending</p>
+        <p className="mt-1 text-lg md:text-2xl font-black text-[#F57F17] truncate">₹59,766</p>
+        <p className="text-[9px] md:text-[10px] text-[#6B6B6B] mt-1">5 Salaries pending</p>
+      </div>
+    </div>
+
+    <div className={card + " overflow-hidden shadow-sm"}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-[#FFEBEE] border-b border-[#FFCDD2]">
+            <tr>
+              <th className="p-4 font-bold text-[#B71C1C] text-xs uppercase tracking-wider">Staff Details</th>
+              <th className="p-4 font-bold text-[#B71C1C] text-xs uppercase tracking-wider text-center">Days</th>
+              <th className="p-4 font-bold text-[#B71C1C] text-xs uppercase tracking-wider text-center">Deductions</th>
+              <th className="p-4 font-bold text-[#B71C1C] text-xs uppercase tracking-wider text-right">Net Salary</th>
+              <th className="p-4 font-bold text-[#B71C1C] text-xs uppercase tracking-wider text-center">Status</th>
+              <th className="p-4 font-bold text-[#B71C1C] text-xs uppercase tracking-wider text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#FFEBEE]">
+            {staff.map((s) => { 
+              const c = s.split("|"); 
+              return (
+                <tr key={s} className="hover:bg-[#FFF5F5] transition-colors">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-[#FFEBEE] flex items-center justify-center text-[10px] font-bold text-[#E53935]">
+                        {c[0].charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-[#1A1A1A]">{c[0]}</p>
+                        <p className="text-[10px] text-[#6B6B6B]">{c[1]}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4 text-center">
+                    <p className="font-semibold">{c[3]}/30</p>
+                    <p className="text-[10px] text-red-500">{c[4]} Absents</p>
+                  </td>
+                  <td className="p-4 text-center font-bold text-red-600">{c[5]}</td>
+                  <td className="p-4 text-right">
+                    <p className="font-black text-lg">{c[6]}</p>
+                    <p className="text-[10px] text-[#6B6B6B]">Base: {c[2]}</p>
+                  </td>
+                  <td className="p-4 text-center">
+                    <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${c[7].includes("Paid") ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700 animate-pulse"}`}>
+                      {c[7]}
+                    </span>
+                  </td>
+                  <td className="p-4 text-center">
+                    <button className="rounded-lg bg-white border border-[#FFCDD2] p-2 hover:border-[#E53935] hover:text-[#E53935] transition-all" onClick={() => onPayslip(c[0])}>
+                      <Bot size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ); 
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div className="rounded-xl bg-gradient-to-r from-[#B71C1C] to-[#E53935] p-4 text-white shadow-lg flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <Sparkles size={24} />
+        <div>
+          <p className="text-sm font-bold">Spire.ai Smart Insight</p>
+          <p className="text-xs opacity-90">Payroll for May is 12% lower than April due to seasonal staff adjustments.</p>
+        </div>
+      </div>
+      <button className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-xs font-bold transition-all">Details</button>
+    </div>
   </div>;
 }
 
@@ -363,54 +774,219 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
 📍 విజయవాడ | ఇప్పుడే ఆర్డర్ చేయండి ☎ 98765-43210
 #చికెన్‌బిర్యానీ #రవిస్‌కిచెన్ #విజయవాడ #ఫుడ్‌లవర్స్ #బిర్యానీ #ఆంధ్రఫుడ్`;
 
-  return <div className="space-y-4">
-    <div className="rounded-[10px] border border-[#FFCDD2] bg-[#FFEBEE] p-4 font-semibold">Spire.ai — Your Designer & Marketing Manager</div>
-    <div className="flex items-center gap-2 text-sm"><span className="rounded-full bg-[#E53935] px-2 py-1 text-white">Step 1: Upload</span><span>→</span><span className="rounded-full bg-[#FFEBEE] px-2 py-1">Step 2: Choose Design</span><span>→</span><span className="rounded-full bg-[#FFEBEE] px-2 py-1">Step 3: Post</span></div>
-    <div className={card + " p-4"}>
-      <button onClick={() => uploadRef.current?.click()} className="w-full rounded-[10px] border-2 border-dashed border-[#E53935] bg-[#FFF5F5] p-8 text-sm">Drop your food photo here or click to browse</button>
-      <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} />
-      {upload && <div className="mt-3 flex items-center gap-3 rounded-md border border-[#FFCDD2] p-2"><img src={upload.url} alt="uploaded" className="h-16 w-16 rounded object-cover" /><p className="text-sm">{upload.name}</p></div>}
-      {!upload && <div className="mt-3 flex items-center gap-3 rounded-md border border-[#FFCDD2] p-2"><div className="h-16 w-16 rounded bg-orange-300" /><p className="text-sm">chicken_biriyani_raw.jpg</p></div>}
-      <button onClick={() => setGenerated(true)} className={`${btn} mt-3`}>Generate Designs →</button>
-    </div>
-    {generated && <div className={card + " p-4"}>
-      <h3 className="font-semibold">Spire.ai generated 4 designs for you</h3>
-      <div className="mt-3 grid grid-cols-4 gap-3">
-        {[{ n: "Overhead flat lay", f: "contrast(1.1) saturate(1.1)" }, { n: "Close-up steam shot", f: "sepia(0.2) saturate(1.3)" }, { n: "Lifestyle restaurant scene", f: "brightness(0.9) saturate(0.8)" }, { n: "Abstract artistic splash", f: "hue-rotate(-15deg) saturate(1.4)" }].map((d, i) => <button key={d.n} onClick={() => setSelectedDesign(i + 1)} className={`rounded-md border p-2 text-left ${selectedDesign === i + 1 ? "border-2 border-[#E53935]" : "border-[#FFCDD2]"}`}>
-          <div className="h-24 w-full rounded bg-[#EF9A9A]">{upload ? <img src={upload.url} alt={d.n} className="h-full w-full rounded object-cover" style={{ filter: d.f }} /> : null}</div>
-          <p className="mt-2 text-xs font-semibold">{`Design ${i + 1}`}</p>
-          <p className="text-xs text-[#6B6B6B]">{d.n}</p>
-        </button>)}
-      </div>
-      <div className="mt-3">
-        <p className="text-sm font-semibold">Name this dish (speak or type):</p>
-        <div className="mt-2 flex gap-2">
-          <button className="h-9 w-9 rounded-full bg-[#E53935] text-white">🎤</button>
-          <input className={input} value={dishName} onChange={(e) => setDishName(e.target.value)} />
+  return (
+    <div className="space-y-6">
+    <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="h-12 w-12 rounded-full bg-[#FFEBEE] flex items-center justify-center text-[#E53935]">
+          <Bot size={28} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold">Spire Marketing AI</h2>
+          <p className="text-xs text-[#6B6B6B]">Automated designer & pricing manager</p>
         </div>
       </div>
-      <div className="mt-2 flex gap-2 text-sm">
-        <button onClick={() => setLanguage("en")} className={`rounded-md px-3 py-1 ${language === "en" ? "border border-[#E53935] bg-[#FFEBEE]" : "border border-[#FFCDD2]"}`}>English</button>
-        <button onClick={() => setLanguage("te")} className={`rounded-md px-3 py-1 ${language === "te" ? "border border-[#E53935] bg-[#FFEBEE] font-semibold text-[#B71C1C]" : "border border-[#FFCDD2]"}`}>తెలుగు</button>
+      <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 text-[10px] md:text-xs font-bold uppercase tracking-wider whitespace-nowrap">
+        <span className="rounded-lg bg-[#E53935] px-3 py-1.5 text-white">1. Upload</span>
+        <span className="text-[#FFCDD2]">→</span>
+        <span className={`rounded-lg px-3 py-1.5 border ${generated ? "bg-[#E53935] text-white" : "bg-[#FFEBEE] text-[#B71C1C] border-[#EF9A9A]"}`}>2. Design</span>
+        <span className="text-[#FFCDD2]">→</span>
+        <span className={`rounded-lg px-3 py-1.5 border ${posted ? "bg-green-600 text-white" : "bg-[#FFEBEE] text-[#B71C1C] border-[#EF9A9A]"}`}>3. Publish</span>
       </div>
-      <div className="mt-3 whitespace-pre-line rounded-md border border-[#FFCDD2] bg-[#FFF5F5] p-3 text-sm">{caption}</div>
-      <div className="mt-3 flex items-center gap-3 text-sm"><span>Choose platforms:</span><label><input type="checkbox" defaultChecked /> Instagram</label><label><input type="checkbox" defaultChecked /> Facebook</label><label><input type="checkbox" /> WhatsApp</label></div>
-      <div className="mt-2 flex items-center gap-3 text-sm"><label><input type="radio" name="posttime" defaultChecked /> Post Now</label><label><input type="radio" name="posttime" /> Schedule</label><input className={input + " max-w-40"} type="time" defaultValue="18:00" /></div>
-      <button onClick={() => setPosted(true)} className={`${btn} mt-3`}>Publish Post</button>
-      {posted && <div className="mt-2 rounded-md border border-[#2E7D32] bg-green-50 p-2 text-sm text-[#2E7D32]">✓ Posted to Instagram & Facebook!</div>}
-      <div className="mt-4"><h4 className="mb-2 font-semibold">Past posts</h4><p className="text-sm">3 May | Instagram | Mutton Biriyani | 248 | 1,840 | Published</p><p className="text-sm">1 May | Facebook | Prawn Fry | 112 | 760 | Published</p><p className="text-sm">28 Apr | Instagram | Gulab Jamun | 89 | 520 | Published</p></div>
-    </div>}
-  </div>;
+    </div>
+
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="xl:col-span-2 space-y-6">
+        <div className={card + " p-6"}>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Promotional Design Variations</h3>
+          <div 
+            onClick={() => uploadRef.current?.click()} 
+            className="group relative w-full cursor-pointer overflow-hidden rounded-[15px] border-2 border-dashed border-[#FFCDD2] bg-[#FFF5F5] p-10 text-center transition-all hover:border-[#E53935] hover:bg-[#FFEBEE]"
+          >
+            <div className="flex flex-col items-center">
+              <Sparkles className="mb-2 text-[#E53935] transition-transform group-hover:scale-110" size={32} />
+              <p className="font-bold text-[#1A1A1A]">Drop your food photo here</p>
+              <p className="text-xs text-[#6B6B6B]">or click to browse files</p>
+            </div>
+          </div>
+          <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} />
+          
+          {upload && (
+            <div className="mt-4 flex items-center gap-4 rounded-xl border border-[#FFCDD2] p-3 bg-white">
+              <img src={upload.url} alt="uploaded" className="h-16 w-16 rounded-lg object-cover shadow-md" />
+              <div className="flex-grow">
+                <p className="text-sm font-bold text-[#1A1A1A]">{upload.name}</p>
+                <p className="text-[10px] text-[#6B6B6B]">Ready for AI processing</p>
+              </div>
+              <button onClick={() => setGenerated(true)} className={btn + " shadow-lg shadow-red-100"}>Generate Designs →</button>
+            </div>
+          )}
+          
+          {generated && (
+            <div className="mt-6 animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                {[{ n: "Social Post", f: "contrast(1.1) saturate(1.1)" }, { n: "Story Ad", f: "sepia(0.1) saturate(1.2)" }, { n: "Menu Banner", f: "brightness(0.95)" }, { n: "WhatsApp Flyer", f: "hue-rotate(-5deg)" }].map((d, i) => (
+                  <button key={d.n} onClick={() => setSelectedDesign(i + 1)} className={`group rounded-xl border p-2 transition-all ${selectedDesign === i + 1 ? "border-2 border-[#E53935] bg-[#FFEBEE] ring-4 ring-red-50" : "border-[#FFCDD2] hover:bg-[#FFF5F5]"}`}>
+                    <div className="aspect-[4/5] w-full rounded-lg bg-[#EF9A9A] overflow-hidden relative">
+                      {upload ? <img src={upload.url} alt={d.n} className="h-full w-full object-cover transition-transform group-hover:scale-110" style={{ filter: d.f }} /> : <div className="h-full w-full bg-orange-100" />}
+                      <div className="absolute top-2 right-2 h-4 w-4 rounded-full bg-white/80 flex items-center justify-center text-[10px] font-bold text-[#E53935]">
+                        {i + 1}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold text-[#E53935] text-center">{d.n}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {generated && (
+          <div className={card + " p-6 animate-fadeIn"}>
+            <div className="flex flex-col md:flex-row gap-6">
+              <div className="flex-grow space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B]">AI Generated Caption</label>
+                  <div className="mt-1 flex gap-2">
+                    <button className="h-10 w-10 flex-shrink-0 rounded-full bg-[#E53935] text-white shadow-lg flex items-center justify-center hover:scale-105 transition-transform"><Bot size={18} /></button>
+                    <textarea 
+                      className={input + " min-h-[120px] resize-none"} 
+                      value={caption} 
+                      onChange={() => {}} // Read only for demo
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setLanguage("en")} className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${language === "en" ? "bg-[#E53935] text-white" : "border border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>English</button>
+                  <button onClick={() => setLanguage("te")} className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${language === "te" ? "bg-[#E53935] text-white" : "border border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>Telugu</button>
+                </div>
+                <div className="pt-2 border-t border-[#FFCDD2]">
+                  <p className="text-[10px] font-bold uppercase text-[#6B6B6B] mb-2">Publishing Channels</p>
+                  <div className="flex flex-wrap gap-4">
+                    {["Instagram", "Facebook", "WhatsApp"].map(p => (
+                      <label key={p} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" className="accent-[#E53935] h-4 w-4" defaultChecked={p !== "WhatsApp"} />
+                        <span>{p}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="w-full md:w-64 space-y-4 border-t md:border-t-0 md:border-l border-[#FFCDD2] pt-4 md:pt-0 md:pl-6">
+                <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">Publishing Controls</p>
+                <div className="space-y-3">
+                  <div className="rounded-lg bg-[#FFF5F5] p-3 border border-[#FFCDD2]">
+                    <label className="text-[10px] font-bold text-[#E53935]">OPTIMAL TIME</label>
+                    <p className="text-sm font-bold">Today, 6:45 PM</p>
+                    <p className="text-[9px] text-[#6B6B6B]">Based on user activity</p>
+                  </div>
+                  <button onClick={() => setPosted(true)} className={btn + " w-full py-3 shadow-lg shadow-red-100 flex items-center justify-center gap-2"}>
+                    <Megaphone size={16} /> Publish Now
+                  </button>
+                  {posted && <p className="text-center text-[10px] font-bold text-[#2E7D32]">✓ Successfully Posted!</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        <div className={card + " p-6"}>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Smart Pricing Engine</h3>
+          <div className="space-y-4">
+            <div className="rounded-xl bg-[#E8F5E9] p-4 border border-[#A5D6A7]">
+              <div className="flex items-center gap-2 text-[#2E7D32] mb-1">
+                <Sparkles size={16} />
+                <span className="text-xs font-bold uppercase">Dynamic Recommendation</span>
+              </div>
+              <p className="text-sm font-bold text-[#1A1A1A]">Increase Biriyani Price by 15%</p>
+              <p className="text-[11px] text-[#6B6B6B] mt-1">Spire detected high demand for tonight's cricket match (expected +40% orders).</p>
+              <button className="mt-3 w-full bg-[#2E7D32] text-white py-2 rounded-lg text-xs font-bold shadow-sm">Apply Smart Price</button>
+            </div>
+            
+            <div className="space-y-3 pt-2">
+              <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">Active Promos</p>
+              {[
+                { n: "Monsoon Special", d: "₹50 OFF on all Biriyani", s: "Active" },
+                { n: "Lassi Combo", d: "Buy 2 Get 1 Free", s: "Scheduled" }
+              ].map(p => (
+                <div key={p.n} className="flex items-center justify-between p-3 rounded-lg border border-[#FFCDD2] bg-white transition-hover hover:border-[#E53935]">
+                  <div>
+                    <p className="text-xs font-bold">{p.n}</p>
+                    <p className="text-[10px] text-[#6B6B6B]">{p.d}</p>
+                  </div>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${p.s === "Active" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{p.s}</span>
+                </div>
+              ))}
+              <button className="w-full border border-dashed border-[#E53935] text-[#E53935] py-2 rounded-lg text-xs font-bold hover:bg-[#FFEBEE]">+ New Promotion</button>
+            </div>
+          </div>
+        </div>
+
+        <div className={card + " p-6"}>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Campaign Performance</h3>
+          <div className="space-y-4">
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-2xl font-black text-[#1A1A1A]">12.4k</p>
+                <p className="text-[10px] font-bold text-[#6B6B6B] uppercase">Total Impressions</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-[#2E7D32]">↑ 24%</p>
+                <p className="text-[10px] text-[#6B6B6B]">vs last week</p>
+              </div>
+            </div>
+            <div className="h-2 w-full bg-[#FFEBEE] rounded-full overflow-hidden">
+              <div className="h-full bg-[#E53935]" style={{width: '75%'}} />
+            </div>
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div>
+                <p className="text-sm font-bold">842</p>
+                <p className="text-[9px] text-[#6B6B6B] uppercase">Conversions</p>
+              </div>
+              <div>
+                <p className="text-sm font-bold">₹1.2k</p>
+                <p className="text-[9px] text-[#6B6B6B] uppercase">Ad Spend</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
 }
 
 function Surveillance({ onIncident }) {
   return <div className="space-y-4">
     <div className="flex items-center justify-between rounded-[10px] border border-[#FFCDD2] bg-white p-3"><p className="font-semibold">Spire.ai Surveillance — Live</p><p className="text-sm"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-red-600" />1080p · 24fps</p></div>
-    <div className="grid grid-cols-2 gap-4">
-      {["CAM-01 Kitchen Pass|Z-01 PASS · 4 persons · safe|bg-slate-700|text-green-400", "CAM-02 Back of House|Z-02 PREP · busy|bg-slate-600|text-amber-300", "CAM-03 Cash Counter|Z-03 CASH · 2 persons · safe|bg-neutral-700|text-green-400", "CAM-04 Storage Room|Z-04 STORAGE · ALERT|bg-zinc-800|text-red-400"].map((x, i) => { const c = x.split("|"); return <div key={x} className={card + " p-2"}><div className={`relative h-40 rounded ${c[2]}`}><div className={`absolute left-4 top-4 border-2 ${i === 3 ? "border-red-500" : "border-green-500"} h-14 w-20`} /></div><p className={`mt-2 text-sm ${c[3]}`}>{c[0]} — {c[1]}</p></div>; })}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {["CAM-01 Kitchen Pass|Z-01 PASS · 4 persons · safe|bg-slate-700|text-green-400", "CAM-02 Back of House|Z-02 PREP · busy|bg-slate-600|text-amber-300", "CAM-03 Cash Counter|Z-03 CASH · 2 persons · safe|bg-neutral-700|text-green-400", "CAM-04 Storage Room|Z-04 STORAGE · ALERT|bg-zinc-800|text-red-400"].map((x, i) => { 
+        const c = x.split("|"); 
+        return (
+          <div key={x} className={card + " p-2 overflow-hidden"}>
+            <div className={`relative aspect-video rounded flex items-center justify-center ${c[2]}`}>
+              <div className={`absolute left-4 top-4 border-2 ${i === 3 ? "border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "border-green-500"} h-1/3 w-1/4 animate-pulse`} />
+              <div className="text-[10px] text-white/30 font-mono uppercase tracking-widest">{c[0]}</div>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <span className={`text-[10px] md:text-xs font-bold ${c[3]}`}>{c[0]}</span>
+              <span className="text-[10px] text-[#6B6B6B] bg-[#FFF5F5] px-1.5 py-0.5 rounded border border-[#FFCDD2]">{c[1].split(" · ")[0]}</span>
+            </div>
+            <p className="mt-1 text-[10px] text-[#6B6B6B] truncate">{c[1]}</p>
+          </div>
+        ); 
+      })}
     </div>
     <div className="rounded-md border border-[#E53935] bg-[#FFEBEE] p-3 text-sm">⚠ SPIRE ALERT — 14:32:07 | CAM-04 | Storage Zone | Unauthorized person detected | Confidence: 91% | Captain notified</div>
-    <div className="flex gap-2">{["Kitchen Pass", "Back of House", "Cash Counter", "Storage Room"].map((x, i) => <button key={x} className={`rounded-full border px-3 py-1 text-xs ${i === 3 ? "border-[#E53935] text-[#B71C1C]" : "border-[#FFCDD2]"}`}>{x} · {i === 3 ? "ALERT red" : "live green"}</button>)}</div>
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {["Kitchen Pass", "Back of House", "Cash Counter", "Storage Room"].map((x, i) => (
+        <button key={x} className={`whitespace-nowrap rounded-full border px-3 py-1 text-[10px] md:text-xs font-semibold ${i === 3 ? "border-[#E53935] bg-[#FFEBEE] text-[#B71C1C]" : "border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>
+          {x} · {i === 3 ? "ALERT" : "LIVE"}
+        </button>
+      ))}
+    </div>
     <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Alert Log</h3><p className="text-sm">14:32 | CAM-04 | Unauthorized person in Storage | Confidence 91% | Captain alerted | <button onClick={onIncident} className="text-[#B71C1C]">View Screenshot</button></p><p className="text-sm">12:18 | CAM-02 | 6th person in Kitchen zone (max 5) | Confidence 87% | Warning sent | <button onClick={onIncident} className="text-[#B71C1C]">View Screenshot</button></p><p className="text-sm">09:45 | CAM-01 | Unknown person at Pass | Confidence 78% | Logged | <button onClick={onIncident} className="text-[#B71C1C]">View Screenshot</button></p></div>
   </div>;
 }
@@ -420,7 +996,43 @@ function Inventory({ onPo }) {
     <div className="rounded-[10px] border border-[#FFCDD2] bg-[#FFEBEE] p-4">Spire.ai tracks every ingredient — ask anything</div>
     <div className="flex gap-2"><input className={input} defaultValue="Where did my 50kg chicken go today?" /><button className={btn}>Ask Spire →</button></div>
     <div className={card + " p-4 text-sm"}><p>Analyzing your 50kg chicken stock for today...</p><p>→ 12.5kg used in 50 Chicken Biriyani plates (₹18,750 revenue)</p><p>→ 3.2kg used in Chicken Curry — 8 orders (₹2,240)</p><p>→ 35kg currently in cold storage (Fridge #2, Zone B)</p><p>→ 2.5kg UNACCOUNTED ⚠ — checking cameras...</p><p>→ Found: CAM-04 at 14:32 — suspicious activity flagged</p><button className={`${btn} mt-3`}>View Camera Incident</button></div>
-    <div className={card + " p-4"}><table className="w-full text-left text-sm"><thead><tr><th>Item</th><th>Opening</th><th>Purchased</th><th>Used</th><th>Current</th><th>Status</th><th>Reorder</th></tr></thead><tbody>{["Chicken|50 kg|0|15.2 kg|34.8 kg|OK|10 kg", "Rice|100 kg|0|20 kg|80 kg|OK|20 kg", "Mutton|15 kg|0|3 kg|12 kg|LOW ⚠|10 kg", "Prawns|10 kg|0|2 kg|8 kg|OK|5 kg", "Cooking Oil|50 L|0|10 L|40 L|OK|15 L", "Onions|30 kg|0|8 kg|22 kg|OK|10 kg", "Tomatoes|20 kg|0|6 kg|14 kg|OK|8 kg", "Milk|20 L|0|8 L|12 L|LOW ⚠|10 L"].map((r) => <tr key={r} className="border-b border-[#FFEBEE]">{r.split("|").map((c) => <td key={c} className="py-1">{c}</td>)}</tr>)}</tbody></table></div>
+    <div className={card + " overflow-x-auto -mx-4 sm:mx-0"}>
+      <div className="inline-block min-w-full align-middle">
+        <table className="w-full text-left text-xs md:text-sm whitespace-nowrap">
+          <thead className="bg-[#FFEBEE]">
+            <tr>
+              <th className="p-3">Item</th>
+              <th className="p-3 text-center">Opening</th>
+              <th className="p-3 text-center">Purchased</th>
+              <th className="p-3 text-center">Used</th>
+              <th className="p-3 text-center">Current</th>
+              <th className="p-3 text-center">Status</th>
+              <th className="p-3 text-center">Reorder</th>
+            </tr>
+          </thead>
+          <tbody>
+            {["Chicken|50 kg|0|15.2 kg|34.8 kg|OK|10 kg", "Rice|100 kg|0|20 kg|80 kg|OK|20 kg", "Mutton|15 kg|0|3 kg|12 kg|LOW ⚠|10 kg", "Prawns|10 kg|0|2 kg|8 kg|OK|5 kg", "Cooking Oil|50 L|0|10 L|40 L|OK|15 L", "Onions|30 kg|0|8 kg|22 kg|OK|10 kg", "Tomatoes|20 kg|0|6 kg|14 kg|OK|8 kg", "Milk|20 L|0|8 L|12 L|LOW ⚠|10 L"].map((r) => {
+              const c = r.split("|");
+              return (
+                <tr key={r} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+                  <td className="p-3 font-semibold">{c[0]}</td>
+                  <td className="p-3 text-center">{c[1]}</td>
+                  <td className="p-3 text-center text-green-600 font-bold">{c[2]}</td>
+                  <td className="p-3 text-center text-red-600">{c[3]}</td>
+                  <td className="p-3 text-center font-extrabold">{c[4]}</td>
+                  <td className="p-3 text-center">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c[5].includes("LOW") ? "bg-orange-100 text-orange-700 animate-pulse" : "bg-green-100 text-green-700"}`}>
+                      {c[5]}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center font-bold text-[#E53935] underline decoration-dotted">{c[6]}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
     <button onClick={onPo} className={btn}>Generate Purchase Order</button>
   </div>;
 }
@@ -429,8 +1041,8 @@ function Pricing() {
   return <div className="space-y-4">
     <div className="text-center"><h2 className="text-3xl font-bold">Simple pricing. Powerful AI. Every day.</h2><p className="text-[#6B6B6B]">Less than a cup of chai per day for the AI that runs your restaurant.</p></div>
     <div className="mx-auto flex w-fit gap-2 rounded-md border border-[#FFCDD2] p-1"><button className="rounded-md bg-[#E53935] px-3 py-1 text-white">Yearly</button><button className="rounded-md px-3 py-1">Monthly</button></div>
-    <div className="grid grid-cols-3 gap-4">
-      <PriceCard title="Basic POS" price="₹68 /day" billed="billed as ₹25,000/year" features={["✓ Full POS billing", "✓ Table management", "✓ KOT system", "✓ Basic reports", "✓ Menu management", "✗ Spire.ai", "✗ Surveillance AI"]} action="Get Started" />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <PriceCard title="Basic POS" price="₹68 /day" billed="billed as ₹25,000/year" features={["✓ Full POS billing", "✓ Table management", "✓ KOT system", "✓ Basic reports", "✓ Menu management", "✗ Spire.ai assistant", "✗ Surveillance AI"]} action="Get Started" />
       <PriceCard title="Spire Starter" popular price="₹110 /day" billed="billed as ₹40,000/year" features={["✓ Everything in Basic +", "✓ Spire.ai voice assistant", "✓ Payroll automation", "✓ AI marketing (50 credits/mo)", "✓ Instagram & Facebook posting", "✗ Camera surveillance"]} action="Start Free Trial" solid />
       <PriceCard title="Spire Pro" price="₹137 /day" billed="billed as ₹50,000/year" features={["✓ Everything in Starter", "✓ Spire.ai cam surveillance", "✓ Inventory AI tracking", "✓ Unlimited marketing credits", "✓ Custom AI training", "✓ Priority support"]} action="Contact Sales" />
     </div>
@@ -443,25 +1055,145 @@ function PriceCard({ title, price, billed, features, action, popular, solid }) {
 }
 
 function SettingsPage() {
-  return <div className="grid grid-cols-4 gap-4">
-    <div className={card + " p-3"}><p className="mb-2 font-semibold">Tabs</p>{["Restaurant", "Users", "Spire.ai", "Payments", "Notifications", "Integrations"].map((x, i) => <div key={x} className={`mb-1 rounded-md px-2 py-1 text-sm ${i === 0 ? "bg-[#FFEBEE]" : ""}`}>{x}</div>)}</div>
-    <div className={"col-span-3 " + card + " p-4"}>
-      <h3 className="mb-3 font-semibold">Restaurant</h3>
-      <div className="grid grid-cols-2 gap-3"><input className={input} defaultValue="Ravi's Kitchen" /><input className={input} defaultValue="Ravi Kumar" /><input className={input} defaultValue="+91 98765 43210" /><input className={input} defaultValue="37AABCU9603R1ZX" /><input className={"col-span-2 " + input} defaultValue="MG Road, Vijayawada, AP 520010" /></div>
-      <div className="mt-3 rounded-md border border-dashed border-[#E53935] p-4 text-sm">Logo upload area</div>
-      <div className="mt-3 rounded-md border border-[#FFCDD2] bg-[#FFF5F5] p-3 text-sm"><p>Spire.ai settings preview: Language Telugu / English, Voice sensitivity, Auto-post toggle, Inventory threshold 20%, Surveillance confidence 85%, Plan: Spire Pro</p></div>
-      <button className={`${btn} mt-3`}>Save</button>
+  return <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <div className="lg:col-span-1">
+      <div className="flex gap-2 overflow-x-auto pb-4 lg:flex-col lg:overflow-visible">
+        {["Restaurant", "Users", "Spire.ai", "Payments", "Notifications", "Integrations"].map((x, i) => (
+          <button key={x} className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm text-left transition-all duration-200 ${i === 0 ? "bg-[#B71C1C] text-white shadow-lg shadow-red-100 font-bold" : "bg-white border border-[#FFCDD2] text-[#6B6B6B] hover:border-[#E53935] hover:text-[#E53935]"}`}>
+            {x}
+          </button>
+        ))}
+      </div>
+    </div>
+    <div className={"lg:col-span-3 " + card + " p-4 md:p-6"}>
+      <h3 className="mb-4 font-bold text-xl text-[#B71C1C]">Restaurant Profile</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Business Name</label><input className={input} defaultValue="Ravi's Kitchen" /></div>
+        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Owner Name</label><input className={input} defaultValue="Ravi Kumar" /></div>
+        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Contact Number</label><input className={input} defaultValue="+91 98765 43210" /></div>
+        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-[#6B6B6B]">GST Number</label><input className={input} defaultValue="37AABCU9603R1ZX" /></div>
+        <div className="sm:col-span-2 space-y-1"><label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Full Address</label><input className={input} defaultValue="MG Road, Vijayawada, AP 520010" /></div>
+      </div>
+      <div className="mt-6">
+        <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Business Logo</label>
+        <div className="mt-1 flex items-center justify-center rounded-md border-2 border-dashed border-[#FFCDD2] bg-[#FFF5F5] p-6 text-sm text-[#6B6B6B] transition-colors hover:border-[#E53935] cursor-pointer">
+          Click to upload or drag and drop
+        </div>
+      </div>
+      <div className="mt-6 rounded-md border border-[#FFCDD2] bg-white p-4">
+        <h4 className="text-sm font-bold mb-2">Spire.ai Active Settings</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-4 text-[11px] text-[#6B6B6B]">
+          <div>Language: <span className="text-[#1A1A1A] font-semibold">Telugu/Eng</span></div>
+          <div>Voice Sensitivity: <span className="text-[#1A1A1A] font-semibold">High</span></div>
+          <div>Auto-post: <span className="text-[#2E7D32] font-semibold">Enabled</span></div>
+          <div>Inventory Alert: <span className="text-[#B71C1C] font-semibold">20%</span></div>
+          <div>Cam Confidence: <span className="text-[#1A1A1A] font-semibold">85%</span></div>
+          <div>Current Plan: <span className="text-[#E53935] font-semibold font-bold">Spire Pro</span></div>
+        </div>
+      </div>
+      <div className="mt-6 flex justify-end">
+        <button className={`${btn} px-8`}>Save Changes</button>
+      </div>
     </div>
   </div>;
 }
 
-function SpirePanel() {
-  return <div className="fixed bottom-0 right-0 top-0 z-40 w-[350px] border-l border-[#FFCDD2] bg-white p-4">
-    <h3 className="font-semibold">Spire.ai Assistant</h3>
-    <div className="mt-4 space-y-3 text-sm">
-      <div className="rounded-md bg-[#FFF5F5] p-2">User: Spire, where did my 50kg chicken go today?</div>
-      <div className="rounded-md bg-[#FFEBEE] p-2">Spire: Analyzing sales + inventory + cameras... Found: 12.5kg used in 50 biriyani plates (₹37,500 revenue). 35kg in fridge. 2.5kg unaccounted — flagged 1 camera incident at 14:32. Showing now ↓</div>
-      <div className="rounded-md border border-[#E53935] bg-[#FFEBEE] p-2">CAM-03 | 14:32:07 | Storage Zone | Confidence: 91%</div>
+function SpirePanel({ onClose }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([
+    { role: "user", content: "Where did my 50kg chicken go today?" },
+    { role: "spire", content: "Analyzing sales, inventory logs, and camera feeds...", 
+      details: ["12.5kg used in 50 biriyani plates", "35kg remains in cold storage (Fridge 2)", "2.5kg discrepancy found."],
+      isIncident: true
+    }
+  ]);
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    const userMsg = input.trim();
+    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setInput("");
+    setIsTyping(true);
+
+    setTimeout(() => {
+      setIsTyping(false);
+      setMessages(prev => [...prev, { role: "spire", content: `I'm analyzing your request about "${userMsg}". How can I help you further with your restaurant operations?` }]);
+    }, 1500);
+  };
+
+  return <div className="fixed bottom-0 right-0 top-0 z-50 w-full sm:w-[400px] border-l border-[#FFCDD2] bg-white shadow-2xl flex flex-col slide-in">
+    <div className="flex items-center justify-between border-b border-[#FFCDD2] p-4 bg-[#B71C1C] text-white">
+      <div className="flex items-center gap-2 font-bold"><Bot size={20} /> Spire.ai Assistant</div>
+      <button onClick={onClose} className="text-white hover:bg-white/10 p-1 rounded-md" title="Close Panel">✕</button>
+    </div>
+    <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 bg-slate-50/30">
+      {messages.map((m, i) => (
+        <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div className={`max-w-[85%] rounded-2xl p-3 text-sm shadow-sm border ${
+            m.role === "user" 
+              ? "rounded-tr-none bg-[#FFF5F5] border-[#FFCDD2] text-[#1A1A1A]" 
+              : "rounded-tl-none bg-white border-[#EF9A9A] text-[#1A1A1A]"
+          }`}>
+            {m.role === "spire" && <p className="font-bold text-[#B71C1C] mb-1 flex items-center gap-1.5"><Sparkles size={12} /> Spire Intelligence</p>}
+            <p>{m.content}</p>
+            {m.details && (
+              <div className="mt-2 space-y-1 opacity-90 text-[13px]">
+                {m.details.map((d, idx) => <p key={idx}>• {d.includes("discrepancy") ? <span className="font-bold text-[#E53935]">{d}</span> : d}</p>)}
+              </div>
+            )}
+            {m.isIncident && (
+              <div className="mt-3 w-full rounded-xl border-2 border-[#E53935] bg-white p-2 shadow-md overflow-hidden">
+                <div className="relative aspect-video rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                  <div className="absolute top-2 left-2 flex flex-col gap-1">
+                    <div className="flex items-center gap-1 bg-[#E53935] text-white px-1.5 py-0.5 rounded text-[7px] font-black tracking-widest animate-pulse">LIVE INCIDENT</div>
+                  </div>
+                  <div className="border-2 border-red-500/80 h-12 w-16 relative">
+                    <span className="absolute -top-3.5 left-0 text-[6px] text-red-500 font-bold bg-black/40 px-1">Person [91%]</span>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between px-1">
+                  <p className="text-[9px] font-black">Unauthorized Access</p>
+                  <p className="text-[9px] text-[#6B6B6B] font-mono">14:32:07</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      {isTyping && (
+        <div className="flex justify-start">
+          <div className="bg-white border border-[#EF9A9A] rounded-2xl rounded-tl-none p-3 flex gap-1">
+            <span className="w-1.5 h-1.5 bg-[#EF9A9A] rounded-full animate-bounce" />
+            <span className="w-1.5 h-1.5 bg-[#EF9A9A] rounded-full animate-bounce [animation-delay:0.2s]" />
+            <span className="w-1.5 h-1.5 bg-[#EF9A9A] rounded-full animate-bounce [animation-delay:0.4s]" />
+          </div>
+        </div>
+      )}
+    </div>
+    <div className="p-4 border-t border-[#FFCDD2] bg-white">
+      <div className="flex gap-2 bg-[#FFF5F5] rounded-full p-1.5 border border-[#FFCDD2] focus-within:border-[#E53935] transition-colors">
+        <input 
+          className="flex-grow bg-transparent px-3 py-1.5 text-sm outline-none" 
+          placeholder="Type or ask anything..." 
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+        />
+        <button 
+          onClick={handleSend}
+          disabled={!input.trim()}
+          className="h-9 w-9 flex items-center justify-center rounded-full bg-[#E53935] text-white shadow-lg transition-transform active:scale-95 disabled:opacity-50"
+        >
+          <Sparkles size={18} />
+        </button>
+      </div>
     </div>
   </div>;
 }
