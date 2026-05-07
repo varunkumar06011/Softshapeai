@@ -66,7 +66,7 @@ function Login({ onLogin }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FFF5F5] p-6">
       <div className="w-full max-w-xl rounded-[10px] border border-[#FFCDD2] bg-white p-8">
-        <h1 className="text-center text-4xl font-bold text-[#E53935]">Vsoftshape.ai</h1>
+        <h1 className="text-center text-4xl font-bold text-[#E53935]">softshape.ai</h1>
         <p className="mt-2 text-center text-[#6B6B6B]">Where AI shapes your business</p>
         <div className="my-6 flex items-center justify-center gap-3">
           {!merge ? ["Designer", "Accountant", "Captain", "Surveillance"].map((r, i) => (
@@ -108,7 +108,7 @@ function App() {
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A]">
       <aside className="fixed left-0 top-0 flex h-screen w-[220px] flex-col justify-between bg-[#B71C1C] p-4 text-white">
         <div>
-          <div className="text-2xl font-bold">Vsoftshape<span className="text-[#EF9A9A]">.ai</span></div>
+          <div className="text-2xl font-bold">softshape<span className="text-[#EF9A9A]">.ai</span></div>
           <div className="mt-1 flex items-center gap-2 text-xs"><span className="h-2 w-2 animate-pulse rounded-full bg-white" />Spire.ai is ready ✦</div>
           <div className="mt-5 space-y-1">
             {navItems.map(([k, label, Icon]) => (
