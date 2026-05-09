@@ -5,46 +5,83 @@ const hashCode = (value) =>
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+export async function detectDish(imageUrl) {
+  await wait(2000); // Simulate processing
+  const detections = [
+    "Chicken Biryani",
+    "Paneer Butter Masala",
+    "Aloo 65",
+    "Butter Chicken",
+    "Veg Fried Rice",
+    "Mutton Rogan Josh",
+    "Hakka Noodles",
+    "Tandoori Platter"
+  ];
+  // Deterministic detection based on imageUrl length (since it's a blob URL)
+  const idx = imageUrl.length % detections.length;
+  return {
+    dishName: detections[idx],
+    category: "Main Course",
+    confidence: 94
+  };
+}
+
 export async function generateDishCreative({ dishName, imageUrl }) {
   if (!dishName?.trim()) throw new Error("Dish name is required");
   if (!imageUrl) throw new Error("Dish image is required");
 
-  await wait(1200);
+  await wait(1500);
 
   const seed = Math.abs(hashCode(dishName.toLowerCase()));
-  const marketMin = 220 + (seed % 20);
-  const marketMax = marketMin + 80 + (seed % 25);
+  const marketMin = 180 + (seed % 100);
+  const marketMax = marketMin + 120 + (seed % 50);
   const competitivePrice = clamp(Math.round((marketMin + marketMax) / 2), marketMin, marketMax);
-  const recommendedPrice = competitivePrice + 9;
-  const profitFriendlyPrice = competitivePrice + 29;
+  const recommendedPrice = competitivePrice + 19;
+  const profitFriendlyPrice = competitivePrice + 49;
 
-  const dishKey = dishName.trim();
+  // Use the same styles as creativeEngine for consistency
   const styles = [
-    { id: "premium", name: "Premium Style", filter: "contrast(1.08) saturate(1.2)" },
-    { id: "street", name: "Spicy Street-Food", filter: "saturate(1.4) hue-rotate(-8deg)" },
-    { id: "luxury", name: "Luxury Restaurant", filter: "brightness(0.92) contrast(1.15)" },
-    { id: "dark", name: "Dark Food Theme", filter: "brightness(0.75) contrast(1.2)" },
-    { id: "festival", name: "Festival Offer", filter: "sepia(0.22) saturate(1.3)" },
+    { id: 'luxury', name: 'Luxury Fine Dining', type: 'marketing' },
+    { id: 'dark', name: 'Cinematic Dark', type: 'marketing' },
+    { id: 'street', name: 'Street Food Vibe', type: 'marketing' },
+    { id: 'ipl', name: 'IPL Match Night', type: 'marketing' },
+    { id: 'neon', name: 'Cyberpunk Neon', type: 'marketing' },
+    { id: 'rustic', name: 'Rustic Indian', type: 'marketing' },
+    { id: 'delivery', name: 'Zomato/Swiggy Optimized', type: 'menu' },
+    { id: 'chef', name: 'Chef Signature', type: 'menu' },
+    { id: 'minimal', name: 'Minimal Gallery', type: 'menu' },
+    { id: 'modern', name: 'Modern White', type: 'menu' }
   ];
 
   const creative = styles.map((style, index) => ({
     ...style,
-    title: `${dishKey} - ${style.name}`,
+    id: `${style.id}-${index}`,
+    styleId: style.id, // Reference to STYLES in creativeEngine
+    title: `${dishName} - ${style.name}`,
     tagline: [
-      "Slow-cooked aroma. Signature taste.",
-      "Every bite starts a craving.",
-      "Chef-crafted, crowd-approved.",
-      "Bold spice, smooth finish.",
-      "Festive flavor on every plate.",
-    ][index],
+      "Royal taste, crafted with precision.",
+      "A masterpiece of spice and smoke.",
+      "The soul of the streets, on your plate.",
+      "Match day essential. Keep the hunger at bay.",
+      "Digital flavor for the modern palate.",
+      "Authentic heritage in every bite.",
+      "Optimized for quick delivery.",
+      "Chef's personal favorite.",
+      "Focus on the flavor, nothing else.",
+      "Clean, fresh, and irresistibly good."
+    ][index % 10],
     highlight: [
-      "Fresh batch available now",
-      "Hot and spicy bestseller",
-      "Chef's featured recommendation",
-      "Perfect for dinner cravings",
-      "Limited festive special",
-    ][index],
-    layout: `Social Poster Layout ${index + 1}`,
+      "98% Approval Rating",
+      "Bestseller this week",
+      "Hot and Spicy",
+      "IPL Final Special",
+      "Trending in Vijayawada",
+      "Heritage Recipe",
+      "Swiggy/Zomato Ready",
+      "Chef Recommended",
+      "Clean Aesthetic",
+      "Premium Choice"
+    ][index % 10]
   }));
 
   return {
@@ -53,8 +90,12 @@ export async function generateDishCreative({ dishName, imageUrl }) {
       competitivePrice,
       recommendedPrice,
       profitFriendlyPrice,
-      combo: `${dishKey} + Coke`,
-      offer: "Flat 10% weekday lunch discount",
+      combo: `${dishName} + Signature Lassi + Fry`,
+      offer: "Exclusive Weekend Dinner Bundle",
+      demandImpact: "+24% during evenings",
+      eventContext: "IPL Finals tonight may increase demand by 18%",
+      confidence: 89,
+      engagement: "High (Estimated 1.2k impressions)"
     },
     creative,
   };

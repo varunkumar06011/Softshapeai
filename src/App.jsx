@@ -20,6 +20,10 @@ import {
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart } from "recharts";
 import AIDishCreationModal from "./components/AIDishCreationModal";
 import UnifiedOrdersDashboard from "./components/UnifiedOrdersDashboard";
+import { STYLES, generateRandomConfig, renderToCanvas } from "./services/creativeEngine";
+import { getSmartRecommendation } from "./services/pricingEngine";
+
+import CreativeCanvas from "./components/CreativeCanvas";
 
 const CaptainPerformanceDashboard = lazy(() => import("./components/CaptainPerformanceDashboard"));
 
@@ -71,7 +75,7 @@ function Login({ onLogin }) {
           <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[#E53935]">softshape<span className="text-[#EF9A9A]">.ai</span></h1>
           <p className="mt-2 text-sm md:text-base font-medium text-[#6B6B6B]">Where AI shapes your business</p>
         </div>
-        
+
         <div className="my-8 flex items-center justify-center gap-4">
           {!merge ? (
             <div className="flex gap-2 md:gap-3 flex-wrap justify-center">
@@ -132,8 +136,8 @@ function App() {
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A]">
       {/* Mobile Overlay */}
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-30 bg-black/50 md:hidden" 
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -145,7 +149,7 @@ function App() {
             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
           </div>
           <div className="mt-1 flex items-center gap-2 text-[10px] opacity-80 flex-shrink-0"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />Spire.ai is ready ✦</div>
-          
+
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1">
             {navItems.map(([k, label, Icon]) => (
               <button key={k} onClick={() => { setPage(k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-[#d64a46]"}`}>
@@ -258,10 +262,10 @@ function Modal({ title, onClose, children }) {
 function Dashboard() {
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4">
-    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base">Good morning, Ravi! 🍽 Today looks busy — 142 orders expected. Chicken Biriyani is trending. 3 staff marked absent.</div>
+    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base">Good morning, Varun! 🍽 Today looks busy — 142 orders expected. Chicken Biriyani is trending. 3 staff marked absent.</div>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       {[
-        { label: "Today's Revenue", value: "₹47,350", sub: "↑12%", color: "text-[#2E7D32]" },
+        { label: "Today's Revenue", value: "₹67,950", sub: "↑12%", color: "text-[#2E7D32]" },
         { label: "Total Orders", value: "89", sub: "live", color: "text-[#1A1A1A]" },
         { label: "Tables Occupied", value: "14/20", sub: "active", color: "text-[#1A1A1A]" },
         { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
@@ -281,9 +285,9 @@ function Dashboard() {
         <div className="h-[220px] w-full min-h-[220px]">
           <ResponsiveContainer width="100%" height="100%" debounce={50}>
             <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <XAxis dataKey="d" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-              <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{fill: '#FFEBEE'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+              <XAxis dataKey="d" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
               <Bar dataKey="v" fill="#E53935" radius={[4, 4, 0, 0]} barSize={24} />
             </BarChart>
           </ResponsiveContainer>
@@ -512,12 +516,11 @@ function Orders() {
                 <td className="p-3">{r[3]} items</td>
                 <td className="p-3 font-bold">{r[4]}</td>
                 <td className="p-3">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] md:text-xs font-semibold ${
-                    r[5] === "Preparing" ? "bg-orange-100 text-orange-700" :
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] md:text-xs font-semibold ${r[5] === "Preparing" ? "bg-orange-100 text-orange-700" :
                     r[5] === "Ready" ? "bg-green-100 text-green-700" :
-                    r[5] === "Dispatched" ? "bg-blue-100 text-blue-700" :
-                    "bg-[#FFEBEE] text-[#B71C1C]"
-                  }`}>{r[5]}</span>
+                      r[5] === "Dispatched" ? "bg-blue-100 text-blue-700" :
+                        "bg-[#FFEBEE] text-[#B71C1C]"
+                    }`}>{r[5]}</span>
                 </td>
                 <td className="p-3 text-[#6B6B6B]">{r[6]}</td>
                 <td className="p-3"><button className="font-semibold text-[#B71C1C] hover:underline">{r[7]}</button></td>
@@ -555,11 +558,11 @@ function Reports() {
         <div className="h-[220px] w-full min-h-[220px]">
           <ResponsiveContainer width="100%" height="100%" debounce={50}>
             <AreaChart data={trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <XAxis dataKey="day" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-              <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+              <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
               <Area type="monotone" dataKey="rev" stroke="#E53935" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" />
-              <defs><linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#E53935" stopOpacity={0.2}/><stop offset="95%" stopColor="#E53935" stopOpacity={0}/></linearGradient></defs>
+              <defs><linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#E53935" stopOpacity={0.2} /><stop offset="95%" stopColor="#E53935" stopOpacity={0} /></linearGradient></defs>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -678,7 +681,7 @@ function Payroll({ onPayslip }) {
         <p className="text-[9px] md:text-[10px] uppercase font-bold tracking-widest text-[#6B6B6B] truncate">Total Paid</p>
         <p className="mt-1 text-lg md:text-2xl font-black text-[#2E7D32] truncate">₹1,75,467</p>
         <div className="mt-2 h-1 w-full bg-gray-100 rounded-full overflow-hidden hidden sm:block">
-          <div className="h-full bg-[#2E7D32]" style={{width: '74%'}} />
+          <div className="h-full bg-[#2E7D32]" style={{ width: '74%' }} />
         </div>
       </div>
       <div className={card + " p-3 md:p-4 border-l-4 border-l-[#F57F17] shadow-sm min-w-0 col-span-2 sm:col-span-1"}>
@@ -702,8 +705,8 @@ function Payroll({ onPayslip }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#FFEBEE]">
-            {staff.map((s) => { 
-              const c = s.split("|"); 
+            {staff.map((s) => {
+              const c = s.split("|");
               return (
                 <tr key={s} className="hover:bg-[#FFF5F5] transition-colors">
                   <td className="p-4">
@@ -737,7 +740,7 @@ function Payroll({ onPayslip }) {
                     </button>
                   </td>
                 </tr>
-              ); 
+              );
             })}
           </tbody>
         </table>
@@ -757,204 +760,529 @@ function Payroll({ onPayslip }) {
 }
 
 function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, posted, setPosted }) {
-  const [selectedDesign, setSelectedDesign] = useState(1);
+  const [selectedDesign, setSelectedDesign] = useState(0);
   const [language, setLanguage] = useState("en");
   const [dishName, setDishName] = useState("Chicken Biriyani");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [designs, setDesigns] = useState([]);
+  const [recommendation, setRecommendation] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // New States for Workflow
+  const [socialConnected, setSocialConnected] = useState({ ig: false, fb: false });
+  const [showSocialModal, setShowSocialModal] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceInput, setVoiceInput] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
+  const [scheduledCampaigns, setScheduledCampaigns] = useState([]);
+  const [isPosting, setIsPosting] = useState(false);
+  const [scheduleModal, setScheduleModal] = useState(false);
+
+  useEffect(() => {
+    // Show social modal if not connected
+    if (!socialConnected.ig && !socialConnected.fb) {
+      const t = setTimeout(() => setShowSocialModal(true), 1000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      setIsAnalyzing(true);
+      setTimeout(() => {
+        setRecommendation(getSmartRecommendation());
+        setIsAnalyzing(false);
+      }, 1500);
+    };
+    refresh();
+    const interval = setInterval(refresh, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleGenerate = () => {
+    setIsGenerating(true);
+    setGenerated(false);
+    
+    setTimeout(() => {
+      const newDesigns = STYLES.map((style, index) => generateRandomConfig(style.id, index));
+      setDesigns(newDesigns);
+      setIsGenerating(false);
+      setGenerated(true);
+      setSelectedDesign(0);
+    }, 2000);
+  };
   const handleUpload = (f) => {
     if (!f) return;
     const url = URL.createObjectURL(f);
     setUpload({ name: f.name, url });
     setGenerated(false);
   };
-  const caption = language === "en"
-    ? `🍛 Royal ${dishName} — Cooked slow, served fresh! Every grain tells a story of flavor crafted with love at Ravi's Kitchen.
+  const handleVoiceInput = () => {
+    setIsListening(true);
+    setTimeout(() => {
+      const texts = [
+        "Hey edi chicken biriyani today special 199",
+        "Make it a family combo with free Lassi",
+        "Special IPL discount of 20 percent"
+      ];
+      const randomText = texts[Math.floor(Math.random() * texts.length)];
+      setVoiceInput(randomText);
+      setIsListening(false);
+      
+      // Update dish name or recommendation based on voice
+      if (randomText.toLowerCase().includes("199")) {
+         setRecommendation(prev => ({...prev, title: "Special Deal: ₹199 Offer Active", explanation: "Voice assistant updated campaign based on manual override."}));
+      }
+    }, 2000);
+  };
+
+  const handlePostNow = () => {
+    setIsPosting(true);
+    setTimeout(() => {
+      setIsPosting(false);
+      setPosted(true);
+      setShowPreview(false);
+    }, 3000);
+  };
+
+  const handleSchedule = () => {
+    const newCampaign = {
+      id: Date.now(),
+      design: designs[selectedDesign],
+      caption: finalCaption,
+      time: "Tomorrow, 6:00 PM",
+      status: "Scheduled"
+    };
+    setScheduledCampaigns(prev => [...prev, newCampaign]);
+    setScheduleModal(false);
+    alert("Campaign scheduled successfully!");
+  };
+
+  const finalCaption = useMemo(() => {
+    const selectedTagline = designs[selectedDesign]?.text.main.content || "";
+    let base = language === "en"
+      ? `🍛 ${selectedTagline ? selectedTagline + " — " : ""}Royal ${dishName} — Cooked slow, served fresh! Every grain tells a story of flavor crafted with love at Ravi's Kitchen.
 📍 Vijayawada | Order Now ☎ 98765-43210
 #ChickenBiriyani #RavisKitchen #Vijayawada #FoodLovers #Biriyani #AndhraFood #FoodPhotography`
-    : `🍛 రాయల్ ${dishName} — నెమ్మదిగా వండి, తాజాగా వడ్డించాం!
+      : `🍛 ${selectedTagline ? selectedTagline + " — " : ""}రాయల్ ${dishName} — నెమ్మదిగా వండి, తాజాగా వడ్డించాం!
 రవి'స్ కిచెన్ ప్రేమతో తయారైన రుచికి ప్రతి అన్నగింజ సాక్ష్యం.
 📍 విజయవాడ | ఇప్పుడే ఆర్డర్ చేయండి ☎ 98765-43210
 #చికెన్‌బిర్యానీ #రవిస్‌కిచెన్ #విజయవాడ #ఫుడ్‌లవర్స్ #బిర్యానీ #ఆంధ్రఫుడ్`;
 
+    if (voiceInput) {
+       base = `🔥 ${voiceInput.toUpperCase()}!\n\n` + base;
+    }
+    if (recommendation && (recommendation.title.includes("IPL") || selectedTagline.includes("IPL"))) {
+       base = `🏏 IPL SPECIAL! ` + base;
+    }
+    return base;
+  }, [dishName, language, voiceInput, recommendation, designs, selectedDesign]);
+
   return (
     <div className="space-y-6">
-    <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        <div className="h-12 w-12 rounded-full bg-[#FFEBEE] flex items-center justify-center text-[#E53935]">
-          <Bot size={28} />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold">Spire Marketing AI</h2>
-          <p className="text-xs text-[#6B6B6B]">Automated designer & pricing manager</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 text-[10px] md:text-xs font-bold uppercase tracking-wider whitespace-nowrap">
-        <span className="rounded-lg bg-[#E53935] px-3 py-1.5 text-white">1. Upload</span>
-        <span className="text-[#FFCDD2]">→</span>
-        <span className={`rounded-lg px-3 py-1.5 border ${generated ? "bg-[#E53935] text-white" : "bg-[#FFEBEE] text-[#B71C1C] border-[#EF9A9A]"}`}>2. Design</span>
-        <span className="text-[#FFCDD2]">→</span>
-        <span className={`rounded-lg px-3 py-1.5 border ${posted ? "bg-green-600 text-white" : "bg-[#FFEBEE] text-[#B71C1C] border-[#EF9A9A]"}`}>3. Publish</span>
-      </div>
-    </div>
-
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-      <div className="xl:col-span-2 space-y-6">
-        <div className={card + " p-6"}>
-          <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Promotional Design Variations</h3>
-          <div 
-            onClick={() => uploadRef.current?.click()} 
-            className="group relative w-full cursor-pointer overflow-hidden rounded-[15px] border-2 border-dashed border-[#FFCDD2] bg-[#FFF5F5] p-10 text-center transition-all hover:border-[#E53935] hover:bg-[#FFEBEE]"
-          >
-            <div className="flex flex-col items-center">
-              <Sparkles className="mb-2 text-[#E53935] transition-transform group-hover:scale-110" size={32} />
-              <p className="font-bold text-[#1A1A1A]">Drop your food photo here</p>
-              <p className="text-xs text-[#6B6B6B]">or click to browse files</p>
-            </div>
+      <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-[#FFEBEE] flex items-center justify-center text-[#E53935]">
+            <Bot size={28} />
           </div>
-          <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} />
-          
-          {upload && (
-            <div className="mt-4 flex items-center gap-4 rounded-xl border border-[#FFCDD2] p-3 bg-white">
-              <img src={upload.url} alt="uploaded" className="h-16 w-16 rounded-lg object-cover shadow-md" />
-              <div className="flex-grow">
-                <p className="text-sm font-bold text-[#1A1A1A]">{upload.name}</p>
-                <p className="text-[10px] text-[#6B6B6B]">Ready for AI processing</p>
-              </div>
-              <button onClick={() => setGenerated(true)} className={btn + " shadow-lg shadow-red-100"}>Generate Designs →</button>
-            </div>
-          )}
-          
-          {generated && (
-            <div className="mt-6 animate-fadeIn">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                {[{ n: "Social Post", f: "contrast(1.1) saturate(1.1)" }, { n: "Story Ad", f: "sepia(0.1) saturate(1.2)" }, { n: "Menu Banner", f: "brightness(0.95)" }, { n: "WhatsApp Flyer", f: "hue-rotate(-5deg)" }].map((d, i) => (
-                  <button key={d.n} onClick={() => setSelectedDesign(i + 1)} className={`group rounded-xl border p-2 transition-all ${selectedDesign === i + 1 ? "border-2 border-[#E53935] bg-[#FFEBEE] ring-4 ring-red-50" : "border-[#FFCDD2] hover:bg-[#FFF5F5]"}`}>
-                    <div className="aspect-[4/5] w-full rounded-lg bg-[#EF9A9A] overflow-hidden relative">
-                      {upload ? <img src={upload.url} alt={d.n} className="h-full w-full object-cover transition-transform group-hover:scale-110" style={{ filter: d.f }} /> : <div className="h-full w-full bg-orange-100" />}
-                      <div className="absolute top-2 right-2 h-4 w-4 rounded-full bg-white/80 flex items-center justify-center text-[10px] font-bold text-[#E53935]">
-                        {i + 1}
-                      </div>
-                    </div>
-                    <p className="mt-2 text-[10px] font-bold text-[#E53935] text-center">{d.n}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div>
+            <h2 className="text-lg font-bold">Spire Marketing AI</h2>
+            <p className="text-xs text-[#6B6B6B]">Automated designer & pricing manager</p>
+          </div>
         </div>
+        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 text-[10px] md:text-xs font-bold uppercase tracking-wider whitespace-nowrap">
+          <span className="rounded-lg bg-[#E53935] px-3 py-1.5 text-white">1. Upload</span>
+          <span className="text-[#FFCDD2]">→</span>
+          <span className={`rounded-lg px-3 py-1.5 border ${generated ? "bg-[#E53935] text-white" : "bg-[#FFEBEE] text-[#B71C1C] border-[#EF9A9A]"}`}>2. Design</span>
+          <span className="text-[#FFCDD2]">→</span>
+          <span className={`rounded-lg px-3 py-1.5 border ${posted ? "bg-green-600 text-white" : "bg-[#FFEBEE] text-[#B71C1C] border-[#EF9A9A]"}`}>3. Publish</span>
+        </div>
+      </div>
 
-        {generated && (
-          <div className={card + " p-6 animate-fadeIn"}>
-            <div className="flex flex-col md:flex-row gap-6">
-              <div className="flex-grow space-y-4">
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B]">AI Generated Caption</label>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          <div className={card + " p-6"}>
+            <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Promotional Design Variations</h3>
+            <div
+              onClick={() => uploadRef.current?.click()}
+              className="group relative w-full cursor-pointer overflow-hidden rounded-[15px] border-2 border-dashed border-[#FFCDD2] bg-[#FFF5F5] p-10 text-center transition-all hover:border-[#E53935] hover:bg-[#FFEBEE]"
+            >
+              <div className="flex flex-col items-center">
+                <Sparkles className="mb-2 text-[#E53935] transition-transform group-hover:scale-110" size={32} />
+                <p className="font-bold text-[#1A1A1A]">Drop your food photo here</p>
+                <p className="text-xs text-[#6B6B6B]">or click to browse files</p>
+              </div>
+            </div>
+            <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} />
+
+            {upload && (
+              <div className="mt-4 flex items-center gap-4 rounded-xl border border-[#FFCDD2] p-3 bg-white">
+                <img src={upload.url} alt="uploaded" className="h-16 w-16 rounded-lg object-cover shadow-md" />
+                <div className="flex-grow">
+                  <p className="text-sm font-bold text-[#1A1A1A]">{upload.name}</p>
+                  <p className="text-[10px] text-[#6B6B6B]">Ready for AI processing</p>
+                </div>
+                <button 
+                  onClick={handleGenerate} 
+                  disabled={isGenerating}
+                  className={`${btn} shadow-lg shadow-red-100 flex items-center gap-2`}
+                >
+                  {isGenerating ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Generating...
+                    </>
+                  ) : "Generate Designs →"}
+                </button>
+              </div>
+            )}
+
+            {isGenerating && (
+              <div className="mt-8 flex flex-col items-center justify-center py-10 animate-fadeIn">
+                <div className="relative">
+                   <div className="h-20 w-20 rounded-full border-4 border-[#FFEBEE] border-t-[#E53935] animate-spin" />
+                   <Bot className="absolute inset-0 m-auto text-[#E53935]" size={32} />
+                </div>
+                <h4 className="mt-4 font-bold text-lg">Generating AI Creatives...</h4>
+                <p className="text-sm text-[#6B6B6B]">Spire is analyzing your food and creating 10 unique styles</p>
+                <div className="mt-6 flex gap-1">
+                   {[0, 1, 2].map(i => (
+                     <div key={i} className="h-2 w-2 rounded-full bg-[#E53935] animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
+                   ))}
+                </div>
+              </div>
+            )}
+
+            {generated && !isGenerating && (
+              <div className="mt-6 animate-fadeIn">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                  {designs.map((config, i) => (
+                    <button 
+                      key={i} 
+                      onClick={() => setSelectedDesign(i)} 
+                      className={`group rounded-xl border p-2 transition-all ${selectedDesign === i ? "border-2 border-[#E53935] bg-[#FFEBEE] ring-4 ring-red-50" : "border-[#FFCDD2] hover:bg-[#FFF5F5]"}`}
+                    >
+                      <div className="aspect-[4/5] w-full rounded-lg bg-black overflow-hidden relative shadow-inner">
+                        <CreativeCanvas config={config} uploadUrl={upload.url} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                        <div className={`absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors ${selectedDesign === i ? 'bg-transparent' : ''}`} />
+                        <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] font-black text-[#E53935] shadow-sm">
+                          {i + 1}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[10px] font-black text-[#E53935] text-center uppercase tracking-tighter truncate">{config.styleName}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {generated && (
+            <div className={card + " p-6 animate-fadeIn"}>
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex-grow space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B]">AI Generated Caption</label>
+                    <button 
+                      onClick={handleVoiceInput} 
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${isListening ? "bg-red-500 text-white animate-pulse" : "bg-[#FFEBEE] text-[#E53935] hover:bg-[#EF9A9A] hover:text-white"}`}
+                    >
+                      <Bot size={12} /> {isListening ? "Listening..." : "Voice Assist"}
+                    </button>
+                  </div>
                   <div className="mt-1 flex gap-2">
                     <button className="h-10 w-10 flex-shrink-0 rounded-full bg-[#E53935] text-white shadow-lg flex items-center justify-center hover:scale-105 transition-transform"><Bot size={18} /></button>
-                    <textarea 
-                      className={input + " min-h-[120px] resize-none"} 
-                      value={caption} 
-                      onChange={() => {}} // Read only for demo
+                    <textarea
+                      className={input + " min-h-[140px] resize-none text-[13px] leading-relaxed"}
+                      value={finalCaption}
+                      readOnly
                     />
                   </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setLanguage("en")} className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${language === "en" ? "bg-[#E53935] text-white" : "border border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>English</button>
+                    <button onClick={() => setLanguage("te")} className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${language === "te" ? "bg-[#E53935] text-white" : "border border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>Telugu</button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setLanguage("en")} className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${language === "en" ? "bg-[#E53935] text-white" : "border border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>English</button>
-                  <button onClick={() => setLanguage("te")} className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-all ${language === "te" ? "bg-[#E53935] text-white" : "border border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>Telugu</button>
-                </div>
-                <div className="pt-2 border-t border-[#FFCDD2]">
-                  <p className="text-[10px] font-bold uppercase text-[#6B6B6B] mb-2">Publishing Channels</p>
-                  <div className="flex flex-wrap gap-4">
-                    {["Instagram", "Facebook", "WhatsApp"].map(p => (
-                      <label key={p} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input type="checkbox" className="accent-[#E53935] h-4 w-4" defaultChecked={p !== "WhatsApp"} />
-                        <span>{p}</span>
-                      </label>
-                    ))}
+                <div className="w-full md:w-64 space-y-4 border-t md:border-t-0 md:border-l border-[#FFCDD2] pt-4 md:pt-0 md:pl-6">
+                  <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">Campaign Actions</p>
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-[#FFF5F5] p-3 border border-[#FFCDD2]">
+                      <label className="text-[10px] font-bold text-[#E53935]">OPTIMAL PERFORMANCE</label>
+                      <p className="text-sm font-black">+{recommendation?.impact || 24}% Engagement</p>
+                      <p className="text-[9px] text-[#6B6B6B]">Based on {recommendation?.conditions.event || 'Current Trends'}</p>
+                    </div>
+                    
+                    {!showPreview ? (
+                      <button onClick={() => setShowPreview(true)} className={btn + " w-full py-3 shadow-lg shadow-red-100 flex items-center justify-center gap-2"}>
+                        <Sparkles size={16} /> Apply & Preview
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <button 
+                          onClick={handlePostNow} 
+                          disabled={isPosting}
+                          className="w-full bg-green-600 text-white rounded-md py-3 text-sm font-bold shadow-lg shadow-green-100 flex items-center justify-center gap-2"
+                        >
+                          {isPosting ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Megaphone size={16} />}
+                          {isPosting ? "Publishing..." : "Post Now"}
+                        </button>
+                        <button onClick={() => setScheduleModal(true)} className="w-full border border-[#FFCDD2] bg-white rounded-md py-2 text-xs font-bold hover:bg-gray-50">
+                          Schedule for Later
+                        </button>
+                      </div>
+                    )}
+                    {posted && <p className="text-center text-[10px] font-bold text-[#2E7D32] animate-bounce">✓ Successfully Published!</p>}
                   </div>
                 </div>
               </div>
-              <div className="w-full md:w-64 space-y-4 border-t md:border-t-0 md:border-l border-[#FFCDD2] pt-4 md:pt-0 md:pl-6">
-                <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">Publishing Controls</p>
-                <div className="space-y-3">
-                  <div className="rounded-lg bg-[#FFF5F5] p-3 border border-[#FFCDD2]">
-                    <label className="text-[10px] font-bold text-[#E53935]">OPTIMAL TIME</label>
-                    <p className="text-sm font-bold">Today, 6:45 PM</p>
-                    <p className="text-[9px] text-[#6B6B6B]">Based on user activity</p>
-                  </div>
-                  <button onClick={() => setPosted(true)} className={btn + " w-full py-3 shadow-lg shadow-red-100 flex items-center justify-center gap-2"}>
-                    <Megaphone size={16} /> Publish Now
-                  </button>
-                  {posted && <p className="text-center text-[10px] font-bold text-[#2E7D32]">✓ Successfully Posted!</p>}
+              
+              {showPreview && (
+                <div className="mt-6 pt-6 border-t border-[#FFCDD2] animate-fadeIn">
+                   <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B]">Social Media Preview</h4>
+                      <button onClick={() => setShowPreview(false)} className="text-[10px] font-bold text-[#E53935] hover:underline">Cancel</button>
+                   </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="rounded-xl border border-[#FFCDD2] overflow-hidden bg-white shadow-sm">
+                         <div className="p-3 flex items-center gap-2 border-b border-gray-100">
+                            <div className="h-6 w-6 rounded-full bg-[#FFEBEE]" />
+                            <span className="text-[10px] font-bold">ravis_kitchen • Instagram</span>
+                         </div>
+                         <div className="aspect-square bg-gray-100">
+                            <CreativeCanvas config={designs[selectedDesign]} uploadUrl={upload.url} />
+                         </div>
+                         <div className="p-3 space-y-2">
+                            <div className="flex gap-3 text-gray-700"><Sparkles size={16} /><Bot size={16} /><Megaphone size={16} /></div>
+                            <p className="text-[10px] leading-snug line-clamp-2"><span className="font-bold mr-1">ravis_kitchen</span>{finalCaption}</p>
+                         </div>
+                      </div>
+                      <div className="rounded-xl border border-[#FFCDD2] overflow-hidden bg-white shadow-sm">
+                         <div className="p-3 flex items-center gap-2 border-b border-gray-100">
+                            <div className="h-6 w-6 rounded-full bg-[#FFEBEE]" />
+                            <div>
+                               <p className="text-[10px] font-bold">Ravi's Kitchen</p>
+                               <p className="text-[8px] text-gray-500">Sponsored • Facebook</p>
+                            </div>
+                         </div>
+                         <div className="p-3 text-[10px] leading-snug">{finalCaption.split('\n')[0]}... <span className="text-blue-600">See More</span></div>
+                         <div className="aspect-[1.91/1] bg-gray-100 overflow-hidden">
+                            <CreativeCanvas config={designs[selectedDesign]} uploadUrl={upload.url} />
+                         </div>
+                         <div className="p-3 flex justify-between items-center border-t border-gray-50 bg-gray-50/50">
+                            <span className="text-[10px] font-bold text-blue-600">Order Now</span>
+                            <button className="bg-gray-200 px-3 py-1 rounded text-[9px] font-bold">Learn More</button>
+                         </div>
+                      </div>
+                   </div>
                 </div>
-              </div>
+              )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      <div className="space-y-6">
-        <div className={card + " p-6"}>
-          <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Smart Pricing Engine</h3>
-          <div className="space-y-4">
-            <div className="rounded-xl bg-[#E8F5E9] p-4 border border-[#A5D6A7]">
-              <div className="flex items-center gap-2 text-[#2E7D32] mb-1">
-                <Sparkles size={16} />
-                <span className="text-xs font-bold uppercase">Dynamic Recommendation</span>
-              </div>
-              <p className="text-sm font-bold text-[#1A1A1A]">Increase Biriyani Price by 15%</p>
-              <p className="text-[11px] text-[#6B6B6B] mt-1">Spire detected high demand for tonight's cricket match (expected +40% orders).</p>
-              <button className="mt-3 w-full bg-[#2E7D32] text-white py-2 rounded-lg text-xs font-bold shadow-sm">Apply Smart Price</button>
+          {scheduledCampaigns.length > 0 && (
+            <div className={card + " p-6 animate-fadeIn"}>
+               <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Upcoming Scheduled Campaigns</h3>
+               <div className="space-y-3">
+                  {scheduledCampaigns.map(c => (
+                    <div key={c.id} className="flex items-center gap-4 p-3 rounded-xl border border-[#FFCDD2] bg-[#FFF5F5]">
+                       <div className="h-12 w-12 rounded-lg bg-black overflow-hidden flex-shrink-0">
+                          <CreativeCanvas config={c.design} uploadUrl={upload.url} />
+                       </div>
+                       <div className="flex-grow min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                             <span className="text-[10px] font-black text-[#E53935] uppercase">{c.status}</span>
+                             <span className="h-1 w-1 rounded-full bg-[#FFCDD2]" />
+                             <span className="text-[10px] font-bold text-[#6B6B6B]">{c.time}</span>
+                          </div>
+                          <p className="text-xs font-bold truncate">{c.caption.split('\n')[0]}</p>
+                       </div>
+                       <button className="text-[10px] font-bold text-[#B71C1C] hover:underline">Edit</button>
+                    </div>
+                  ))}
+               </div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <div className={card + " p-6"}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B]">Smart Pricing Engine</h3>
+              {isAnalyzing && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#E53935] animate-pulse">
+                  <div className="h-1.5 w-1.5 rounded-full bg-[#E53935]" /> Analyzing...
+                </div>
+              )}
             </div>
             
-            <div className="space-y-3 pt-2">
-              <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">Active Promos</p>
-              {[
-                { n: "Monsoon Special", d: "₹50 OFF on all Biriyani", s: "Active" },
-                { n: "Lassi Combo", d: "Buy 2 Get 1 Free", s: "Scheduled" }
-              ].map(p => (
-                <div key={p.n} className="flex items-center justify-between p-3 rounded-lg border border-[#FFCDD2] bg-white transition-hover hover:border-[#E53935]">
-                  <div>
-                    <p className="text-xs font-bold">{p.n}</p>
-                    <p className="text-[10px] text-[#6B6B6B]">{p.d}</p>
+            <div className="space-y-4">
+              {recommendation ? (
+                <div className={`rounded-xl border p-4 transition-all duration-500 ${isAnalyzing ? 'opacity-40 scale-95' : 'opacity-100 scale-100'} bg-[#E8F5E9] border-[#A5D6A7]`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-[#2E7D32]">
+                      <Sparkles size={14} />
+                      <span className="text-[9px] font-black uppercase tracking-tighter">{recommendation.category}</span>
+                    </div>
+                    <span className="text-[9px] font-bold bg-[#2E7D32] text-white px-1.5 py-0.5 rounded-full">
+                      {recommendation.confidence}% Confidence
+                    </span>
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${p.s === "Active" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{p.s}</span>
+                  
+                  <p className="text-sm font-black text-[#1A1A1A]">{recommendation.title}</p>
+                  <p className="text-[11px] text-[#2E7D32] mt-1.5 leading-relaxed font-medium">
+                    {recommendation.explanation}
+                  </p>
+                  
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#A5D6A7]/30 pt-3">
+                    <div>
+                      <p className="text-[9px] font-bold text-[#6B6B6B] uppercase">Revenue Impact</p>
+                      <p className="text-xs font-black text-[#2E7D32]">+{recommendation.impact}% {recommendation.impactType}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[9px] font-bold text-[#6B6B6B] uppercase">Signals</p>
+                      <p className="text-[9px] font-medium text-[#6B6B6B]">{recommendation.conditions.weather} • {recommendation.conditions.event}</p>
+                    </div>
+                  </div>
+                  
+                  <button className="mt-4 w-full bg-[#2E7D32] text-white py-2.5 rounded-lg text-xs font-bold shadow-md shadow-green-100 active:scale-95 transition-transform">
+                    Apply Now
+                  </button>
                 </div>
-              ))}
-              <button className="w-full border border-dashed border-[#E53935] text-[#E53935] py-2 rounded-lg text-xs font-bold hover:bg-[#FFEBEE]">+ New Promotion</button>
-            </div>
-          </div>
-        </div>
+              ) : (
+                <div className="h-40 animate-pulse rounded-xl bg-gray-50 flex items-center justify-center text-xs text-gray-400 font-medium italic">
+                  Initializing Spire Intelligence...
+                </div>
+              )}
 
-        <div className={card + " p-6"}>
-          <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Campaign Performance</h3>
-          <div className="space-y-4">
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-2xl font-black text-[#1A1A1A]">12.4k</p>
-                <p className="text-[10px] font-bold text-[#6B6B6B] uppercase">Total Impressions</p>
-              </div>
-              <div className="text-right">
-                <p className="text-lg font-bold text-[#2E7D32]">↑ 24%</p>
-                <p className="text-[10px] text-[#6B6B6B]">vs last week</p>
-              </div>
-            </div>
-            <div className="h-2 w-full bg-[#FFEBEE] rounded-full overflow-hidden">
-              <div className="h-full bg-[#E53935]" style={{width: '75%'}} />
-            </div>
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div>
-                <p className="text-sm font-bold">842</p>
-                <p className="text-[9px] text-[#6B6B6B] uppercase">Conversions</p>
-              </div>
-              <div>
-                <p className="text-sm font-bold">₹1.2k</p>
-                <p className="text-[9px] text-[#6B6B6B] uppercase">Ad Spend</p>
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">Operational Pulse</p>
+                  <span className="text-[9px] text-[#6B6B6B]">Updated {recommendation?.timestamp || 'just now'}</span>
+                </div>
+                {[
+                  { n: "Monsoon Special", d: "₹50 OFF on all Biriyani", s: "Active" },
+                  { n: "Lassi Combo", d: "Buy 2 Get 1 Free", s: "Scheduled" }
+                ].map(p => (
+                  <div key={p.n} className="flex items-center justify-between p-3 rounded-lg border border-[#FFCDD2] bg-white transition-hover hover:border-[#E53935]">
+                    <div>
+                      <p className="text-xs font-bold">{p.n}</p>
+                      <p className="text-[10px] text-[#6B6B6B]">{p.d}</p>
+                    </div>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${p.s === "Active" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{p.s}</span>
+                  </div>
+                ))}
+                <button className="w-full border border-dashed border-[#E53935] text-[#E53935] py-2 rounded-lg text-xs font-bold hover:bg-[#FFEBEE]">+ New Promotion</button>
               </div>
             </div>
           </div>
+
+          <div className={card + " p-6"}>
+            <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Campaign Performance</h3>
+            <div className="space-y-4">
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-2xl font-black text-[#1A1A1A]">12.4k</p>
+                  <p className="text-[10px] font-bold text-[#6B6B6B] uppercase">Total Impressions</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-[#2E7D32]">↑ 24%</p>
+                  <p className="text-[10px] text-[#6B6B6B]">vs last week</p>
+                </div>
+              </div>
+              <div className="h-2 w-full bg-[#FFEBEE] rounded-full overflow-hidden">
+                <div className="h-full bg-[#E53935]" style={{ width: '75%' }} />
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <p className="text-sm font-bold">842</p>
+                  <p className="text-[9px] text-[#6B6B6B] uppercase">Conversions</p>
+                </div>
+                <div>
+                  <p className="text-sm font-bold">₹1.2k</p>
+                  <p className="text-[9px] text-[#6B6B6B] uppercase">Ad Spend</p>
+                </div>
+              </div>
+            </div>
+          </div>
+      </div>
+      </div>
+
+      {/* Social Onboarding Modal */}
+      {showSocialModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-left">
+          <div className="w-full max-w-md rounded-2xl border border-[#FFCDD2] bg-white p-8 shadow-2xl animate-fadeIn">
+            <div className="text-center mb-6">
+              <div className="h-16 w-16 rounded-full bg-[#FFEBEE] flex items-center justify-center text-[#E53935] mx-auto mb-4">
+                <Sparkles size={32} />
+              </div>
+              <h2 className="text-2xl font-black text-[#1A1A1A]">Connect Your Socials</h2>
+              <p className="text-sm text-[#6B6B6B] mt-1">Let Spire.ai automate your restaurant marketing</p>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-2 text-left">
+                 <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Restaurant Brand</label>
+                 <input className={input} defaultValue="Ravi's Kitchen" />
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                 <button 
+                  onClick={() => setSocialConnected(prev => ({...prev, ig: true}))}
+                  className={`flex items-center justify-between border-2 rounded-xl p-4 transition-all ${socialConnected.ig ? "border-green-500 bg-green-50" : "border-[#FFCDD2] hover:border-[#E53935]"}`}
+                 >
+                   <div className="flex items-center gap-3">
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${socialConnected.ig ? "bg-green-500 text-white" : "bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white"}`}>
+                         {socialConnected.ig ? "✓" : "IG"}
+                      </div>
+                      <div className="text-left">
+                         <p className="text-xs font-black">Instagram Business</p>
+                         <p className="text-[9px] text-[#6B6B6B]">{socialConnected.ig ? "@ravis_kitchen connected" : "Not connected"}</p>
+                      </div>
+                   </div>
+                   {!socialConnected.ig && <span className="text-[10px] font-bold text-[#E53935]">Connect</span>}
+                 </button>
+                 <button 
+                  onClick={() => setSocialConnected(prev => ({...prev, fb: true}))}
+                  className={`flex items-center justify-between border-2 rounded-xl p-4 transition-all ${socialConnected.fb ? "border-green-500 bg-green-50" : "border-[#FFCDD2] hover:border-[#E53935]"}`}
+                 >
+                   <div className="flex items-center gap-3">
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${socialConnected.fb ? "bg-green-500 text-white" : "bg-blue-600 text-white"}`}>
+                         {socialConnected.fb ? "✓" : "FB"}
+                      </div>
+                      <div className="text-left">
+                         <p className="text-xs font-black">Facebook Page</p>
+                         <p className="text-[9px] text-[#6B6B6B]">{socialConnected.fb ? "Ravi's Kitchen connected" : "Not connected"}</p>
+                      </div>
+                   </div>
+                   {!socialConnected.fb && <span className="text-[10px] font-bold text-[#E53935]">Connect</span>}
+                 </button>
+              </div>
+              <button 
+                onClick={() => setShowSocialModal(false)}
+                disabled={!socialConnected.ig && !socialConnected.fb}
+                className={`${btn} w-full py-4 text-base mt-2 disabled:opacity-50`}
+              >
+                Continue to Dashboard
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-      </div>
+      )}
+
+      {/* Schedule Modal */}
+      {scheduleModal && (
+        <Modal title="Schedule Campaign" onClose={() => setScheduleModal(false)}>
+          <div className="space-y-4 p-2 text-left">
+             <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Select Date & Time</label>
+                <input type="datetime-local" className={input} defaultValue="2025-05-08T18:00" />
+             </div>
+             <div className="rounded-xl border border-[#FFCDD2] bg-[#FFF5F5] p-3">
+                <p className="text-[10px] font-bold text-[#E53935] uppercase mb-1">Spire Recommendation</p>
+                <p className="text-xs font-bold">Tomorrow at 6:45 PM is optimal for your audience.</p>
+             </div>
+             <button onClick={handleSchedule} className={btn + " w-full py-3"}>Confirm Schedule</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -963,8 +1291,8 @@ function Surveillance({ onIncident }) {
   return <div className="space-y-4">
     <div className="flex items-center justify-between rounded-[10px] border border-[#FFCDD2] bg-white p-3"><p className="font-semibold">Spire.ai Surveillance — Live</p><p className="text-sm"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-red-600" />1080p · 24fps</p></div>
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {["CAM-01 Kitchen Pass|Z-01 PASS · 4 persons · safe|bg-slate-700|text-green-400", "CAM-02 Back of House|Z-02 PREP · busy|bg-slate-600|text-amber-300", "CAM-03 Cash Counter|Z-03 CASH · 2 persons · safe|bg-neutral-700|text-green-400", "CAM-04 Storage Room|Z-04 STORAGE · ALERT|bg-zinc-800|text-red-400"].map((x, i) => { 
-        const c = x.split("|"); 
+      {["CAM-01 Kitchen Pass|Z-01 PASS · 4 persons · safe|bg-slate-700|text-green-400", "CAM-02 Back of House|Z-02 PREP · busy|bg-slate-600|text-amber-300", "CAM-03 Cash Counter|Z-03 CASH · 2 persons · safe|bg-neutral-700|text-green-400", "CAM-04 Storage Room|Z-04 STORAGE · ALERT|bg-zinc-800|text-red-400"].map((x, i) => {
+        const c = x.split("|");
         return (
           <div key={x} className={card + " p-2 overflow-hidden"}>
             <div className={`relative aspect-video rounded flex items-center justify-center ${c[2]}`}>
@@ -977,7 +1305,7 @@ function Surveillance({ onIncident }) {
             </div>
             <p className="mt-1 text-[10px] text-[#6B6B6B] truncate">{c[1]}</p>
           </div>
-        ); 
+        );
       })}
     </div>
     <div className="rounded-md border border-[#E53935] bg-[#FFEBEE] p-3 text-sm">⚠ SPIRE ALERT — 14:32:07 | CAM-04 | Storage Zone | Unauthorized person detected | Confidence: 91% | Captain notified</div>
@@ -1103,7 +1431,8 @@ function SpirePanel({ onClose }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([
     { role: "user", content: "Where did my 50kg chicken go today?" },
-    { role: "spire", content: "Analyzing sales, inventory logs, and camera feeds...", 
+    {
+      role: "spire", content: "Analyzing sales, inventory logs, and camera feeds...",
       details: ["12.5kg used in 50 biriyani plates", "35kg remains in cold storage (Fridge 2)", "2.5kg discrepancy found."],
       isIncident: true
     }
@@ -1136,11 +1465,10 @@ function SpirePanel({ onClose }) {
     <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 bg-slate-50/30">
       {messages.map((m, i) => (
         <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-          <div className={`max-w-[85%] rounded-2xl p-3 text-sm shadow-sm border ${
-            m.role === "user" 
-              ? "rounded-tr-none bg-[#FFF5F5] border-[#FFCDD2] text-[#1A1A1A]" 
-              : "rounded-tl-none bg-white border-[#EF9A9A] text-[#1A1A1A]"
-          }`}>
+          <div className={`max-w-[85%] rounded-2xl p-3 text-sm shadow-sm border ${m.role === "user"
+            ? "rounded-tr-none bg-[#FFF5F5] border-[#FFCDD2] text-[#1A1A1A]"
+            : "rounded-tl-none bg-white border-[#EF9A9A] text-[#1A1A1A]"
+            }`}>
             {m.role === "spire" && <p className="font-bold text-[#B71C1C] mb-1 flex items-center gap-1.5"><Sparkles size={12} /> Spire Intelligence</p>}
             <p>{m.content}</p>
             {m.details && (
@@ -1180,14 +1508,14 @@ function SpirePanel({ onClose }) {
     </div>
     <div className="p-4 border-t border-[#FFCDD2] bg-white">
       <div className="flex gap-2 bg-[#FFF5F5] rounded-full p-1.5 border border-[#FFCDD2] focus-within:border-[#E53935] transition-colors">
-        <input 
-          className="flex-grow bg-transparent px-3 py-1.5 text-sm outline-none" 
-          placeholder="Type or ask anything..." 
+        <input
+          className="flex-grow bg-transparent px-3 py-1.5 text-sm outline-none"
+          placeholder="Type or ask anything..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
         />
-        <button 
+        <button
           onClick={handleSend}
           disabled={!input.trim()}
           className="h-9 w-9 flex items-center justify-center rounded-full bg-[#E53935] text-white shadow-lg transition-transform active:scale-95 disabled:opacity-50"

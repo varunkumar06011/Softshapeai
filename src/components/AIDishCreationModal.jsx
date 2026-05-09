@@ -1,332 +1,356 @@
-import { useMemo, useState } from "react";
-import { Sparkles, Bot, X, RotateCcw, Check } from "lucide-react";
-import { generateDishCreative } from "../services/menuAiService";
+import { useMemo, useState, useEffect } from "react";
+import { Sparkles, Bot, X, RotateCcw, Check, Zap, Megaphone, UtensilsCrossed, ArrowRight, ShieldCheck, Share2 } from "lucide-react";
+import { generateDishCreative, detectDish } from "../services/menuAiService";
+import { generateRandomConfig } from "../services/creativeEngine";
+import CreativeCanvas from "./CreativeCanvas";
 
 export default function AIDishCreationModal({ open, onClose, onSave }) {
   const [step, setStep] = useState(1);
   const [image, setImage] = useState(null);
   const [dishName, setDishName] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [selectedDesignIndex, setSelectedDesignIndex] = useState(0);
+  const [usageMode, setUsageMode] = useState('both'); // 'menu', 'marketing', 'both'
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
 
-  const selectedPreview = useMemo(() => result?.creative?.[0], [result]);
+  const card = "rounded-[24px] border border-[#FFCDD2] bg-white shadow-sm transition-all";
+  const btn = "rounded-xl px-6 py-3 font-black text-sm transition-all active:scale-95 flex items-center justify-center gap-2";
+
+  useEffect(() => {
+    if (!open) {
+      setStep(1);
+      setImage(null);
+      setDishName("");
+      setResult(null);
+      setSyncStatus(null);
+    }
+  }, [open]);
 
   if (!open) return null;
 
+  const handleUpload = async (file) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setImage({ name: file.name, url });
+    setStep(2);
+    setIsAnalyzing(true);
+    
+    try {
+      const detection = await detectDish(url);
+      setDishName(detection.dishName);
+    } catch (e) {
+      console.error("Detection failed", e);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const generate = async () => {
-    setLoading(true);
+    setIsGenerating(true);
     setError("");
     try {
       const data = await generateDishCreative({ dishName, imageUrl: image?.url });
-      setResult(data);
+      
+      // Enhance the creative items with random configs for the canvas engine
+      const enhancedCreative = data.creative.map((item, idx) => ({
+        ...item,
+        config: generateRandomConfig(item.styleId, idx)
+      }));
+      
+      setResult({ ...data, creative: enhancedCreative });
       setStep(3);
     } catch (e) {
       setError(e.message || "Unable to generate");
     } finally {
-      setLoading(false);
+      setIsGenerating(false);
     }
   };
 
+  const finalize = () => {
+    setIsSyncing(true);
+    setSyncStatus("Preparing Swiggy/Zomato optimized assets...");
+    
+    setTimeout(() => setSyncStatus("Optimizing metadata for UrbanPiper..."), 1500);
+    setTimeout(() => setSyncStatus("Calibrating smart pricing thresholds..."), 3000);
+    setTimeout(() => {
+      setIsSyncing(false);
+      setStep(4);
+    }, 4500);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4 md:p-6">
-      {/* Modal Container */}
-      <div className="relative w-full max-w-5xl h-full sm:h-auto sm:max-h-[95vh] rounded-none sm:rounded-[32px] border-0 sm:border border-[#FFCDD2] bg-white shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4">
+      <div className="relative w-full max-w-6xl h-full sm:h-auto sm:max-h-[90vh] rounded-none sm:rounded-[32px] border-0 sm:border border-[#FFCDD2] bg-white shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
         
-        {/* Header - Fixed at top */}
-        <div className="flex items-center justify-between border-b border-[#FFCDD2] bg-white/95 backdrop-blur-md px-4 py-4 md:px-8 md:py-5">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[#FFCDD2] px-6 py-4 md:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#E53935] to-[#B71C1C] text-white shadow-lg shadow-red-100">
-              <Sparkles size={22} fill="currentColor" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#E53935] text-white shadow-lg">
+              <Sparkles size={20} fill="currentColor" />
             </div>
             <div>
-              <h3 className="text-xl md:text-2xl font-black text-[#B71C1C] leading-none">
-                AI Creative Suite
-              </h3>
-              <p className="text-[10px] md:text-xs font-bold text-[#6B6B6B] uppercase tracking-[0.2em] mt-1">Spire.ai Intelligence</p>
+              <h3 className="text-xl font-black text-[#1A1A1A]">Menu Onboarding AI</h3>
+              <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-widest">Powered by Spire Intelligence</p>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
-            className="group rounded-full p-2.5 hover:bg-[#FFEBEE] transition-all active:scale-90"
-          >
-            <X size={24} className="text-[#6B6B6B] group-hover:text-[#B71C1C] group-hover:rotate-90 transition-all duration-300" />
+          <button onClick={onClose} className="p-2 hover:bg-[#FFEBEE] rounded-full transition-colors">
+            <X size={24} className="text-[#6B6B6B]" />
           </button>
         </div>
 
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 custom-scrollbar">
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
           
-          {/* Progress Indicator */}
-          <div className="mb-8 flex gap-3 overflow-x-auto pb-4 custom-scrollbar">
-            {["Upload Source", "Dish Identity", "AI Generation"].map((label, idx) => {
-              const isActive = step === idx + 1;
-              const isDone = step > idx + 1;
-              return (
-                <div key={label} className="flex items-center gap-2 min-w-fit">
-                  <span
-                    className={`flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${
-                      isActive 
-                        ? "border-[#E53935] bg-[#E53935] text-white shadow-lg shadow-red-100" 
-                        : isDone
-                          ? "border-[#2E7D32] bg-[#E8F5E9] text-[#2E7D32]"
-                          : "border-[#FFCDD2] bg-white text-[#6B6B6B]"
-                    }`}
-                  >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${isActive ? "bg-white text-[#E53935]" : isDone ? "bg-[#2E7D32] text-white" : "bg-[#FFEBEE] text-[#B71C1C]"}`}>
-                      {isDone ? <Check size={12} strokeWidth={4} /> : idx + 1}
-                    </span>
-                    {label}
-                  </span>
-                  {idx < 2 && <div className="h-px w-4 bg-[#FFCDD2]" />}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="relative">
-            {step === 1 && (
-              <div className="space-y-6 animate-fadeIn">
-                <label className="group flex min-h-[280px] cursor-pointer flex-col items-center justify-center rounded-[32px] border-3 border-dashed border-[#FFCDD2] bg-[#FFF5F5]/30 p-10 text-center transition-all hover:border-[#E53935] hover:bg-[#FFEBEE]/50">
-                  <div className="mb-4 rounded-[24px] bg-white p-5 shadow-xl shadow-red-50 text-[#E53935] group-hover:scale-110 transition-transform duration-500">
-                    <Sparkles size={32} />
-                  </div>
-                  <h4 className="text-xl font-black text-[#1A1A1A]">Drop your dish photo</h4>
-                  <p className="text-sm font-medium text-[#6B6B6B] mt-2 max-w-[240px]">We'll use AI to transform it into premium promotional content.</p>
-                  <div className="mt-6 rounded-full bg-[#E53935] px-8 py-2.5 text-xs font-bold text-white shadow-lg group-hover:bg-[#B71C1C] transition-colors">
-                    Browse Files
-                  </div>
-                  <input
-                    className="hidden"
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setImage({ name: file.name, url: URL.createObjectURL(file) });
-                    }}
-                  />
-                </label>
-                
-                {image && (
-                  <div className="flex items-center gap-5 rounded-[24px] border border-[#FFCDD2] p-4 bg-white shadow-xl shadow-red-50/50 animate-fadeInUp">
-                    <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-2xl shadow-md">
-                      <img className="h-full w-full object-cover" src={image.url} alt="dish" />
-                    </div>
-                    <div className="flex-grow min-w-0">
-                      <p className="text-base font-black text-[#1A1A1A] truncate">{image.name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                        <p className="text-[10px] text-green-600 font-black uppercase tracking-widest">Image Optimized</p>
-                      </div>
-                    </div>
-                    <button onClick={() => setImage(null)} className="rounded-full p-3 text-[#6B6B6B] hover:bg-red-50 hover:text-[#E53935] transition-all">
-                      <X size={20} />
-                    </button>
-                  </div>
-                )}
-                
-                <button 
-                  disabled={!image} 
-                  onClick={() => setStep(2)} 
-                  className="w-full rounded-2xl bg-[#E53935] py-4 text-sm font-black text-white shadow-2xl shadow-red-200 disabled:opacity-20 transition-all hover:bg-[#B71C1C] active:scale-[0.98] mt-4"
-                >
-                  Continue to Branding
-                </button>
+          {step === 1 && (
+            <div className="max-w-2xl mx-auto space-y-8 py-10 animate-fadeIn">
+              <div className="text-center space-y-2">
+                <h2 className="text-3xl font-black text-[#1A1A1A]">Add New Menu Item</h2>
+                <p className="text-[#6B6B6B] font-medium">Upload a photo and let AI handle the branding & pricing.</p>
               </div>
-            )}
-
-            {step === 2 && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-1">
-                    <p className="text-xs font-black text-[#6B6B6B] uppercase tracking-[0.2em]">Dish Identity</p>
-                    <span className="text-[10px] font-bold text-[#B71C1C] bg-[#FFEBEE] px-2 py-0.5 rounded">Required</span>
-                  </div>
-                  <input
-                    className="w-full rounded-2xl border-2 border-[#FFCDD2] bg-[#FFF5F5]/30 px-6 py-4 text-xl font-black placeholder:font-bold placeholder:text-[#FFCDD2] focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 outline-none transition-all shadow-sm"
-                    placeholder="e.g. Signature Truffle Mushroom Pasta"
-                    value={dishName}
-                    onChange={(e) => setDishName(e.target.value)}
-                    autoFocus
-                  />
-                  <p className="text-[10px] font-medium text-[#6B6B6B] leading-relaxed">
-                    Tip: Use descriptive names like "Spicy Garlic Prawns" instead of just "Prawns" for better AI results.
-                  </p>
+              
+              <label className="group flex min-h-[320px] cursor-pointer flex-col items-center justify-center rounded-[40px] border-3 border-dashed border-[#FFCDD2] bg-[#FFF5F5]/30 p-10 text-center transition-all hover:border-[#E53935] hover:bg-[#FFEBEE]/50">
+                <div className="mb-6 rounded-[28px] bg-white p-6 shadow-xl text-[#E53935] group-hover:scale-110 transition-transform duration-500">
+                  <UtensilsCrossed size={40} />
                 </div>
-                
-                <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                  <button onClick={() => setStep(1)} className="flex-1 rounded-2xl border-2 border-[#FFCDD2] py-4 text-sm font-black text-[#6B6B6B] hover:bg-[#FFF5F5] transition-all">Back</button>
-                  <button 
-                    disabled={!dishName.trim() || loading} 
-                    onClick={generate} 
-                    className="flex-[2] rounded-2xl bg-[#E53935] py-4 text-sm font-black text-white shadow-2xl shadow-red-200 disabled:opacity-20 flex items-center justify-center gap-3 hover:bg-[#B71C1C] transition-all"
-                  >
-                    {loading ? (
-                      <>
-                        <RotateCcw size={18} className="animate-spin" />
-                        Analyzing Dish Patterns...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={18} />
-                        Generate AI Assets
-                      </>
+                <h4 className="text-xl font-black text-[#1A1A1A]">Snap or Drop Food Photo</h4>
+                <p className="text-sm font-medium text-[#6B6B6B] mt-2 max-w-[280px]">AI will detect the dish and generate premium creatives instantly.</p>
+                <div className="mt-8 rounded-full bg-[#E53935] px-10 py-3 text-sm font-bold text-white shadow-lg group-hover:bg-[#B71C1C] transition-colors">
+                  Upload Photo
+                </div>
+                <input className="hidden" type="file" accept="image/*" onChange={(e) => handleUpload(e.target.files?.[0])} />
+              </label>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="max-w-2xl mx-auto space-y-8 py-10 animate-fadeIn">
+              <div className="flex flex-col items-center justify-center text-center space-y-6">
+                <div className="relative">
+                  <div className="h-40 w-40 rounded-[40px] overflow-hidden border-4 border-[#FFCDD2] shadow-2xl">
+                    <img src={image?.url} className="h-full w-full object-cover" alt="analyzing" />
+                    {isAnalyzing && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="h-20 w-20 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                      </div>
                     )}
-                  </button>
+                  </div>
+                  {isAnalyzing && (
+                    <div className="absolute -bottom-4 -right-4 bg-[#E53935] text-white p-3 rounded-2xl shadow-lg animate-bounce">
+                      <Zap size={20} fill="currentColor" />
+                    </div>
+                  )}
                 </div>
-                
-                {loading && (
-                  <div className="space-y-4 pt-6 animate-pulse">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#FFEBEE]">
-                      <div className="h-full w-1/3 rounded-full bg-[#E53935] animate-[shimmer_1.5s_infinite]" />
-                    </div>
-                    <div className="flex flex-col items-center gap-2">
-                      <p className="text-[10px] font-black text-[#B71C1C] uppercase tracking-widest">Spire.ai Engine Processing</p>
-                      <p className="text-xs text-[#6B6B6B] font-medium italic">"Optimizing shadows, applying studio filters, and calculating market metrics..."</p>
-                    </div>
-                  </div>
-                )}
-                {error && <p className="text-sm font-bold text-[#B71C1C] bg-[#FFEBEE] p-4 rounded-2xl border-2 border-[#EF9A9A] animate-shake">{error}</p>}
-              </div>
-            )}
 
-            {step === 3 && result && (
-              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8 lg:gap-12 animate-fadeIn">
-                {/* Left Column: Variations */}
-                <div className="lg:col-span-7 space-y-8 order-2 lg:order-1">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h4 className="font-black text-2xl text-[#1A1A1A]">Ready-to-Post Creatives</h4>
-                      <p className="text-sm font-medium text-[#6B6B6B]">AI transformed your photo into studio-grade marketing assets.</p>
-                    </div>
-                    <div className="flex h-fit items-center gap-2 rounded-full bg-[#FFEBEE] px-4 py-2 border border-[#EF9A9A]">
-                      <span className="flex h-2 w-2 rounded-full bg-[#E53935] animate-pulse" />
-                      <span className="text-[10px] font-black text-[#B71C1C] uppercase whitespace-nowrap">
-                        {result.creative.length} Variations
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {result.creative.map((item) => (
-                      <div key={item.id} className="group flex flex-col rounded-[28px] border-2 border-[#FFCDD2] p-4 bg-white shadow-lg hover:border-[#E53935] hover:shadow-2xl hover:shadow-red-50 transition-all duration-500">
-                        <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[20px] bg-[#FFF5F5]">
-                          <img 
-                            src={image.url} 
-                            alt={item.name} 
-                            className="h-full w-full object-cover transition-transform duration-1000 group-hover:scale-110" 
-                            style={{ filter: item.filter }} 
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                          <div className="absolute top-4 left-4 rounded-full bg-white/90 backdrop-blur-md px-4 py-1.5 text-[9px] font-black text-[#B71C1C] uppercase shadow-sm border border-white">
-                            {item.highlight}
-                          </div>
-                          <div className="absolute bottom-4 left-4 right-4 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
-                            <button className="w-full rounded-xl bg-white/20 backdrop-blur-md border border-white/30 py-2.5 text-[10px] font-black text-white uppercase hover:bg-white hover:text-[#B71C1C] transition-all">
-                              Preview Full HD
-                            </button>
-                          </div>
-                        </div>
-                        <div className="mt-5 px-1 flex-1 flex flex-col">
-                          <p className="font-black text-lg text-[#1A1A1A] leading-tight group-hover:text-[#E53935] transition-colors">{item.name}</p>
-                          <p className="text-sm text-[#6B6B6B] mt-2 line-clamp-2 font-medium italic leading-relaxed opacity-90">"{item.tagline}"</p>
-                          <div className="mt-auto pt-4 flex items-center justify-between border-t border-dashed border-[#FFCDD2]/50 mt-4">
-                            <span className="text-[9px] font-black text-[#B71C1C] uppercase tracking-widest bg-[#FFEBEE] px-2 py-1 rounded">Optimized for Instagram</span>
-                            <Sparkles size={14} className="text-[#E53935]" />
-                          </div>
-                        </div>
+                <div className="space-y-4 w-full">
+                  <h3 className="text-2xl font-black text-[#1A1A1A]">{isAnalyzing ? "Analyzing food identity..." : "Dish Detected!"}</h3>
+                  
+                  {!isAnalyzing && (
+                    <div className="space-y-4 animate-fadeInUp">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-[#6B6B6B] tracking-[0.2em] text-left block ml-1">Confirm Dish Name</label>
+                        <input 
+                          className="w-full rounded-2xl border-2 border-[#FFCDD2] bg-[#FFF5F5]/30 px-6 py-4 text-2xl font-black focus:bg-white focus:border-[#E53935] outline-none transition-all"
+                          value={dishName}
+                          onChange={(e) => setDishName(e.target.value)}
+                        />
                       </div>
+                      <div className="flex gap-4">
+                        <button onClick={() => setStep(1)} className="flex-1 rounded-2xl border-2 border-[#FFCDD2] py-4 font-black text-[#6B6B6B] hover:bg-[#FFF5F5]">Retake</button>
+                        <button onClick={generate} disabled={isGenerating} className="flex-[2] rounded-2xl bg-[#E53935] py-4 font-black text-white shadow-xl hover:bg-[#B71C1C] flex items-center justify-center gap-2">
+                          {isGenerating ? <RotateCcw className="animate-spin" size={20} /> : <Sparkles size={20} />}
+                          {isGenerating ? "Generating Creatives..." : "Generate & Price"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && result && (
+            <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8 animate-fadeIn">
+              {/* Left: Creative Selection */}
+              <div className="lg:col-span-7 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-black text-xl text-[#1A1A1A]">Select Your Visuals</h4>
+                  <div className="flex gap-2">
+                     <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-black uppercase">Swiggy Optimized</span>
+                     <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black uppercase">Zomato Ready</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {result.creative.map((item, idx) => (
+                    <button 
+                      key={idx}
+                      onClick={() => setSelectedDesignIndex(idx)}
+                      className={`relative aspect-[4/5] rounded-2xl overflow-hidden border-2 transition-all ${selectedDesignIndex === idx ? 'border-[#E53935] ring-4 ring-red-100' : 'border-[#FFCDD2] hover:border-[#EF9A9A]'}`}
+                    >
+                      <CreativeCanvas config={item.config} uploadUrl={image?.url} className="w-full h-full object-cover" />
+                      <div className={`absolute top-2 right-2 h-6 w-6 rounded-full flex items-center justify-center ${selectedDesignIndex === idx ? 'bg-[#E53935] text-white' : 'bg-white/80 text-transparent'}`}>
+                        <Check size={14} strokeWidth={4} />
+                      </div>
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 p-2 text-left">
+                        <p className="text-[8px] font-black text-white uppercase tracking-tighter truncate">{item.name}</p>
+                        <p className="text-[7px] text-white/70 truncate">{item.type === 'menu' ? 'MENU READY' : 'MARKETING'}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className={`${card} p-6 border-2 border-[#E53935]/20 bg-[#FFF5F5]/50`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs font-black uppercase text-[#6B6B6B]">Asset Usage Configuration</p>
+                    <Megaphone size={16} className="text-[#E53935]" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { id: 'menu', label: 'Menu Only', icon: <UtensilsCrossed size={16} /> },
+                      { id: 'marketing', label: 'Marketing Only', icon: <Share2 size={16} /> },
+                      { id: 'both', label: 'Use for Both', icon: <Zap size={16} /> }
+                    ].map(mode => (
+                      <button 
+                        key={mode.id}
+                        onClick={() => setUsageMode(mode.id)}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${usageMode === mode.id ? 'border-[#E53935] bg-white shadow-md text-[#E53935]' : 'border-[#FFCDD2] bg-white/50 text-[#6B6B6B]'}`}
+                      >
+                        {mode.icon}
+                        <span className="text-[10px] font-black uppercase tracking-tighter">{mode.label}</span>
+                      </button>
                     ))}
                   </div>
                 </div>
-                
-                {/* Right Column: Pricing & Controls */}
-                <div className="lg:col-span-5 order-1 lg:order-2">
-                  <div className="lg:sticky lg:top-0 space-y-6 rounded-[32px] border-2 border-[#FFCDD2] bg-gradient-to-b from-[#FFF5F5] to-white p-6 md:p-8 shadow-xl shadow-red-50/30">
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-2xl bg-white flex items-center justify-center shadow-md border border-[#FFCDD2] text-[#B71C1C]">
-                        <Bot size={28} />
-                      </div>
-                      <div>
-                        <h4 className="font-black text-xl text-[#1A1A1A]">Smart Pricing</h4>
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                          <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-widest">Market Context Active</p>
-                        </div>
-                      </div>
+              </div>
+
+              {/* Right: Smart Pricing & AI Context */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className={`${card} p-6 border-2 border-[#FFCDD2]`}>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="h-10 w-10 rounded-xl bg-[#FFEBEE] flex items-center justify-center text-[#E53935]">
+                      <Bot size={24} />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-lg text-[#1A1A1A]">Smart Pricing Engine</h4>
+                      <p className="text-[10px] font-bold text-[#6B6B6B]">REAL-TIME MARKET ANALYSIS</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="bg-[#FFF5F5] rounded-2xl p-4 border border-[#FFCDD2]">
+                      <p className="text-[9px] font-black text-[#E53935] uppercase mb-1">Contextual Insight</p>
+                      <p className="text-sm font-bold leading-relaxed">"{result.pricing.eventContext}"</p>
                     </div>
 
-                    <div className="rounded-2xl bg-white p-5 border-2 border-[#FFCDD2] shadow-sm relative overflow-hidden group">
-                      <div className="absolute right-0 top-0 h-full w-1 bg-gradient-to-b from-[#E53935] to-[#B71C1C]" />
-                      <p className="text-[10px] font-black text-[#6B6B6B] uppercase tracking-[0.2em]">Market Standard Range</p>
-                      <div className="flex items-baseline gap-2 mt-1">
-                        <p className="text-2xl font-black text-[#1A1A1A]">₹{result.marketRange.min} — ₹{result.marketRange.max}</p>
-                        <span className="text-[10px] font-bold text-[#2E7D32]">Competitive</span>
-                      </div>
-                      <p className="text-[10px] font-medium text-[#6B6B6B] mt-2 flex items-center gap-2">
-                        <Check size={10} className="text-green-600" strokeWidth={4} />
-                        Analyzed 12 regional benchmarks
-                      </p>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="bg-white p-3 rounded-xl border border-[#FFCDD2]">
+                         <p className="text-[8px] font-black text-[#6B6B6B] uppercase">Sales Impact</p>
+                         <p className="text-lg font-black text-green-600">{result.pricing.demandImpact.split(' ')[0]}</p>
+                         <p className="text-[8px] text-[#6B6B6B]">Estimated Lift</p>
+                       </div>
+                       <div className="bg-white p-3 rounded-xl border border-[#FFCDD2]">
+                         <p className="text-[8px] font-black text-[#6B6B6B] uppercase">AI Confidence</p>
+                         <p className="text-lg font-black text-blue-600">{result.pricing.confidence}%</p>
+                         <p className="text-[8px] text-[#6B6B6B]">Data Matched</p>
+                       </div>
                     </div>
-                    
-                    <div className="space-y-5">
-                      {[
-                        { label: "AI Recommended", value: result.pricing.recommendedPrice, icon: "💎", desc: "Best for overall balance", color: "border-[#E53935] ring-4 ring-red-50 bg-white" },
-                        { label: "Profit Focused", value: result.pricing.profitFriendlyPrice, icon: "📈", desc: "Higher margins, lower volume", color: "border-[#FFCDD2] bg-white/50" },
-                        { label: "Competitive", value: result.pricing.competitivePrice, icon: "⚔️", desc: "Best for high-traffic days", color: "border-[#FFCDD2] bg-white/50" },
-                      ].map((p) => (
-                        <div key={p.label} className="space-y-2">
-                          <div className="flex items-center justify-between px-1">
-                            <div>
-                              <label className="text-[11px] font-black uppercase text-[#1A1A1A] tracking-wider">{p.label}</label>
-                              <p className="text-[9px] font-medium text-[#6B6B6B]">{p.desc}</p>
+
+                    <div className="space-y-3">
+                       <p className="text-[10px] font-black text-[#6B6B6B] uppercase tracking-widest px-1">Select Strategy</p>
+                       {[
+                         { label: "AI Recommended", price: result.pricing.recommendedPrice, badge: "MOST STABLE" },
+                         { label: "Aggressive Growth", price: result.pricing.competitivePrice, badge: "HIGH VOLUME" },
+                         { label: "Premium / Profit", price: result.pricing.profitFriendlyPrice, badge: "MAX MARGIN" }
+                       ].map(strat => (
+                         <button key={strat.label} className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-[#FFCDD2] bg-white hover:border-[#E53935] transition-all group">
+                            <div className="text-left">
+                               <p className="text-xs font-black text-[#1A1A1A]">{strat.label}</p>
+                               <p className="text-[8px] font-bold text-[#6B6B6B] uppercase">{strat.badge}</p>
                             </div>
-                            <span className="text-sm grayscale group-hover:grayscale-0 transition-all">{p.icon}</span>
-                          </div>
-                          <div className="relative">
-                            <span className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-base sm:text-lg font-black text-[#B71C1C]">₹</span>
-                            <input 
-                              className={`w-full rounded-2xl border-2 px-8 sm:px-10 py-3 sm:py-4 text-lg sm:text-xl font-black text-[#1A1A1A] focus:border-[#E53935] focus:ring-4 focus:ring-red-50 outline-none transition-all ${p.color}`} 
-                              defaultValue={p.value} 
-                            />
-                          </div>
-                        </div>
-                      ))}
+                            <p className="text-xl font-black text-[#E53935]">₹{strat.price}</p>
+                         </button>
+                       ))}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4 pt-2">
-                      <div className="rounded-2xl bg-white p-4 border-l-4 border-l-[#F57F17] shadow-sm">
-                        <p className="text-[9px] font-black text-[#F57F17] uppercase tracking-widest mb-1">Bundle Strategy</p>
-                        <p className="text-xs font-bold text-[#1A1A1A] leading-relaxed italic">"{result.pricing.combo}"</p>
-                      </div>
-                      <div className="rounded-2xl bg-white p-4 border-l-4 border-l-[#E53935] shadow-sm">
-                        <p className="text-[9px] font-black text-[#E53935] uppercase tracking-widest mb-1">Marketing Hook</p>
-                        <p className="text-xs font-bold text-[#1A1A1A] leading-relaxed italic">"{result.pricing.offer}"</p>
-                      </div>
-                    </div>
+                    <button onClick={finalize} disabled={isSyncing} className={`${btn} w-full bg-[#E53935] text-white py-5 shadow-2xl shadow-red-200 mt-4`}>
+                      {isSyncing ? <RotateCcw className="animate-spin" /> : <Check strokeWidth={3} />}
+                      {isSyncing ? "Preparing Assets..." : "Finalize & Save Item"}
+                    </button>
+                    {isSyncing && <p className="text-center text-[10px] font-bold text-[#E53935] animate-pulse uppercase tracking-[0.2em]">{syncStatus}</p>}
+                  </div>
+                </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                      <button 
-                        onClick={generate} 
-                        className="group flex-1 rounded-2xl border-2 border-[#E53935] py-4 text-xs font-black text-[#B71C1C] hover:bg-white transition-all active:scale-95 flex items-center justify-center gap-2"
-                      >
-                        <RotateCcw size={16} className="group-hover:rotate-[-45deg] transition-transform" />
-                        Regenerate
-                      </button>
-                      <button 
-                        onClick={() => onSave({ dishName, creative: selectedPreview, pricing: result.pricing })} 
-                        className="flex-[1.5] rounded-2xl bg-[#E53935] py-4 text-xs font-black text-white shadow-2xl shadow-red-100 hover:bg-[#c62828] transition-all active:scale-95 flex items-center justify-center gap-2"
-                      >
-                        <Check size={16} strokeWidth={3} />
-                        Finalize & Save
-                      </button>
+                <div className={`${card} p-4 bg-slate-900 text-white border-0`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck size={14} className="text-green-400" />
+                    <p className="text-[10px] font-black uppercase tracking-widest">UrbanPiper Sync Bridge</p>
+                  </div>
+                  <p className="text-[10px] opacity-70 leading-relaxed mb-3">Item will be automatically pushed to 3 platforms once saved.</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1 bg-white/10 rounded-lg p-2 text-center border border-white/10">
+                      <p className="text-[8px] font-bold opacity-60">SWIGGY</p>
+                      <p className="text-[10px] font-black text-green-400">READY</p>
+                    </div>
+                    <div className="flex-1 bg-white/10 rounded-lg p-2 text-center border border-white/10">
+                      <p className="text-[8px] font-bold opacity-60">ZOMATO</p>
+                      <p className="text-[10px] font-black text-green-400">READY</p>
+                    </div>
+                    <div className="flex-1 bg-white/10 rounded-lg p-2 text-center border border-white/10">
+                      <p className="text-[8px] font-bold opacity-60">MAGICPIN</p>
+                      <p className="text-[10px] font-black text-green-400">READY</p>
                     </div>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="max-w-xl mx-auto py-10 space-y-8 text-center animate-fadeIn">
+               <div className="relative mx-auto h-32 w-32">
+                 <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-20" />
+                 <div className="relative h-32 w-32 bg-green-500 rounded-full flex items-center justify-center text-white shadow-2xl">
+                    <Check size={64} strokeWidth={4} />
+                 </div>
+               </div>
+
+               <div className="space-y-4">
+                 <h2 className="text-3xl font-black text-[#1A1A1A]">Onboarding Successful</h2>
+                 <p className="text-[#6B6B6B] font-medium px-4">
+                   "{dishName}" has been added to your smart menu. Assets have been optimized for marketplace standards and pricing logic has been deployed.
+                 </p>
+               </div>
+
+               <div className="grid grid-cols-1 gap-4 pt-4 text-left">
+                  <div className="p-4 rounded-2xl bg-green-50 border border-green-200 flex items-center gap-4">
+                     <div className="h-10 w-10 bg-green-500 rounded-xl flex items-center justify-center text-white"><UtensilsCrossed size={20} /></div>
+                     <div>
+                        <p className="text-xs font-black text-green-800 uppercase">UrbanPiper Sync Bridge</p>
+                        <p className="text-[10px] text-green-600 font-medium">All platforms successfully synchronized</p>
+                     </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center gap-4">
+                     <div className="h-10 w-10 bg-blue-500 rounded-xl flex items-center justify-center text-white"><Megaphone size={20} /></div>
+                     <div>
+                        <p className="text-xs font-black text-blue-800 uppercase">Marketing Deployment</p>
+                        <p className="text-[10px] text-blue-600 font-medium">Campaign prepared for tonight's peak hour</p>
+                     </div>
+                  </div>
+               </div>
+
+               <button 
+                 onClick={onClose}
+                 className={`${btn} w-full bg-[#1A1A1A] text-white py-5 mt-6`}
+               >
+                 Go to Dashboard <ArrowRight size={18} />
+               </button>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
