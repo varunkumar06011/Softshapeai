@@ -24,6 +24,7 @@ import { STYLES, generateRandomConfig, renderToCanvas } from "./services/creativ
 import { getSmartRecommendation } from "./services/pricingEngine";
 
 import CreativeCanvas from "./components/CreativeCanvas";
+import SurveillanceDashboard from "./components/SurveillanceDashboard";
 
 const CaptainPerformanceDashboard = lazy(() => import("./components/CaptainPerformanceDashboard"));
 
@@ -1288,36 +1289,7 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
 }
 
 function Surveillance({ onIncident }) {
-  return <div className="space-y-4">
-    <div className="flex items-center justify-between rounded-[10px] border border-[#FFCDD2] bg-white p-3"><p className="font-semibold">Spire.ai Surveillance — Live</p><p className="text-sm"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-red-600" />1080p · 24fps</p></div>
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {["CAM-01 Kitchen Pass|Z-01 PASS · 4 persons · safe|bg-slate-700|text-green-400", "CAM-02 Back of House|Z-02 PREP · busy|bg-slate-600|text-amber-300", "CAM-03 Cash Counter|Z-03 CASH · 2 persons · safe|bg-neutral-700|text-green-400", "CAM-04 Storage Room|Z-04 STORAGE · ALERT|bg-zinc-800|text-red-400"].map((x, i) => {
-        const c = x.split("|");
-        return (
-          <div key={x} className={card + " p-2 overflow-hidden"}>
-            <div className={`relative aspect-video rounded flex items-center justify-center ${c[2]}`}>
-              <div className={`absolute left-4 top-4 border-2 ${i === 3 ? "border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "border-green-500"} h-1/3 w-1/4 animate-pulse`} />
-              <div className="text-[10px] text-white/30 font-mono uppercase tracking-widest">{c[0]}</div>
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <span className={`text-[10px] md:text-xs font-bold ${c[3]}`}>{c[0]}</span>
-              <span className="text-[10px] text-[#6B6B6B] bg-[#FFF5F5] px-1.5 py-0.5 rounded border border-[#FFCDD2]">{c[1].split(" · ")[0]}</span>
-            </div>
-            <p className="mt-1 text-[10px] text-[#6B6B6B] truncate">{c[1]}</p>
-          </div>
-        );
-      })}
-    </div>
-    <div className="rounded-md border border-[#E53935] bg-[#FFEBEE] p-3 text-sm">⚠ SPIRE ALERT — 14:32:07 | CAM-04 | Storage Zone | Unauthorized person detected | Confidence: 91% | Captain notified</div>
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {["Kitchen Pass", "Back of House", "Cash Counter", "Storage Room"].map((x, i) => (
-        <button key={x} className={`whitespace-nowrap rounded-full border px-3 py-1 text-[10px] md:text-xs font-semibold ${i === 3 ? "border-[#E53935] bg-[#FFEBEE] text-[#B71C1C]" : "border-[#FFCDD2] bg-white text-[#6B6B6B]"}`}>
-          {x} · {i === 3 ? "ALERT" : "LIVE"}
-        </button>
-      ))}
-    </div>
-    <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Alert Log</h3><p className="text-sm">14:32 | CAM-04 | Unauthorized person in Storage | Confidence 91% | Captain alerted | <button onClick={onIncident} className="text-[#B71C1C]">View Screenshot</button></p><p className="text-sm">12:18 | CAM-02 | 6th person in Kitchen zone (max 5) | Confidence 87% | Warning sent | <button onClick={onIncident} className="text-[#B71C1C]">View Screenshot</button></p><p className="text-sm">09:45 | CAM-01 | Unknown person at Pass | Confidence 78% | Logged | <button onClick={onIncident} className="text-[#B71C1C]">View Screenshot</button></p></div>
-  </div>;
+  return <SurveillanceDashboard onIncident={onIncident} />;
 }
 
 function Inventory({ onPo }) {
