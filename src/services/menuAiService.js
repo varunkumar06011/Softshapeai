@@ -8,14 +8,14 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export async function detectDish(imageUrl) {
   await wait(2000); // Simulate processing
   const detections = [
-    "Chicken Biryani",
+    "Chicken Dum Biryani",
     "Paneer Butter Masala",
-    "Aloo 65",
-    "Butter Chicken",
+    "Apollo Fish",
+    "Mutton Curry",
     "Veg Fried Rice",
-    "Mutton Rogan Josh",
-    "Hakka Noodles",
-    "Tandoori Platter"
+    "Chicken Tikka Masala",
+    "Dragon Prawns",
+    "Cashew Nut Biryani"
   ];
   // Deterministic detection based on imageUrl length (since it's a blob URL)
   const idx = imageUrl.length % detections.length;

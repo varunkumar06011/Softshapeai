@@ -10,28 +10,28 @@ const CAMERAS = [
 ];
 
 const INCIDENTS = [
-  { id: 1, time: "8:03 PM", cam: "CAM-04", zone: "Storage Area", msg: "Unauthorized inventory movement detected", severity: "critical", conf: 91 },
-  { id: 2, time: "7:51 PM", cam: "CAM-06", zone: "Counter Area", msg: "Restricted zone access — packing staff", severity: "warning", conf: 84 },
-  { id: 3, time: "7:42 PM", cam: "CAM-02", zone: "Packing Zone", msg: "Congestion detected — 4+ persons", severity: "warning", conf: 78 },
-  { id: 4, time: "7:21 PM", cam: "CAM-01", zone: "Kitchen Zone", msg: "Hygiene compliance — no gloves detected", severity: "info", conf: 72 },
-  { id: 5, time: "6:55 PM", cam: "CAM-04", zone: "Storage Area", msg: "Suspicious inventory transfer after hours", severity: "critical", conf: 88 },
-  { id: 6, time: "6:30 PM", cam: "CAM-05", zone: "Back-of-House", msg: "Kitchen workflow bottleneck detected", severity: "info", conf: 67 },
+  { id: 1, time: "8:03 PM", cam: "CAM-04", zone: "Storage Area", msg: "Unauthorized Basmati Rice movement detected", severity: "critical", conf: 91 },
+  { id: 2, time: "7:51 PM", cam: "CAM-06", zone: "Counter Area", msg: "Restricted zone access — Chicken Dum Biryani delivery", severity: "warning", conf: 84 },
+  { id: 3, time: "7:42 PM", cam: "CAM-02", zone: "Packing Zone", msg: "Congestion detected — 4+ persons at Biryani station", severity: "warning", conf: 78 },
+  { id: 4, time: "7:21 PM", cam: "CAM-01", zone: "Kitchen Zone", msg: "Hygiene compliance — no gloves detected at Tandoor", severity: "info", conf: 72 },
+  { id: 5, time: "6:55 PM", cam: "CAM-04", zone: "Storage Area", msg: "Suspicious Frozen Prawns transfer after hours", severity: "critical", conf: 88 },
+  { id: 6, time: "6:30 PM", cam: "CAM-05", zone: "Back-of-House", msg: "Kitchen workflow bottleneck — 15+ Biryani orders pending", severity: "info", conf: 67 },
 ];
 
 const INSIGHTS = [
-  { icon: "📦", text: "Frequent inventory movement after 6 PM — 3 incidents this week", tag: "Inventory Risk" },
-  { icon: "🚧", text: "Packing efficiency decreased by 12% during dinner rush", tag: "Operations" },
-  { icon: "👥", text: "Kitchen zone congestion peaks between 7–9 PM", tag: "Congestion" },
-  { icon: "🔍", text: "CAM-04 flagged 5 unusual access events in last 48 hrs", tag: "Security" },
-  { icon: "✅", text: "Delivery zone compliance: 97% — no violations today", tag: "Compliance" },
+  { icon: "📦", text: "Frequent Basmati Rice movement after 6 PM — 3 incidents this week", tag: "Inventory Risk" },
+  { icon: "🚧", text: "Biryani Packing efficiency decreased by 12% during dinner rush", tag: "Operations" },
+  { icon: "👥", text: "Tandoor zone congestion peaks between 7–9 PM", tag: "Congestion" },
+  { icon: "🔍", text: "Cold Storage CAM-04 flagged 5 unusual access events in last 48 hrs", tag: "Security" },
+  { icon: "✅", text: "Chicken Dum Biryani delivery compliance: 97% — no violations today", tag: "Compliance" },
 ];
 
 const ALERT_MSGS = [
-  "⚠ Unauthorized ingredient movement detected",
-  "⚠ Kitchen staff entered restricted packing zone",
-  "⚠ Suspicious inventory transfer detected",
-  "⚠ Hygiene compliance warning — zone B",
-  "⚠ Congestion detected in packing area",
+  "⚠ Unauthorized Basmati Rice movement detected",
+  "⚠ Staff entered restricted Chicken Packing zone",
+  "⚠ Suspicious Mutton stock transfer detected",
+  "⚠ Hygiene compliance warning — Biryani Prep Zone",
+  "⚠ Congestion detected in Biryani packing area",
 ];
 
 // Simulated CCTV noise canvas

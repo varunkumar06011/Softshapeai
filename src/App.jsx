@@ -42,6 +42,223 @@ const C = {
   page: "#FFF5F5",
 };
 
+const MENU_DATA = [
+  { n: "Tomato Soup", p: 130, c: "Soups", t: "veg" },
+  { n: "Veg Sweet Corn Soup", p: 145, c: "Soups", t: "veg" },
+  { n: "Veg Hot & Sour Soup", p: 145, c: "Soups", t: "veg" },
+  { n: "Veg Dragon Soup", p: 145, c: "Soups", t: "veg" },
+  { n: "Veg Manchow Soup", p: 145, c: "Soups", t: "veg" },
+  { n: "Chicken Hot & Sour Soup", p: 150, c: "Soups", t: "non" },
+  { n: "Chicken Sweet Corn Soup", p: 150, c: "Soups", t: "non" },
+  { n: "Chicken Lungfung Soup", p: 150, c: "Soups", t: "non" },
+  { n: "Chicken Manchow Soup", p: 150, c: "Soups", t: "non" },
+  { n: "Chicken Dragon Soup", p: 150, c: "Soups", t: "non" },
+  { n: "V-Grand Special Cream of Chicken Soup", p: 180, c: "Soups", t: "non" },
+  { n: "Boiled Egg", p: 79, c: "Starters", t: "non" },
+  { n: "Omelette", p: 89, c: "Starters", t: "non" },
+  { n: "Masala Papad", p: 89, c: "Starters", t: "veg" },
+  { n: "Crispy Corn", p: 174, c: "Starters", t: "veg" },
+  { n: "French Fries", p: 184, c: "Starters", t: "veg" },
+  { n: "Aloo 65", p: 199, c: "Starters", t: "veg" },
+  { n: "Gobi Manchurian", p: 209, c: "Starters", t: "veg" },
+  { n: "Gobi Chilli", p: 209, c: "Starters", t: "veg" },
+  { n: "Golden Fried Crispy Baby Corn", p: 240, c: "Starters", t: "veg" },
+  { n: "Veg Manchurian", p: 209, c: "Starters", t: "veg" },
+  { n: "Veg Shangrilla", p: 249, c: "Starters", t: "veg" },
+  { n: "Spring Rolls", p: 234, c: "Starters", t: "veg" },
+  { n: "Cashew Nut Roast", p: 279, c: "Starters", t: "veg" },
+  { n: "Baby Corn Manchurian", p: 239, c: "Starters", t: "veg" },
+  { n: "Baby Corn Chilli", p: 249, c: "Starters", t: "veg" },
+  { n: "Mushroom Manchurian", p: 259, c: "Starters", t: "veg" },
+  { n: "Mushroom Chilli", p: 259, c: "Starters", t: "veg" },
+  { n: "Mushroom Pepper Salt", p: 269, c: "Starters", t: "veg" },
+  { n: "Paneer Manchurian", p: 259, c: "Starters", t: "veg" },
+  { n: "Paneer Chilli", p: 259, c: "Starters", t: "veg" },
+  { n: "Paneer Majestic", p: 259, c: "Starters", t: "veg" },
+  { n: "Paneer Tikka", p: 329, c: "Starters", t: "veg" },
+  { n: "Chicken Roast", p: 299, c: "Starters", t: "non" },
+  { n: "Chicken Fry", p: 299, c: "Starters", t: "non" },
+  { n: "Phuket Fish", p: 349, c: "Starters", t: "non" },
+  { n: "Basket Chicken", p: 349, c: "Starters", t: "non" },
+  { n: "Chicken 555", p: 359, c: "Starters", t: "non" },
+  { n: "Lemon Chicken", p: 389, c: "Starters", t: "non" },
+  { n: "Ginger Chicken", p: 359, c: "Starters", t: "non" },
+  { n: "Chicken Patiala", p: 359, c: "Starters", t: "non" },
+  { n: "Cashew Nut Chicken", p: 379, c: "Starters", t: "non" },
+  { n: "Fish Fry", p: 389, c: "Starters", t: "non" },
+  { n: "Tawa Fish", p: 399, c: "Starters", t: "non" },
+  { n: "Mutton Fry", p: 499, c: "Starters", t: "non" },
+  { n: "Kheema Balls", p: 499, c: "Starters", t: "non" },
+  { n: "Pepper Mutton", p: 499, c: "Starters", t: "non" },
+  { n: "Basket Mutton", p: 499, c: "Starters", t: "non" },
+  { n: "Chicken Manchurian", p: 319, c: "Chinese", t: "non" },
+  { n: "Chicken 65", p: 329, c: "Chinese", t: "non" },
+  { n: "Chicken Chilli", p: 329, c: "Chinese", t: "non" },
+  { n: "Crispy Chicken Fingers", p: 339, c: "Chinese", t: "non" },
+  { n: "Pepper Chicken", p: 339, c: "Chinese", t: "non" },
+  { n: "Fish 65", p: 349, c: "Chinese", t: "non" },
+  { n: "Fish Manchurian", p: 349, c: "Chinese", t: "non" },
+  { n: "Fish Chilli", p: 359, c: "Chinese", t: "non" },
+  { n: "Schezwan Chicken", p: 389, c: "Chinese", t: "non" },
+  { n: "Star Chicken", p: 369, c: "Chinese", t: "non" },
+  { n: "Majestic Chicken", p: 369, c: "Chinese", t: "non" },
+  { n: "Dragon Chicken", p: 369, c: "Chinese", t: "non" },
+  { n: "Apollo Fish", p: 359, c: "Chinese", t: "non" },
+  { n: "Velvet Fish", p: 359, c: "Chinese", t: "non" },
+  { n: "Chicken Drumsticks", p: 359, c: "Chinese", t: "non" },
+  { n: "Chicken Wings", p: 369, c: "Chinese", t: "non" },
+  { n: "Chicken Lollipop", p: 369, c: "Chinese", t: "non" },
+  { n: "Chicken Shangrilla", p: 389, c: "Chinese", t: "non" },
+  { n: "Chicken 85", p: 369, c: "Chinese", t: "non" },
+  { n: "Chicken Alpha", p: 369, c: "Chinese", t: "non" },
+  { n: "Chilli Prawns", p: 409, c: "Chinese", t: "non" },
+  { n: "Loose Prawns", p: 409, c: "Chinese", t: "non" },
+  { n: "Golden Fried Prawns", p: 409, c: "Chinese", t: "non" },
+  { n: "Dragon Prawns", p: 434, c: "Chinese", t: "non" },
+  { n: "Velvet Prawns", p: 434, c: "Chinese", t: "non" },
+  { n: "Chicken Tikka", p: 319, c: "Tandoori", t: "non" },
+  { n: "Tandoori Chicken Half", p: 369, c: "Tandoori", t: "non" },
+  { n: "Tandoori Chicken Full", p: 619, c: "Tandoori", t: "non" },
+  { n: "Hariyali Chicken Kebab", p: 389, c: "Tandoori", t: "non" },
+  { n: "Murg Malai Kebab", p: 364, c: "Tandoori", t: "non" },
+  { n: "Reshmi Kebab", p: 394, c: "Tandoori", t: "non" },
+  { n: "Kalmi Kebab", p: 359, c: "Tandoori", t: "non" },
+  { n: "Tangidi Kebab", p: 399, c: "Tandoori", t: "non" },
+  { n: "Mutton Seekh Kebab", p: 499, c: "Tandoori", t: "non" },
+  { n: "V-Grand Special Tandoori Platter", p: 589, c: "Tandoori", t: "non" },
+  { n: "Biryani Rice", p: 214, c: "Biryani", t: "veg" },
+  { n: "Veg Biryani", p: 259, c: "Biryani", t: "veg" },
+  { n: "Special Veg Biryani", p: 269, c: "Biryani", t: "veg" },
+  { n: "Mushroom Biryani", p: 269, c: "Biryani", t: "veg" },
+  { n: "Paneer Biryani", p: 269, c: "Biryani", t: "veg" },
+  { n: "Cashew Nut Biryani", p: 299, c: "Biryani", t: "veg" },
+  { n: "Egg Biryani", p: 259, c: "Biryani", t: "non" },
+  { n: "Chicken Dum Biryani", p: 309, c: "Biryani", t: "non" },
+  { n: "Chicken Fry Piece Biryani", p: 309, c: "Biryani", t: "non" },
+  { n: "Boneless Chicken Biryani", p: 309, c: "Biryani", t: "non" },
+  { n: "Lollipop Biryani", p: 339, c: "Biryani", t: "non" },
+  { n: "Mughlai Chicken Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Fish Biryani", p: 359, c: "Biryani", t: "non" },
+  { n: "Tikka Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Tandoori Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Mutton Dum Biryani", p: 499, c: "Biryani", t: "non" },
+  { n: "Mutton Fry Biryani", p: 499, c: "Biryani", t: "non" },
+  { n: "Mutton Kheema Biryani", p: 499, c: "Biryani", t: "non" },
+  { n: "Prawns Biryani", p: 434, c: "Biryani", t: "non" },
+  { n: "Rambo Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Dilkush Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Raju Gari Kodi Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Rangamma Gari Kodi Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Ajantha Biryani", p: 429, c: "Biryani", t: "non" },
+  { n: "Ulavacharu Chicken Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Kona Seema Chicken Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Pachimirchi Chicken Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Military Mutton Biryani", p: 499, c: "Biryani", t: "non" },
+  { n: "Raju Gari Royyala Biryani", p: 439, c: "Biryani", t: "non" },
+  { n: "OG Gongura Chicken Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Mirchi Bajji Biryani", p: 399, c: "Biryani", t: "veg" },
+  { n: "Sultani Chicken Biryani", p: 399, c: "Biryani", t: "non" },
+  { n: "Mutton Shahi Gosh Biryani", p: 499, c: "Biryani", t: "non" },
+  { n: "Veg Fried Rice", p: 229, c: "Chinese", t: "veg" },
+  { n: "Jeera Fried Rice", p: 234, c: "Chinese", t: "veg" },
+  { n: "Schezwan Fried Rice", p: 254, c: "Chinese", t: "veg" },
+  { n: "Paneer Fried Rice", p: 254, c: "Chinese", t: "veg" },
+  { n: "Mushroom Fried Rice", p: 279, c: "Chinese", t: "veg" },
+  { n: "Veg Noodles", p: 254, c: "Chinese", t: "veg" },
+  { n: "Schezwan Noodles", p: 269, c: "Chinese", t: "veg" },
+  { n: "Paneer Noodles", p: 259, c: "Chinese", t: "veg" },
+  { n: "Mushroom Noodles", p: 259, c: "Chinese", t: "veg" },
+  { n: "Egg Fried Rice", p: 259, c: "Chinese", t: "non" },
+  { n: "Egg Schezwan Fried Rice", p: 269, c: "Chinese", t: "non" },
+  { n: "Egg Noodles", p: 259, c: "Chinese", t: "non" },
+  { n: "Egg Schezwan Noodles", p: 269, c: "Chinese", t: "non" },
+  { n: "Chicken Fried Rice", p: 289, c: "Chinese", t: "non" },
+  { n: "Chicken Schezwan Fried Rice", p: 299, c: "Chinese", t: "non" },
+  { n: "Chicken Noodles", p: 289, c: "Chinese", t: "non" },
+  { n: "Chicken Schezwan Noodles", p: 299, c: "Chinese", t: "non" },
+  { n: "V-Grand Special Chicken Fried Rice", p: 319, c: "Chinese", t: "non" },
+  { n: "Dal Fry", p: 159, c: "Curries", t: "veg" },
+  { n: "Dal Tadka", p: 169, c: "Curries", t: "veg" },
+  { n: "Tomato Curry", p: 189, c: "Curries", t: "veg" },
+  { n: "Aloo Masala", p: 209, c: "Curries", t: "veg" },
+  { n: "Green Peas Masala", p: 209, c: "Curries", t: "veg" },
+  { n: "Plain Palak", p: 209, c: "Curries", t: "veg" },
+  { n: "Paneer Palak", p: 269, c: "Curries", t: "veg" },
+  { n: "Kadai Paneer", p: 289, c: "Curries", t: "veg" },
+  { n: "Mixed Veg Curry", p: 239, c: "Curries", t: "veg" },
+  { n: "Kadai Veg Curry", p: 259, c: "Curries", t: "veg" },
+  { n: "Capsicum Masala", p: 209, c: "Curries", t: "veg" },
+  { n: "Baby Corn Masala", p: 239, c: "Curries", t: "veg" },
+  { n: "Mushroom Curry", p: 259, c: "Curries", t: "veg" },
+  { n: "Veg Kheema Curry", p: 259, c: "Curries", t: "veg" },
+  { n: "Malai Kofta", p: 259, c: "Curries", t: "veg" },
+  { n: "Veg Jaipuri", p: 259, c: "Curries", t: "veg" },
+  { n: "Shahi Kurma", p: 259, c: "Curries", t: "veg" },
+  { n: "Methi Chaman", p: 284, c: "Curries", t: "veg" },
+  { n: "Paneer Butter Masala", p: 289, c: "Curries", t: "veg" },
+  { n: "Cashew Nut Curry", p: 289, c: "Curries", t: "veg" },
+  { n: "Egg Burji", p: 154, c: "Curries", t: "non" },
+  { n: "Omelette Curry", p: 174, c: "Curries", t: "non" },
+  { n: "Boiled Egg Curry", p: 189, c: "Curries", t: "non" },
+  { n: "Chicken Afghani", p: 344, c: "Curries", t: "non" },
+  { n: "Butter Chicken", p: 369, c: "Curries", t: "non" },
+  { n: "Chicken Priya Pasand", p: 369, c: "Curries", t: "non" },
+  { n: "Chicken Shahi Kurma", p: 369, c: "Curries", t: "non" },
+  { n: "Kashmiri Chicken", p: 369, c: "Curries", t: "non" },
+  { n: "Chicken Tikka Masala", p: 369, c: "Curries", t: "non" },
+  { n: "Cashew Nut Chicken Curry", p: 369, c: "Curries", t: "non" },
+  { n: "Maharani Chicken Curry", p: 369, c: "Curries", t: "non" },
+  { n: "Chicken Curry", p: 329, c: "Curries", t: "non" },
+  { n: "Andhra Chicken Curry", p: 329, c: "Curries", t: "non" },
+  { n: "Kadai Chicken", p: 329, c: "Curries", t: "non" },
+  { n: "Gongura Chicken", p: 329, c: "Curries", t: "non" },
+  { n: "Fish Curry", p: 359, c: "Curries", t: "non" },
+  { n: "Fish Fry Curry", p: 359, c: "Curries", t: "non" },
+  { n: "Mughlai Chicken", p: 389, c: "Curries", t: "non" },
+  { n: "Prawns Fry", p: 425, c: "Curries", t: "non" },
+  { n: "Prawns Curry", p: 425, c: "Curries", t: "non" },
+  { n: "Gongura Prawns", p: 425, c: "Curries", t: "non" },
+  { n: "Mutton Fry", p: 499, c: "Curries", t: "non" },
+  { n: "Mutton Curry", p: 499, c: "Curries", t: "non" },
+  { n: "Gongura Mutton", p: 499, c: "Curries", t: "non" },
+  { n: "Mutton Kheema Curry", p: 499, c: "Curries", t: "non" },
+  { n: "Gongura Mutton Curry", p: 499, c: "Curries", t: "non" },
+  { n: "Pulka", p: 39, c: "Breads", t: "veg" },
+  { n: "Plain Roti", p: 54, c: "Breads", t: "veg" },
+  { n: "Butter Roti", p: 59, c: "Breads", t: "veg" },
+  { n: "Plain Naan", p: 54, c: "Breads", t: "veg" },
+  { n: "Butter Naan", p: 64, c: "Breads", t: "veg" },
+  { n: "Garlic Naan", p: 74, c: "Breads", t: "veg" },
+  { n: "Methi Naan", p: 74, c: "Breads", t: "veg" },
+  { n: "Methi Paratha", p: 74, c: "Breads", t: "veg" },
+  { n: "Paneer Kulcha", p: 89, c: "Breads", t: "veg" },
+  { n: "Masala Kulcha", p: 89, c: "Breads", t: "veg" },
+  { n: "Plain Rice", p: 109, c: "Rice", t: "veg" },
+  { n: "Sambar Rice", p: 149, c: "Rice", t: "veg" },
+  { n: "Tomato Rice", p: 149, c: "Rice", t: "veg" },
+  { n: "Curd Rice", p: 149, c: "Rice", t: "veg" },
+  { n: "Special Curd Rice (Fruit \u0026 Nuts)", p: 199, c: "Rice", t: "veg" },
+  { n: "Vanilla", p: 85, c: "Desserts", t: "veg" },
+  { n: "Strawberry", p: 85, c: "Desserts", t: "veg" },
+  { n: "Chocolate", p: 100, c: "Desserts", t: "veg" },
+  { n: "Butterscotch", p: 100, c: "Desserts", t: "veg" },
+  { n: "Pista", p: 100, c: "Desserts", t: "veg" },
+  { n: "Mango", p: 100, c: "Desserts", t: "veg" },
+  { n: "Black Current", p: 100, c: "Desserts", t: "veg" },
+  { n: "American Nuts", p: 125, c: "Desserts", t: "veg" },
+  { n: "Italian Bounty", p: 125, c: "Desserts", t: "veg" },
+  { n: "Caramel", p: 125, c: "Desserts", t: "veg" },
+  { n: "Vanilla Milkshake", p: 85, c: "Drinks", t: "veg" },
+  { n: "Strawberry Milkshake", p: 85, c: "Drinks", t: "veg" },
+  { n: "Chocolate Milkshake", p: 100, c: "Drinks", t: "veg" },
+  { n: "Pista Milkshake", p: 100, c: "Drinks", t: "veg" },
+  { n: "Black Current Milkshake", p: 100, c: "Drinks", t: "veg" },
+  { n: "Mango Milkshake", p: 100, c: "Drinks", t: "veg" },
+  { n: "Butterscotch Milkshake", p: 100, c: "Drinks", t: "veg" },
+  { n: "Plain Lassi", p: 100, c: "Drinks", t: "veg" },
+  { n: "Mango Lassi", p: 100, c: "Drinks", t: "veg" },
+];
+
 const navItems = [
   ["dashboard", "Dashboard", LayoutDashboard],
   ["pos", "POS Billing", ShoppingCart],
@@ -263,7 +480,7 @@ function Modal({ title, onClose, children }) {
 function Dashboard() {
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4">
-    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base">Good morning, Varun! 🍽 Today looks busy — 142 orders expected. Chicken Biriyani is trending. 3 staff marked absent.</div>
+    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base">Good morning, Varun! 🍽 Today looks busy — 142 orders expected. Chicken Dum Biryani is trending. 3 staff marked absent.</div>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       {[
         { label: "Today's Revenue", value: "₹67,950", sub: "↑12%", color: "text-[#2E7D32]" },
@@ -297,7 +514,7 @@ function Dashboard() {
       <div className={card + " p-4"}>
         <h3 className="mb-3 font-semibold text-sm md:text-base">Top selling items today</h3>
         <div className="space-y-2">
-          {["Chicken Biriyani — 50 plates — ₹18,750", "Mutton Curry — 28 plates — ₹11,200", "Prawn Fry — 22 plates — ₹8,800", "Veg Biriyani — 19 plates — ₹5,700", "Lassi — 45 glasses — ₹3,150"].map((r) => {
+          {["Chicken Dum Biryani — 50 plates — ₹15,450", "Mutton Dum Biryani — 28 plates — ₹13,972", "Loose Prawns — 22 plates — ₹8,998", "Veg Biryani — 19 plates — ₹4,921", "Mango Lassi — 45 glasses — ₹4,500"].map((r) => {
             const [name, qty, price] = r.split(" — ");
             return (
               <div key={r} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-md border border-[#FFCDD2] p-2 text-sm transition-colors hover:bg-[#FFF5F5]">
@@ -321,27 +538,66 @@ function Dashboard() {
 }
 
 function Pos() {
-  const items = [["Chicken Biriyani", 375, "non"], ["Mutton Biriyani", 450, "non"], ["Veg Biriyani", 300, "veg"], ["Prawn Biriyani", 550, "non"], ["Chicken Curry", 280, "non"], ["Mutton Curry", 400, "non"], ["Chicken 65", 320, "non"], ["Prawn Fry", 400, "non"], ["Paneer Tikka", 350, "veg"], ["Lassi", 70, "veg"], ["Soft Drinks", 50, "veg"], ["Gulab Jamun", 80, "veg"]];
+  const [cat, setCat] = useState("All");
+  const [search, setSearch] = useState("");
+  const [cart, setCart] = useState([]);
+  
+  const items = useMemo(() => {
+    let filtered = MENU_DATA;
+    if (cat !== "All") filtered = filtered.filter(x => x.c === cat);
+    if (search) filtered = filtered.filter(x => x.n.toLowerCase().includes(search.toLowerCase()));
+    return filtered.slice(0, 18);
+  }, [cat, search]);
+
+  const addToCart = (item) => {
+    setCart(prev => {
+      const existing = prev.find(x => x.n === item.n);
+      if (existing) {
+        return prev.map(x => x.n === item.n ? { ...x, q: x.q + 1 } : x);
+      }
+      return [...prev, { ...item, q: 1 }];
+    });
+  };
+
+  const removeFromCart = (name) => {
+    setCart(prev => prev.filter(x => x.n !== name));
+  };
+
+  const subtotal = cart.reduce((acc, x) => acc + (x.p * x.q), 0);
+  const gst = subtotal * 0.05;
+  const total = subtotal + gst;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
       <div className="lg:col-span-3 space-y-4">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-          {["All", "Biriyani", "Curry", "Starters", "Drinks", "Desserts"].map((x, i) => (
-            <button key={x} className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-xs font-bold transition-all ${i === 0 ? "border-[#E53935] bg-[#E53935] text-white shadow-md shadow-red-100" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>
-              {x}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-grow">
+            <input 
+              className={input + " pl-10 h-11"} 
+              placeholder="Search items or type code..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" size={18} />
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
+            {["All", "Biryani", "Starters", "Chinese", "Tandoori", "Curries", "Breads", "Rice", "Drinks", "Desserts"].map((x) => (
+              <button key={x} onClick={() => setCat(x)} className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-xs font-bold transition-all ${cat === x ? "border-[#E53935] bg-[#E53935] text-white shadow-md shadow-red-100" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>
+                {x}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
           {items.map((x) => (
-            <div key={x[0]} className={card + " p-3 flex flex-col justify-between transition-transform active:scale-95 cursor-pointer group hover:border-[#E53935]"}>
+            <div key={x.n} onClick={() => addToCart(x)} className={card + " p-3 flex flex-col justify-between transition-transform active:scale-95 cursor-pointer group hover:border-[#E53935]"}>
               <div>
-                <p className="font-bold text-sm md:text-base text-[#1A1A1A] line-clamp-1 group-hover:text-[#E53935]">{x[0]}</p>
-                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">₹{x[1]}</p>
+                <p className="font-bold text-sm md:text-base text-[#1A1A1A] line-clamp-1 group-hover:text-[#E53935]">{x.n}</p>
+                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">₹{x.p}</p>
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <div className={`h-4 w-4 rounded-sm border flex items-center justify-center ${x[2] === "veg" ? "border-green-600" : "border-red-600"}`}>
-                  <div className={`h-1.5 w-1.5 rounded-full ${x[2] === "veg" ? "bg-green-600" : "bg-red-600"}`} />
+                <div className={`h-4 w-4 rounded-sm border flex items-center justify-center ${x.t === "veg" ? "border-green-600" : "border-red-600"}`}>
+                  <div className={`h-1.5 w-1.5 rounded-full ${x.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
                 </div>
                 <button className={btn + " px-3 py-1 text-[10px] md:text-xs rounded-full"}>Add</button>
               </div>
@@ -356,20 +612,29 @@ function Pos() {
             <span className="text-xs bg-[#FFEBEE] text-[#B71C1C] px-2 py-0.5 rounded-full font-bold">Table 8</span>
           </div>
           <div className="space-y-3 max-h-[35vh] lg:max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-            {[["Chicken Biriyani", 2, 750], ["Mutton Curry", 1, 400], ["Lassi", 2, 140]].map(([name, qty, price]) => (
-              <div key={name} className="flex justify-between items-center text-sm">
-                <div className="flex flex-col">
-                  <span className="font-medium">{name}</span>
-                  <span className="text-[10px] text-[#6B6B6B]">Qty: {qty}</span>
-                </div>
-                <span className="font-bold">₹{price}</span>
+            {cart.length === 0 ? (
+              <div className="py-10 text-center text-[#6B6B6B] text-sm italic">
+                Cart is empty. Add some items to start.
               </div>
-            ))}
+            ) : (
+              cart.map((item) => (
+                <div key={item.n} className="flex justify-between items-center text-sm group">
+                  <div className="flex flex-col">
+                    <span className="font-medium">{item.n}</span>
+                    <span className="text-[10px] text-[#6B6B6B]">₹{item.p} x {item.q}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold">₹{item.p * item.q}</span>
+                    <button onClick={(e) => { e.stopPropagation(); removeFromCart(item.n); }} className="text-[#E53935] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
           <div className="mt-4 border-t border-[#FFCDD2] pt-3 space-y-1">
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹1,290.00</span></div>
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>₹64.50</span></div>
-            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹1,354.50</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>₹{gst.toFixed(2)}</span></div>
+            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
             {["Cash", "Card", "UPI"].map((x, i) => (
@@ -379,11 +644,18 @@ function Pos() {
             ))}
           </div>
           <div className="mt-4 space-y-2">
-            <button className={`${btn} w-full py-3 text-sm shadow-md`}>Complete & Print Bill</button>
-            <div className="grid grid-cols-2 gap-2">
-              <button className="rounded-md border border-[#FFCDD2] py-2 text-xs font-bold hover:bg-[#FFF5F5]">New Order</button>
-              <button className="rounded-md bg-[#B71C1C] text-white py-2 text-xs font-bold hover:bg-[#8e1515]">Send to KOT</button>
-            </div>
+            <button 
+              onClick={() => { 
+                if(cart.length > 0) { 
+                  alert("KOT Sent to Kitchen! & Bill Generated for Customer."); 
+                  setCart([]); 
+                } 
+              }} 
+              className={`${btn} w-full py-3 text-sm shadow-md flex items-center justify-center gap-2`}
+            >
+              <UtensilsCrossed size={16} /> Complete & Print Bill
+            </button>
+            <button onClick={() => setCart([])} className="w-full rounded-md border border-[#FFCDD2] py-2 text-xs font-bold hover:bg-[#FFF5F5]">New Order</button>
           </div>
         </div>
       </div>
@@ -423,7 +695,7 @@ function Tables({ onOpen }) {
       {data.map((t) => {
         const bg = t.status === "occupied" ? "bg-[#B71C1C] text-white border-[#B71C1C]" : t.status === "reserved" ? "bg-[#FFF3E0] text-[#8D4E00]" : "bg-[#E8F5E9] text-[#1B5E20]";
         const label = t.status === "occupied" ? `Occupied — ${t.details}` : t.status === "reserved" ? `Reserved — ${t.details}` : "Available";
-        return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Biriyani x2, Mutton Curry x1, Lassi x2", time: "Seated 45 min ago", bill: "₹1,850" })} className={`${cardBase} ${bg} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
+        return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Dum Biryani x2, Mutton Curry x1, Mango Lassi x2", time: "Seated 45 min ago", bill: "₹1,382" })} className={`${cardBase} ${bg} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
       })}
     </div>
     <div className="flex flex-wrap items-center gap-4 rounded-lg bg-white p-3 border border-[#FFCDD2] shadow-sm">
@@ -436,10 +708,14 @@ function Tables({ onOpen }) {
 }
 
 function MenuPage({ onAddDish }) {
-  const items = ["Chicken Biriyani", "Mutton Biriyani", "Veg Biriyani", "Prawn Biriyani", "Chicken Curry", "Mutton Curry", "Chicken 65", "Prawn Fry", "Paneer Tikka", "Lassi", "Soft Drinks", "Gulab Jamun"];
+  const [filter, setFilter] = useState("");
+  const items = useMemo(() => MENU_DATA.filter(x => x.n.toLowerCase().includes(filter.toLowerCase()) || x.c.toLowerCase().includes(filter.toLowerCase())), [filter]);
   return <div className={card + " p-4"}>
     <div className="mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-      <h3 className="font-semibold text-lg">Menu Items</h3>
+      <div className="flex items-center gap-4 w-full sm:w-auto">
+        <h3 className="font-semibold text-lg">Menu Items</h3>
+        <input className={input + " h-9 w-48"} placeholder="Search menu..." value={filter} onChange={e => setFilter(e.target.value)} />
+      </div>
       <button className={btn} onClick={onAddDish}>+ Add Item</button>
     </div>
     <div className="overflow-x-auto -mx-4 sm:mx-0">
@@ -457,15 +733,15 @@ function MenuPage({ onAddDish }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((i, idx) => (
-              <tr key={i} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+            {items.slice(0, 50).map((item) => (
+              <tr key={item.n} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
                 <td className="px-4 py-2"><div className="h-10 w-10 rounded-md bg-[#EF9A9A]" /></td>
-                <td className="px-4 py-2 font-medium">{i}</td>
-                <td className="px-4 py-2">{idx < 4 ? "Biriyani" : idx < 8 ? "Starters/Curry" : "Drinks/Dessert"}</td>
-                <td className="px-4 py-2">₹{[375, 450, 300, 550, 280, 400, 320, 400, 350, 70, 50, 80][idx]}</td>
+                <td className="px-4 py-2 font-medium">{item.n}</td>
+                <td className="px-4 py-2">{item.c}</td>
+                <td className="px-4 py-2">₹{item.p}</td>
                 <td className="px-4 py-2">
-                  <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${idx === 2 || idx > 7 ? "bg-green-600" : "bg-red-600"}`} />
-                  {idx === 2 || idx > 7 ? "Veg" : "Non-Veg"}
+                  <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
+                  {item.t === "veg" ? "Veg" : "Non-Veg"}
                 </td>
                 <td className="px-4 py-2"><span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">Available</span></td>
                 <td className="px-4 py-2">
@@ -482,7 +758,7 @@ function MenuPage({ onAddDish }) {
 }
 
 function Orders() {
-  const rows = [["#1043", "Dine-In", "Table 8", "3", "₹1,354", "Preparing", "5 min ago", "View"], ["#1042", "Dine-In", "Table 7", "4", "₹850", "Ready", "12 min ago", "View"], ["#1041", "Delivery", "Swiggy — Kiran", "2", "₹890", "Dispatched", "18 min ago", "Track"], ["#1040", "Takeaway", "Walk-in", "1", "₹375", "Ready", "22 min ago", "View"], ["#1039", "Dine-In", "Table 12", "6", "₹2,100", "Served", "35 min ago", "Bill"], ["#1038", "Delivery", "Zomato — Ananya", "3", "₹1,100", "Delivered", "45 min ago", "Done"], ["#1037", "Dine-In", "Table 5", "5", "₹3,200", "Preparing", "8 min ago", "View"], ["#1036", "Takeaway", "Walk-in", "2", "₹650", "Ready", "50 min ago", "View"], ["#1035", "Delivery", "Rajat", "4", "₹1,280", "Dispatched", "1h ago", "Track"], ["#1034", "Dine-In", "Table 4", "3", "₹740", "Cancelled", "1h ago", "View"], ["#1033", "Dine-In", "Table 11", "2", "₹520", "Served", "1h 15m", "Bill"], ["#1032", "Delivery", "Nisha", "3", "₹990", "Delivered", "1h 20m", "Done"]];
+  const rows = [["#1043", "Dine-In", "Table 8", "3", "₹1,382", "Preparing", "5 min ago", "View"], ["#1042", "Dine-In", "Table 7", "4", "₹850", "Ready", "12 min ago", "View"], ["#1041", "Delivery", "Swiggy — Kiran", "2", "₹890", "Dispatched", "18 min ago", "Track"], ["#1040", "Takeaway", "Walk-in", "1", "₹309", "Ready", "22 min ago", "View"], ["#1039", "Dine-In", "Table 12", "6", "₹2,100", "Served", "35 min ago", "Bill"], ["#1038", "Delivery", "Zomato — Ananya", "3", "₹1,100", "Delivered", "45 min ago", "Done"], ["#1037", "Dine-In", "Table 5", "5", "₹3,200", "Preparing", "8 min ago", "View"], ["#1036", "Takeaway", "Walk-in", "2", "₹650", "Ready", "50 min ago", "View"], ["#1035", "Delivery", "Rajat", "4", "₹1,280", "Dispatched", "1h ago", "Track"], ["#1034", "Dine-In", "Table 4", "3", "₹740", "Cancelled", "1h ago", "View"], ["#1033", "Dine-In", "Table 11", "2", "₹520", "Served", "1h 15m", "Bill"], ["#1032", "Delivery", "Nisha", "3", "₹990", "Delivered", "1h 20m", "Done"]];
   return <div className="space-y-4">
     <UnifiedOrdersDashboard />
     <div className="flex gap-2">{["Dine-In (48)", "Takeaway (23)", "Delivery (18)", "All (89)"].map((x, i) => <button key={x} className={`rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
@@ -546,7 +822,7 @@ function Reports() {
       </div>
     </div>
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-      {["Total Revenue|₹3,47,250", "Total Orders|624", "Avg Order Value|₹556", "Top Item|Chicken Biriyani"].map((x) => (
+      {["Total Revenue|₹3,47,250", "Total Orders|624", "Avg Order Value|₹556", "Top Item|Chicken Dum Biryani"].map((x) => (
         <div key={x} className={card + " p-3 border-l-4 border-l-[#E53935] min-w-0"}>
           <p className="text-[10px] uppercase tracking-wider text-[#6B6B6B] truncate">{x.split("|")[0]}</p>
           <p className="mt-1 font-bold text-sm md:text-lg truncate">{x.split("|")[1]}</p>
@@ -592,11 +868,11 @@ function Reports() {
         <h3 className="mb-4 font-semibold text-sm md:text-base">Top 5 Items (Revenue)</h3>
         <div className="space-y-3">
           {[
-            { n: "Chicken Biriyani", q: "280", r: "₹1,05,000", p: "30%" },
-            { n: "Mutton Curry", q: "220", r: "₹88,000", p: "25%" },
-            { n: "Prawn Fry", q: "180", r: "₹72,000", p: "20%" },
-            { n: "Veg Biriyani", q: "150", r: "₹45,000", p: "13%" },
-            { n: "Lassi", q: "320", r: "₹22,400", p: "12%" }
+            { n: "Chicken Dum Biryani", q: "280", r: "₹86,520", p: "30%" },
+            { n: "Mutton Dum Biryani", q: "220", r: "₹1,09,780", p: "25%" },
+            { n: "Loose Prawns", q: "180", r: "₹73,620", p: "20%" },
+            { n: "Veg Biryani", q: "150", r: "₹38,850", p: "13%" },
+            { n: "Mango Lassi", q: "320", r: "₹32,000", p: "12%" }
           ].map((item) => (
             <div key={item.n} className="flex items-center justify-between text-xs sm:text-sm gap-2">
               <div className="flex flex-col min-w-0">
@@ -763,7 +1039,7 @@ function Payroll({ onPayslip }) {
 function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, posted, setPosted }) {
   const [selectedDesign, setSelectedDesign] = useState(0);
   const [language, setLanguage] = useState("en");
-  const [dishName, setDishName] = useState("Chicken Biriyani");
+  const [dishName, setDishName] = useState("Chicken Dum Biryani");
   const [isGenerating, setIsGenerating] = useState(false);
   const [designs, setDesigns] = useState([]);
   const [recommendation, setRecommendation] = useState(null);
@@ -1296,7 +1572,7 @@ function Inventory({ onPo }) {
   return <div className="space-y-4">
     <div className="rounded-[10px] border border-[#FFCDD2] bg-[#FFEBEE] p-4">Spire.ai tracks every ingredient — ask anything</div>
     <div className="flex gap-2"><input className={input} defaultValue="Where did my 50kg chicken go today?" /><button className={btn}>Ask Spire →</button></div>
-    <div className={card + " p-4 text-sm"}><p>Analyzing your 50kg chicken stock for today...</p><p>→ 12.5kg used in 50 Chicken Biriyani plates (₹18,750 revenue)</p><p>→ 3.2kg used in Chicken Curry — 8 orders (₹2,240)</p><p>→ 35kg currently in cold storage (Fridge #2, Zone B)</p><p>→ 2.5kg UNACCOUNTED ⚠ — checking cameras...</p><p>→ Found: CAM-04 at 14:32 — suspicious activity flagged</p><button className={`${btn} mt-3`}>View Camera Incident</button></div>
+    <div className={card + " p-4 text-sm"}><p>Analyzing your 50kg chicken stock for today...</p><p>→ 12.5kg used in 50 Chicken Dum Biryani plates (₹15,450 revenue)</p><p>→ 3.2kg used in Chicken Fry Piece Biryani — 8 orders (₹2,472)</p><p>→ 35kg currently in cold storage (Fridge #2, Zone B)</p><p>→ 2.5kg UNACCOUNTED ⚠ — checking cameras...</p><p>→ Found: CAM-04 at 14:32 — suspicious activity flagged</p><button className={`${btn} mt-3`}>View Camera Incident</button></div>
     <div className={card + " overflow-x-auto -mx-4 sm:mx-0"}>
       <div className="inline-block min-w-full align-middle">
         <table className="w-full text-left text-xs md:text-sm whitespace-nowrap">
@@ -1312,7 +1588,7 @@ function Inventory({ onPo }) {
             </tr>
           </thead>
           <tbody>
-            {["Chicken|50 kg|0|15.2 kg|34.8 kg|OK|10 kg", "Rice|100 kg|0|20 kg|80 kg|OK|20 kg", "Mutton|15 kg|0|3 kg|12 kg|LOW ⚠|10 kg", "Prawns|10 kg|0|2 kg|8 kg|OK|5 kg", "Cooking Oil|50 L|0|10 L|40 L|OK|15 L", "Onions|30 kg|0|8 kg|22 kg|OK|10 kg", "Tomatoes|20 kg|0|6 kg|14 kg|OK|8 kg", "Milk|20 L|0|8 L|12 L|LOW ⚠|10 L"].map((r) => {
+            {["Chicken|50 kg|0|15.2 kg|34.8 kg|OK|10 kg", "Basmati Rice|100 kg|0|20 kg|80 kg|OK|20 kg", "Mutton|15 kg|0|3 kg|12 kg|LOW ⚠|10 kg", "Prawns|10 kg|0|2 kg|8 kg|OK|5 kg", "Refined Oil|50 L|0|10 L|40 L|OK|15 L", "Onions|30 kg|0|8 kg|22 kg|OK|10 kg", "Tomatoes|20 kg|0|6 kg|14 kg|OK|8 kg", "Paneer|20 kg|0|8 kg|12 kg|LOW ⚠|10 kg"].map((r) => {
               const c = r.split("|");
               return (
                 <tr key={r} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
@@ -1405,7 +1681,7 @@ function SpirePanel({ onClose }) {
     { role: "user", content: "Where did my 50kg chicken go today?" },
     {
       role: "spire", content: "Analyzing sales, inventory logs, and camera feeds...",
-      details: ["12.5kg used in 50 biriyani plates", "35kg remains in cold storage (Fridge 2)", "2.5kg discrepancy found."],
+      details: ["12.5kg used in 50 Chicken Dum Biryani plates", "35kg remains in cold storage (Fridge 2)", "2.5kg discrepancy found."],
       isIncident: true
     }
   ]);

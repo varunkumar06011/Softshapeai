@@ -1,5 +1,5 @@
 
-const ITEMS = ['Biriyani', 'Chai & Pakoda', 'Paneer Tikka', 'Family Meal Bundle', 'Lassi', 'Chicken 65', 'Veg Biriyani'];
+const ITEMS = ['Chicken Dum Biryani', 'Mango Lassi', 'Paneer Butter Masala', 'Mutton Curry', 'Dragon Prawns', 'Veg Fried Rice'];
 const WEATHER = ['Sunny', 'Rainy', 'Cold', 'Humid'];
 const EVENTS = ['Cricket Match', 'Weekend Rush', 'Local Festival', 'Public Holiday', 'None'];
 const CATEGORIES = ['Pricing', 'Promotion', 'Inventory', 'Demand', 'Marketing', 'Combo Optimization'];
