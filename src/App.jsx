@@ -280,29 +280,15 @@ const cardBase = "rounded-[10px] border border-[#FFCDD2]";
 const card = cardBase + " bg-white";
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
-const CAPTAINS = [
-  { id: "C1", name: "Lakshmi", img: "👩‍💼", shift: "11AM-8PM", tables: [12, 13, 14, 15], sales: 50300, orders: 44, rating: 4.9, speed: 12 },
-  { id: "C2", name: "Raju", img: "👨‍💼", shift: "9AM-6PM", tables: [1, 2, 3, 4], sales: 48200, orders: 42, rating: 4.8, speed: 13 },
-  { id: "C3", name: "Meena", img: "👩‍💼", shift: "10AM-7PM", tables: [5, 6, 7, 8], sales: 42900, orders: 38, rating: 4.6, speed: 14 },
-  { id: "C4", name: "Suresh", img: "👨‍💼", shift: "12PM-9PM", tables: [9, 10, 11], sales: 39750, orders: 35, rating: 4.4, speed: 16 },
-];
-
-const INITIAL_ACTIVITY = [
-  { id: 1, text: "Raju closed Table 4 bill for ₹2,450", time: "2 min ago", type: "success" },
-  { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
-  { id: 3, text: "Meena received ₹320 tip via UPI", time: "12 min ago", type: "tip" },
-  { id: 4, text: "Suresh sold 3 Premium Thalis", time: "15 min ago", type: "sales" },
-];
-
-function Login({ onLogin, onCaptainLogin }) {
+function Login({ onLogin }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FFF5F5] p-4 md:p-6">
       <div className="w-full max-w-lg rounded-2xl border border-[#FFCDD2] bg-white pt-4 md:pt-6 px-6 md:px-10 pb-6 md:pb-10 shadow-xl">
         <div className="mb-0 flex items-center justify-center">
-          <img 
-            src="/logo softshape.ai.png" 
-            alt="softshape.ai logo" 
-            className="w-full max-w-[280px] sm:max-w-[400px] md:max-w-[480px] h-auto object-contain transition-all duration-700 hover:scale-[1.03]" 
+          <img
+            src="/logo softshape.ai.png"
+            alt="softshape.ai logo"
+            className="w-full max-w-[280px] sm:max-w-[400px] md:max-w-[480px] h-auto object-contain transition-all duration-700 hover:scale-[1.03]"
           />
         </div>
 
@@ -313,38 +299,20 @@ function Login({ onLogin, onCaptainLogin }) {
         </div>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            <button onClick={onLogin} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-[#FFCDD2] hover:border-[#E53935] hover:bg-[#FFEBEE] transition-all group">
-              <div className="h-10 w-10 rounded-full bg-[#FFEBEE] flex items-center justify-center text-xl group-hover:scale-110 transition-transform">👑</div>
-              <span className="text-xs font-bold text-[#B71C1C]">Admin Portal</span>
-            </button>
-            <div className="relative group">
-              <div className="flex flex-col items-center gap-2 p-4 rounded-xl border border-[#FFCDD2] bg-gray-50 opacity-50 cursor-not-allowed">
-                <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-xl">📱</div>
-                <span className="text-xs font-bold text-gray-500">Kitchen View</span>
-              </div>
-            </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] ml-1">Email Address</label>
+            <input className={input + " h-11"} defaultValue="admin@raviskitchen.com" />
           </div>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#FFCDD2]"></div></div>
-            <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest"><span className="bg-white px-2 text-[#6B6B6B]">Or Login as Captain</span></div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] ml-1">Password</label>
+            <input className={input + " h-11"} defaultValue="••••••••" type="password" />
           </div>
-
-          <div className="grid grid-cols-4 gap-2 py-2">
-            {CAPTAINS.map(c => (
-              <button key={c.id} onClick={() => onCaptainLogin(c)} className="flex flex-col items-center gap-1 group">
-                <div className="h-12 w-12 rounded-full border-2 border-transparent group-hover:border-[#E53935] transition-all flex items-center justify-center bg-[#FFEBEE] text-xl shadow-sm">
-                  {c.img}
-                </div>
-                <span className="text-[10px] font-bold text-[#6B6B6B] group-hover:text-[#E53935]">{c.name}</span>
-              </button>
-            ))}
-          </div>
-          
           <button onClick={onLogin} className={`${btn} w-full h-12 text-base shadow-lg shadow-red-100 mt-2`}>
-            Enter Admin Dashboard
+            Enter Dashboard
           </button>
+          <div className="pt-2 text-center">
+            <button className="text-xs font-semibold text-[#B71C1C] hover:underline">Forgot password?</button>
+          </div>
         </div>
       </div>
     </div>
@@ -353,7 +321,6 @@ function Login({ onLogin, onCaptainLogin }) {
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [spireOpen, setSpireOpen] = useState(false);
   const [tableDetail, setTableDetail] = useState(null);
@@ -365,129 +332,45 @@ function App() {
   const [dishModalOpen, setDishModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [posted, setPosted] = useState(false);
-  
-  // Live Demo State
-  const [liveCaptains, setLiveCaptains] = useState(CAPTAINS);
-  const [activityLog, setActivityLog] = useState(INITIAL_ACTIVITY);
-  const [revenue, setRevenue] = useState(67950);
-  const [ordersCount, setOrdersCount] = useState(89);
-
-  const handleOrderComplete = (captainId, amount, itemsCount, paymentMode) => {
-    setRevenue(prev => prev + amount);
-    setOrdersCount(prev => prev + 1);
-    
-    setLiveCaptains(prev => prev.map(c => {
-      if (c.id === captainId || (captainId === "ADMIN" && c.name === "Raju")) { // Default to Raju if admin for demo
-        return {
-          ...c,
-          sales: c.sales + amount,
-          orders: c.orders + 1,
-        };
-      }
-      return c;
-    }));
-
-    const captainName = captainId === "ADMIN" ? "Admin" : CAPTAINS.find(c => c.id === captainId)?.name || "Staff";
-    const newActivity = {
-      id: Date.now(),
-      text: `${captainName} closed order for ₹${amount.toLocaleString()} (${paymentMode})`,
-      time: "Just now",
-      type: "success"
-    };
-    setActivityLog(prev => [newActivity, ...prev.slice(0, 7)]);
-  };
-
-  const handleKOTSend = (captainName, table) => {
-    const newActivity = {
-      id: Date.now(),
-      text: `${captainName} sent KOT for Table ${table}`,
-      time: "Just now",
-      type: "info"
-    };
-    setActivityLog(prev => [newActivity, ...prev.slice(0, 7)]);
-  };
-
-  // Simulation Effect
-  useEffect(() => {
-    if (!loggedIn) return;
-    
-    const interval = setInterval(() => {
-      const randomCaptain = CAPTAINS[Math.floor(Math.random() * CAPTAINS.length)];
-      const randomAmount = Math.floor(Math.random() * 3000) + 500;
-      const modes = ["Cash", "UPI", "Card"];
-      const randomMode = modes[Math.floor(Math.random() * modes.length)];
-      
-      const eventType = Math.random() > 0.3 ? "success" : "info";
-      let text = "";
-      
-      if (eventType === "success") {
-        text = `${randomCaptain.name} closed Table ${Math.floor(Math.random() * 20) + 1} bill for ₹${randomAmount.toLocaleString()} (${randomMode})`;
-        setRevenue(prev => prev + randomAmount);
-        setOrdersCount(prev => prev + 1);
-        setLiveCaptains(prev => prev.map(c => c.id === randomCaptain.id ? { ...c, sales: c.sales + randomAmount, orders: c.orders + 1 } : c));
-      } else {
-        text = `${randomCaptain.name} sent KOT for Table ${Math.floor(Math.random() * 20) + 1}`;
-      }
-
-      setActivityLog(prev => [{
-        id: Date.now(),
-        text,
-        time: "Just now",
-        type: eventType
-      }, ...prev.slice(0, 7)]);
-
-    }, 15000); // Simulate every 15 seconds
-
-    return () => clearInterval(interval);
-  }, [loggedIn]);
+  const uploadRef = useRef(null);
 
   const title = useMemo(() => navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard", [page]);
-
-  const onLogin = () => {
-    setCurrentUser({ name: "Admin", role: "admin", img: "👑" });
-    setLoggedIn(true);
-  };
-
-  const onCaptainLogin = (captain) => {
-    setCurrentUser({ ...captain, role: "captain" });
-    setLoggedIn(true);
-    setPage("pos");
-  };
-
-  if (!loggedIn) return <Login onLogin={onLogin} onCaptainLogin={onCaptainLogin} />;
+  if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A]">
-      {/* Sidebar Overlay */}
-      {isSidebarOpen && <div className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
-      
-      <aside className={`fixed inset-y-0 left-0 z-50 flex w-[240px] flex-col border-r border-[#FFCDD2] bg-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="flex h-16 items-center border-b border-[#FFCDD2] px-6">
-          <div className="text-2xl font-black text-[#1A1A1A]">softshape<span className="text-[#E53935]">.ai</span></div>
-        </div>
-        <div className="p-4 border-b border-[#FFCDD2] bg-[#FFF5F5]/50">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-[#E53935] flex items-center justify-center text-white font-bold shadow-sm ring-2 ring-[#FFCDD2]">
-              {currentUser?.img || "👑"}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold truncate text-[#1A1A1A]">{currentUser?.name}</p>
-              <p className="text-[10px] uppercase font-black text-[#B71C1C] tracking-tighter opacity-70">{currentUser?.role}</p>
-            </div>
+      {/* Mobile Overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      <aside className={`fixed left-0 top-0 z-40 flex h-[100dvh] w-[240px] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className="flex flex-col flex-grow overflow-hidden p-4">
+          <div className="flex items-center justify-between flex-shrink-0">
+            <div className="text-2xl font-bold">softshape<span className="text-[#EF9A9A]">.ai</span></div>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[10px] opacity-80 flex-shrink-0"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />Spire.ai is ready ✦</div>
+
+          <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1">
+            {navItems.map(([k, label, Icon]) => (
+              <button key={k} onClick={() => { setPage(k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-[#d64a46]"}`}>
+                <Icon size={16} /> {label}
+              </button>
+            ))}
           </div>
         </div>
-        <nav className="flex-grow space-y-1 overflow-y-auto p-4 custom-scrollbar">
-          {navItems.map(([id, label, Icon]) => (
-            <button key={id} onClick={() => { setPage(id); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-3 rounded-[8px] px-3 py-2.5 text-sm font-semibold transition-all ${page === id ? "bg-[#FFEBEE] text-[#E53935] shadow-sm" : "text-[#6B6B6B] hover:bg-[#FFF5F5] hover:text-[#E53935]"}`}>
-              <Icon size={18} className={page === id ? "text-[#E53935]" : "text-[#B71C1C]"} />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-4 border-t border-[#FFCDD2]">
-          <button onClick={() => setLoggedIn(false)} className="flex w-full items-center gap-3 rounded-[8px] px-3 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors">
-            <LogOut size={18} />Logout
-          </button>
+        <div className="p-4 border-t border-white/10 bg-black/5 flex-shrink-0">
+          <div className="flex items-center justify-between rounded-lg border border-white/20 p-2">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="h-7 w-7 rounded-full bg-white/20 flex-shrink-0" />
+              <div className="text-[10px] font-bold truncate">Ravi's Kitchen</div>
+            </div>
+            <LogOut size={14} className="flex-shrink-0 cursor-pointer hover:text-[#EF9A9A] transition-colors" />
+          </div>
         </div>
       </aside>
 
@@ -510,17 +393,13 @@ function App() {
           </div>
         </header>
         <main className="page-enter flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
-          {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} />}
-          {page === "pos" && <Pos currentUser={currentUser} onOrderComplete={handleOrderComplete} onKOTSend={handleKOTSend} />}
+          {page === "dashboard" && <Dashboard />}
+          {page === "pos" && <Pos />}
           {page === "tables" && <Tables onOpen={setTableDetail} />}
           {page === "menu" && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
           {page === "orders" && <Orders />}
           {page === "reports" && <Reports />}
-          {page === "captains" && (
-            <Suspense fallback={<div className={card + " p-4"}>Loading captain analytics...</div>}>
-              <CaptainPerformanceDashboard captains={liveCaptains} />
-            </Suspense>
-          )}
+          {page === "captains" && <Suspense fallback={<div className={card + " p-4"}>Loading captain analytics...</div>}><CaptainPerformanceDashboard /></Suspense>}
           {page === "payroll" && <Payroll onPayslip={setPayslip} />}
           {page === "marketing" && <Marketing upload={upload} setUpload={setUpload} uploadRef={uploadRef} generated={generated} setGenerated={setGenerated} posted={posted} setPosted={setPosted} />}
           {page === "surveillance" && <Surveillance onIncident={() => setIncident(true)} />}
@@ -585,138 +464,71 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function Dashboard({ revenue, ordersCount, activityLog }) {
+function Dashboard() {
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
-  return (
-    <div className="space-y-4">
-      <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base animate-fade-in flex items-center gap-3">
-        <span className="text-xl">✨</span>
-        <p className="font-medium">Live Operational Insight: <span className="font-bold text-[#B71C1C]">Chicken Dum Biryani</span> is moving 15% faster than usual. Average prep time is 12 mins.</p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {[
-          { label: "Today's Revenue", value: `₹${revenue.toLocaleString()}`, sub: "↑12%", color: "text-[#2E7D32]" },
-          { label: "Total Orders", value: ordersCount, sub: "live", color: "text-[#1A1A1A]" },
-          { label: "Tables Occupied", value: "14/20", sub: "active", color: "text-[#1A1A1A]" },
-          { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
-        ].map((x) => (
-          <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-3 md:p-4 min-w-0 shadow-sm transition-all hover:translate-y-[-2px]"}>
-            <p className="text-[10px] md:text-xs font-bold uppercase tracking-tight text-[#6B6B6B] truncate">{x.label}</p>
-            <div className="mt-1 md:mt-2 flex flex-col sm:flex-row sm:items-baseline gap-1 overflow-hidden">
-              <p className="text-xl md:text-2xl lg:text-3xl font-black text-[#1A1A1A] whitespace-nowrap animate-number-grow">{x.value}</p>
-              <p className={`text-[10px] md:text-xs font-bold ${x.color} whitespace-nowrap`}>{x.sub}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className={card + " p-4 lg:col-span-2"}>
-          <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
-            <ChartNoAxesCombined size={18} className="text-[#E53935]" />
-            Sales Attribution - Last 7 days
-          </h3>
-          <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={sales}>
-                <XAxis dataKey="d" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} />
-                <Bar dataKey="v" fill="#E53935" radius={[6, 6, 0, 0]} barSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
+  return <div className="space-y-4">
+    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base">Good morning, Varun! 🍽 Today looks busy — 142 orders expected. Chicken Dum Biryani is trending. 3 staff marked absent.</div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      {[
+        { label: "Today's Revenue", value: "₹67,950", sub: "↑12%", color: "text-[#2E7D32]" },
+        { label: "Total Orders", value: "89", sub: "live", color: "text-[#1A1A1A]" },
+        { label: "Tables Occupied", value: "14/20", sub: "active", color: "text-[#1A1A1A]" },
+        { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
+      ].map((x) => (
+        <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-3 md:p-4 min-w-0 shadow-sm"}>
+          <p className="text-[10px] md:text-xs font-bold uppercase tracking-tight text-[#6B6B6B] truncate">{x.label}</p>
+          <div className="mt-1 md:mt-2 flex flex-col sm:flex-row sm:items-baseline gap-1 overflow-hidden">
+            <p className="text-xl md:text-2xl lg:text-3xl font-black text-[#1A1A1A] whitespace-nowrap">{x.value}</p>
+            <p className={`text-[10px] md:text-xs font-bold ${x.color} whitespace-nowrap`}>{x.sub}</p>
           </div>
         </div>
-
-        <div className={card + " p-0 overflow-hidden flex flex-col h-[320px] lg:h-auto"}>
-          <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
-            <h3 className="font-bold text-sm md:text-base flex items-center gap-2">
-              <ClipboardList size={18} className="text-[#E53935]" />
-              Live Activity
-            </h3>
-            <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-          </div>
-          <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
-            {activityLog.map((log) => (
-              <div key={log.id} className="flex gap-3 animate-slide-in">
-                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
-                  log.type === "success" ? "bg-green-500" : 
-                  log.type === "info" ? "bg-blue-500" : 
-                  log.type === "tip" ? "bg-amber-500" : "bg-red-500"
-                }`} />
-                <div className="flex-grow min-w-0">
-                  <p className="text-xs font-medium text-[#1A1A1A] leading-relaxed">{log.text}</p>
-                  <p className="text-[10px] text-[#6B6B6B] mt-1">{log.time}</p>
+      ))}
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={card + " p-4 overflow-hidden"}>
+        <h3 className="mb-3 font-semibold text-sm md:text-base">Sales - Last 7 days</h3>
+        <div className="h-[220px] w-full min-h-[220px]">
+          <ResponsiveContainer width="100%" height="100%" debounce={50}>
+            <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <XAxis dataKey="d" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+              <Bar dataKey="v" fill="#E53935" radius={[4, 4, 0, 0]} barSize={24} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      <div className={card + " p-4"}>
+        <h3 className="mb-3 font-semibold text-sm md:text-base">Top selling items today</h3>
+        <div className="space-y-2">
+          {["Chicken Dum Biryani — 50 plates — ₹15,450", "Mutton Dum Biryani — 28 plates — ₹13,972", "Loose Prawns — 22 plates — ₹8,998", "Veg Biryani — 19 plates — ₹4,921", "Mango Lassi — 45 glasses — ₹4,500"].map((r) => {
+            const [name, qty, price] = r.split(" — ");
+            return (
+              <div key={r} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-md border border-[#FFCDD2] p-2 text-sm transition-colors hover:bg-[#FFF5F5]">
+                <span className="font-medium">{name}</span>
+                <div className="flex items-center justify-between sm:justify-end gap-3">
+                  <span className="flex h-5 min-w-[32px] items-center justify-center rounded-full bg-[#FFEBEE] px-2 text-[10px] font-bold text-[#B71C1C]">{qty}</span>
+                  <span className="font-bold text-[#1A1A1A] whitespace-nowrap">{price}</span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className={card + " p-4 border-l-4 border-l-blue-500"}>
-          <h3 className="mb-3 font-bold text-[#1A1A1A] flex items-center gap-2">
-            <Bot size={18} className="text-blue-500" />
-            AI Operational Insights
-          </h3>
-          <div className="space-y-3">
-            <p className="text-xs text-[#6B6B6B] flex items-start gap-2">
-              <span className="text-blue-500 font-bold">●</span>
-              Table 7 has been idle for 25 mins after main course. Suggesting dessert menu to Captain Raju.
-            </p>
-            <p className="text-xs text-[#6B6B6B] flex items-start gap-2">
-              <span className="text-blue-500 font-bold">●</span>
-              Stock for <span className="font-bold text-[#1A1A1A]">Basmati Rice</span> is 15% lower than expected velocity.
-            </p>
-          </div>
-        </div>
-
-        <div className={card + " p-4 border-l-4 border-l-[#E53935]"}>
-          <h3 className="mb-3 font-bold text-[#1A1A1A] flex items-center gap-2">
-            <Megaphone size={18} className="text-[#E53935]" />
-            Management Alerts
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between bg-red-50 p-2 rounded border border-red-100">
-              <p className="text-xs font-bold text-red-700">Deleted Bill: #1042</p>
-              <span className="text-[10px] bg-red-700 text-white px-1.5 rounded">Action</span>
-            </div>
-            <p className="text-xs text-[#6B6B6B]">₹1,200 manual discount added by Raju (Table 4).</p>
-            <p className="text-xs text-[#6B6B6B] font-medium text-amber-700">⚠ 3 bills cancelled after KOT confirmation.</p>
-          </div>
-        </div>
-
-        <div className={card + " p-4 border-l-4 border-l-green-500"}>
-          <h3 className="mb-3 font-bold text-[#1A1A1A] flex items-center gap-2">
-            <Sparkles size={18} className="text-green-500" />
-            Captain Leaderboard
-          </h3>
-          <div className="space-y-2">
-            {activityLog.filter(l => l.type === "success").slice(0, 3).map((l, i) => (
-              <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black text-[#E53935]">#{i+1}</span>
-                  <span className="text-xs font-bold">{l.text.split(' ')[0]}</span>
-                </div>
-                <span className="text-xs font-black text-[#2E7D32]">↑ High</span>
-              </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>
-  );
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Recent Orders</h3><p className="text-sm">Order#1042 Table 7 ₹850 Preparing</p><p className="text-sm">Order#1041 Table 3 ₹1,200 Served</p><p className="text-sm">Order#1040 Takeaway ₹650 Ready</p><p className="text-sm">Order#1039 Table 12 ₹2,100 Served</p><p className="text-sm">Order#1038 Delivery ₹890 Dispatched</p></div>
+      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Spire.ai Alerts</h3><p className="text-sm">⚠ Zone violation at Kitchen 14:32</p><p className="text-sm">✦ Post scheduled for Instagram 6PM</p><p className="text-sm">✓ Payroll calculated for May — 21 staff</p></div>
+      <div className={card + " p-4"}><h3 className="mb-2 font-semibold">Inventory Quick View</h3><p className="text-sm">Chicken 35kg remaining</p><p className="text-sm">Rice 80kg</p><p className="text-sm">Mutton 12kg <span className="rounded bg-[#FFEBEE] px-2 text-[#B71C1C]">LOW</span></p><p className="text-sm">Prawns 8kg</p><p className="text-sm">Oil 40L</p></div>
+    </div>
+  </div>;
 }
 
-function Pos({ currentUser, onOrderComplete, onKOTSend }) {
+function Pos() {
   const [cat, setCat] = useState("All");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
-  const [kotStatus, setKotStatus] = useState(null); // 'sending', 'delivered', 'accepted'
-  const [table, setTable] = useState("8");
-  
+
   const items = useMemo(() => {
     let filtered = MENU_DATA;
     if (cat !== "All") filtered = filtered.filter(x => x.c === cat);
@@ -742,36 +554,14 @@ function Pos({ currentUser, onOrderComplete, onKOTSend }) {
   const gst = subtotal * 0.05;
   const total = subtotal + gst;
 
-  const handleSendToKitchen = () => {
-    if (cart.length === 0) return;
-    
-    setKotStatus('sending');
-    onKOTSend(currentUser?.name || "Admin", table);
-    
-    setTimeout(() => {
-      setKotStatus('delivered');
-      setTimeout(() => {
-        setKotStatus('accepted');
-        setTimeout(() => setKotStatus(null), 3000);
-      }, 1500);
-    }, 1500);
-  };
-
-  const handleBill = (paymentMode) => {
-    if (cart.length === 0) return;
-    onOrderComplete(currentUser?.id || "ADMIN", total, cart.length, paymentMode);
-    setCart([]);
-    alert(`Order #1043 closed by ${currentUser?.name || "Admin"}. Payment: ${paymentMode}`);
-  };
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
       <div className="lg:col-span-3 space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-grow">
-            <input 
-              className={input + " pl-10 h-11"} 
-              placeholder="Search items or type code..." 
+            <input
+              className={input + " pl-10 h-11"}
+              placeholder="Search items or type code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -803,19 +593,11 @@ function Pos({ currentUser, onOrderComplete, onKOTSend }) {
         </div>
       </div>
       <div className={"lg:col-span-2 space-y-4"}>
-        <div className={card + " p-4 h-fit lg:sticky lg:top-20 shadow-lg shadow-red-50/50 overflow-hidden"}>
+        <div className={card + " p-4 h-fit lg:sticky lg:top-20 shadow-lg shadow-red-50/50"}>
           <div className="flex items-center justify-between border-b border-[#FFCDD2] pb-3 mb-3">
             <h3 className="font-bold text-[#1A1A1A]">Order <span className="text-[#B71C1C]">#1043</span></h3>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-[#6B6B6B]">{currentUser?.name}</span>
-              <select value={table} onChange={e => setTable(e.target.value)} className="text-xs bg-[#FFEBEE] text-[#B71C1C] px-2 py-0.5 rounded-full font-bold border-none outline-none">
-                <option value="8">Table 8</option>
-                <option value="4">Table 4</option>
-                <option value="12">Table 12</option>
-              </select>
-            </div>
+            <span className="text-xs bg-[#FFEBEE] text-[#B71C1C] px-2 py-0.5 rounded-full font-bold">Table 8</span>
           </div>
-          
           <div className="space-y-3 max-h-[35vh] lg:max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
             {cart.length === 0 ? (
               <div className="py-10 text-center text-[#6B6B6B] text-sm italic">
@@ -836,48 +618,31 @@ function Pos({ currentUser, onOrderComplete, onKOTSend }) {
               ))
             )}
           </div>
-
           <div className="mt-4 border-t border-[#FFCDD2] pt-3 space-y-1">
             <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
             <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>₹{gst.toFixed(2)}</span></div>
             <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
           </div>
-
-          {kotStatus && (
-            <div className="mt-4 p-3 rounded-lg bg-gray-50 border border-dashed border-[#FFCDD2] animate-pulse">
-              <p className="text-center text-xs font-bold text-[#B71C1C] flex items-center justify-center gap-2">
-                {kotStatus === 'sending' && <><span className="h-2 w-2 rounded-full bg-blue-500" /> Sending to Kitchen KOT...</>}
-                {kotStatus === 'delivered' && <><span className="h-2 w-2 rounded-full bg-green-500" /> KOT Delivered Successfully</>}
-                {kotStatus === 'accepted' && <><span className="h-2 w-2 rounded-full bg-green-500 animate-ping" /> Kitchen Accepted ✅</>}
-              </p>
-            </div>
-          )}
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button 
-              onClick={handleSendToKitchen}
-              className="rounded-md border border-[#E53935] bg-[#FFEBEE] py-2 text-xs font-black text-[#B71C1C] hover:bg-[#EF9A9A] transition-all"
-            >
-              SEND TO KITCHEN
-            </button>
-            <button className="rounded-md border border-[#FFCDD2] bg-white py-2 text-xs font-bold text-[#6B6B6B]">KOT History</button>
-          </div>
-
           <div className="mt-4 grid grid-cols-3 gap-2">
-            {["Cash", "Card", "UPI"].map((x) => (
-              <button key={x} onClick={() => handleBill(x)} className={`rounded-md border py-2 text-xs font-bold transition-all border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5] hover:border-[#E53935]`}>
+            {["Cash", "Card", "UPI"].map((x, i) => (
+              <button key={x} className={`rounded-md border py-2 text-xs font-bold transition-all ${i === 2 ? "border-[#E53935] bg-[#FFEBEE] text-[#B71C1C]" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>
                 {x}
               </button>
             ))}
           </div>
-
-          <div className="mt-4">
-            <button 
-              onClick={() => handleBill("UPI")} 
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => {
+                if (cart.length > 0) {
+                  alert("KOT Sent to Kitchen! & Bill Generated for Customer.");
+                  setCart([]);
+                }
+              }}
               className={`${btn} w-full py-3 text-sm shadow-md flex items-center justify-center gap-2`}
             >
               <UtensilsCrossed size={16} /> Complete & Print Bill
             </button>
+            <button onClick={() => setCart([])} className="w-full rounded-md border border-[#FFCDD2] py-2 text-xs font-bold hover:bg-[#FFF5F5]">New Order</button>
           </div>
         </div>
       </div>
@@ -1266,7 +1031,7 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
   const [designs, setDesigns] = useState([]);
   const [recommendation, setRecommendation] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  
+
   // New States for Workflow
   const [socialConnected, setSocialConnected] = useState({ ig: false, fb: false });
   const [showSocialModal, setShowSocialModal] = useState(false);
@@ -1301,7 +1066,7 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
   const handleGenerate = () => {
     setIsGenerating(true);
     setGenerated(false);
-    
+
     setTimeout(() => {
       const newDesigns = STYLES.map((style, index) => generateRandomConfig(style.id, index));
       setDesigns(newDesigns);
@@ -1327,10 +1092,10 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
       const randomText = texts[Math.floor(Math.random() * texts.length)];
       setVoiceInput(randomText);
       setIsListening(false);
-      
+
       // Update dish name or recommendation based on voice
       if (randomText.toLowerCase().includes("199")) {
-         setRecommendation(prev => ({...prev, title: "Special Deal: ₹199 Offer Active", explanation: "Voice assistant updated campaign based on manual override."}));
+        setRecommendation(prev => ({ ...prev, title: "Special Deal: ₹199 Offer Active", explanation: "Voice assistant updated campaign based on manual override." }));
       }
     }, 2000);
   };
@@ -1369,10 +1134,10 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
 #చికెన్‌బిర్యానీ #రవిస్‌కిచెన్ #విజయవాడ #ఫుడ్‌లవర్స్ #బిర్యానీ #ఆంధ్రఫుడ్`;
 
     if (voiceInput) {
-       base = `🔥 ${voiceInput.toUpperCase()}!\n\n` + base;
+      base = `🔥 ${voiceInput.toUpperCase()}!\n\n` + base;
     }
     if (recommendation && (recommendation.title.includes("IPL") || selectedTagline.includes("IPL"))) {
-       base = `🏏 IPL SPECIAL! ` + base;
+      base = `🏏 IPL SPECIAL! ` + base;
     }
     return base;
   }, [dishName, language, voiceInput, recommendation, designs, selectedDesign]);
@@ -1421,8 +1186,8 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                   <p className="text-sm font-bold text-[#1A1A1A]">{upload.name}</p>
                   <p className="text-[10px] text-[#6B6B6B]">Ready for AI processing</p>
                 </div>
-                <button 
-                  onClick={handleGenerate} 
+                <button
+                  onClick={handleGenerate}
                   disabled={isGenerating}
                   className={`${btn} shadow-lg shadow-red-100 flex items-center gap-2`}
                 >
@@ -1439,15 +1204,15 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
             {isGenerating && (
               <div className="mt-8 flex flex-col items-center justify-center py-10 animate-fadeIn">
                 <div className="relative">
-                   <div className="h-20 w-20 rounded-full border-4 border-[#FFEBEE] border-t-[#E53935] animate-spin" />
-                   <Bot className="absolute inset-0 m-auto text-[#E53935]" size={32} />
+                  <div className="h-20 w-20 rounded-full border-4 border-[#FFEBEE] border-t-[#E53935] animate-spin" />
+                  <Bot className="absolute inset-0 m-auto text-[#E53935]" size={32} />
                 </div>
                 <h4 className="mt-4 font-bold text-lg">Generating AI Creatives...</h4>
                 <p className="text-sm text-[#6B6B6B]">Spire is analyzing your food and creating 10 unique styles</p>
                 <div className="mt-6 flex gap-1">
-                   {[0, 1, 2].map(i => (
-                     <div key={i} className="h-2 w-2 rounded-full bg-[#E53935] animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
-                   ))}
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="h-2 w-2 rounded-full bg-[#E53935] animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
+                  ))}
                 </div>
               </div>
             )}
@@ -1456,9 +1221,9 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
               <div className="mt-6 animate-fadeIn">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
                   {designs.map((config, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => setSelectedDesign(i)} 
+                    <button
+                      key={i}
+                      onClick={() => setSelectedDesign(i)}
                       className={`group rounded-xl border p-2 transition-all ${selectedDesign === i ? "border-2 border-[#E53935] bg-[#FFEBEE] ring-4 ring-red-50" : "border-[#FFCDD2] hover:bg-[#FFF5F5]"}`}
                     >
                       <div className="aspect-[4/5] w-full rounded-lg bg-black overflow-hidden relative shadow-inner">
@@ -1482,8 +1247,8 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                 <div className="flex-grow space-y-4">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B]">AI Generated Caption</label>
-                    <button 
-                      onClick={handleVoiceInput} 
+                    <button
+                      onClick={handleVoiceInput}
                       className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${isListening ? "bg-red-500 text-white animate-pulse" : "bg-[#FFEBEE] text-[#E53935] hover:bg-[#EF9A9A] hover:text-white"}`}
                     >
                       <Bot size={12} /> {isListening ? "Listening..." : "Voice Assist"}
@@ -1510,15 +1275,15 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                       <p className="text-sm font-black">+{recommendation?.impact || 24}% Engagement</p>
                       <p className="text-[9px] text-[#6B6B6B]">Based on {recommendation?.conditions.event || 'Current Trends'}</p>
                     </div>
-                    
+
                     {!showPreview ? (
                       <button onClick={() => setShowPreview(true)} className={btn + " w-full py-3 shadow-lg shadow-red-100 flex items-center justify-center gap-2"}>
                         <Sparkles size={16} /> Apply & Preview
                       </button>
                     ) : (
                       <div className="space-y-2">
-                        <button 
-                          onClick={handlePostNow} 
+                        <button
+                          onClick={handlePostNow}
                           disabled={isPosting}
                           className="w-full bg-green-600 text-white rounded-md py-3 text-sm font-bold shadow-lg shadow-green-100 flex items-center justify-center gap-2"
                         >
@@ -1534,45 +1299,45 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                   </div>
                 </div>
               </div>
-              
+
               {showPreview && (
                 <div className="mt-6 pt-6 border-t border-[#FFCDD2] animate-fadeIn">
-                   <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B]">Social Media Preview</h4>
-                      <button onClick={() => setShowPreview(false)} className="text-[10px] font-bold text-[#E53935] hover:underline">Cancel</button>
-                   </div>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="rounded-xl border border-[#FFCDD2] overflow-hidden bg-white shadow-sm">
-                         <div className="p-3 flex items-center gap-2 border-b border-gray-100">
-                            <div className="h-6 w-6 rounded-full bg-[#FFEBEE]" />
-                            <span className="text-[10px] font-bold">ravis_kitchen • Instagram</span>
-                         </div>
-                         <div className="aspect-square bg-gray-100">
-                            <CreativeCanvas config={designs[selectedDesign]} uploadUrl={upload.url} />
-                         </div>
-                         <div className="p-3 space-y-2">
-                            <div className="flex gap-3 text-gray-700"><Sparkles size={16} /><Bot size={16} /><Megaphone size={16} /></div>
-                            <p className="text-[10px] leading-snug line-clamp-2"><span className="font-bold mr-1">ravis_kitchen</span>{finalCaption}</p>
-                         </div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B]">Social Media Preview</h4>
+                    <button onClick={() => setShowPreview(false)} className="text-[10px] font-bold text-[#E53935] hover:underline">Cancel</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="rounded-xl border border-[#FFCDD2] overflow-hidden bg-white shadow-sm">
+                      <div className="p-3 flex items-center gap-2 border-b border-gray-100">
+                        <div className="h-6 w-6 rounded-full bg-[#FFEBEE]" />
+                        <span className="text-[10px] font-bold">ravis_kitchen • Instagram</span>
                       </div>
-                      <div className="rounded-xl border border-[#FFCDD2] overflow-hidden bg-white shadow-sm">
-                         <div className="p-3 flex items-center gap-2 border-b border-gray-100">
-                            <div className="h-6 w-6 rounded-full bg-[#FFEBEE]" />
-                            <div>
-                               <p className="text-[10px] font-bold">Ravi's Kitchen</p>
-                               <p className="text-[8px] text-gray-500">Sponsored • Facebook</p>
-                            </div>
-                         </div>
-                         <div className="p-3 text-[10px] leading-snug">{finalCaption.split('\n')[0]}... <span className="text-blue-600">See More</span></div>
-                         <div className="aspect-[1.91/1] bg-gray-100 overflow-hidden">
-                            <CreativeCanvas config={designs[selectedDesign]} uploadUrl={upload.url} />
-                         </div>
-                         <div className="p-3 flex justify-between items-center border-t border-gray-50 bg-gray-50/50">
-                            <span className="text-[10px] font-bold text-blue-600">Order Now</span>
-                            <button className="bg-gray-200 px-3 py-1 rounded text-[9px] font-bold">Learn More</button>
-                         </div>
+                      <div className="aspect-square bg-gray-100">
+                        <CreativeCanvas config={designs[selectedDesign]} uploadUrl={upload.url} />
                       </div>
-                   </div>
+                      <div className="p-3 space-y-2">
+                        <div className="flex gap-3 text-gray-700"><Sparkles size={16} /><Bot size={16} /><Megaphone size={16} /></div>
+                        <p className="text-[10px] leading-snug line-clamp-2"><span className="font-bold mr-1">ravis_kitchen</span>{finalCaption}</p>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-[#FFCDD2] overflow-hidden bg-white shadow-sm">
+                      <div className="p-3 flex items-center gap-2 border-b border-gray-100">
+                        <div className="h-6 w-6 rounded-full bg-[#FFEBEE]" />
+                        <div>
+                          <p className="text-[10px] font-bold">Ravi's Kitchen</p>
+                          <p className="text-[8px] text-gray-500">Sponsored • Facebook</p>
+                        </div>
+                      </div>
+                      <div className="p-3 text-[10px] leading-snug">{finalCaption.split('\n')[0]}... <span className="text-blue-600">See More</span></div>
+                      <div className="aspect-[1.91/1] bg-gray-100 overflow-hidden">
+                        <CreativeCanvas config={designs[selectedDesign]} uploadUrl={upload.url} />
+                      </div>
+                      <div className="p-3 flex justify-between items-center border-t border-gray-50 bg-gray-50/50">
+                        <span className="text-[10px] font-bold text-blue-600">Order Now</span>
+                        <button className="bg-gray-200 px-3 py-1 rounded text-[9px] font-bold">Learn More</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1580,25 +1345,25 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
 
           {scheduledCampaigns.length > 0 && (
             <div className={card + " p-6 animate-fadeIn"}>
-               <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Upcoming Scheduled Campaigns</h3>
-               <div className="space-y-3">
-                  {scheduledCampaigns.map(c => (
-                    <div key={c.id} className="flex items-center gap-4 p-3 rounded-xl border border-[#FFCDD2] bg-[#FFF5F5]">
-                       <div className="h-12 w-12 rounded-lg bg-black overflow-hidden flex-shrink-0">
-                          <CreativeCanvas config={c.design} uploadUrl={upload.url} />
-                       </div>
-                       <div className="flex-grow min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                             <span className="text-[10px] font-black text-[#E53935] uppercase">{c.status}</span>
-                             <span className="h-1 w-1 rounded-full bg-[#FFCDD2]" />
-                             <span className="text-[10px] font-bold text-[#6B6B6B]">{c.time}</span>
-                          </div>
-                          <p className="text-xs font-bold truncate">{c.caption.split('\n')[0]}</p>
-                       </div>
-                       <button className="text-[10px] font-bold text-[#B71C1C] hover:underline">Edit</button>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-[#6B6B6B] mb-4">Upcoming Scheduled Campaigns</h3>
+              <div className="space-y-3">
+                {scheduledCampaigns.map(c => (
+                  <div key={c.id} className="flex items-center gap-4 p-3 rounded-xl border border-[#FFCDD2] bg-[#FFF5F5]">
+                    <div className="h-12 w-12 rounded-lg bg-black overflow-hidden flex-shrink-0">
+                      <CreativeCanvas config={c.design} uploadUrl={upload.url} />
                     </div>
-                  ))}
-               </div>
+                    <div className="flex-grow min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-black text-[#E53935] uppercase">{c.status}</span>
+                        <span className="h-1 w-1 rounded-full bg-[#FFCDD2]" />
+                        <span className="text-[10px] font-bold text-[#6B6B6B]">{c.time}</span>
+                      </div>
+                      <p className="text-xs font-bold truncate">{c.caption.split('\n')[0]}</p>
+                    </div>
+                    <button className="text-[10px] font-bold text-[#B71C1C] hover:underline">Edit</button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1613,7 +1378,7 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                 </div>
               )}
             </div>
-            
+
             <div className="space-y-4">
               {recommendation ? (
                 <div className={`rounded-xl border p-4 transition-all duration-500 ${isAnalyzing ? 'opacity-40 scale-95' : 'opacity-100 scale-100'} bg-[#E8F5E9] border-[#A5D6A7]`}>
@@ -1626,12 +1391,12 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                       {recommendation.confidence}% Confidence
                     </span>
                   </div>
-                  
+
                   <p className="text-sm font-black text-[#1A1A1A]">{recommendation.title}</p>
                   <p className="text-[11px] text-[#2E7D32] mt-1.5 leading-relaxed font-medium">
                     {recommendation.explanation}
                   </p>
-                  
+
                   <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#A5D6A7]/30 pt-3">
                     <div>
                       <p className="text-[9px] font-bold text-[#6B6B6B] uppercase">Revenue Impact</p>
@@ -1642,7 +1407,7 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
                       <p className="text-[9px] font-medium text-[#6B6B6B]">{recommendation.conditions.weather} • {recommendation.conditions.event}</p>
                     </div>
                   </div>
-                  
+
                   <button className="mt-4 w-full bg-[#2E7D32] text-white py-2.5 rounded-lg text-xs font-bold shadow-md shadow-green-100 active:scale-95 transition-transform">
                     Apply Now
                   </button>
@@ -1703,7 +1468,7 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
               </div>
             </div>
           </div>
-      </div>
+        </div>
       </div>
 
       {/* Social Onboarding Modal */}
@@ -1719,42 +1484,42 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
             </div>
             <div className="space-y-4">
               <div className="space-y-2 text-left">
-                 <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Restaurant Brand</label>
-                 <input className={input} defaultValue="Ravi's Kitchen" />
+                <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Restaurant Brand</label>
+                <input className={input} defaultValue="Ravi's Kitchen" />
               </div>
               <div className="grid grid-cols-1 gap-3">
-                 <button 
-                  onClick={() => setSocialConnected(prev => ({...prev, ig: true}))}
+                <button
+                  onClick={() => setSocialConnected(prev => ({ ...prev, ig: true }))}
                   className={`flex items-center justify-between border-2 rounded-xl p-4 transition-all ${socialConnected.ig ? "border-green-500 bg-green-50" : "border-[#FFCDD2] hover:border-[#E53935]"}`}
-                 >
-                   <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${socialConnected.ig ? "bg-green-500 text-white" : "bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white"}`}>
-                         {socialConnected.ig ? "✓" : "IG"}
-                      </div>
-                      <div className="text-left">
-                         <p className="text-xs font-black">Instagram Business</p>
-                         <p className="text-[9px] text-[#6B6B6B]">{socialConnected.ig ? "@ravis_kitchen connected" : "Not connected"}</p>
-                      </div>
-                   </div>
-                   {!socialConnected.ig && <span className="text-[10px] font-bold text-[#E53935]">Connect</span>}
-                 </button>
-                 <button 
-                  onClick={() => setSocialConnected(prev => ({...prev, fb: true}))}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center ${socialConnected.ig ? "bg-green-500 text-white" : "bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white"}`}>
+                      {socialConnected.ig ? "✓" : "IG"}
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs font-black">Instagram Business</p>
+                      <p className="text-[9px] text-[#6B6B6B]">{socialConnected.ig ? "@ravis_kitchen connected" : "Not connected"}</p>
+                    </div>
+                  </div>
+                  {!socialConnected.ig && <span className="text-[10px] font-bold text-[#E53935]">Connect</span>}
+                </button>
+                <button
+                  onClick={() => setSocialConnected(prev => ({ ...prev, fb: true }))}
                   className={`flex items-center justify-between border-2 rounded-xl p-4 transition-all ${socialConnected.fb ? "border-green-500 bg-green-50" : "border-[#FFCDD2] hover:border-[#E53935]"}`}
-                 >
-                   <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${socialConnected.fb ? "bg-green-500 text-white" : "bg-blue-600 text-white"}`}>
-                         {socialConnected.fb ? "✓" : "FB"}
-                      </div>
-                      <div className="text-left">
-                         <p className="text-xs font-black">Facebook Page</p>
-                         <p className="text-[9px] text-[#6B6B6B]">{socialConnected.fb ? "Ravi's Kitchen connected" : "Not connected"}</p>
-                      </div>
-                   </div>
-                   {!socialConnected.fb && <span className="text-[10px] font-bold text-[#E53935]">Connect</span>}
-                 </button>
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center ${socialConnected.fb ? "bg-green-500 text-white" : "bg-blue-600 text-white"}`}>
+                      {socialConnected.fb ? "✓" : "FB"}
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs font-black">Facebook Page</p>
+                      <p className="text-[9px] text-[#6B6B6B]">{socialConnected.fb ? "Ravi's Kitchen connected" : "Not connected"}</p>
+                    </div>
+                  </div>
+                  {!socialConnected.fb && <span className="text-[10px] font-bold text-[#E53935]">Connect</span>}
+                </button>
               </div>
-              <button 
+              <button
                 onClick={() => setShowSocialModal(false)}
                 disabled={!socialConnected.ig && !socialConnected.fb}
                 className={`${btn} w-full py-4 text-base mt-2 disabled:opacity-50`}
@@ -1770,15 +1535,15 @@ function Marketing({ upload, setUpload, uploadRef, generated, setGenerated, post
       {scheduleModal && (
         <Modal title="Schedule Campaign" onClose={() => setScheduleModal(false)}>
           <div className="space-y-4 p-2 text-left">
-             <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Select Date & Time</label>
-                <input type="datetime-local" className={input} defaultValue="2025-05-08T18:00" />
-             </div>
-             <div className="rounded-xl border border-[#FFCDD2] bg-[#FFF5F5] p-3">
-                <p className="text-[10px] font-bold text-[#E53935] uppercase mb-1">Spire Recommendation</p>
-                <p className="text-xs font-bold">Tomorrow at 6:45 PM is optimal for your audience.</p>
-             </div>
-             <button onClick={handleSchedule} className={btn + " w-full py-3"}>Confirm Schedule</button>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase text-[#6B6B6B]">Select Date & Time</label>
+              <input type="datetime-local" className={input} defaultValue="2025-05-08T18:00" />
+            </div>
+            <div className="rounded-xl border border-[#FFCDD2] bg-[#FFF5F5] p-3">
+              <p className="text-[10px] font-bold text-[#E53935] uppercase mb-1">Spire Recommendation</p>
+              <p className="text-xs font-bold">Tomorrow at 6:45 PM is optimal for your audience.</p>
+            </div>
+            <button onClick={handleSchedule} className={btn + " w-full py-3"}>Confirm Schedule</button>
           </div>
         </Modal>
       )}
