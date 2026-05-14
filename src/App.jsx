@@ -416,12 +416,12 @@ function App() {
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#E53935]/5 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#B71C1C]/5 rounded-full blur-[120px] pointer-events-none" />
         
-        <div className="mb-10 text-center z-10 animate-fade-in">
+        <div className="mb-6 text-center z-10 animate-fade-in">
           <div className="flex items-center justify-center">
             <img 
               src="/logo softshape.ai.png" 
               alt="softshape.ai" 
-              className="h-64 md:h-[450px] w-auto object-contain drop-shadow-xl scale-110 md:scale-125" 
+              className="h-64 md:h-80 w-auto object-contain mix-blend-multiply drop-shadow-sm" 
             />
           </div>
         </div>
