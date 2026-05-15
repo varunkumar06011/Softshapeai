@@ -116,11 +116,11 @@ const CashierDashboard = ({ onLogout }) => {
       {/* SIDEBAR */}
       <aside className="w-16 lg:w-60 bg-white border-r border-[#FFCDD2] flex flex-col z-30 transition-all shrink-0">
         <div className="p-4 border-b border-[#FFCDD2] flex items-center justify-center lg:justify-start lg:h-20 shrink-0 bg-white gap-3">
-          <div className="bg-white p-2 rounded-xl border border-red-50 shadow-sm flex items-center justify-center">
+          <div className="bg-white p-1 rounded-xl border border-red-50 shadow-sm flex items-center justify-center">
             <img 
               src="/logo softshape.ai.png" 
               alt="Softshape.ai" 
-              className="h-10 lg:h-12 w-auto object-contain" 
+              className="h-12 lg:h-16 w-auto object-contain" 
             />
           </div>
           <span className="hidden lg:block text-base font-black tracking-tighter text-nowrap">

@@ -74,11 +74,11 @@ const AdminDashboard = ({ onLogout }) => {
       <aside className={`fixed left-0 top-0 z-[60] flex h-[100dvh] w-[240px] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex flex-col flex-grow overflow-hidden p-4">
           <div className="flex items-center justify-between flex-shrink-0 mb-2">
-            <div className="bg-white px-4 py-3 rounded-2xl shadow-xl border border-white/20 w-full flex items-center gap-3">
+            <div className="bg-white p-1 rounded-2xl shadow-xl border border-white/20 w-full flex items-center gap-2">
               <img 
                 src="/logo softshape.ai.png" 
                 alt="Softshape.ai" 
-                className="h-14 w-auto object-contain" 
+                className="h-16 w-auto object-contain" 
               />
               <span className="text-lg font-black tracking-tighter">
                 <span className="text-black">softshape</span>
