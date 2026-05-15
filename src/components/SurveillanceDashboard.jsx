@@ -368,25 +368,27 @@ export default function SurveillanceDashboard({ onIncident }) {
   return (
     <div className="space-y-4">
       {/* Header bar */}
-      <div className="rounded-xl border border-[#FFCDD2] bg-white p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-full bg-[#FFEBEE] flex items-center justify-center text-[#E53935] text-lg">📹</div>
+      <div className="rounded-3xl border border-[#FFCDD2] bg-white p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-2xl bg-[#FFEBEE] flex items-center justify-center text-[#E53935] text-xl shadow-inner">📹</div>
           <div>
-            <p className="font-bold text-sm text-[#1A1A1A]">Spire.ai Operational Surveillance</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: alertActive ? "#ef4444" : "#22c55e" }} />
-              <span className="text-[10px] font-semibold" style={{ color: alertActive ? "#dc2626" : "#16a34a" }}>
+            <p className="font-black text-gray-900 tracking-tight">Spire.ai Operational Surveillance</p>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="inline-block h-2 w-2 rounded-full animate-pulse" style={{ background: alertActive ? "#ef4444" : "#22c55e" }} />
+              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: alertActive ? "#dc2626" : "#16a34a" }}>
                 {aiStatus}
               </span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-[#6B6B6B] bg-[#FFF5F5] border border-[#FFCDD2] px-2 py-1 rounded-full">6 CAMERAS</span>
-          <span className="text-[10px] font-bold text-[#6B6B6B] bg-[#FFF5F5] border border-[#FFCDD2] px-2 py-1 rounded-full">1080p · 24fps</span>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="hidden sm:flex gap-2">
+            <span className="text-[9px] font-black text-[#6B6B6B] bg-[#FFF5F5] border border-[#FFCDD2] px-3 py-1.5 rounded-xl uppercase tracking-widest">6 CAMERAS</span>
+            <span className="text-[9px] font-black text-[#6B6B6B] bg-[#FFF5F5] border border-[#FFCDD2] px-3 py-1.5 rounded-xl uppercase tracking-widest">1080p · 24fps</span>
+          </div>
           <button
             onClick={() => setActiveTab(activeTab === "grid" ? "focus" : "grid")}
-            className="text-[10px] font-bold text-white bg-[#E53935] px-3 py-1 rounded-full hover:bg-[#c62828] transition-colors"
+            className="flex-grow md:flex-grow-0 text-[10px] font-black uppercase tracking-widest text-white bg-[#E53935] px-6 py-3 rounded-2xl hover:bg-[#c62828] transition-all shadow-lg shadow-red-50"
           >
             {activeTab === "grid" ? "Focus View" : "Grid View"}
           </button>

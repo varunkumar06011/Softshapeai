@@ -1,388 +1,771 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  LogOut, 
-  ChevronRight, 
-  Clock, 
-  Star, 
-  TrendingUp, 
-  Plus, 
-  Minus, 
-  Send, 
-  CheckCircle2, 
-  CreditCard, 
-  Banknote, 
-  Smartphone,
-  Search,
-  ArrowLeft
+  LayoutDashboard, ShoppingCart, LogOut, ChevronRight, Clock, Plus, Minus, 
+  Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer, 
+  UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
+  FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon
 } from 'lucide-react';
+import { MENU_DATA } from '../data/menuData';
 
-const C = {
-  primary: "#E53935",
-  primaryLight: "#FFEBEE",
-  primaryMid: "#EF9A9A",
-  white: "#FFFFFF",
-  text: "#1A1A1A",
-  muted: "#6B6B6B",
-  success: "#2E7D32",
-  warning: "#F57F17",
-  border: "#FFCDD2",
-  sidebar: "#B71C1C",
-  page: "#FFF5F5",
+const TABLE_STATUS = {
+  FREE: 'Free',
+  OCCUPIED: 'Occupied',
+  PREPARING: 'Preparing',
+  READY: 'Ready',
+  BILLING: 'Waiting Bill'
 };
 
-export default function CaptainApp({ 
-  captains, 
-  menuData, 
-  onOrderComplete, 
-  onKOTSend,
-  onLogout 
-}) {
-  const [currentCaptain, setCurrentCaptain] = useState(null);
-  const [view, setView] = useState('login'); // login, dashboard, order, payment
-  const [activeTable, setActiveTable] = useState(null);
-  const [cart, setCart] = useState([]);
-  const [kotStatus, setKotStatus] = useState(null); // sending, delivered, accepted
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
+const CAPTAINS = [
+  { id: 'C1', name: 'Rahul Sharma', pin: '1234', initials: 'RS', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
+  { id: 'C2', name: 'Arjun Singh', pin: '1234', initials: 'AS', color: 'bg-[#EEF2FF] text-[#4338CA]' },
+  { id: 'C3', name: 'Kiran T.', pin: '1234', initials: 'KT', color: 'bg-[#ECFDF5] text-[#047857]' },
+  { id: 'C4', name: 'Meena Devi', pin: '1234', initials: 'MD', color: 'bg-[#FFF1F2] text-[#BE123C]' },
+];
 
-  const handleLogin = (captain) => {
-    setCurrentCaptain(captain);
-    setView('dashboard');
-  };
+export default function CaptainApp({ onLogout }) {
+  const [currentCaptain, setCurrentCaptain] = useState(() => {
+    const saved = localStorage.getItem('active_captain');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [isLoginView, setIsLoginView] = useState(() => {
+    const auth = localStorage.getItem('captain_auth_v2') === 'true';
+    const hasCaptain = !!localStorage.getItem('active_captain');
+    return !(auth && hasCaptain);
+  });
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [pin, setPin] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [view, setView] = useState('tables'); // tables, session
+  const [activeTableId, setActiveTableId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeDiet, setActiveDiet] = useState('All');
+  const [notifications, setNotifications] = useState([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [previewItem, setPreviewItem] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
+  const [isCartMinimized, setIsCartMinimized] = useState(true);
+  
+  // MENU STATE (Persisted and Synced)
+  const [menuItems, setMenuItems] = useState(() => {
+    const saved = localStorage.getItem('softshape_menu');
+    return saved ? JSON.parse(saved) : MENU_DATA;
+  });
 
-  const handleStartOrder = (tableId) => {
-    setActiveTable(tableId);
-    setCart([]);
-    setView('order');
-  };
+  useEffect(() => {
+    localStorage.setItem('softshape_menu', JSON.stringify(menuItems));
+  }, [menuItems]);
 
-  const addToCart = (item) => {
-    setCart(prev => {
-      const existing = prev.find(x => x.n === item.n);
-      if (existing) return prev.map(x => x.n === item.n ? { ...x, q: x.q + 1 } : x);
-      return [...prev, { ...item, q: 1 }];
-    });
-  };
-
-  const updateQty = (name, delta) => {
-    setCart(prev => prev.map(x => {
-      if (x.n === name) {
-        const newQty = Math.max(0, x.q + delta);
-        return { ...x, q: newQty };
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_menu') {
+        setMenuItems(JSON.parse(e.newValue));
+        setIsSyncing(true);
+        setTimeout(() => setIsSyncing(false), 800);
       }
-      return x;
-    }).filter(x => x.q > 0));
-  };
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  // SHARED STATE PERSISTENCE
+  const [tables, setTables] = useState(() => {
+    const saved = localStorage.getItem('softshape_tables');
+    if (saved) return JSON.parse(saved);
+    return Array.from({ length: 24 }, (_, i) => ({
+      id: i + 1,
+      status: i % 5 === 0 ? TABLE_STATUS.OCCUPIED : TABLE_STATUS.FREE,
+      guests: i % 5 === 0 ? 4 : 0,
+      time: i % 5 === 0 ? '24m' : null,
+      captainId: i % 5 === 0 ? 'C1' : null,
+      kotHistory: i % 5 === 0 ? [
+        { 
+          id: '1001', 
+          time: '12:15 PM', 
+          items: [
+            { n: 'Chicken Biryani', q: 2, p: 450, s: 'Served' },
+            { n: 'Coke', q: 2, p: 60, s: 'Served' }
+          ] 
+        }
+      ] : [],
+      currentBill: i % 5 === 0 ? 1020 : 0
+    }));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('softshape_tables', JSON.stringify(tables));
+    setIsSyncing(true);
+    const timer = setTimeout(() => setIsSyncing(false), 800);
+    return () => clearTimeout(timer);
+  }, [tables]);
+
+  const [currentSessionItems, setCurrentSessionItems] = useState([]); 
+
+  const activeTable = useMemo(() => tables.find(t => t.id === activeTableId), [tables, activeTableId]);
+
+  const categories = ['All', 'Starters', 'Main Course', 'Drinks', 'Desserts'];
 
   const filteredMenu = useMemo(() => {
-    let filtered = menuData;
-    if (category !== "All") filtered = filtered.filter(x => x.c === category);
-    if (search) filtered = filtered.filter(x => x.n.toLowerCase().includes(search.toLowerCase()));
-    return filtered;
-  }, [menuData, category, search]);
+    return menuItems.filter(item => {
+      const matchesSearch = item.n.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = activeCategory === 'All' || item.c === activeCategory;
+      const matchesDiet = activeDiet === 'All' || item.t === activeDiet;
+      return matchesSearch && matchesCategory && matchesDiet;
+    });
+  }, [searchQuery, activeCategory, activeDiet, menuItems]);
 
-  const subtotal = cart.reduce((acc, x) => acc + (x.p * x.q), 0);
-  const gst = subtotal * 0.05;
-  const total = subtotal + gst;
-
-  const handleSendKOT = () => {
-    if (cart.length === 0) return;
-    setKotStatus('sending');
-    onKOTSend(currentCaptain.name, activeTable);
-    
-    setTimeout(() => {
-      setKotStatus('delivered');
-      setTimeout(() => {
-        setKotStatus('accepted');
-        setTimeout(() => setKotStatus(null), 2000);
-      }, 1500);
-    }, 1500);
+  const addNotification = (title, type = 'success') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, title, type }]);
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
   };
 
-  const handleFinishPayment = (mode) => {
-    onOrderComplete(currentCaptain.id, total, cart.length, mode, cart);
-    setView('dashboard');
-    setActiveTable(null);
-    setCart([]);
-    alert(`Order completed for Table ${activeTable}. Payment: ${mode}`);
-  };
+  const handleImageUpload = (e, item) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  if (view === 'login') {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#FFF5F5] p-6">
-        <div className="mb-8 text-center">
-          <div className="text-3xl font-black text-[#1A1A1A]">softshape<span className="text-[#E53935]">.ai</span></div>
-          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-[#6B6B6B]">Captain Operations</p>
-        </div>
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 600;
+        const MAX_HEIGHT = 450;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
         
-        <div className="w-full max-w-sm space-y-4">
-          <div className="grid grid-cols-1 gap-3">
-            {captains.map(c => (
-              <button 
-                key={c.id} 
-                onClick={() => handleLogin(c)}
-                className="flex items-center gap-4 rounded-2xl border border-[#FFCDD2] bg-white p-4 shadow-sm transition-all hover:border-[#E53935] active:scale-95"
-              >
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#FFEBEE] text-2xl shadow-inner">
-                  {c.img}
-                </div>
-                <div className="flex-grow text-left">
-                  <p className="font-bold text-[#1A1A1A]">{c.name}</p>
-                  <p className="text-[10px] font-bold uppercase text-[#6B6B6B]">{c.shift} Shift • ID: {c.id}</p>
-                </div>
-                <ChevronRight size={20} className="text-[#FFCDD2]" />
-              </button>
-            ))}
+        const base64String = canvas.toDataURL('image/jpeg', 0.7); // Compress to prevent localStorage crash
+        
+        setMenuItems(prev => prev.map(m => m.n === item.n ? { ...m, img: base64String } : m));
+        setEditingItem(null);
+        addNotification(`${item.n} image updated globally`, 'success');
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleProfileSelect = (profile) => {
+    setSelectedProfile(profile);
+    setPin('');
+  };
+
+  const handlePinInput = (num) => {
+    if (pin.length < 4 && !isAuthenticating) {
+      const newPin = pin + num;
+      setPin(newPin);
+      if (newPin.length === 4) {
+        setIsAuthenticating(true);
+        setTimeout(() => {
+          if (newPin === selectedProfile.pin) {
+            setCurrentCaptain(selectedProfile);
+            setIsLoginView(false);
+            localStorage.setItem('captain_auth_v2', 'true');
+            localStorage.setItem('active_captain', JSON.stringify(selectedProfile));
+          } else {
+            setPin('');
+            addNotification('Access Denied: Invalid PIN', 'error');
+          }
+          setIsAuthenticating(false);
+        }, 600);
+      }
+    }
+  };
+
+  const openTableSession = (table) => {
+    setActiveTableId(table.id);
+    setCurrentSessionItems([]);
+    setView('session');
+  };
+
+  const addItemToSession = (item) => {
+    setCurrentSessionItems(prev => {
+      const existing = prev.find(i => i.n === item.n);
+      if (existing) {
+        return prev.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
+      }
+      return [...prev, { ...item, q: 1, s: 'Pending' }];
+    });
+    addNotification(`${item.n} added`, 'success');
+  };
+
+  const updateDraftQty = (name, delta) => {
+    setCurrentSessionItems(prev => prev.map(i => {
+      if (i.n === name) return { ...i, q: Math.max(1, i.q + delta) };
+      return i;
+    }).filter(i => i.q > 0));
+  };
+
+  const sendIncrementalKOT = () => {
+    try {
+      if (currentSessionItems.length === 0) return;
+      if (!currentCaptain) {
+        setIsLoginView(true);
+        return;
+      }
+      
+      const newKOT = {
+        id: Math.floor(1000 + Math.random() * 9000).toString(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' }))
+      };
+
+      const addedTotal = currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0);
+
+      setTables(prev => prev.map(t => {
+        if (t.id === activeTableId) {
+          return {
+            ...t,
+            status: TABLE_STATUS.PREPARING,
+            time: t.time || '1m',
+            captainId: currentCaptain.id,
+            kotHistory: [...(t.kotHistory || []), newKOT],
+            currentBill: (t.currentBill || 0) + addedTotal
+          };
+        }
+        return t;
+      }));
+
+      setCurrentSessionItems([]);
+      addNotification(`KOT #${newKOT.id} Sent`, 'success');
+    } catch (err) {
+      addNotification("Submission Failed", "error");
+    }
+  };
+
+  const requestFinalBill = () => {
+    setTables(prev => prev.map(t => {
+      if (t.id === activeTableId) return { ...t, status: TABLE_STATUS.BILLING };
+      return t;
+    }));
+    addNotification("Billing Requested", 'success');
+    setView('tables');
+    setActiveTableId(null);
+  };
+
+  if (isLoginView) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F4F5] p-6 font-['Inter',sans-serif]">
+        <div className="w-full max-w-lg bg-white rounded-[40px] p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100">
+          <div className="text-center mb-10">
+            <div className="flex flex-col items-center justify-center mb-6 gap-2">
+              <img 
+                src="/logo softshape.ai.png" 
+                alt="Softshape.ai" 
+                className="h-12 w-auto object-contain mix-blend-multiply drop-shadow-sm" 
+              />
+              <span className="text-3xl font-black tracking-tighter">
+                <span className="text-black">softshape</span>
+                <span className="text-[#E53935]">.ai</span>
+              </span>
+            </div>
+            <h2 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Operational Terminal</h2>
+            <p className="text-lg font-black text-gray-900">Sign in to Session</p>
           </div>
-          
-          <div className="pt-6 text-center">
-            <button onClick={onLogout} className="text-xs font-bold text-[#B71C1C] hover:underline">Exit to Admin Portal</button>
-          </div>
+
+          {!selectedProfile ? (
+            <div className="grid grid-cols-2 gap-4">
+              {CAPTAINS.map(p => (
+                <button 
+                  key={p.id}
+                  onClick={() => handleProfileSelect(p)}
+                  className="flex flex-col items-center gap-4 p-6 rounded-[24px] border border-gray-100 bg-white hover:border-gray-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-300 group"
+                >
+                  <div className={`w-14 h-14 rounded-2xl ${p.color} flex items-center justify-center text-xl font-black tracking-tight shadow-sm group-hover:scale-110 transition-transform`}>
+                    {p.initials}
+                  </div>
+                  <span className="text-[13px] font-bold text-gray-800 tracking-tight">{p.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex items-center justify-center gap-4">
+                <button onClick={() => setSelectedProfile(null)} className="p-2 text-gray-400 hover:text-gray-900 transition-colors"><ArrowLeft size={20} /></button>
+                <div className="flex items-center gap-3 bg-white px-5 py-2.5 rounded-[20px] border border-gray-100 shadow-sm">
+                  <div className={`w-8 h-8 rounded-xl ${selectedProfile.color} flex items-center justify-center text-xs font-black tracking-tight`}>
+                    {selectedProfile.initials}
+                  </div>
+                  <span className="text-sm font-bold text-gray-900 tracking-tight">{selectedProfile.name}</span>
+                </div>
+              </div>
+              <div className="space-y-6">
+                <div className="flex justify-center gap-4">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className={`w-3.5 h-3.5 rounded-full transition-all duration-300 ${pin.length > i ? 'bg-[#E53935] scale-125 shadow-lg shadow-red-200' : 'bg-gray-200'}`} />
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-3 max-w-[260px] mx-auto">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(n => (
+                    <button 
+                      key={n}
+                      disabled={isAuthenticating}
+                      onClick={() => {
+                        if (n === 'C') setPin('');
+                        else if (n === '←') setPin(prev => prev.slice(0, -1));
+                        else handlePinInput(n.toString());
+                      }}
+                      className="w-full aspect-square rounded-2xl border border-gray-100 text-xl font-black text-gray-900 hover:bg-gray-50 active:scale-95 transition-all flex items-center justify-center disabled:opacity-30"
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                {isAuthenticating && (
+                  <div className="flex items-center justify-center gap-2 text-[#E53935]">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Validating PIN...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#FFF5F5] font-sans text-[#1A1A1A]">
-      {/* App Header */}
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          {view !== 'dashboard' && (
-            <button onClick={() => setView('dashboard')} className="rounded-full p-1 text-[#E53935] hover:bg-[#FFEBEE]">
-              <ArrowLeft size={24} />
-            </button>
-          )}
-          <div className="text-xl font-black">softshape<span className="text-[#E53935]">.ai</span></div>
+    <div className="flex flex-col h-screen bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
+      {/* GLOBAL HEADER */}
+      <header className="h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <img 
+              src="/logo softshape.ai.png" 
+              alt="Softshape.ai" 
+              className="h-7 sm:h-8 w-auto object-contain mix-blend-multiply shrink-0 brightness-[0.7] contrast-[1.5] saturate-[1.5]" 
+            />
+            <span className="text-sm font-black tracking-tighter">
+              <span className="text-black">softshape</span>
+              <span className="text-[#E53935]">.ai</span>
+            </span>
+            <div className="hidden sm:flex flex-col border-l-2 border-gray-100 pl-3 justify-center">
+              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Terminal</span>
+              <span className="text-[11px] font-black text-gray-900 tracking-tight leading-none">{currentCaptain?.name}</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right hidden sm:block">
-            <p className="text-xs font-bold">{currentCaptain.name}</p>
-            <p className="text-[9px] font-black uppercase text-[#B71C1C] tracking-tighter">Ranking #2</p>
+
+        <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+          <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-20'}`}>
+             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+             <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Live Sync</span>
           </div>
-          <div className="h-10 w-10 rounded-full border-2 border-[#E53935] bg-[#FFEBEE] flex items-center justify-center text-xl shadow-sm">
-            {currentCaptain.img}
-          </div>
+          <button onClick={() => {
+            localStorage.removeItem('captain_auth_v2');
+            localStorage.removeItem('active_captain');
+            setIsLoginView(true);
+          }} className="p-2 text-gray-400 hover:text-red-600 transition-colors"><LogOut size={18} /></button>
         </div>
       </header>
 
-      <main className="flex-grow overflow-y-auto pb-24">
-        {view === 'dashboard' && (
-          <div className="p-4 space-y-6">
-            {/* Quick Stats */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: 'Revenue', val: `₹${(currentCaptain.sales / 1000).toFixed(1)}k`, icon: TrendingUp, color: 'text-green-600' },
-                { label: 'Orders', val: currentCaptain.orders, icon: ShoppingCart, color: 'text-blue-600' },
-                { label: 'Tips', val: '₹1,240', icon: Star, color: 'text-amber-500' },
-              ].map(s => (
-                <div key={s.label} className="rounded-2xl border border-[#FFCDD2] bg-white p-3 text-center shadow-sm">
-                  <div className={`mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-[#FFF5F5] ${s.color}`}>
-                    <s.icon size={16} />
-                  </div>
-                  <p className="text-sm font-black">{s.val}</p>
-                  <p className="text-[9px] font-bold uppercase text-[#6B6B6B]">{s.label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Tables Section */}
-            <div>
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-black uppercase tracking-widest text-[#B71C1C]">Your Assigned Tables</h3>
-                <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[10px] font-bold text-[#E53935]">4 Active</span>
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-grow flex flex-col overflow-hidden relative">
+        {view === 'tables' ? (
+          <div className="flex-grow overflow-y-auto p-6 scroll-smooth bg-gray-50/50">
+            <div className="max-w-6xl mx-auto">
+              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-8">
+                 <div>
+                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900">Floor Overview</h2>
+                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                      Active Operations • Floor Rank #1
+                    </p>
+                 </div>
+                 <div className="flex gap-2">
+                    <div className="px-4 py-2 bg-white rounded-xl border border-gray-200 flex items-center gap-2">
+                       <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                       <span className="text-[10px] font-black uppercase text-gray-600">14 Free</span>
+                    </div>
+                    <div className="px-4 py-2 bg-white rounded-xl border border-gray-200 flex items-center gap-2">
+                       <div className="w-1.5 h-1.5 bg-[#E53935] rounded-full" />
+                       <span className="text-[10px] font-black uppercase text-gray-600">10 Busy</span>
+                    </div>
+                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                {currentCaptain.tables.map(t => (
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                {tables.map(table => (
                   <button 
-                    key={t}
-                    onClick={() => handleStartOrder(t)}
-                    className="flex flex-col items-center justify-center rounded-3xl border-2 border-[#FFCDD2] bg-white py-8 shadow-sm transition-all hover:border-[#E53935] active:scale-95"
+                    key={table.id}
+                    onClick={() => openTableSession(table)}
+                    className={`aspect-square p-4 rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
+                      table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
+                      table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
+                      table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
+                      'bg-red-50 border-red-100 text-red-600'
+                    }`}
                   >
-                    <span className="text-[10px] font-black uppercase text-[#6B6B6B]">Table</span>
-                    <span className="text-4xl font-black text-[#1A1A1A]">{t}</span>
-                    <div className="mt-2 flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-bold text-green-700">
-                      <Clock size={10} /> Available
+                    <div className="w-full flex justify-between items-start">
+                       <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">T{table.id}</span>
+                       {table.time && (
+                         <div className="flex items-center gap-1 text-[9px] font-black opacity-40">
+                           <Clock size={10} /> {table.time}
+                         </div>
+                       )}
+                    </div>
+                    
+                    <span className="text-3xl font-black leading-none">{table.id}</span>
+                    
+                    <div className="w-full flex flex-col items-center gap-1.5">
+                       <div className={`w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${
+                          table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
+                          table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
+                          table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                       }`}>
+                         {table.status}
+                       </div>
+                       {table.status !== TABLE_STATUS.FREE && (
+                         <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
+                       )}
                     </div>
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Performance Card */}
-            <div className="rounded-3xl bg-[#B71C1C] p-5 text-white shadow-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Shift Efficiency</p>
-                  <p className="mt-1 text-2xl font-black">94.2%</p>
-                </div>
-                <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
-                  <Star size={24} className="fill-white" />
-                </div>
-              </div>
-              <div className="mt-4 h-1.5 w-full rounded-full bg-white/20">
-                <div className="h-full w-[94%] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]"></div>
-              </div>
-              <p className="mt-3 text-[10px] font-medium opacity-80 italic">"Keep it up, {currentCaptain.name.split(' ')[0]}! You're in the top 3 today."</p>
-            </div>
           </div>
-        )}
+        ) : (
+          <div className="flex-grow flex flex-col overflow-hidden bg-white">
+            {/* STICKY SESSION HEADER */}
+            <div className="bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 shrink-0 z-40 shadow-sm">
+               <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
+                  <button onClick={() => setView('tables')} className="p-2.5 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-xl border border-gray-100 transition-all"><ChevronLeft size={20} /></button>
+                  <div className="flex flex-col">
+                    <div className="flex flex-wrap items-center gap-2">
+                       <h2 className="text-lg font-black tracking-tight uppercase leading-none">Table {activeTable?.id}</h2>
+                       <div className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[8px] font-black uppercase tracking-widest border border-blue-100 shrink-0">Live Session #10{activeTable?.id}</div>
+                    </div>
+                    <div className="flex items-center gap-4 mt-1">
+                       <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Users size={10} /> {activeTable?.guests || 0} Pax</span>
+                       <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Timer size={10} /> {activeTable?.time || '1m'}</span>
+                       <span className="text-[9px] font-black text-[#E53935] uppercase tracking-widest flex items-center gap-1"><History size={10} /> {(activeTable?.kotHistory || []).length} KOTs</span>
+                    </div>
+                  </div>
+               </div>
+               <div className="flex gap-2 w-full sm:w-auto">
+                  <button onClick={requestFinalBill} className="flex-grow sm:flex-grow-0 px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all text-center">Request Billing</button>
+                  <button className="p-2.5 bg-red-50 text-[#E53935] rounded-xl border border-red-100 shrink-0"><Bell size={18} /></button>
+               </div>
+            </div>
 
-        {view === 'order' && (
-          <div className="flex flex-col min-h-full">
-            <div className="p-4 border-b border-[#FFCDD2] bg-white sticky top-16 z-20 shadow-md">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-black text-[#1A1A1A]">Table {activeTable}</h2>
-                <button onClick={() => setView('payment')} className="rounded-full bg-[#2E7D32] px-6 py-2.5 text-[12px] font-black text-white shadow-lg shadow-green-100 active:scale-95 transition-transform">
-                  Finish & Bill
-                </button>
-              </div>
-              <div className="relative">
-                <input 
-                  className="w-full rounded-2xl border border-[#FFCDD2] bg-[#FFF5F5] py-3.5 pl-11 pr-4 text-sm font-medium outline-none focus:border-[#E53935] focus:ring-1 focus:ring-[#E53935]/20 transition-all"
-                  placeholder="Search menu items..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#B71C1C]" size={20} />
-              </div>
-              <div className="mt-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                {["All", "Biryani", "Starters", "Chinese", "Tandoori", "Curries"].map(cat => (
-                  <button 
-                    key={cat}
-                    onClick={() => setCategory(cat)}
-                    className={`whitespace-nowrap rounded-full px-5 py-2.5 text-[11px] font-black uppercase tracking-wider transition-all border ${category === cat ? "bg-[#E53935] text-white border-[#E53935] shadow-md shadow-red-100" : "bg-white text-[#6B6B6B] border-[#FFCDD2] hover:bg-[#FFEBEE]"}`}
+            <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
+               {/* MENU INTERFACE */}
+               <div className={`flex-grow flex flex-col overflow-hidden bg-gray-50/30 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} border-b lg:border-b-0 lg:border-r border-gray-100 transition-all duration-300`}>
+                  {/* STICKY MENU BAR */}
+                  <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
+                     <div className="relative group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={16} />
+                        <input 
+                           type="text" 
+                           placeholder="Quick search dish by name or ID..." 
+                           className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-[13px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
+                           value={searchQuery}
+                           onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                     </div>
+                     <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                           {categories.map(cat => (
+                              <button 
+                                 key={cat}
+                                 onClick={() => setActiveCategory(cat)}
+                                 className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 ${
+                                    activeCategory === cat ? 'bg-[#E53935] border-[#E53935] text-white shadow-md shadow-red-100' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
+                                 }`}
+                              >
+                                 {cat}
+                              </button>
+                           ))}
+                        </div>
+                        
+                        {/* Dietary Filter */}
+                        <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0">
+                           {['All', 'veg', 'non'].map(diet => (
+                              <button 
+                                 key={diet}
+                                 onClick={() => setActiveDiet(diet)}
+                                 className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    activeDiet === diet 
+                                       ? 'bg-white text-gray-900 shadow-sm' 
+                                       : 'text-gray-400 hover:text-gray-600'
+                                 }`}
+                              >
+                                 {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non-Veg'}
+                              </button>
+                           ))}
+                        </div>
+                     </div>
+                  </div>
+
+                  {/* SCROLLABLE MENU GRID */}
+                  <div className="flex-grow overflow-y-auto p-6 scroll-smooth">
+                     <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12">
+                        {filteredMenu.map((item, idx) => (
+                           <div 
+                              key={idx}
+                              className="bg-white rounded-3xl border border-gray-100 overflow-hidden hover:border-[#E53935] hover:shadow-2xl transition-all cursor-pointer flex flex-col group active:scale-98 relative"
+                              onClick={() => setPreviewItem(item)}
+                           >
+                              {/* EDIT BUTTON */}
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setEditingItem(item); }}
+                                className="absolute top-3 left-3 w-8 h-8 rounded-xl bg-white/90 hover:bg-white backdrop-blur-md shadow-sm border border-gray-100 flex items-center justify-center text-gray-500 hover:text-[#E53935] opacity-0 group-hover:opacity-100 transition-all z-20"
+                                title="Edit Image"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+
+                              <div className="h-40 w-full overflow-hidden relative">
+                                 <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                 <div className={`absolute top-3 right-3 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50`}>
+                                    <div className={`w-3.5 h-3.5 rounded-[3px] border-2 flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
+                                       <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
+                                    </div>
+                                 </div>
+                                 <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4 z-10">
+                                    <span className="text-[10px] font-black text-white uppercase flex items-center gap-1.5"><Info size={12} /> Show Customer</span>
+                                 </div>
+                              </div>
+                              <div className="p-4 flex flex-col flex-grow">
+                                 <h4 className="text-[12px] font-black text-gray-900 leading-tight mb-3 flex-grow">{item.n}</h4>
+                                 <div className="flex items-center justify-between mt-auto">
+                                    <span className="text-sm font-black text-gray-900 tracking-tight">₹{item.p}</span>
+                                    <button 
+                                       onClick={(e) => { e.stopPropagation(); addItemToSession(item); }}
+                                       className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-[#E53935] hover:bg-[#E53935] hover:text-white transition-all shadow-sm"
+                                    >
+                                       <Plus size={18} strokeWidth={3} />
+                                    </button>
+                                 </div>
+                              </div>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+               </div>
+
+               {/* SESSION ORDER PANEL */}
+               <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'h-16 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'} bg-white flex flex-col z-40 shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300`}>
+                  <div 
+                    className="p-4 sm:p-6 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0 cursor-pointer lg:cursor-default"
+                    onClick={() => setIsCartMinimized(!isCartMinimized)}
                   >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 grid grid-cols-2 gap-4 pb-48">
-              {filteredMenu.map(item => (
-                <div key={item.n} className="flex flex-col justify-between rounded-[32px] border border-[#FFCDD2] bg-white p-4 shadow-sm active:bg-[#FFF5F5] active:scale-95 transition-all relative overflow-hidden group" onClick={() => addToCart(item)}>
-                  <div className="flex justify-between items-start mb-2">
-                    <div className={`h-4 w-4 rounded-md border-2 flex items-center justify-center ${item.t === "veg" ? "border-green-600" : "border-red-600"}`}>
-                      <div className={`h-1.5 w-1.5 rounded-full ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
-                    </div>
-                    <p className="text-[11px] font-black text-[#E53935] bg-[#FFEBEE] px-2 py-0.5 rounded-lg">₹{item.p}</p>
+                     <div className="flex items-center gap-3">
+                        <History size={18} className="text-[#E53935]" />
+                        <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
+                     </div>
+                     <div className="flex items-center gap-3">
+                        <span className="text-sm font-black text-gray-900">₹{activeTable?.currentBill || 0}</span>
+                        <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
+                           <ChevronLeft size={16} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-90' : '-rotate-90'}`} />
+                        </div>
+                     </div>
                   </div>
-                  <p className="text-sm font-black text-[#1A1A1A] leading-tight line-clamp-2 min-h-[40px] mb-2">{item.n}</p>
-                  <div className="flex items-center justify-end">
-                    <div className="rounded-full bg-[#E53935] p-2 text-white shadow-md shadow-red-100 group-active:scale-110 transition-transform">
-                      <Plus size={16} strokeWidth={4} />
-                    </div>
+
+                  <div className="flex-grow overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                     {/* KOT LOGS */}
+                     {(activeTable?.kotHistory || []).map((kot) => (
+                        <div key={kot.id} className="space-y-4">
+                           <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">KOT #{kot.id}</span>
+                              <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time}</span>
+                           </div>
+                           <div className="space-y-3">
+                              {kot.items.map((item, iIdx) => (
+                                 <div key={iIdx} className="flex justify-between items-center group">
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
+                                       <p className="text-[11px] font-bold text-gray-700">{item.n}</p>
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-md bg-green-50 text-green-600 text-[8px] font-black uppercase tracking-widest border border-green-100">{item.s}</span>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     ))}
+
+                     {/* ACTIVE DRAFT */}
+                     <div className="space-y-5 pt-6 border-t-2 border-dashed border-gray-100">
+                        <div className="flex items-center justify-between">
+                           <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935] flex items-center gap-2"><ShoppingCart size={16} /> New KOT Draft</h4>
+                           {currentSessionItems.length > 0 && <button onClick={() => setCurrentSessionItems([])} className="text-[9px] font-black text-gray-400 uppercase hover:text-red-500 transition-colors">Clear All</button>}
+                        </div>
+
+                        {currentSessionItems.length === 0 ? (
+                           <div className="py-12 text-center border-2 border-dashed border-gray-50 rounded-[32px] flex flex-col items-center bg-gray-50/30">
+                              <UtensilsCrossed size={32} className="text-gray-200 mb-3" />
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-relaxed">Menu is open.<br/>Add items to start KOT.</p>
+                           </div>
+                        ) : (
+                           <div className="space-y-3">
+                              {currentSessionItems.map((item, idx) => (
+                                 <div key={idx} className="bg-red-50/50 p-4 rounded-3xl border border-red-100/30 animate-in slide-in-from-right-4">
+                                    <div className="flex justify-between items-start mb-3">
+                                       <p className="text-[11px] font-black text-gray-900 uppercase pr-8 leading-tight">{item.n}</p>
+                                       <button onClick={() => updateDraftQty(item.n, -item.q)} className="text-gray-300 hover:text-red-500 transition-colors"><X size={16} /></button>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                       <div className="flex items-center bg-white rounded-xl p-1 shadow-sm border border-red-50">
+                                          <button onClick={() => updateDraftQty(item.n, -1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Minus size={14} strokeWidth={3} /></button>
+                                          <span className="w-8 text-center text-xs font-black">{item.q}</span>
+                                          <button onClick={() => updateDraftQty(item.n, 1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Plus size={14} strokeWidth={3} /></button>
+                                       </div>
+                                       <span className="text-sm font-black text-gray-900">₹{item.p * item.q}</span>
+                                    </div>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {view === 'payment' && (
-          <div className="p-4 space-y-6">
-            <div className="rounded-3xl border border-[#FFCDD2] bg-white p-6 shadow-sm">
-              <h2 className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-[#6B6B6B] mb-1">Final Summary</h2>
-              <p className="text-center text-3xl font-black text-[#1A1A1A]">₹{total.toLocaleString()}</p>
-              
-              <div className="mt-6 space-y-3 border-t border-[#FFCDD2] pt-4">
-                <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span className="font-bold">₹{subtotal.toFixed(2)}</span></div>
-                <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span className="font-bold">₹{gst.toFixed(2)}</span></div>
-                <div className="flex justify-between text-sm font-black pt-1 border-t border-[#FFCDD2]"><span>Grand Total</span><span>₹{total.toLocaleString()}</span></div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs font-black uppercase tracking-widest text-[#B71C1C] ml-2">Select Payment Method</p>
-              <button onClick={() => handleFinishPayment('Cash')} className="flex w-full items-center justify-between rounded-2xl border border-[#FFCDD2] bg-white p-5 shadow-sm active:bg-gray-50">
-                <div className="flex items-center gap-4">
-                  <div className="rounded-full bg-green-100 p-3 text-green-600"><Banknote size={24} /></div>
-                  <span className="font-bold">Cash Payment</span>
-                </div>
-                <ChevronRight size={20} className="text-[#FFCDD2]" />
-              </button>
-              <button onClick={() => handleFinishPayment('UPI')} className="flex w-full items-center justify-between rounded-2xl border border-[#E53935] bg-[#FFEBEE] p-5 shadow-sm active:bg-red-100">
-                <div className="flex items-center gap-4">
-                  <div className="rounded-full bg-[#E53935] p-3 text-white shadow-md"><Smartphone size={24} /></div>
-                  <span className="font-black text-[#B71C1C]">UPI / Digital</span>
-                </div>
-                <ChevronRight size={20} className="text-[#B71C1C]" />
-              </button>
-              <button onClick={() => handleFinishPayment('Card')} className="flex w-full items-center justify-between rounded-2xl border border-[#FFCDD2] bg-white p-5 shadow-sm active:bg-gray-50">
-                <div className="flex items-center gap-4">
-                  <div className="rounded-full bg-blue-100 p-3 text-blue-600"><CreditCard size={24} /></div>
-                  <span className="font-bold">Card Payment</span>
-                </div>
-                <ChevronRight size={20} className="text-[#FFCDD2]" />
-              </button>
+                  <div className="p-8 bg-white border-t border-gray-100 space-y-6 shrink-0 shadow-[0_-20px_50px_rgba(0,0,0,0.03)]">
+                     <div className="flex justify-between items-center">
+                        <div className="flex flex-col gap-1">
+                           <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
+                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</p>
+                        </div>
+                        <div className="text-right flex flex-col gap-1">
+                           <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">KOT Draft</span>
+                           <span className="text-lg font-black text-gray-400">₹{currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
+                        </div>
+                     </div>
+                     <button 
+                        onClick={sendIncrementalKOT}
+                        disabled={currentSessionItems.length === 0}
+                        className="w-full py-5 bg-[#E53935] text-white rounded-2xl font-black text-xs uppercase tracking-[0.25em] shadow-xl shadow-red-100 active:scale-98 transition-all flex items-center justify-center gap-3 disabled:opacity-20 disabled:shadow-none relative group overflow-hidden"
+                     >
+                        <Send size={18} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                        Send KOT to Kitchen
+                     </button>
+                  </div>
+               </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* Floating Cart for Order View */}
-      {view === 'order' && cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 p-4 animate-slide-up">
-          <div className="mx-auto max-w-lg rounded-3xl bg-white p-4 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] border-t border-[#FFCDD2]">
-            <div className="max-h-[200px] overflow-y-auto mb-4 space-y-2 px-1">
-              {cart.map(item => (
-                <div key={item.n} className="flex items-center justify-between">
-                  <div className="min-w-0 flex-grow">
-                    <p className="text-xs font-black truncate">{item.n}</p>
-                    <p className="text-[10px] text-[#6B6B6B]">₹{item.p} x {item.q}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center rounded-full bg-[#FFF5F5] p-1 border border-[#FFCDD2]">
-                      <button onClick={() => updateQty(item.n, -1)} className="p-1 text-[#E53935]"><Minus size={14} strokeWidth={3} /></button>
-                      <span className="px-2 text-xs font-black w-6 text-center">{item.q}</span>
-                      <button onClick={() => updateQty(item.n, 1)} className="p-1 text-[#E53935]"><Plus size={14} strokeWidth={3} /></button>
+      {/* EDIT ITEM MODAL */}
+      {editingItem && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 backdrop-blur-xl bg-black/40 animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-sm rounded-[40px] overflow-hidden shadow-2xl p-8 animate-in zoom-in-95 duration-500 relative">
+              <button onClick={() => setEditingItem(null)} className="absolute top-6 right-6 w-10 h-10 bg-gray-50 hover:bg-red-50 hover:text-red-500 rounded-full flex items-center justify-center transition-all"><X size={20} /></button>
+              
+              <div className="mb-8">
+                 <h3 className="text-2xl font-black text-gray-900 tracking-tight leading-none mb-2">Update Asset</h3>
+                 <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">{editingItem.n}</p>
+              </div>
+              
+              <div className="space-y-6">
+                 <div className="h-48 w-full rounded-[24px] overflow-hidden border-2 border-dashed border-gray-200 relative group flex items-center justify-center bg-gray-50">
+                    {editingItem.img ? (
+                       <img src={editingItem.img} className="w-full h-full object-cover opacity-80 group-hover:opacity-40 transition-opacity" />
+                    ) : (
+                       <ImageIcon className="text-gray-300" size={48} />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                       <label className="cursor-pointer px-6 py-3 bg-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-gray-100 hover:scale-105 active:scale-95 transition-transform flex items-center gap-2">
+                          <ImageIcon size={14} className="text-[#E53935]" />
+                          Upload Photo
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, editingItem)} />
+                       </label>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button 
-              onClick={handleSendKOT}
-              disabled={!!kotStatus}
-              className={`flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-black transition-all ${
-                kotStatus === 'sending' ? 'bg-amber-500 text-white' : 
-                kotStatus === 'delivered' ? 'bg-blue-600 text-white' : 
-                kotStatus === 'accepted' ? 'bg-green-600 text-white' : 
-                'bg-[#E53935] text-white shadow-xl shadow-red-200 active:scale-95'
-              }`}
-            >
-              {kotStatus === 'sending' && <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
-              {kotStatus === 'delivered' && <CheckCircle2 size={20} />}
-              {kotStatus === 'accepted' && <CheckCircle2 size={20} />}
-              {!kotStatus && <Send size={18} />}
-              {kotStatus === 'sending' ? 'Sending KOT...' : 
-               kotStatus === 'delivered' ? 'Delivered to Kitchen' : 
-               kotStatus === 'accepted' ? 'Accepted by Chef' : 
-               `Send KOT (₹${total.toFixed(0)})`}
-            </button>
-          </div>
+                 </div>
+                 
+                 <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 py-3 rounded-2xl border border-green-100">
+                    <RefreshCw size={14} className="animate-spin-slow" />
+                    <p className="text-[9px] font-black uppercase tracking-[0.1em]">Syncs instantly to all terminals</p>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
 
-      {/* Bottom Nav for Dashboard */}
-      {view === 'dashboard' && (
-        <nav className="fixed bottom-0 left-0 right-0 z-30 flex h-20 items-center justify-around border-t border-[#FFCDD2] bg-white px-6 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-          <button className="flex flex-col items-center gap-1 text-[#E53935]">
-            <LayoutDashboard size={20} strokeWidth={3} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Dash</span>
-          </button>
-          <button className="flex h-14 w-14 items-center justify-center rounded-full bg-[#E53935] text-white shadow-lg shadow-red-200 -mt-8 border-4 border-white transition-transform active:scale-90">
-            <Plus size={28} strokeWidth={3} />
-          </button>
-          <button onClick={() => setView('login')} className="flex flex-col items-center gap-1 text-[#6B6B6B] hover:text-[#B71C1C]">
-            <LogOut size={20} strokeWidth={2} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Logout</span>
-          </button>
-        </nav>
+      {/* CUSTOMER ITEM PREVIEW MODAL */}
+      {previewItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-black/40 animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-4xl rounded-3xl sm:rounded-[48px] overflow-hidden shadow-[0_100px_150px_rgba(0,0,0,0.3)] flex flex-col md:flex-row animate-in zoom-in-95 duration-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
+              <div className="w-full md:w-1/2 h-[200px] sm:h-[300px] md:h-auto relative shrink-0">
+                 <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
+                 <button onClick={() => setPreviewItem(null)} className="absolute top-4 left-4 sm:top-6 sm:left-6 w-10 h-10 sm:w-12 sm:h-12 bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-2xl flex items-center justify-center text-white transition-all"><X size={24} /></button>
+                 <div className="absolute bottom-8 left-8 flex gap-3">
+                    <div className={`px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest ${previewItem.t === 'veg' ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
+                       {previewItem.t === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
+                    </div>
+                    {previewItem.spice > 0 && (
+                      <div className="px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest bg-orange-500/80 flex items-center gap-2">
+                        <Flame size={14} /> Spicy Lvl {previewItem.spice}
+                      </div>
+                    )}
+                 </div>
+              </div>
+              <div className="w-full md:w-1/2 p-6 sm:p-12 flex flex-col justify-between">
+                 <div>
+                    <h3 className="text-2xl sm:text-4xl font-black tracking-tight text-gray-900 mb-2 sm:mb-4 leading-tight">{previewItem.n}</h3>
+                    <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed mb-6 sm:mb-8">{previewItem.desc}</p>
+                    
+                    <div className="space-y-4 sm:space-y-6">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><CheckCircle2 size={20} /></div>
+                          <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Chef Special Recommendation</p>
+                       </div>
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><ChefHat size={20} /></div>
+                          <p className="text-sm font-black uppercase tracking-tight text-gray-700">Freshly prepared in our high-speed kitchen</p>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-100 flex items-center justify-between gap-4">
+                    <div className="flex flex-col shrink-0">
+                       <span className="text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">A-la-Carte Price</span>
+                       <span className="text-2xl sm:text-3xl font-black text-gray-900">₹{previewItem.p}</span>
+                    </div>
+                    <button 
+                       onClick={() => { addItemToSession(previewItem); setPreviewItem(null); }}
+                       className="px-6 py-4 sm:px-10 sm:py-5 w-full bg-[#E53935] text-white rounded-2xl sm:rounded-3xl font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] shadow-xl shadow-red-100 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 sm:gap-3"
+                    >
+                       <Plus size={20} strokeWidth={3} />
+                       Add to Session
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
       )}
+
+      {/* OPERATIONAL NOTIFICATIONS */}
+      <div className="fixed bottom-6 right-6 z-[120] flex flex-col gap-3 pointer-events-none">
+        {notifications.map(n => (
+          <div key={n.id} className="pointer-events-auto flex items-center gap-4 bg-white border border-gray-100 p-4 rounded-[24px] shadow-[0_20px_40px_rgba(0,0,0,0.1)] animate-in slide-in-from-right-4 min-w-[280px]">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${n.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-[#E53935]'}`}>
+               {n.type === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+            </div>
+            <div>
+               <p className="text-[11px] font-black text-gray-900 uppercase tracking-tight leading-none">{n.title}</p>
+               <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">Cloud Synchronized</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

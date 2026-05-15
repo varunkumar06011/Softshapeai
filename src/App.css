@@ -1,3 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&display=swap');
+
+:root {
+  --font-main: 'Plus Jakarta Sans', sans-serif;
+}
+
 :root {
   --primary: #E53935;
   --primary-dark: #B71C1C;
@@ -107,6 +113,23 @@ input, select, button {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-4px); }
   75% { transform: translateX(4px); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes bounceSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 2s infinite ease-in-out;
 }
 
 .animate-shimmer {

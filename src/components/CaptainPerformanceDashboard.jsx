@@ -1,117 +1,122 @@
 import React, { useMemo, useState } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Users, Star, TrendingUp } from "lucide-react";
 
-export default function CaptainPerformanceDashboard({ captains, recentSoldItems }) {
-  const [range, setRange] = useState("Daily");
+export default function CaptainPerformanceDashboard() {
+  const [range, setRange] = useState("Today");
 
-  const ranked = useMemo(
-    () => [...(captains || [])].sort((a, b) => b.sales - a.sales).map((captain, idx) => ({ ...captain, rank: idx + 1 })),
-    [captains],
-  );
+  const captains = [
+    { name: "Rahul Sharma", rating: 4.9, sales: 18400, orders: 127, topItem: "Chicken Biryani", status: "Online", speed: "12m", shift: "Morning", rank: 1, stars: 5 },
+    { name: "Suresh Kumar", rating: 4.7, sales: 14200, orders: 98, topItem: "Butter Naan", status: "Online", speed: "15m", shift: "Morning", rank: 2, stars: 4 },
+    { name: "Priya Singh", rating: 4.8, sales: 12500, orders: 84, topItem: "Paneer Tikka", status: "Offline", speed: "14m", shift: "Evening", rank: 3, stars: 4 },
+    { name: "Amit Patel", rating: 4.5, sales: 11800, orders: 76, topItem: "Veg Pulav", status: "Online", speed: "18m", shift: "Evening", rank: 4, stars: 3 }
+  ];
+
+  const trends = [
+    { hour: "12 PM", sales: 4200 },
+    { hour: "2 PM", sales: 8500 },
+    { hour: "4 PM", sales: 3100 },
+    { hour: "6 PM", sales: 9400 },
+    { hour: "8 PM", sales: 15600 },
+    { hour: "10 PM", sales: 11200 }
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-[10px] border border-[#FFCDD2] bg-white p-4">
-        <h3 className="font-semibold">Captain Performance Management</h3>
-        <div className="flex gap-2">
-          {["Daily", "Weekly", "Monthly"].map((item) => (
-            <button key={item} onClick={() => setRange(item)} className={`rounded-md border px-3 py-1 text-sm ${range === item ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{item}</button>
+    <div className="space-y-6 font-sans">
+      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-[#FFCDD2] shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center text-[#B71C1C]">
+            <Users size={20} />
+          </div>
+          <div>
+            <h2 className="font-black text-gray-900 tracking-tight">Captain Intelligence</h2>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Performance & Service Quality</p>
+          </div>
+        </div>
+        <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
+          {['Today', 'Weekly', 'Monthly'].map(r => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? 'bg-white text-[#B71C1C] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              {r}
+            </button>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Stat label="Top Performer" value={ranked[0]?.name ?? "-"} />
-          <Stat label="Highest Sales" value={`₹${ranked[0]?.sales?.toLocaleString?.() ?? 0}`} />
-          <Stat label="Best Rating" value={Math.max(...ranked.map((x) => x.rating), 0).toFixed(1)} />
-          <Stat label="Avg Completion Speed" value={`${Math.round(ranked.reduce((a, c) => a + c.speed, 0) / (ranked.length || 1))} mins`} />
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {captains.slice(0, 4).map((c, i) => (
+          <div key={i} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
+            <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
+               <Star size={48} className="text-[#B71C1C]" />
+            </div>
+            <div className="flex items-center gap-3 mb-4">
+               <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">{c.name[0]}</div>
+               <div>
+                  <p className="font-black text-gray-900">{c.name}</p>
+                  <p className="text-[10px] font-bold text-[#F57F17]">{"★".repeat(c.stars)} {c.rating}</p>
+               </div>
+            </div>
+            <div className="space-y-3">
+               <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Sales Today</span>
+                  <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
+               </div>
+               <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
+                  <span className="text-sm font-black text-gray-900">{c.orders}</span>
+               </div>
+               <div className="pt-3 border-t border-gray-50 flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Top Item</span>
+                  <span className="text-[10px] font-black text-[#B71C1C] uppercase truncate max-w-[100px]">{c.topItem}</span>
+               </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="font-black text-gray-900 mb-8 flex items-center gap-2">
+            <TrendingUp size={18} className="text-[#B71C1C]" />
+            Efficiency Trend
+          </h3>
+          <div className="h-[250px] w-full">
+            <ResponsiveContainer width="99%" height="100%">
+              <BarChart data={trends}>
+                <XAxis dataKey="hour" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                <YAxis tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} />
+                <Bar dataKey="sales" fill="#B71C1C" radius={[4, 4, 0, 0]} barSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        
-        <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4">
-          <h4 className="mb-3 text-xs font-bold uppercase text-[#B71C1C]">Recently Sold Items</h4>
-          <div className="space-y-2">
-            {(recentSoldItems || []).map((item, i) => (
-              <div key={i} className="flex items-center justify-between border-b border-[#FFEBEE] pb-2 last:border-0 last:pb-0">
-                <div>
-                  <p className="text-xs font-bold">{item.name}</p>
-                  <p className="text-[10px] text-[#6B6B6B]">{item.qty} units • {item.time}</p>
+
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="font-black text-gray-900 mb-6">Captain Leaderboard</h3>
+          <div className="space-y-4">
+            {captains.map((c, i) => (
+              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{i+1}</span>
+                  <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">{c.name.split(' ').map(n => n[0]).join('')}</div>
+                  <div>
+                    <p className="text-xs font-black text-gray-900">{c.name}</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase">{c.shift} Shift</p>
+                  </div>
                 </div>
-                <p className="text-xs font-black text-[#2E7D32]">₹{item.price}</p>
+                <div className="text-right">
+                  <p className="text-xs font-black text-[#B71C1C]">₹{c.sales.toLocaleString()}</p>
+                  <p className="text-[9px] font-bold text-green-600">{c.speed} Speed</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </div>
-
-
-      {!!ranked.length && (
-        <>
-          <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4">
-            <h4 className="mb-2 font-semibold">Sales Comparison</h4>
-            <div className="h-[220px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ranked}>
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Bar dataKey="sales" fill="#E53935" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-4">
-            <h4 className="mb-4 font-semibold text-sm md:text-base">Captain Performance Leaderboard</h4>
-            <div className="overflow-x-auto -mx-4 px-4 scrollbar-thin scrollbar-thumb-red-200">
-              <table className="w-full min-w-[900px] text-left text-xs md:text-sm">
-                <thead>
-                  <tr className="border-b border-[#FFCDD2] text-[#B71C1C] uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-2">Rank</th>
-                    <th className="py-3 px-2">Name</th>
-                    <th className="py-3 px-2">Tables</th>
-                    <th className="py-3 px-2 text-center">Orders</th>
-                    <th className="py-3 px-2 text-right">Sales</th>
-                    <th className="py-3 px-2 text-center">Upsell</th>
-                    <th className="py-3 px-2 text-center">Rating</th>
-                    <th className="py-3 px-2">Stars</th>
-                    <th className="py-3 px-2">Shift</th>
-                    <th className="py-3 px-2 text-center">Speed</th>
-                    <th className="py-3 px-2 text-center">Badge</th>
-                    <th className="py-3 px-2 text-center">Trend</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#FFEBEE]">
-                  {ranked.map((captain) => (
-                    <tr key={captain.name} className="hover:bg-[#FFF5F5] transition-colors">
-                      <td className="py-3 px-2 font-black text-[#E53935]">#{captain.rank}</td>
-                      <td className="py-3 px-2 font-bold">{captain.name}</td>
-                      <td className="py-3 px-2 text-[#6B6B6B]">{captain.tables.join(", ")}</td>
-                      <td className="py-3 px-2 text-center font-semibold">{captain.orders}</td>
-                      <td className="py-3 px-2 text-right font-black">₹{captain.sales.toLocaleString()}</td>
-                      <td className="py-3 px-2 text-center text-blue-600 font-bold">{captain.upsell}%</td>
-                      <td className="py-3 px-2 text-center">
-                        <span className="font-bold text-[#F57F17]">{captain.rating}</span>
-                      </td>
-                      <td className="py-3 px-2 text-[#F57F17]">{"★".repeat(captain.stars)}</td>
-                      <td className="py-3 px-2 text-[#6B6B6B]">{captain.shift}</td>
-                      <td className="py-3 px-2 text-center">
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono">{captain.speed}m</span>
-                      </td>
-                      <td className="py-3 px-2 text-center">
-                        <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[9px] font-black text-[#B71C1C] uppercase tracking-tighter border border-[#EF9A9A]">
-                          {captain.badge}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-center text-lg">{captain.trend === "up" ? "📈" : "➖"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }
