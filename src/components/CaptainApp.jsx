@@ -524,14 +524,7 @@ export default function CaptainApp({ onLogout }) {
                               className="bg-white rounded-3xl border border-gray-100 overflow-hidden hover:border-[#E53935] hover:shadow-2xl transition-all cursor-pointer flex flex-col group active:scale-98 relative"
                               onClick={() => setPreviewItem(item)}
                            >
-                              {/* EDIT BUTTON */}
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setEditingItem(item); }}
-                                className="absolute top-3 left-3 w-8 h-8 rounded-xl bg-white/90 hover:bg-white backdrop-blur-md shadow-sm border border-gray-100 flex items-center justify-center text-gray-500 hover:text-[#E53935] opacity-0 group-hover:opacity-100 transition-all z-20"
-                                title="Edit Image"
-                              >
-                                <Edit2 size={14} />
-                              </button>
+
 
                               <div className="h-40 w-full overflow-hidden relative">
                                  <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />

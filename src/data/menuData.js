@@ -8,13 +8,13 @@ export const MENU_DATA = [
   },
   { 
     n: "Veg Sweet Corn Soup", p: 145, c: "Starters", t: "veg", 
-    img: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&h=450&fit=crop",
+    img: "/Veg Sweet Corn Soup_converted.jpg",
     desc: "A comforting blend of creamy sweet corn and finely chopped seasonal vegetables.",
     spice: 1
   },
   { 
     n: "Chicken Hot & Sour Soup", p: 150, c: "Starters", t: "non", 
-    img: "https://images.unsplash.com/photo-1504670073073-6123e39e0754?w=600&h=450&fit=crop",
+    img: "/Chicken Hot and Sour Soup 1_converted.jpg",
     desc: "A spicy and tangy broth packed with shredded chicken and oriental vegetables.",
     spice: 3
   },
@@ -22,13 +22,13 @@ export const MENU_DATA = [
   // Starters
   { 
     n: "Crispy Corn", p: 174, c: "Starters", t: "veg", 
-    img: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&h=450&fit=crop",
+    img: "/Crispy Corn_converted.jpg",
     desc: "Golden fried kernels tossed with peri-peri spices and lime zest.",
     spice: 2
   },
   { 
     n: "Gobi Manchurian", p: 209, c: "Starters", t: "veg", 
-    img: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=600&h=450&fit=crop",
+    img: "/Gobi Manchurian_converted.jpg",
     desc: "Crispy cauliflower florets tossed in a classic Indo-Chinese soya-garlic glaze.",
     spice: 2
   },
@@ -40,13 +40,13 @@ export const MENU_DATA = [
   },
   { 
     n: "Chicken 65", p: 329, c: "Starters", t: "non", 
-    img: "https://images.unsplash.com/photo-1610057099443-fde8c4d50f91?w=600&h=450&fit=crop",
+    img: "/Chicken 65_converted.jpg",
     desc: "A classic South Indian spicy fried chicken appetizer seasoned with curry leaves.",
     spice: 3
   },
   { 
     n: "Chicken Lollipop", p: 369, c: "Starters", t: "non", 
-    img: "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?w=600&h=450&fit=crop",
+    img: "/Chicken Lollipop (Bones)_converted.jpg",
     desc: "Frenched chicken wings coated in a spicy red batter and deep-fried to perfection.",
     spice: 2
   },
@@ -54,7 +54,7 @@ export const MENU_DATA = [
   // Main Course
   { 
     n: "Veg Biryani", p: 259, c: "Main Course", t: "veg", 
-    img: "https://foodish-api.com/images/biryani/biryani1.jpg",
+    img: "/Special Veg Biryani.avif",
     desc: "Fragrant basmati rice cooked with seasonal vegetables and aromatic whole spices.",
     spice: 2
   },
@@ -112,7 +112,7 @@ export const MENU_DATA = [
   },
   { 
     n: "Mango Lassi", p: 100, c: "Drinks", t: "veg", 
-    img: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=600&h=450&fit=crop",
+    img: "/Mango Lassi.jpg",
     desc: "Traditional yogurt-based mango shake, thick and refreshing.",
     spice: 0
   },
@@ -126,13 +126,13 @@ export const MENU_DATA = [
   // Desserts
   { 
     n: "Chocolate Ice Cream", p: 120, c: "Desserts", t: "veg", 
-    img: "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&h=450&fit=crop",
+    img: "/Chocolate Ice Cream (Scoop).jpg",
     desc: "Two scoops of premium rich dark chocolate ice cream.",
     spice: 0
   },
   { 
     n: "Gulab Jamun", p: 90, c: "Desserts", t: "veg", 
-    img: "https://images.unsplash.com/photo-1589119908995-c6837fa14848?w=600&h=450&fit=crop",
+    img: "/Gulab Jamun.jpg",
     desc: "Soft milk solids dumplings fried and soaked in cardamom-infused sugar syrup.",
     spice: 0
   },
