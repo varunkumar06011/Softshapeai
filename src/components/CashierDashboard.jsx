@@ -154,7 +154,7 @@ const CashierDashboard = ({ onLogout }) => {
           ))}
         </nav>
 
-        <div className="p-2 border-t border-gray-100">
+        <div className="p-2 border-t border-gray-100 mt-auto pb-8">
           <button onClick={onLogout} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all">
             <LogOut size={18} />
             <span className="hidden lg:block text-xs font-bold uppercase tracking-tight">Logout</span>
@@ -203,7 +203,7 @@ const CashierDashboard = ({ onLogout }) => {
           {activeTab === 'dashboard' ? (
             <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
                {/* Stats Row */}
-               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {stats.map((stat, i) => (
                     <div key={i} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
                        <div className={`w-9 h-9 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center shrink-0`}>

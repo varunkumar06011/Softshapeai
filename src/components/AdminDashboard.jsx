@@ -71,7 +71,7 @@ const AdminDashboard = ({ onLogout }) => {
         <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      <aside className={`fixed left-0 top-0 z-40 flex h-[100dvh] w-[240px] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed left-0 top-0 z-[60] flex h-[100dvh] w-[240px] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex flex-col flex-grow overflow-hidden p-4">
           <div className="flex items-center justify-between flex-shrink-0 mb-2">
             <div className="bg-white px-4 py-3 rounded-2xl shadow-xl border border-white/20 w-full flex items-center gap-3">
@@ -154,7 +154,7 @@ const AdminDashboard = ({ onLogout }) => {
         </main>
       </div>
 
-      <button onClick={() => setSpireOpen(true)} className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-[#E53935] px-6 py-4 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 group">
+      <button onClick={() => setSpireOpen(true)} className="fixed bottom-6 right-6 z-30 flex items-center gap-3 rounded-full bg-[#E53935] px-6 py-4 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 group">
         <Sparkles size={18} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
       </button>
 
