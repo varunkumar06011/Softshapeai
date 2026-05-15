@@ -29,7 +29,8 @@ import {
   Clock,
   ChevronRight,
   Filter,
-  Star
+  Star,
+  ArrowRightLeft
 } from 'lucide-react';
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
