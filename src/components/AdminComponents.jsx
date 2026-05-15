@@ -124,11 +124,23 @@ export function Pos({ onOrderComplete, onKOTSend }) {
   const [kotStatus, setKotStatus] = useState(null);
   const [table, setTable] = useState("8");
   
+  const availableCategories = useMemo(() => {
+    const cats = new Set(MENU_DATA.map(item => item.c));
+    return ["All", ...Array.from(cats)];
+  }, []);
+
   const items = useMemo(() => {
     let filtered = MENU_DATA;
-    if (cat !== "All") filtered = filtered.filter(x => x.c === cat);
-    if (search) filtered = filtered.filter(x => x.n.toLowerCase().includes(search.toLowerCase()));
-    return filtered.slice(0, 24);
+    if (cat !== "All") {
+      filtered = filtered.filter(x => x.c === cat);
+    }
+    if (search) {
+      filtered = filtered.filter(x => 
+        x.n.toLowerCase().includes(search.toLowerCase()) ||
+        x.c.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    return filtered.slice(0, 50);
   }, [cat, search]);
 
   const subtotal = cart.reduce((a, c) => a + c.p * c.q, 0);
@@ -176,7 +188,7 @@ export function Pos({ onOrderComplete, onKOTSend }) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" size={18} />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {["All", "Biryani", "Starters", "Chinese", "Tandoori", "Curries", "Breads", "Rice", "Drinks", "Desserts"].map((x) => (
+            {availableCategories.map((x) => (
               <button key={x} onClick={() => setCat(x)} className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-xs font-bold transition-all ${cat === x ? "border-[#E53935] bg-[#E53935] text-white shadow-md shadow-red-100" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>{x}</button>
             ))}
           </div>
