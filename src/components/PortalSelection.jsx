@@ -13,12 +13,8 @@ const PortalSelection = ({ onSelect }) => {
           <img 
             src="/logo softshape.ai.png" 
             alt="softshape.ai" 
-            className="h-48 md:h-64 w-auto object-contain mix-blend-multiply drop-shadow-sm brightness-[0.7] contrast-[1.5] saturate-[1.5]" 
+            className="h-64 md:h-80 w-auto object-contain" 
           />
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter">
-            <span className="text-black">softshape</span>
-            <span className="text-[#E53935]">.ai</span>
-          </h1>
         </div>
       </div>
 

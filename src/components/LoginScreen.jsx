@@ -25,12 +25,8 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
             <img
               src="/logo softshape.ai.png"
               alt="Softshape.ai"
-              className="h-14 w-auto object-contain mix-blend-multiply drop-shadow-sm brightness-[0.7] contrast-[1.5] saturate-[1.5]"
+              className="h-20 w-auto object-contain"
             />
-            <h1 className="text-3xl font-black tracking-tighter">
-              <span className="text-black">softshape</span>
-              <span className="text-[#E53935]">.ai</span>
-            </h1>
           </div>
           <h2 className="text-xl font-black text-gray-900 uppercase tracking-widest leading-none">{roleTitle} Terminal</h2>
           <p className="text-xs text-gray-400 mt-2 font-bold uppercase tracking-widest">Enterprise Operational Access</p>

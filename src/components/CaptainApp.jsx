@@ -266,12 +266,8 @@ export default function CaptainApp({ onLogout }) {
               <img 
                 src="/logo softshape.ai.png" 
                 alt="Softshape.ai" 
-                className="h-12 w-auto object-contain mix-blend-multiply drop-shadow-sm" 
+                className="h-16 w-auto object-contain" 
               />
-              <span className="text-3xl font-black tracking-tighter">
-                <span className="text-black">softshape</span>
-                <span className="text-[#E53935]">.ai</span>
-              </span>
             </div>
             <h2 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Operational Terminal</h2>
             <p className="text-lg font-black text-gray-900">Sign in to Session</p>
@@ -348,12 +344,8 @@ export default function CaptainApp({ onLogout }) {
             <img 
               src="/logo softshape.ai.png" 
               alt="Softshape.ai" 
-              className="h-10 sm:h-12 w-auto object-contain shrink-0" 
+              className="h-12 sm:h-16 w-auto object-contain shrink-0" 
             />
-            <span className="text-sm font-black tracking-tighter">
-              <span className="text-black">softshape</span>
-              <span className="text-[#E53935]">.ai</span>
-            </span>
             <div className="hidden sm:flex flex-col border-l-2 border-gray-100 pl-3 justify-center">
               <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Terminal</span>
               <span className="text-[11px] font-black text-gray-900 tracking-tight leading-none">{currentCaptain?.name}</span>

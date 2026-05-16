@@ -154,18 +154,14 @@ const CashierDashboard = ({ onLogout }) => {
     <div className="flex h-screen bg-[#FFF5F5] font-sans overflow-hidden text-[#1A1A1A]">
       {/* SIDEBAR */}
       <aside className="w-16 lg:w-60 bg-white border-r border-[#FFCDD2] flex flex-col z-30 transition-all shrink-0">
-        <div className="p-4 border-b border-[#FFCDD2] flex items-center justify-center lg:justify-start lg:h-20 shrink-0 bg-white gap-3">
-          <div className="bg-white p-1 rounded-xl border border-red-50 shadow-sm flex items-center justify-center">
+        <div className="p-2 lg:p-6 border-b border-[#FFCDD2] flex items-center justify-center shrink-0 bg-white">
+          <div className="bg-white p-1 lg:p-3 rounded-xl lg:rounded-[32px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-10 lg:w-36 flex items-center justify-center">
             <img 
               src="/logo softshape.ai.png" 
               alt="Softshape.ai" 
-              className="h-12 lg:h-16 w-auto object-contain" 
+              className="w-full h-full object-contain" 
             />
           </div>
-          <span className="hidden lg:block text-base font-black tracking-tighter text-nowrap">
-            <span className="text-black">softshape</span>
-            <span className="text-[#E53935]">.ai</span>
-          </span>
         </div>
 
         <nav className="flex-grow p-2 space-y-0.5 mt-2">
