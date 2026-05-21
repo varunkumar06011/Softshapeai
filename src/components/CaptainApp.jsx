@@ -658,7 +658,7 @@ export default function CaptainApp({ onLogout }) {
                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
                      </div>
                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-black text-gray-900">₹{activeTable?.currentBill || 0}</span>
+                        <span className="text-sm font-black text-gray-900">₹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
                         {isCartMinimized && (
                           <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
                              <ChevronLeft size={16} className="rotate-90" />
@@ -737,7 +737,11 @@ export default function CaptainApp({ onLogout }) {
                            </div>
                            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x custom-scrollbar">
                               {suggestedSpecials.map((item, idx) => (
-                                 <div key={idx} className="min-w-[150px] w-[150px] bg-amber-50/30 border border-amber-100 rounded-2xl p-3 shadow-sm shrink-0 snap-start flex flex-col relative overflow-hidden group">
+                                 <div 
+                                    key={idx} 
+                                    onClick={() => setPreviewItem(item)}
+                                    className="min-w-[150px] w-[150px] bg-amber-50/30 border border-amber-100 rounded-2xl p-3 shadow-sm shrink-0 snap-start flex flex-col relative overflow-hidden group cursor-pointer hover:border-amber-300 transition-colors"
+                                 >
                                     <p className="text-[11px] font-bold text-gray-900 leading-tight mb-3 pr-2">{item.n}</p>
                                     <div className="flex items-center justify-between mt-auto">
                                        <span className="text-[11px] font-black text-gray-500">₹{item.p}</span>
