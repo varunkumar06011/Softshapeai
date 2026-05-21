@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   Smartphone,
   CheckCircle2,
+  X,
   RefreshCw,
   TrendingUp,
   TrendingDown,
@@ -42,6 +43,30 @@ import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
 import CreativeCanvas from '../shared/components/CreativeCanvas';
 import { calculateOrderTotal } from '../shared/utils/billing';
+
+function useMenuSync() {
+  const [menuItems, setMenuItems] = useState(() => {
+    const saved = localStorage.getItem('softshape_menu');
+    return saved ? JSON.parse(saved) : MENU_DATA;
+  });
+
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_menu' && e.newValue) {
+        setMenuItems(JSON.parse(e.newValue));
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const updateMenu = (newMenu) => {
+    setMenuItems(newMenu);
+    localStorage.setItem('softshape_menu', JSON.stringify(newMenu));
+  };
+
+  return { menuItems, updateMenu };
+}
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -137,31 +162,26 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
   </div>;
 }
 
-export function Pos({ onOrderComplete, onKOTSend }) {
+export function Pos() {
+  const [cart, setCart] = useState([]);
   const [cat, setCat] = useState("All");
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState([]);
   const [kotStatus, setKotStatus] = useState(null);
   const [table, setTable] = useState("8");
+  const { menuItems } = useMenuSync();
   
-  const availableCategories = useMemo(() => {
-    const cats = new Set(MENU_DATA.map(item => item.c));
+  const categories = useMemo(() => {
+    const cats = new Set(menuItems.map(item => item.c));
     return ["All", ...Array.from(cats)];
-  }, []);
+  }, [menuItems]);
 
-  const items = useMemo(() => {
-    let filtered = MENU_DATA;
-    if (cat !== "All") {
-      filtered = filtered.filter(x => x.c === cat);
-    }
-    if (search) {
-      filtered = filtered.filter(x => 
-        x.n.toLowerCase().includes(search.toLowerCase()) ||
-        x.c.toLowerCase().includes(search.toLowerCase())
-      );
-    }
+  const displayItems = useMemo(() => {
+    let filtered = menuItems;
+    if (cat !== "All") filtered = filtered.filter(x => x.c === cat);
+    if (search) filtered = filtered.filter(x => x.n.toLowerCase().includes(search.toLowerCase()) || x.c.toLowerCase().includes(search.toLowerCase()));
+    
     return filtered.slice(0, 50);
-  }, [cat, search]);
+  }, [cat, search, menuItems]);
 
   const { subtotal, taxes: gst, total } = calculateOrderTotal(cart);
 
@@ -284,6 +304,7 @@ const CAPTAINS = [
 ];
 
 export function Tables({ onOpen }) {
+  const [activePopupTableId, setActivePopupTableId] = useState(null);
   const [tables, setTables] = useState(() => {
     const saved = localStorage.getItem('softshape_tables');
     if (saved) return JSON.parse(saved);
@@ -341,12 +362,11 @@ export function Tables({ onOpen }) {
         return (
           <button 
              key={t.id} 
-             onClick={() => !isFree && onOpen({ 
-               id: t.id, 
-               items: items.map(i => `${i.n} x${i.q}`).join(', ') || "No items yet", 
-               time: t.time || "Recently", 
-               bill: `₹${t.currentBill || 0}` 
-             })} 
+             onClick={() => {
+               if (!isFree && !isReserved) {
+                 setActivePopupTableId(t.id);
+               }
+             }}
              className={`${cardBase} ${bgClass} min-h-[100px] p-3 text-left transition-all active:scale-95 flex flex-col justify-between`}
           >
              <div className="flex justify-between items-start w-full">
@@ -395,19 +415,183 @@ export function Tables({ onOpen }) {
       <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#E8F5E9] border border-[#1B5E20]" /><span className="text-xs font-medium">Available</span></div>
       <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#FFF3E0] border border-[#8D4E00]" /><span className="text-xs font-medium">Reserved</span></div>
     </div>
+
+    {/* LIVE SESSION DETAILS POPUP */}
+    {activePopupTableId && (() => {
+      const pTable = tables.find(t => t.id === activePopupTableId);
+      if (!pTable || !pTable.status || pTable.status === 'Free' || pTable.status === 'available') {
+         setTimeout(() => setActivePopupTableId(null), 0);
+         return null;
+      }
+      
+      const pItems = pTable.kotHistory ? pTable.kotHistory.flatMap(k => k.items || []) : [];
+      const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
+      const pCaptainName = CAPTAINS.find(c => c.id === pTable.captainId)?.name || pTable.captainId || 'Staff';
+      
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in duration-200" onClick={() => setActivePopupTableId(null)}>
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div className="flex items-center gap-3">
+                   <div className={`w-3 h-3 rounded-full ${pTable.status === 'Waiting Bill' ? 'bg-amber-500 animate-pulse' : pTable.status === 'Preparing' ? 'bg-orange-500' : 'bg-red-600'}`} />
+                   <h3 className="font-black text-lg text-gray-900 tracking-tight">Table {pTable.id}</h3>
+                   <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest bg-gray-200 text-gray-700">{pTable.status}</span>
+                </div>
+                <button onClick={() => setActivePopupTableId(null)} className="p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-lg transition-colors">
+                   <X size={18} />
+                </button>
+             </div>
+             
+             <div className="p-5">
+                <div className="flex items-center justify-between mb-5">
+                   <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Assigned Captain</span>
+                      <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><User size={14} className="text-gray-400"/> {pCaptainName}</span>
+                   </div>
+                   <div className="flex gap-4 text-right">
+                      <div className="flex flex-col gap-0.5">
+                         <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Guests</span>
+                         <span className="text-sm font-bold text-gray-900 flex items-center gap-1 justify-end"><Users size={14} className="text-gray-400"/> {pTable.guests || 0}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                         <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Duration</span>
+                         <span className="text-sm font-bold text-gray-900 flex items-center gap-1 justify-end"><Clock size={14} className="text-gray-400"/> {pTable.time || '1m'}</span>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="mb-5">
+                   <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Active Order ({pCount} Items)</span>
+                      <span className="text-[10px] font-black uppercase text-green-600 tracking-widest">{(pTable.kotHistory || []).length} KOTs</span>
+                   </div>
+                   
+                   <div className="bg-gray-50 border border-gray-100 rounded-xl p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                      {pItems.length > 0 ? pItems.map((item, idx) => (
+                         <div key={idx} className="flex items-center justify-between p-2 hover:bg-white rounded-lg transition-colors border-b border-transparent hover:border-gray-100">
+                            <div className="flex items-center gap-3">
+                               <div className="w-6 h-6 rounded bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-700">{item.q}x</div>
+                               <span className="text-[12px] font-bold text-gray-800">{item.n}</span>
+                            </div>
+                            <span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{item.s || 'Sent'}</span>
+                         </div>
+                      )) : (
+                         <div className="text-center py-4 text-xs font-bold text-gray-400">No items submitted yet</div>
+                      )}
+                   </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-100 flex items-end justify-between">
+                   <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Live Running Total</span>
+                      <span className="text-xs font-bold text-gray-500">Including Taxes (5% GST)</span>
+                   </div>
+                   <span className="text-2xl font-black text-[#E53935] tracking-tight">₹{pTable.currentBill || 0}</span>
+                </div>
+             </div>
+          </div>
+        </div>
+      );
+    })()}
   </div>;
 }
 
 export function MenuPage({ onAddDish }) {
+  const { menuItems, updateMenu } = useMenuSync();
   const [filter, setFilter] = useState("");
-  const items = useMemo(() => MENU_DATA.filter(x => x.n.toLowerCase().includes(filter.toLowerCase()) || x.c.toLowerCase().includes(filter.toLowerCase())), [filter]);
+  const items = useMemo(() => menuItems.filter(x => x.n.toLowerCase().includes(filter.toLowerCase()) || x.c.toLowerCase().includes(filter.toLowerCase())), [filter, menuItems]);
+  
+  const [editingItem, setEditingItem] = useState(null);
+  const [addingItem, setAddingItem] = useState(null);
+  const [deletingItem, setDeletingItem] = useState(null);
+
+  const handleEdit = (item) => setEditingItem({ originalName: item.n, ...item });
+  const handleDeleteClick = (item) => setDeletingItem(item);
+  
+  const confirmDelete = () => {
+    const newMenu = menuItems.filter(i => i.n !== deletingItem.n);
+    updateMenu(newMenu);
+    setDeletingItem(null);
+  };
+
+  const handleSaveEdit = () => {
+    const newMenu = menuItems.map(i => 
+      i.n === editingItem.originalName 
+        ? { n: editingItem.n, c: editingItem.c, p: Number(editingItem.p), t: editingItem.t, img: editingItem.img } 
+        : i
+    );
+    updateMenu(newMenu);
+    setEditingItem(null);
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 600;
+        const MAX_HEIGHT = 450;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+        } else {
+          if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+        }
+
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const base64String = canvas.toDataURL('image/jpeg', 0.7);
+        if (editingItem) setEditingItem(prev => ({ ...prev, img: base64String }));
+        if (addingItem) setAddingItem(prev => ({ ...prev, img: base64String }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveAdd = () => {
+    if (!addingItem.n || !addingItem.p) return;
+    if (menuItems.some(i => i.n.toLowerCase() === addingItem.n.toLowerCase())) {
+       alert("An item with this name already exists.");
+       return;
+    }
+    const newMenu = [{ n: addingItem.n, c: addingItem.c, p: Number(addingItem.p), t: addingItem.t, img: addingItem.img }, ...menuItems];
+    updateMenu(newMenu);
+    setAddingItem(null);
+  };
+
   return <div className={card + " p-4 font-sans"}>
-    <div className="mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-      <div className="flex items-center gap-4 w-full sm:w-auto">
-        <h3 className="font-semibold text-lg">Menu Items</h3>
-        <input className={input + " h-9 w-48"} placeholder="Search menu..." value={filter} onChange={e => setFilter(e.target.value)} />
+    <div className="mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
+        <h3 className="font-semibold text-lg shrink-0">Menu Items</h3>
+        <input className={input + " h-9 w-full sm:w-64"} placeholder="Search menu..." value={filter} onChange={e => setFilter(e.target.value)} />
       </div>
-      <button className={btn} onClick={onAddDish}>+ Add Item</button>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto justify-end">
+        <button 
+          className="rounded-lg bg-white border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md hover:border-gray-300 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap w-full sm:w-auto" 
+          onClick={() => setAddingItem({ n: '', c: 'Starters', p: '', t: 'veg', img: null })}
+        >
+          <span className="text-gray-400 font-black">+</span> Add Item
+        </button>
+        <button 
+          className="relative group rounded-lg p-[1px] transition-all hover:scale-[1.02] active:scale-95 whitespace-nowrap w-full sm:w-auto"
+          onClick={onAddDish}
+        >
+          <span className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-lg opacity-80 group-hover:opacity-100 transition-opacity animate-pulse"></span>
+          <div className="relative flex items-center justify-center gap-2 bg-gray-950 px-4 py-2 rounded-lg font-bold text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+            <Sparkles size={16} className="text-purple-300" /> 
+            <span className="bg-gradient-to-r from-purple-200 to-pink-200 bg-clip-text text-transparent text-sm">AI Generate</span>
+          </div>
+        </button>
+      </div>
     </div>
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm whitespace-nowrap">
@@ -425,7 +609,13 @@ export function MenuPage({ onAddDish }) {
         <tbody>
           {items.slice(0, 50).map((item) => (
             <tr key={item.n} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
-              <td className="px-4 py-2"><div className="h-10 w-10 rounded-md bg-[#EF9A9A]" /></td>
+              <td className="px-4 py-2">
+                 {item.img ? (
+                    <img src={item.img} alt={item.n} className="h-10 w-10 rounded-md object-cover" />
+                 ) : (
+                    <div className="h-10 w-10 rounded-md bg-[#EF9A9A]" />
+                 )}
+              </td>
               <td className="px-4 py-2 font-medium">{item.n}</td>
               <td className="px-4 py-2">{item.c}</td>
               <td className="px-4 py-2">₹{item.p}</td>
@@ -435,14 +625,155 @@ export function MenuPage({ onAddDish }) {
               </td>
               <td className="px-4 py-2"><span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">Available</span></td>
               <td className="px-4 py-2">
-                <button className="text-blue-600 mr-3">✏️</button>
-                <button className="text-red-600">🗑️</button>
+                <button onClick={() => handleEdit(item)} className="text-blue-600 mr-3 hover:scale-110 transition-transform">✏️</button>
+                <button onClick={() => handleDeleteClick(item)} className="text-red-600 hover:scale-110 transition-transform">🗑️</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+
+    {/* EDIT MODAL */}
+    {editingItem && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in">
+        <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
+          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+            <h3 className="font-black text-lg text-gray-900 tracking-tight">Edit Item</h3>
+            <button onClick={() => setEditingItem(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div>
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Image</label>
+               <div className="flex items-center gap-4">
+                  {editingItem.img ? (
+                     <img src={editingItem.img} alt={editingItem.n} className="h-16 w-16 rounded-xl object-cover border border-gray-200" />
+                  ) : (
+                     <div className="h-16 w-16 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center"><Camera size={20} className="text-gray-400"/></div>
+                  )}
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="text-xs text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-600 hover:file:bg-red-100" />
+               </div>
+            </div>
+            <div>
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Name</label>
+               <input value={editingItem.n} onChange={e => setEditingItem({...editingItem, n: e.target.value})} className={input + " w-full bg-gray-50"} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
+                  <select value={editingItem.c} onChange={e => setEditingItem({...editingItem, c: e.target.value})} className={input + " w-full bg-gray-50"}>
+                     <option value="Starters">Starters</option>
+                     <option value="Main Course">Main Course</option>
+                     <option value="Drinks">Drinks</option>
+                     <option value="Desserts">Desserts</option>
+                  </select>
+               </div>
+               <div>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Price (₹)</label>
+                  <input type="number" value={editingItem.p} onChange={e => setEditingItem({...editingItem, p: e.target.value})} className={input + " w-full bg-gray-50"} />
+               </div>
+            </div>
+            <div>
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
+               <div className="flex gap-4 mt-2">
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                     <input type="radio" name="diet" value="veg" checked={editingItem.t === 'veg'} onChange={() => setEditingItem({...editingItem, t: 'veg'})} className="accent-green-600" />
+                     <span className="text-green-700">Vegetarian</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                     <input type="radio" name="diet" value="non" checked={editingItem.t === 'non'} onChange={() => setEditingItem({...editingItem, t: 'non'})} className="accent-red-600" />
+                     <span className="text-red-700">Non-Veg</span>
+                  </label>
+               </div>
+            </div>
+          </div>
+          <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
+            <button onClick={() => setEditingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button onClick={handleSaveEdit} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 rounded-lg shadow-md">Save Changes</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ADD MODAL */}
+    {addingItem && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in">
+        <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
+          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+            <h3 className="font-black text-lg text-gray-900 tracking-tight">Add New Item</h3>
+            <button onClick={() => setAddingItem(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div>
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Image</label>
+               <div className="flex items-center gap-4">
+                  {addingItem.img ? (
+                     <img src={addingItem.img} alt="Preview" className="h-16 w-16 rounded-xl object-cover border border-gray-200" />
+                  ) : (
+                     <div className="h-16 w-16 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center"><Camera size={20} className="text-gray-400"/></div>
+                  )}
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="text-xs text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-600 hover:file:bg-red-100" />
+               </div>
+            </div>
+            <div>
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Name</label>
+               <input value={addingItem.n} onChange={e => setAddingItem({...addingItem, n: e.target.value})} placeholder="e.g. Chicken Biryani" className={input + " w-full bg-gray-50"} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
+                  <select value={addingItem.c} onChange={e => setAddingItem({...addingItem, c: e.target.value})} className={input + " w-full bg-gray-50"}>
+                     <option value="Starters">Starters</option>
+                     <option value="Main Course">Main Course</option>
+                     <option value="Drinks">Drinks</option>
+                     <option value="Desserts">Desserts</option>
+                  </select>
+               </div>
+               <div>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Price (₹)</label>
+                  <input type="number" placeholder="0.00" value={addingItem.p} onChange={e => setAddingItem({...addingItem, p: e.target.value})} className={input + " w-full bg-gray-50"} />
+               </div>
+            </div>
+            <div>
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
+               <div className="flex gap-4 mt-2">
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                     <input type="radio" name="add_diet" value="veg" checked={addingItem.t === 'veg'} onChange={() => setAddingItem({...addingItem, t: 'veg'})} className="accent-green-600" />
+                     <span className="text-green-700">Vegetarian</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                     <input type="radio" name="add_diet" value="non" checked={addingItem.t === 'non'} onChange={() => setAddingItem({...addingItem, t: 'non'})} className="accent-red-600" />
+                     <span className="text-red-700">Non-Veg</span>
+                  </label>
+               </div>
+            </div>
+          </div>
+          <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
+            <button onClick={() => setAddingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button onClick={handleSaveAdd} disabled={!addingItem.n || !addingItem.p} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 disabled:hover:bg-[#E53935] rounded-lg shadow-md">Add Item</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* DELETE CONFIRMATION MODAL */}
+    {deletingItem && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in">
+        <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
+          <div className="p-6 text-center space-y-4">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2">
+              <AlertCircle size={32} />
+            </div>
+            <h3 className="font-black text-xl text-gray-900 tracking-tight">Delete Item?</h3>
+            <p className="text-sm text-gray-500 font-medium">Are you sure you want to permanently remove <span className="font-bold text-gray-900">{deletingItem.n}</span> from the menu? This action cannot be undone.</p>
+          </div>
+          <div className="p-4 border-t border-gray-100 flex justify-center gap-3 bg-gray-50/50">
+            <button onClick={() => setDeletingItem(null)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
+            <button onClick={confirmDelete} className="flex-1 py-2.5 text-sm font-black text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md transition-colors">Yes, Delete</button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>;
 }
 
