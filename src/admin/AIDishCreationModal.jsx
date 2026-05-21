@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Sparkles, Bot, X, RotateCcw, Check, Zap, Megaphone, UtensilsCrossed, ArrowRight, ShieldCheck, Share2 } from "lucide-react";
 import { generateDishCreative, detectDish } from "../services/menuAiService";
 import { generateRandomConfig } from "../services/creativeEngine";
-import CreativeCanvas from "./CreativeCanvas";
+import CreativeCanvas from "../shared/components/CreativeCanvas";
 
 export default function AIDishCreationModal({ open, onClose, onSave }) {
   const [step, setStep] = useState(1);

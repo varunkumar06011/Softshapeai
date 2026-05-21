@@ -1,4 +1,4 @@
-import React, { useState, useRef, Suspense, lazy } from 'react';
+﻿import React, { useState, useRef, Suspense, lazy } from 'react';
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -24,7 +24,7 @@ import {
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
 
-const CaptainPerformanceDashboard = lazy(() => import("./CaptainPerformanceDashboard"));
+const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
 
 const navItems = [
   ["dashboard", "Dashboard", LayoutDashboard],
@@ -58,7 +58,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [revenue, setRevenue] = useState(67950);
   const [ordersCount, setOrdersCount] = useState(89);
   const [activityLog, setActivityLog] = useState([
-    { id: 1, text: "Raju closed Table 4 bill for ₹2,450", time: "2 min ago", type: "success" },
+    { id: 1, text: "Raju closed Table 4 bill for â‚¹2,450", time: "2 min ago", type: "success" },
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
 
@@ -81,7 +81,7 @@ const AdminDashboard = ({ onLogout }) => {
                 className="w-full h-full object-contain" 
               />
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">âœ•</button>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-bold text-white/90 flex-shrink-0 mb-2 mt-4">
             <span className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" />
@@ -151,7 +151,7 @@ const AdminDashboard = ({ onLogout }) => {
       </div>
 
       <button onClick={() => setSpireOpen(true)} className="fixed bottom-6 right-6 z-30 flex items-center gap-3 rounded-full bg-[#E53935] px-6 py-4 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 group">
-        <Sparkles size={18} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
+        <Sparkles size={18} className="group-hover:rotate-12 transition-transform" /> Ask Spire âœ¨
       </button>
 
       <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
@@ -171,7 +171,7 @@ const AdminDashboard = ({ onLogout }) => {
                    <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Operational Intelligence Active</p>
                 </div>
               </div>
-              <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">✕</button>
+              <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">âœ•</button>
             </div>
             
             <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-[#FFF9F9]">
@@ -190,9 +190,9 @@ const AdminDashboard = ({ onLogout }) => {
                     Analyzing sales, inventory logs, and camera feeds...
                   </p>
                   <ul className="space-y-3 text-sm font-bold text-gray-700">
-                     <li className="flex gap-2"><span>•</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
-                     <li className="flex gap-2"><span>•</span> 35kg remains in cold storage (Fridge 2)</li>
-                     <li className="flex gap-2 text-[#E53935] font-black"><span>•</span> 2.5kg discrepancy found.</li>
+                     <li className="flex gap-2"><span>â€¢</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
+                     <li className="flex gap-2"><span>â€¢</span> 35kg remains in cold storage (Fridge 2)</li>
+                     <li className="flex gap-2 text-[#E53935] font-black"><span>â€¢</span> 2.5kg discrepancy found.</li>
                   </ul>
                   
                   <div className="relative aspect-[16/10] rounded-[32px] overflow-hidden bg-black group border-[3px] border-[#E53935] shadow-2xl">
@@ -227,3 +227,4 @@ const AdminDashboard = ({ onLogout }) => {
 };
 
 export default AdminDashboard;
+

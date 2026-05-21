@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+﻿import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, ShoppingCart, LogOut, ChevronRight, Clock, Plus, Minus, 
   Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer, 
@@ -391,13 +391,13 @@ export default function CaptainApp({ onLogout }) {
                   ))}
                 </div>
                 <div className="grid grid-cols-3 gap-3 max-w-[260px] mx-auto">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(n => (
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'â†'].map(n => (
                     <button 
                       key={n}
                       disabled={isAuthenticating}
                       onClick={() => {
                         if (n === 'C') setPin('');
-                        else if (n === '←') setPin(prev => prev.slice(0, -1));
+                        else if (n === 'â†') setPin(prev => prev.slice(0, -1));
                         else handlePinInput(n.toString());
                       }}
                       className="w-full aspect-square rounded-2xl border border-gray-100 text-xl font-black text-gray-900 hover:bg-gray-50 active:scale-95 transition-all flex items-center justify-center disabled:opacity-30"
@@ -415,7 +415,7 @@ export default function CaptainApp({ onLogout }) {
                 {pinError && !isAuthenticating && (
                   <div className="text-center animate-in fade-in slide-in-from-bottom-2">
                     <p className="text-sm font-bold text-[#E53935]">plz enter right password</p>
-                    <p className="text-sm font-bold text-[#E53935] mt-1">దయచేసి సరైన పాస్వర్డ్ను నమోదు చేయండి.</p>
+                    <p className="text-sm font-bold text-[#E53935] mt-1">à°¦à°¯à°šà±‡à°¸à°¿ à°¸à°°à±ˆà°¨ à°ªà°¾à°¸à±à°µà°°à±à°¡à±à°¨à± à°¨à°®à±‹à°¦à± à°šà±‡à°¯à°‚à°¡à°¿.</p>
                   </div>
                 )}
               </div>
@@ -467,7 +467,7 @@ export default function CaptainApp({ onLogout }) {
                     <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900">Floor Overview</h2>
                     <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full" />
-                      Active Operations • Floor Rank #1
+                      Active Operations â€¢ Floor Rank #1
                     </p>
                  </div>
                  <div className="flex gap-2">
@@ -514,7 +514,7 @@ export default function CaptainApp({ onLogout }) {
                          {table.status}
                        </div>
                        {table.status !== TABLE_STATUS.FREE && (
-                         <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
+                         <span className="text-[10px] font-black opacity-60">â‚¹{table.currentBill}</span>
                        )}
                     </div>
                   </button>
@@ -620,7 +620,7 @@ export default function CaptainApp({ onLogout }) {
                               <div className="p-4 flex flex-col flex-grow">
                                  <h4 className="text-[12px] font-black text-gray-900 leading-tight mb-3 flex-grow">{item.n}</h4>
                                  <div className="flex items-center justify-between mt-auto">
-                                    <span className="text-sm font-black text-gray-900 tracking-tight">₹{item.p}</span>
+                                    <span className="text-sm font-black text-gray-900 tracking-tight">â‚¹{item.p}</span>
                                     <button 
                                        onClick={(e) => { e.stopPropagation(); addItemToSession(item); }}
                                        className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-[#E53935] hover:bg-[#E53935] hover:text-white transition-all shadow-sm"
@@ -658,7 +658,7 @@ export default function CaptainApp({ onLogout }) {
                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
                      </div>
                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-black text-gray-900">₹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
+                        <span className="text-sm font-black text-gray-900">â‚¹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
                         {isCartMinimized && (
                           <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
                              <ChevronLeft size={16} className="rotate-90" />
@@ -720,7 +720,7 @@ export default function CaptainApp({ onLogout }) {
                                           <span className="w-8 text-center text-xs font-black">{item.q}</span>
                                           <button onClick={() => updateDraftQty(item.n, 1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Plus size={14} strokeWidth={3} /></button>
                                        </div>
-                                       <span className="text-sm font-black text-gray-900">₹{item.p * item.q}</span>
+                                       <span className="text-sm font-black text-gray-900">â‚¹{item.p * item.q}</span>
                                     </div>
                                  </div>
                               ))}
@@ -744,7 +744,7 @@ export default function CaptainApp({ onLogout }) {
                                  >
                                     <p className="text-[11px] font-bold text-gray-900 leading-tight mb-3 pr-2">{item.n}</p>
                                     <div className="flex items-center justify-between mt-auto">
-                                       <span className="text-[11px] font-black text-gray-500">₹{item.p}</span>
+                                       <span className="text-[11px] font-black text-gray-500">â‚¹{item.p}</span>
                                        <button 
                                           onClick={(e) => { e.stopPropagation(); addItemToSession(item); }}
                                           className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center hover:bg-amber-500 hover:text-white transition-colors"
@@ -763,11 +763,11 @@ export default function CaptainApp({ onLogout }) {
                      <div className="flex justify-between items-center">
                         <div className="flex flex-col gap-1">
                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
-                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</p>
+                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">â‚¹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</p>
                         </div>
                         <div className="text-right flex flex-col gap-1">
                            <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">KOT Draft</span>
-                           <span className="text-lg font-black text-gray-400">₹{currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
+                           <span className="text-lg font-black text-gray-400">â‚¹{currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
                         </div>
                      </div>
                      <button 
@@ -859,7 +859,7 @@ export default function CaptainApp({ onLogout }) {
                  <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-100 flex items-center justify-between gap-4">
                     <div className="flex flex-col shrink-0">
                        <span className="text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">A-la-Carte Price</span>
-                       <span className="text-2xl sm:text-3xl font-black text-gray-900">₹{previewItem.p}</span>
+                       <span className="text-2xl sm:text-3xl font-black text-gray-900">â‚¹{previewItem.p}</span>
                     </div>
                     <button 
                        onClick={() => { addItemToSession(previewItem); setPreviewItem(null); }}
@@ -952,3 +952,4 @@ export default function CaptainApp({ onLogout }) {
     </div>
   );
 }
+

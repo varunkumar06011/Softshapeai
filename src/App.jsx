@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import PortalSelection from "./components/PortalSelection";
-import LoginScreen from "./components/LoginScreen";
-import AdminDashboard from "./components/AdminDashboard";
-import CashierDashboard from "./components/CashierDashboard";
-import CaptainApp from "./components/CaptainApp";
+import PortalSelection from "./shared/components/PortalSelection";
+import LoginScreen from "./shared/components/LoginScreen";
+import AdminDashboard from "./admin/AdminDashboard";
+import CashierDashboard from "./cashier/CashierDashboard";
+import CaptainApp from "./captain/CaptainApp";
 import { MENU_DATA } from "./data/menuData";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { renderToCanvas } from "../services/creativeEngine";
+import { renderToCanvas } from "../../services/creativeEngine";
 
 export default function CreativeCanvas({ config, uploadUrl, className }) {
   const canvasRef = useRef(null);

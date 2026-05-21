@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search, 
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus, 
@@ -181,7 +181,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Today's Sale", value: "₹42,850", change: "+12%", icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Today's Sale", value: "â‚¹42,850", change: "+12%", icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Active Tables", value: "14/24", change: "58% Occupancy", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "Pending KOTs", value: "08", change: "Avg 12m prep", icon: ChefHat, color: "text-orange-600", bg: "bg-orange-50" },
     { label: "Online Orders", value: "26", change: "12 Swiggy, 14 Zomato", icon: Monitor, color: "text-purple-600", bg: "bg-purple-50" },
@@ -265,7 +265,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <p className="text-[10px] font-black leading-none">Kiran Kumar</p>
                   <p className="text-[8px] text-gray-400 font-bold uppercase mt-0.5">Head Cashier</p>
                 </div>
-                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm shadow-inner">🤵</div>
+                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm shadow-inner">ðŸ¤µ</div>
              </div>
           </div>
         </header>
@@ -328,7 +328,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       }`}>{o.status}</span>
                                    </td>
                                    <td className="px-3 py-2 text-right">
-                                      <p className="text-[10px] font-black text-gray-900">₹{o.amount}</p>
+                                      <p className="text-[10px] font-black text-gray-900">â‚¹{o.amount}</p>
                                    </td>
                                 </tr>
                               ))}
@@ -354,7 +354,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     <Timer size={10} /> 0{i+4}:22
                                  </span>
                               </div>
-                              <p className="text-[10px] font-black text-gray-900 leading-tight">Table 0{i+2} • {i+1} Items</p>
+                              <p className="text-[10px] font-black text-gray-900 leading-tight">Table 0{i+2} â€¢ {i+1} Items</p>
                               <div className="mt-1 flex gap-1 flex-wrap">
                                  <span className="text-[7px] font-bold bg-white border border-gray-100 px-1 rounded">Chicken Biryani</span>
                                  <span className="text-[7px] font-bold bg-white border border-gray-100 px-1 rounded">Naan</span>
@@ -380,7 +380,7 @@ const CashierDashboard = ({ onLogout }) => {
                               <span className="text-[7px] font-black bg-orange-500 text-white px-1 py-0.5 rounded">SWIGGY</span>
                               <span className="text-[8px] font-black text-orange-600">04:32</span>
                            </div>
-                           <p className="text-[10px] font-black text-gray-900">#SW-2456 • 2 Items</p>
+                           <p className="text-[10px] font-black text-gray-900">#SW-2456 â€¢ 2 Items</p>
                         </div>
                      </div>
                   </div>
@@ -482,7 +482,7 @@ const CashierDashboard = ({ onLogout }) => {
                               <div className="p-1.5 flex flex-col flex-grow">
                                  <h4 className="text-[9px] font-black text-gray-900 leading-tight mb-1 line-clamp-1">{item.n}</h4>
                                  <div className="flex items-center justify-between mt-auto">
-                                    <p className="text-[10px] font-black text-gray-900">₹{item.p}</p>
+                                    <p className="text-[10px] font-black text-gray-900">â‚¹{item.p}</p>
                                     <div className="w-5 h-5 rounded-md bg-gray-100 border border-gray-100 flex items-center justify-center text-gray-400 group-hover:bg-[#E53935] group-hover:text-white">
                                        <Plus size={12} />
                                     </div>
@@ -533,7 +533,7 @@ const CashierDashboard = ({ onLogout }) => {
                               <div className="flex-grow min-w-0">
                                  <div className="flex justify-between items-start mb-0.5">
                                     <p className="text-[9px] font-bold text-gray-900 truncate">{item.n}</p>
-                                    <p className="text-[9px] font-black text-gray-900">₹{item.p * item.q}</p>
+                                    <p className="text-[9px] font-black text-gray-900">â‚¹{item.p * item.q}</p>
                                  </div>
                                  <div className="flex items-center justify-between">
                                     <div className="flex items-center bg-gray-100 rounded-md p-0.5">
@@ -553,11 +553,11 @@ const CashierDashboard = ({ onLogout }) => {
                      <div className="space-y-0.5">
                         <div className="flex justify-between text-[8px] font-bold text-gray-400 uppercase tracking-widest">
                            <span>Subtotal</span>
-                           <span>₹{subtotal}</span>
+                           <span>â‚¹{subtotal}</span>
                         </div>
                         <div className="flex justify-between items-center pt-1 border-t border-gray-200">
                            <span className="text-[9px] font-black text-gray-900">NET TOTAL</span>
-                           <span className="text-xl font-black text-[#E53935]">₹{total.toFixed(0)}</span>
+                           <span className="text-xl font-black text-[#E53935]">â‚¹{total.toFixed(0)}</span>
                         </div>
                      </div>
 
@@ -660,7 +660,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         }`}>{txn.method}</span>
                                      </td>
                                      <td className="p-3 text-right">
-                                        <p className="text-[10px] font-black text-gray-900">₹{txn.amount}</p>
+                                        <p className="text-[10px] font-black text-gray-900">â‚¹{txn.amount}</p>
                                         <p className="text-[8px] text-gray-400 font-bold uppercase">{txn.items} Items</p>
                                      </td>
                                   </tr>
@@ -717,7 +717,7 @@ const CashierDashboard = ({ onLogout }) => {
                                {order.items.map(item => <p key={item} className="text-[9px] text-gray-500 font-bold">{item}</p>)}
                             </div>
                             <div className="flex justify-between items-center pt-3 border-t border-gray-50">
-                               <span className="text-[10px] font-black text-gray-900">₹{order.amount}</span>
+                               <span className="text-[10px] font-black text-gray-900">â‚¹{order.amount}</span>
                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
                                  order.status === 'Ready' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                                }`}>{order.status}</span>
@@ -746,11 +746,11 @@ const CashierDashboard = ({ onLogout }) => {
                                   </div>
                                   <div>
                                      <p className="text-[10px] font-black text-gray-900">{payment.id}</p>
-                                     <p className="text-[8px] font-bold text-gray-400 uppercase">{payment.time} • via {payment.method}</p>
+                                     <p className="text-[8px] font-bold text-gray-400 uppercase">{payment.time} â€¢ via {payment.method}</p>
                                   </div>
                                </div>
                                <div className="text-right">
-                                  <p className="text-[11px] font-black text-gray-900">₹{payment.amount}</p>
+                                  <p className="text-[11px] font-black text-gray-900">â‚¹{payment.amount}</p>
                                   <div className="flex items-center gap-1 justify-end">
                                      <div className="w-1 h-1 rounded-full bg-green-500" />
                                      <span className="text-[8px] font-black text-green-600 uppercase">Settled</span>
@@ -776,7 +776,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="w-10 h-10 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl">T{selectedTable.id}</div>
                     <div>
                        <h2 className="text-[10px] font-black uppercase text-gray-400 leading-none">Active Session</h2>
-                       <p className="text-sm font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
+                       <p className="text-sm font-black text-gray-900 mt-1">{selectedTable.guests} Guests â€¢ {selectedTable.time}</p>
                     </div>
                  </div>
                  <button onClick={() => setSelectedTable(null)} className="p-2 text-gray-400 hover:text-gray-900 bg-white rounded-lg border border-gray-100"><X size={18} /></button>
@@ -791,18 +791,18 @@ const CashierDashboard = ({ onLogout }) => {
                                 <span className="w-5 h-5 rounded bg-gray-50 flex items-center justify-center text-[9px] font-black text-gray-500">{item.q}x</span>
                                 <span className="text-[11px] font-bold text-gray-800">{item.n}</span>
                              </div>
-                             <span className="text-[11px] font-black text-gray-900">₹{item.p * item.q}</span>
+                             <span className="text-[11px] font-black text-gray-900">â‚¹{item.p * item.q}</span>
                           </div>
                        ))}
                     </div>
                  </div>
                  
                  <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-6 border border-gray-100">
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{activeSubtotal}</span></div>
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{activeTaxes.toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>â‚¹{activeSubtotal}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>â‚¹{activeTaxes.toFixed(0)}</span></div>
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-1">
                        <span className="text-[10px] font-black text-gray-900 uppercase">Running Total</span>
-                       <span className="text-2xl font-black text-[#E53935]">₹{activeTotal.toFixed(0)}</span>
+                       <span className="text-2xl font-black text-[#E53935]">â‚¹{activeTotal.toFixed(0)}</span>
                     </div>
                  </div>
 
@@ -832,7 +832,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
                  <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
                  <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{activeTotal.toFixed(0)}</p>
+                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">â‚¹{activeTotal.toFixed(0)}</p>
                  <div className="space-y-3">
                     <div className="flex justify-between border-b border-gray-200 pb-1">
                        <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>
@@ -879,3 +879,4 @@ const CashierDashboard = ({ onLogout }) => {
 };
 
 export default CashierDashboard;
+
