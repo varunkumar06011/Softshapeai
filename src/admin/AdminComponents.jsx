@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   ChartNoAxesCombined, 
   ClipboardList, 
@@ -51,13 +51,13 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4 font-sans">
     <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base animate-fade-in flex items-center gap-3">
-      <span className="text-xl">âœ¨</span>
+      <span className="text-xl">✨</span>
       <p className="font-medium">Live Operational Insight: <span className="font-bold text-[#B71C1C]">Chicken Dum Biryani</span> is moving 15% faster than usual. Average prep time is 12 mins.</p>
     </div>
 
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       {[
-        { label: "Today's Revenue", value: `â‚¹${revenue.toLocaleString()}`, sub: "â†‘12%", color: "text-[#2E7D32]" },
+        { label: "Today's Revenue", value: `₹${revenue.toLocaleString()}`, sub: "↑12%", color: "text-[#2E7D32]" },
         { label: "Total Orders", value: ordersCount, sub: "live", color: "text-[#1A1A1A]" },
         { label: "Tables Occupied", value: "14/20", sub: "active", color: "text-[#1A1A1A]" },
         { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
@@ -198,7 +198,7 @@ export function Pos({ onOrderComplete, onKOTSend }) {
             <div key={x.n} onClick={() => addToCart(x)} className={card + " p-3 flex flex-col justify-between transition-transform active:scale-95 cursor-pointer group hover:border-[#E53935]"}>
               <div>
                 <p className="font-bold text-sm md:text-base text-[#1A1A1A] line-clamp-1 group-hover:text-[#E53935]">{x.n}</p>
-                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">â‚¹{x.p}</p>
+                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">₹{x.p}</p>
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <div className={`h-4 w-4 rounded-sm border flex items-center justify-center ${x.t === "veg" ? "border-green-600" : "border-red-600"}`}>
@@ -224,20 +224,20 @@ export function Pos({ onOrderComplete, onKOTSend }) {
                 <div key={item.n} className="flex justify-between items-center text-sm group">
                   <div className="flex flex-col">
                     <span className="font-medium">{item.n}</span>
-                    <span className="text-[10px] text-[#6B6B6B]">â‚¹{item.p} x {item.q}</span>
+                    <span className="text-[10px] text-[#6B6B6B]">₹{item.p} x {item.q}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-bold">â‚¹{item.p * item.q}</span>
-                    <button onClick={(e) => { e.stopPropagation(); removeFromCart(item.n); }} className="text-[#E53935] opacity-0 group-hover:opacity-100 transition-opacity">âœ•</button>
+                    <span className="font-bold">₹{item.p * item.q}</span>
+                    <button onClick={(e) => { e.stopPropagation(); removeFromCart(item.n); }} className="text-[#E53935] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                   </div>
                 </div>
               ))
             )}
           </div>
           <div className="mt-4 border-t border-[#FFCDD2] pt-3 space-y-1">
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>â‚¹{subtotal.toFixed(2)}</span></div>
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>â‚¹{gst.toFixed(2)}</span></div>
-            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>â‚¹{total.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>₹{gst.toFixed(2)}</span></div>
+            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
             {["Cash", "Card", "UPI"].map((x, i) => (
@@ -258,37 +258,37 @@ export function Pos({ onOrderComplete, onKOTSend }) {
 
 export function Tables({ onOpen }) {
   const data = [
-    { id: 1, status: "occupied", details: "4 guests â€” â‚¹1,850 â€” 45 min" },
+    { id: 1, status: "occupied", details: "4 guests — ₹1,850 — 45 min" },
     { id: 2, status: "available", details: "Available" },
-    { id: 3, status: "occupied", details: "2 guests â€” â‚¹650 â€” 20 min" },
+    { id: 3, status: "occupied", details: "2 guests — ₹650 — 20 min" },
     { id: 4, status: "reserved", details: "Priya 7:00 PM" },
-    { id: 5, status: "occupied", details: "6 guests â€” â‚¹3,200 â€” 1h 10m" },
+    { id: 5, status: "occupied", details: "6 guests — ₹3,200 — 1h 10m" },
     { id: 6, status: "available", details: "Available" },
-    { id: 7, status: "occupied", details: "3 guests â€” â‚¹980 â€” 35 min" },
-    { id: 8, status: "occupied", details: "4 guests â€” â‚¹1,354 â€” 15 min" },
+    { id: 7, status: "occupied", details: "3 guests — ₹980 — 35 min" },
+    { id: 8, status: "occupied", details: "4 guests — ₹1,354 — 15 min" },
     { id: 9, status: "available", details: "Available" },
     { id: 10, status: "reserved", details: "Wedding party 8PM" },
-    { id: 11, status: "occupied", details: "2 guests â€” â‚¹480 â€” 12 min" },
+    { id: 11, status: "occupied", details: "2 guests — ₹480 — 12 min" },
     { id: 12, status: "available", details: "Available" },
-    { id: 13, status: "occupied", details: "5 guests â€” â‚¹2,410 â€” 53 min" },
+    { id: 13, status: "occupied", details: "5 guests — ₹2,410 — 53 min" },
     { id: 14, status: "available", details: "Available" },
-    { id: 15, status: "occupied", details: "4 guests â€” â‚¹1,440 â€” 24 min" },
-    { id: 16, status: "occupied", details: "3 guests â€” â‚¹1,140 â€” 32 min" },
+    { id: 15, status: "occupied", details: "4 guests — ₹1,440 — 24 min" },
+    { id: 16, status: "occupied", details: "3 guests — ₹1,140 — 32 min" },
     { id: 17, status: "available", details: "Available" },
-    { id: 18, status: "occupied", details: "4 guests â€” â‚¹1,760 â€” 41 min" },
+    { id: 18, status: "occupied", details: "4 guests — ₹1,760 — 41 min" },
     { id: 19, status: "available", details: "Available" },
-    { id: 20, status: "occupied", details: "2 guests â€” â‚¹720 â€” 18 min" },
+    { id: 20, status: "occupied", details: "2 guests — ₹720 — 18 min" },
   ];
   return <div className="space-y-4 font-sans">
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-      <h3 className="font-semibold">Floor Plan â€” Main Hall</h3>
+      <h3 className="font-semibold">Floor Plan — Main Hall</h3>
       <select className={input + " w-full sm:max-w-52"}><option>Main Hall</option><option>Terrace</option></select>
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
       {data.map((t) => {
         const bg = t.status === "occupied" ? "bg-[#B71C1C] text-white border-[#B71C1C]" : t.status === "reserved" ? "bg-[#FFF3E0] text-[#8D4E00]" : "bg-[#E8F5E9] text-[#1B5E20]";
-        const label = t.status === "occupied" ? `Occupied â€” ${t.details}` : t.status === "reserved" ? `Reserved â€” ${t.details}` : "Available";
-        return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Dum Biryani x2, Mutton Curry x1, Mango Lassi x2", time: "Seated 45 min ago", bill: "â‚¹1,382" })} className={`${cardBase} ${bg} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
+        const label = t.status === "occupied" ? `Occupied — ${t.details}` : t.status === "reserved" ? `Reserved — ${t.details}` : "Available";
+        return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Dum Biryani x2, Mutton Curry x1, Mango Lassi x2", time: "Seated 45 min ago", bill: "₹1,382" })} className={`${cardBase} ${bg} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
       })}
     </div>
     <div className="flex flex-wrap items-center gap-4 rounded-lg bg-white p-3 border border-[#FFCDD2] shadow-sm">
@@ -330,15 +330,15 @@ export function MenuPage({ onAddDish }) {
               <td className="px-4 py-2"><div className="h-10 w-10 rounded-md bg-[#EF9A9A]" /></td>
               <td className="px-4 py-2 font-medium">{item.n}</td>
               <td className="px-4 py-2">{item.c}</td>
-              <td className="px-4 py-2">â‚¹{item.p}</td>
+              <td className="px-4 py-2">₹{item.p}</td>
               <td className="px-4 py-2">
                 <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
                 {item.t === "veg" ? "Veg" : "Non-Veg"}
               </td>
               <td className="px-4 py-2"><span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">Available</span></td>
               <td className="px-4 py-2">
-                <button className="text-blue-600 mr-3">âœï¸</button>
-                <button className="text-red-600">ðŸ—‘ï¸</button>
+                <button className="text-blue-600 mr-3">✏️</button>
+                <button className="text-red-600">🗑️</button>
               </td>
             </tr>
           ))}
@@ -349,7 +349,7 @@ export function MenuPage({ onAddDish }) {
 }
 
 export function Orders() {
-  const rows = [["#1043", "Dine-In", "Table 8", "3", "â‚¹1,382", "Preparing", "5 min ago", "View"], ["#1042", "Dine-In", "Table 7", "4", "â‚¹850", "Ready", "12 min ago", "View"], ["#1041", "Delivery", "Swiggy â€” Kiran", "2", "â‚¹890", "Dispatched", "18 min ago", "Track"], ["#1040", "Takeaway", "Walk-in", "1", "â‚¹309", "Ready", "22 min ago", "View"], ["#1039", "Dine-In", "Table 12", "6", "â‚¹2,100", "Served", "35 min ago", "Bill"], ["#1038", "Delivery", "Zomato â€” Ananya", "3", "â‚¹1,100", "Delivered", "45 min ago", "Done"]];
+  const rows = [["#1043", "Dine-In", "Table 8", "3", "₹1,382", "Preparing", "5 min ago", "View"], ["#1042", "Dine-In", "Table 7", "4", "₹850", "Ready", "12 min ago", "View"], ["#1041", "Delivery", "Swiggy — Kiran", "2", "₹890", "Dispatched", "18 min ago", "Track"], ["#1040", "Takeaway", "Walk-in", "1", "₹309", "Ready", "22 min ago", "View"], ["#1039", "Dine-In", "Table 12", "6", "₹2,100", "Served", "35 min ago", "Bill"], ["#1038", "Delivery", "Zomato — Ananya", "3", "₹1,100", "Delivered", "45 min ago", "Done"]];
   return <div className="space-y-4 font-sans">
     <UnifiedOrdersDashboard />
     <div className="flex gap-2 overflow-x-auto pb-1">{["Dine-In (48)", "Takeaway (23)", "Delivery (18)", "All (89)"].map((x, i) => <button key={x} className={`whitespace-nowrap rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
@@ -378,9 +378,9 @@ export function Reports() {
   const data = useMemo(() => {
     if (timeRange === 'Today') {
       return {
-        revenue: "â‚¹48,250",
+        revenue: "₹48,250",
         orders: "124",
-        aov: "â‚¹389",
+        aov: "₹389",
         topItem: "Chicken Biryani",
         trend: Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, rev: 1000 + Math.random() * 5000 })),
         sources: [{ name: "Dine-In", value: 65 }, { name: "Zomato", value: 20 }, { name: "Swiggy", value: 15 }]
@@ -388,18 +388,18 @@ export function Reports() {
     }
     if (timeRange === 'This Week') {
       return {
-        revenue: "â‚¹3,47,250",
+        revenue: "₹3,47,250",
         orders: "892",
-        aov: "â‚¹389",
+        aov: "₹389",
         topItem: "Paneer Butter Masala",
         trend: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => ({ time: d, rev: 40000 + Math.random() * 20000 })),
         sources: [{ name: "Dine-In", value: 55 }, { name: "Zomato", value: 25 }, { name: "Swiggy", value: 20 }]
       };
     }
     return {
-      revenue: "â‚¹14,82,500",
+      revenue: "₹14,82,500",
       orders: "3,842",
-      aov: "â‚¹385",
+      aov: "₹385",
       topItem: "Chicken Biryani",
       trend: Array.from({ length: 30 }).map((_, i) => ({ time: i + 1, rev: 45000 + Math.random() * 15000 })),
       sources: [{ name: "Dine-In", value: 50 }, { name: "Zomato", value: 30 }, { name: "Swiggy", value: 20 }]
@@ -549,7 +549,7 @@ export function Payroll() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-10">
           <div className="text-left sm:text-right">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
-            <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">â‚¹1,38,434</p>
+            <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹1,38,434</p>
           </div>
           <button className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95">
              Run Payroll
@@ -585,15 +585,15 @@ export function Payroll() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-bold text-gray-700">â‚¹{emp.salary.toLocaleString()}</td>
+                    <td className="px-6 py-4 font-bold text-gray-700">₹{emp.salary.toLocaleString()}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${emp.absent > 2 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
                         {emp.absent} Days
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right font-bold text-red-600">â‚¹{emp.deduction.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-bold text-green-600">â‚¹{emp.bonus.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-black text-gray-900">â‚¹{final.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-right font-bold text-red-600">₹{emp.deduction.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-right font-bold text-green-600">₹{emp.bonus.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-right font-black text-gray-900">₹{final.toLocaleString()}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${emp.status === 'Paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700 animate-pulse'}`}>
                         {emp.status}
@@ -622,7 +622,7 @@ export function Inventory() {
   return (
     <div className="space-y-6 font-sans max-w-7xl mx-auto">
       <div className="bg-[#FFF1F2] p-5 rounded-2xl border border-[#FFE4E6] text-gray-800 text-sm font-medium">
-        Spire.ai tracks every ingredient â€” ask anything
+        Spire.ai tracks every ingredient — ask anything
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
@@ -639,25 +639,25 @@ export function Inventory() {
         <p className="text-sm font-medium text-gray-500">Analyzing your 50kg chicken stock for today...</p>
         <div className="space-y-3 text-sm font-bold text-gray-800 leading-relaxed">
           <p className="flex items-center gap-3">
-             <span className="text-gray-400">â†’</span> 
-             <span>12.5kg used in 50 Chicken Dum Biryani plates (<span className="text-gray-500 font-medium">â‚¹15,450 revenue</span>)</span>
+             <span className="text-gray-400">→</span> 
+             <span>12.5kg used in 50 Chicken Dum Biryani plates (<span className="text-gray-500 font-medium">₹15,450 revenue</span>)</span>
           </p>
           <p className="flex items-center gap-3">
-             <span className="text-gray-400">â†’</span> 
-             <span>3.2kg used in Chicken Fry Piece Biryani â€” 8 orders (<span className="text-gray-500 font-medium">â‚¹2,472</span>)</span>
+             <span className="text-gray-400">→</span> 
+             <span>3.2kg used in Chicken Fry Piece Biryani — 8 orders (<span className="text-gray-500 font-medium">₹2,472</span>)</span>
           </p>
           <p className="flex items-center gap-3">
-             <span className="text-gray-400">â†’</span> 
+             <span className="text-gray-400">→</span> 
              <span>35kg currently in cold storage (Fridge #2, Zone B)</span>
           </p>
           <p className="flex items-center gap-3 text-[#E53935] font-black">
-             <span>â†’ 2.5kg UNACCOUNTED</span> 
+             <span>→ 2.5kg UNACCOUNTED</span> 
              <AlertCircle size={16} /> 
-             <span className="font-medium">â€” checking cameras...</span>
+             <span className="font-medium">— checking cameras...</span>
           </p>
           <p className="flex items-center gap-3">
-             <span className="text-gray-400">â†’</span> 
-             <span>Found: CAM-04 at 14:32 â€” suspicious activity flagged</span>
+             <span className="text-gray-400">→</span> 
+             <span>Found: CAM-04 at 14:32 — suspicious activity flagged</span>
           </p>
         </div>
         <button className="bg-[#E53935] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#B71C1C] transition-all active:scale-95 shadow-md">
@@ -689,7 +689,7 @@ export function Inventory() {
                   <td className="px-8 py-5 text-center font-black text-gray-900">{item.current}</td>
                   <td className="px-8 py-5 text-center">
                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${item.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {item.status} {item.status === 'LOW' && 'âš '}
+                        {item.status} {item.status === 'LOW' && '⚠'}
                      </span>
                   </td>
                   <td className="px-8 py-5 text-center font-black text-[#E53935] underline decoration-dotted underline-offset-4">{item.reorder}</td>
@@ -706,7 +706,7 @@ export function Inventory() {
 export function Marketing({ upload, setUpload, uploadRef }) {
   const [step, setStep] = useState('upload');
   const [selectedConfig, setSelectedConfig] = useState(null);
-  const [caption, setCaption] = useState("âœ¨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. ðŸ¥˜â¤ï¸\n\n#VGrand #SoftshapeAI #GourmetExperience #FoodArt");
+  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#VGrand #SoftshapeAI #GourmetExperience #FoodArt");
   const [scheduling, setScheduling] = useState('now');
 
   const handlePost = () => {
@@ -907,7 +907,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
               </div>
               <div className="text-right">
                  <p className="text-[10px] font-black text-gray-400 uppercase">SIGNALS</p>
-                 <p className="text-[10px] font-bold text-gray-700 uppercase">Rainy â€¢ Public Holiday</p>
+                 <p className="text-[10px] font-bold text-gray-700 uppercase">Rainy • Public Holiday</p>
               </div>
            </div>
            <button className="w-full bg-[#166534] text-white py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-100">Apply Now</button>
@@ -920,7 +920,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
            </div>
            <div className="space-y-3">
               {[
-                { name: "Monsoon Special", desc: "â‚¹50 OFF on all Biryani", status: "Active", color: "text-green-600 bg-green-50" },
+                { name: "Monsoon Special", desc: "₹50 OFF on all Biryani", status: "Active", color: "text-green-600 bg-green-50" },
                 { name: "Lassi Combo", desc: "Buy 2 Get 1 Free", status: "Scheduled", color: "text-blue-600 bg-blue-50" }
               ].map((p, i) => (
                 <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-gray-50 bg-gray-50/50">
@@ -944,7 +944,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">TOTAL IMPRESSIONS</p>
                  </div>
                  <div className="text-right">
-                    <p className="text-xs font-black text-green-600 flex items-center gap-1">â†‘ 24%</p>
+                    <p className="text-xs font-black text-green-600 flex items-center gap-1">↑ 24%</p>
                     <p className="text-[9px] font-bold text-gray-400 uppercase">vs last week</p>
                  </div>
               </div>
@@ -957,7 +957,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
                     <p className="text-[9px] font-black text-gray-400 uppercase">CONVERSIONS</p>
                  </div>
                  <div className="text-right">
-                    <p className="text-sm font-black text-gray-900">â‚¹1.2k</p>
+                    <p className="text-sm font-black text-gray-900">₹1.2k</p>
                     <p className="text-[9px] font-black text-gray-400 uppercase">AD SPEND</p>
                  </div>
               </div>
@@ -1015,10 +1015,10 @@ export function Pricing() {
             <h3 className="text-xl font-black text-gray-900 mb-4">{plan.name}</h3>
             <div className="flex flex-col mb-10">
               <div className="flex items-baseline gap-1">
-                <span className="text-5xl font-black text-gray-900 tracking-tighter">â‚¹{plan.dayPrice}</span>
+                <span className="text-5xl font-black text-gray-900 tracking-tighter">₹{plan.dayPrice}</span>
                 <span className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">/ Day</span>
               </div>
-              <p className="text-sm font-medium text-gray-400 mt-2">â‚¹{plan.monthPrice} / Month</p>
+              <p className="text-sm font-medium text-gray-400 mt-2">₹{plan.monthPrice} / Month</p>
             </div>
 
             <div className="space-y-4 mb-12 flex-grow">
@@ -1059,4 +1059,3 @@ export function SettingsPage() {
     <p className="text-sm text-gray-600">Configure outlet details, printers, and user permissions.</p>
   </div>;
 }
-
