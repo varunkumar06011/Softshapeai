@@ -19,6 +19,7 @@ import {
   RefreshCw,
   TrendingUp,
   TrendingDown,
+  User,
   Users,
   DollarSign,
   Layers,
@@ -273,6 +274,15 @@ export function Pos({ onOrderComplete, onKOTSend }) {
   );
 }
 
+const CAPTAINS = [
+  { id: 'C1', name: 'Ajay Kumar' },
+  { id: 'C2', name: 'Ravi Behar' },
+  { id: 'C3', name: 'Sagar' },
+  { id: 'C4', name: 'Durga Prasad' },
+  { id: 'C5', name: 'Subbaiah' },
+  { id: 'C6', name: 'Happy' },
+];
+
 export function Tables({ onOpen }) {
   const [tables, setTables] = useState(() => {
     const saved = localStorage.getItem('softshape_tables');
@@ -315,6 +325,10 @@ export function Tables({ onOpen }) {
            bgClass = "bg-[#FFF3E0] text-[#8D4E00]";
         }
 
+        const items = t.kotHistory ? t.kotHistory.flatMap(k => k.items || []) : [];
+        const itemsCount = items.reduce((sum, i) => sum + i.q, 0);
+        const captainName = CAPTAINS.find(c => c.id === t.captainId)?.name || t.captainId || 'Staff';
+
         let details = "Available";
         if (!isFree && !isReserved) {
            details = `${t.guests || 0} guests — ₹${t.currentBill || 0}`;
@@ -324,12 +338,55 @@ export function Tables({ onOpen }) {
         
         const label = isFree ? "Available" : isReserved ? `Reserved — ${details}` : `${t.status} — ${details}`;
         
-        return <button key={t.id} onClick={() => !isFree && onOpen({ 
-           id: t.id, 
-           items: t.kotHistory ? t.kotHistory.flatMap(k => k.items).map(i => `${i.n} x${i.q}`).join(', ') : "View items", 
-           time: t.time || "Recently", 
-           bill: `₹${t.currentBill || 0}` 
-        })} className={`${cardBase} ${bgClass} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
+        return (
+          <button 
+             key={t.id} 
+             onClick={() => !isFree && onOpen({ 
+               id: t.id, 
+               items: items.map(i => `${i.n} x${i.q}`).join(', ') || "No items yet", 
+               time: t.time || "Recently", 
+               bill: `₹${t.currentBill || 0}` 
+             })} 
+             className={`${cardBase} ${bgClass} min-h-[100px] p-3 text-left transition-all active:scale-95 flex flex-col justify-between`}
+          >
+             <div className="flex justify-between items-start w-full">
+               <p className="text-xl font-black leading-none">T{t.id}</p>
+               {!isFree && !isReserved && (
+                 <span className="text-[9px] font-black uppercase bg-white/20 px-1.5 py-0.5 rounded">{t.time || '1m'}</span>
+               )}
+             </div>
+             
+             {isFree || isReserved ? (
+               <p className="text-[11px] font-bold mt-2">{label}</p>
+             ) : (
+               <div className="mt-2 space-y-1.5 w-full">
+                 <div className="flex justify-between items-center text-[10px]">
+                   <span className="font-bold truncate opacity-90 flex items-center gap-1"><User size={10} /> {captainName}</span>
+                   <span className="font-black flex items-center gap-1"><Users size={10} /> {t.guests || 0}</span>
+                 </div>
+                 
+                 {items.length > 0 && (
+                   <div className="text-[9px] leading-tight opacity-90 border-t border-white/20 pt-1.5">
+                     <p className="truncate font-medium">
+                       {items.slice(0, 2).map(i => `${i.q}x ${i.n}`).join(', ')}
+                     </p>
+                     {items.length > 2 && (
+                       <p className="italic text-[8px] mt-0.5">+{items.length - 2} more items</p>
+                     )}
+                   </div>
+                 )}
+                 
+                 <div className="flex justify-between items-end border-t border-white/20 pt-1.5 mt-1">
+                   <div className="flex flex-col">
+                     <span className="text-[8px] uppercase tracking-widest opacity-80">{t.status}</span>
+                     <span className="text-[9px] font-bold">{itemsCount} Items</span>
+                   </div>
+                   <span className="text-sm font-black">₹{t.currentBill || 0}</span>
+                 </div>
+               </div>
+             )}
+          </button>
+        );
       })}
     </div>
     <div className="flex flex-wrap items-center gap-4 rounded-lg bg-white p-3 border border-[#FFCDD2] shadow-sm">
