@@ -614,22 +614,34 @@ const CashierDashboard = ({ onLogout }) => {
 
                   {activeTab === 'tables' && (
                     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2">
-                       {tables.map((table, i) => {
-                         const isBusy = table.status !== 'Free';
+                        {tables.map((table, i) => {
+                         const isFree = table.status === 'Free' || !table.status;
+                         const isWaitingBill = table.status === 'Waiting Bill';
+                         const isBusy = !isFree && !isWaitingBill;
+                         
+                         let containerClass = 'bg-white border-gray-100 text-gray-400 hover:border-gray-300';
+                         let statusText = 'Open';
+                         
+                         if (isWaitingBill) {
+                           containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-sm shadow-amber-50 animate-pulse';
+                           statusText = 'Billing Requested';
+                         } else if (isBusy) {
+                           containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-sm shadow-red-50';
+                           statusText = 'Busy';
+                         }
+
                          return (
                            <div 
                               key={i} 
-                              onClick={() => isBusy && setSelectedTable(table)}
-                              className={`aspect-square rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95 ${
-                                isBusy ? 'bg-red-50 border-[#E53935] text-[#E53935] shadow-sm shadow-red-50' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300'
-                              }`}
+                              onClick={() => !isFree && setSelectedTable(table)}
+                              className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-1 cursor-pointer transition-all hover:scale-105 active:scale-95 ${containerClass}`}
                            >
                               <span className="text-xl font-black">{table.id}</span>
-                              <span className="text-[7px] font-black uppercase tracking-widest">{isBusy ? 'Busy' : 'Open'}</span>
+                              <span className="text-[7px] font-black uppercase tracking-tighter leading-tight mt-0.5">{statusText}</span>
                            </div>
                          );
-                       })}
-                    </div>
+                        })}
+                     </div>
                   )}
 
                   {activeTab === 'history' && (
