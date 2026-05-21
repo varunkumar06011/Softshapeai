@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, ShoppingCart, LogOut, ChevronRight, Clock, Plus, Minus, 
   Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer, 
@@ -16,10 +16,12 @@ const TABLE_STATUS = {
 };
 
 const CAPTAINS = [
-  { id: 'C1', name: 'Rahul Sharma', pin: '1234', initials: 'RS', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
-  { id: 'C2', name: 'Arjun Singh', pin: '1234', initials: 'AS', color: 'bg-[#EEF2FF] text-[#4338CA]' },
-  { id: 'C3', name: 'Kiran T.', pin: '1234', initials: 'KT', color: 'bg-[#ECFDF5] text-[#047857]' },
-  { id: 'C4', name: 'Meena Devi', pin: '1234', initials: 'MD', color: 'bg-[#FFF1F2] text-[#BE123C]' },
+  { id: 'C1', name: 'Ajay Kumar', pin: '1997', initials: 'AK', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
+  { id: 'C2', name: 'Ravi Behar', pin: '2002', initials: 'RB', color: 'bg-[#EEF2FF] text-[#4338CA]' },
+  { id: 'C3', name: 'Sagar', pin: '2000', initials: 'S', color: 'bg-[#ECFDF5] text-[#047857]' },
+  { id: 'C4', name: 'Durga Prasad', pin: '1998', initials: 'DP', color: 'bg-[#FFF1F2] text-[#BE123C]' },
+  { id: 'C5', name: 'Subbaiah', pin: '1977', initials: 'SU', color: 'bg-[#FEF3C7] text-[#D97706]' },
+  { id: 'C6', name: 'Happy', pin: '1996', initials: 'H', color: 'bg-[#F3E8FF] text-[#7E22CE]' },
 ];
 
 export default function CaptainApp({ onLogout }) {
@@ -33,6 +35,7 @@ export default function CaptainApp({ onLogout }) {
     return !(auth && hasCaptain);
   });
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [pinError, setPinError] = useState(false);
   const [pin, setPin] = useState('');
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [view, setView] = useState('tables'); // tables, session
@@ -45,6 +48,8 @@ export default function CaptainApp({ onLogout }) {
   const [previewItem, setPreviewItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [isCartMinimized, setIsCartMinimized] = useState(true);
+  const [removedItem, setRemovedItem] = useState(null);
+  const removeTimeoutRef = useRef(null);
   
   // MENU STATE (Persisted and Synced)
   const [menuItems, setMenuItems] = useState(MENU_DATA);
@@ -111,6 +116,33 @@ export default function CaptainApp({ onLogout }) {
     });
   }, [searchQuery, activeCategory, activeDiet, menuItems]);
 
+  const suggestedSpecials = useMemo(() => {
+    if (currentSessionItems.length === 0) return [];
+    
+    let hasSoup = false, hasBiryani = false, hasStarter = false;
+    currentSessionItems.forEach(item => {
+      const name = item.n.toLowerCase();
+      if (name.includes('soup')) hasSoup = true;
+      if (name.includes('biryani')) hasBiryani = true;
+      if (item.c === 'Starters') hasStarter = true;
+    });
+
+    let suggestions = [];
+    if (hasSoup && !hasBiryani) {
+      suggestions = menuItems.filter(m => m.n.toLowerCase().includes('biryani') || m.n === 'Chicken 65');
+    } else if (hasBiryani) {
+      suggestions = menuItems.filter(m => m.c === 'Drinks' || m.c === 'Desserts' || m.n === 'Chicken Lollipop');
+    } else if (hasStarter) {
+      suggestions = menuItems.filter(m => m.c === 'Main Course' || m.c === 'Drinks');
+    } else {
+      suggestions = menuItems.filter(m => m.c === 'Desserts' || m.c === 'Drinks');
+    }
+    
+    // Filter out items already in the cart
+    suggestions = suggestions.filter(s => !currentSessionItems.find(i => i.n === s.n));
+    return suggestions.slice(0, 4);
+  }, [currentSessionItems, menuItems]);
+
   const addNotification = (title, type = 'success') => {
     const id = Date.now();
     setNotifications(prev => [...prev, { id, title, type }]);
@@ -165,6 +197,7 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const handlePinInput = (num) => {
+    setPinError(false);
     if (pin.length < 4 && !isAuthenticating) {
       const newPin = pin + num;
       setPin(newPin);
@@ -178,7 +211,7 @@ export default function CaptainApp({ onLogout }) {
             localStorage.setItem('active_captain', JSON.stringify(selectedProfile));
           } else {
             setPin('');
-            addNotification('Access Denied: Invalid PIN', 'error');
+            setPinError(true);
           }
           setIsAuthenticating(false);
         }, 600);
@@ -204,10 +237,31 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const updateDraftQty = (name, delta) => {
-    setCurrentSessionItems(prev => prev.map(i => {
-      if (i.n === name) return { ...i, q: Math.max(1, i.q + delta) };
-      return i;
-    }).filter(i => i.q > 0));
+    setCurrentSessionItems(prev => {
+      const itemToUpdate = prev.find(i => i.n === name);
+      if (itemToUpdate && itemToUpdate.q + delta <= 0) {
+        setRemovedItem(itemToUpdate);
+        if (removeTimeoutRef.current) clearTimeout(removeTimeoutRef.current);
+        removeTimeoutRef.current = setTimeout(() => {
+          setRemovedItem(null);
+        }, 5000);
+      }
+      return prev.map(i => {
+        if (i.n === name) return { ...i, q: i.q + delta };
+        return i;
+      }).filter(i => i.q > 0);
+    });
+  };
+
+  const undoRemove = () => {
+    if (removedItem) {
+      setCurrentSessionItems(prev => {
+        if (prev.find(i => i.n === removedItem.n)) return prev;
+        return [...prev, removedItem];
+      });
+      setRemovedItem(null);
+      if (removeTimeoutRef.current) clearTimeout(removeTimeoutRef.current);
+    }
   };
 
   const sendIncrementalKOT = () => {
@@ -325,6 +379,12 @@ export default function CaptainApp({ onLogout }) {
                   <div className="flex items-center justify-center gap-2 text-[#E53935]">
                     <Loader2 size={16} className="animate-spin" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Validating PIN...</span>
+                  </div>
+                )}
+                {pinError && !isAuthenticating && (
+                  <div className="text-center animate-in fade-in slide-in-from-bottom-2">
+                    <p className="text-sm font-bold text-[#E53935]">plz enter right password</p>
+                    <p className="text-sm font-bold text-[#E53935] mt-1">దయచేసి సరైన పాస్వర్డ్ను నమోదు చేయండి.</p>
                   </div>
                 )}
               </div>
@@ -545,18 +605,35 @@ export default function CaptainApp({ onLogout }) {
                </div>
 
                {/* SESSION ORDER PANEL */}
-               <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'h-16 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'} bg-white flex flex-col z-40 shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300`}>
+               <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'h-16 lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`}>
                   <div 
                     className="p-4 sm:p-6 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0 cursor-pointer lg:cursor-default"
-                    onClick={() => setIsCartMinimized(!isCartMinimized)}
+                    onClick={() => {
+                      if (isCartMinimized || window.innerWidth >= 1024) {
+                        setIsCartMinimized(!isCartMinimized);
+                      }
+                    }}
                   >
                      <div className="flex items-center gap-3">
-                        <History size={18} className="text-[#E53935]" />
+                        {!isCartMinimized && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setIsCartMinimized(true); }}
+                            className="lg:hidden p-2 -ml-2 rounded-xl text-gray-600 hover:bg-gray-100 transition-colors flex items-center justify-center"
+                          >
+                            <ArrowLeft size={20} />
+                          </button>
+                        )}
+                        <History size={18} className={`text-[#E53935] ${!isCartMinimized ? 'hidden lg:block' : ''}`} />
                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
                      </div>
                      <div className="flex items-center gap-3">
                         <span className="text-sm font-black text-gray-900">₹{activeTable?.currentBill || 0}</span>
-                        <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
+                        {isCartMinimized && (
+                          <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
+                             <ChevronLeft size={16} className="rotate-90" />
+                          </div>
+                        )}
+                        <div className="hidden lg:flex w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center text-gray-400">
                            <ChevronLeft size={16} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-90' : '-rotate-90'}`} />
                         </div>
                      </div>
@@ -617,9 +694,35 @@ export default function CaptainApp({ onLogout }) {
                            </div>
                         )}
                      </div>
+
+                     {/* TODAY SPECIALS SMART SUGGESTIONS */}
+                     {!isCartMinimized && currentSessionItems.length > 0 && suggestedSpecials.length > 0 && (
+                        <div className="pt-8 border-t-2 border-dashed border-gray-100">
+                           <div className="flex items-center gap-2 mb-4">
+                              <Star size={16} className="text-amber-500 fill-amber-500" />
+                              <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935]">Today Specials</h4>
+                           </div>
+                           <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x custom-scrollbar">
+                              {suggestedSpecials.map((item, idx) => (
+                                 <div key={idx} className="min-w-[150px] w-[150px] bg-amber-50/30 border border-amber-100 rounded-2xl p-3 shadow-sm shrink-0 snap-start flex flex-col relative overflow-hidden group">
+                                    <p className="text-[11px] font-bold text-gray-900 leading-tight mb-3 pr-2">{item.n}</p>
+                                    <div className="flex items-center justify-between mt-auto">
+                                       <span className="text-[11px] font-black text-gray-500">₹{item.p}</span>
+                                       <button 
+                                          onClick={(e) => { e.stopPropagation(); addItemToSession(item); }}
+                                          className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center hover:bg-amber-500 hover:text-white transition-colors"
+                                       >
+                                          <Plus size={16} strokeWidth={3} />
+                                       </button>
+                                    </div>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     )}
                   </div>
 
-                  <div className="p-8 bg-white border-t border-gray-100 space-y-6 shrink-0 shadow-[0_-20px_50px_rgba(0,0,0,0.03)]">
+                  <div className="p-8 bg-white border-t border-gray-100 space-y-6 shrink-0 shadow-[0_-20px_50px_rgba(0,0,0,0.03)] relative z-10">
                      <div className="flex justify-between items-center">
                         <div className="flex flex-col gap-1">
                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
@@ -734,10 +837,71 @@ export default function CaptainApp({ onLogout }) {
         </div>
       )}
 
+      {/* UNDO NOTIFICATION */}
+      {removedItem && (
+        <div 
+          className="fixed bottom-24 right-6 z-[130] pointer-events-auto flex items-center justify-between gap-6 bg-gray-900 text-white px-5 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right-4 min-w-[280px] transition-transform"
+          onTouchStart={e => e.currentTarget.dataset.startX = e.touches[0].clientX}
+          onTouchMove={e => {
+            const startX = parseFloat(e.currentTarget.dataset.startX);
+            const currentX = e.touches[0].clientX;
+            const deltaX = currentX - startX;
+            if (deltaX > 0) {
+              e.currentTarget.style.transform = `translateX(${deltaX}px)`;
+              e.currentTarget.style.opacity = 1 - (deltaX / 200);
+            }
+          }}
+          onTouchEnd={e => {
+            const startX = parseFloat(e.currentTarget.dataset.startX);
+            const currentX = e.changedTouches[0].clientX;
+            if (currentX - startX > 50) {
+              setRemovedItem(null);
+            } else {
+              e.currentTarget.style.transform = '';
+              e.currentTarget.style.opacity = '';
+            }
+          }}
+        >
+          <div>
+             <p className="text-[11px] font-black uppercase tracking-tight leading-none">{removedItem.n} Removed</p>
+             <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">Item removed from draft</p>
+          </div>
+          <button 
+            onClick={undoRemove}
+            className="text-[10px] font-black text-amber-400 hover:text-amber-300 uppercase tracking-widest px-4 py-2 border border-amber-400/30 rounded-lg hover:bg-amber-400/10 transition-colors"
+          >
+            Undo
+          </button>
+        </div>
+      )}
+
       {/* OPERATIONAL NOTIFICATIONS */}
       <div className="fixed bottom-6 right-6 z-[120] flex flex-col gap-3 pointer-events-none">
         {notifications.map(n => (
-          <div key={n.id} className="pointer-events-auto flex items-center gap-4 bg-white border border-gray-100 p-4 rounded-[24px] shadow-[0_20px_40px_rgba(0,0,0,0.1)] animate-in slide-in-from-right-4 min-w-[280px]">
+          <div 
+            key={n.id} 
+            className="pointer-events-auto flex items-center gap-4 bg-white border border-gray-100 p-4 rounded-[24px] shadow-[0_20px_40px_rgba(0,0,0,0.1)] animate-in slide-in-from-right-4 min-w-[280px] transition-transform"
+            onTouchStart={e => e.currentTarget.dataset.startX = e.touches[0].clientX}
+            onTouchMove={e => {
+              const startX = parseFloat(e.currentTarget.dataset.startX);
+              const currentX = e.touches[0].clientX;
+              const deltaX = currentX - startX;
+              if (deltaX > 0) {
+                e.currentTarget.style.transform = `translateX(${deltaX}px)`;
+                e.currentTarget.style.opacity = 1 - (deltaX / 200);
+              }
+            }}
+            onTouchEnd={e => {
+              const startX = parseFloat(e.currentTarget.dataset.startX);
+              const currentX = e.changedTouches[0].clientX;
+              if (currentX - startX > 50) {
+                setNotifications(prev => prev.filter(notif => notif.id !== n.id));
+              } else {
+                e.currentTarget.style.transform = '';
+                e.currentTarget.style.opacity = '';
+              }
+            }}
+          >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${n.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-[#E53935]'}`}>
                {n.type === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
             </div>
