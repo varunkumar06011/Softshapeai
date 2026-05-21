@@ -37,7 +37,7 @@ import {
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
 } from 'recharts';
-import { useMenuSync } from '../hooks/useMenuSync';
+import { useMenu } from '../context/MenuContext';
 import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
 import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
@@ -144,14 +144,14 @@ export function Pos() {
   const [search, setSearch] = useState("");
   const [kotStatus, setKotStatus] = useState(null);
   const [table, setTable] = useState("8");
-  const { menuItems, categories, loading } = useMenuSync();
+  const { menuItems, categories, loading } = useMenu();
 
   const displayItems = useMemo(() => {
     let filtered = menuItems;
     if (cat !== "All") filtered = filtered.filter(x => x.c === cat);
     if (search) filtered = filtered.filter(x => x.n.toLowerCase().includes(search.toLowerCase()) || x.c.toLowerCase().includes(search.toLowerCase()));
     
-    return filtered.slice(0, 50);
+    return filtered;
   }, [cat, search, menuItems]);
 
   const { subtotal, taxes: gst, total } = calculateOrderTotal(cart);
@@ -472,9 +472,17 @@ export function Tables({ onOpen }) {
 }
 
 export function MenuPage({ onAddDish }) {
-  const { menuItems, updateMenu, loading, error, refreshMenu } = useMenuSync();
+  const { menuItems, updateMenu, loading, error, refreshMenu } = useMenu();
   const [filter, setFilter] = useState("");
-  const items = useMemo(() => menuItems.filter(x => x.n.toLowerCase().includes(filter.toLowerCase()) || x.c.toLowerCase().includes(filter.toLowerCase())), [filter, menuItems]);
+  const items = useMemo(
+    () =>
+      menuItems.filter(
+        (x) =>
+          x.n.toLowerCase().includes(filter.toLowerCase()) ||
+          x.c.toLowerCase().includes(filter.toLowerCase())
+      ),
+    [filter, menuItems]
+  );
   
   const [editingItem, setEditingItem] = useState(null);
   const [addingItem, setAddingItem] = useState(null);
@@ -492,7 +500,7 @@ export function MenuPage({ onAddDish }) {
   const handleSaveEdit = () => {
     const newMenu = menuItems.map(i => 
       i.n === editingItem.originalName 
-        ? { n: editingItem.n, c: editingItem.c, p: Number(editingItem.p), t: editingItem.t, img: editingItem.img } 
+        ? { ...i, n: editingItem.n, c: editingItem.c, p: Number(editingItem.p), t: editingItem.t, img: editingItem.img } 
         : i
     );
     updateMenu(newMenu);
@@ -549,7 +557,15 @@ export function MenuPage({ onAddDish }) {
     )}
     <div className="mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
-        <h3 className="font-semibold text-lg shrink-0">Menu Items {loading && <span className="text-xs font-normal text-gray-400">(syncing…)</span>}</h3>
+        <h3 className="font-semibold text-lg shrink-0">
+          Menu Items
+          {!loading && menuItems.length > 0 && (
+            <span className="ml-2 text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+              {menuItems.length} synced
+            </span>
+          )}
+          {loading && <span className="text-xs font-normal text-gray-400"> (syncing…)</span>}
+        </h3>
         <button type="button" onClick={() => refreshMenu()} className="text-xs font-bold text-[#E53935] hover:underline">Refresh from server</button>
         <input className={input + " h-9 w-full sm:w-64"} placeholder="Search menu..." value={filter} onChange={e => setFilter(e.target.value)} />
       </div>
@@ -572,9 +588,13 @@ export function MenuPage({ onAddDish }) {
         </button>
       </div>
     </div>
-    <div className="overflow-x-auto">
+    <p className="text-xs text-[#6B6B6B] mb-3">
+      Showing {items.length} item{items.length !== 1 ? "s" : ""}
+      {filter ? ` matching "${filter}"` : ""} · synced from Railway backend
+    </p>
+    <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
       <table className="w-full text-left text-sm whitespace-nowrap">
-        <thead>
+        <thead className="sticky top-0 bg-white z-10">
           <tr className="border-b border-[#FFCDD2]">
             <th className="px-4 py-2">Image</th>
             <th className="px-4 py-2">Name</th>
@@ -586,8 +606,21 @@ export function MenuPage({ onAddDish }) {
           </tr>
         </thead>
         <tbody>
-          {items.slice(0, 50).map((item) => (
-            <tr key={item.n} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+          {loading ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+                Syncing menu from server…
+              </td>
+            </tr>
+          ) : items.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+                No menu items found. Click &quot;Refresh from server&quot; to load from backend.
+              </td>
+            </tr>
+          ) : (
+          items.map((item) => (
+            <tr key={item.id || item.n} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
               <td className="px-4 py-2">
                  {item.img ? (
                     <img src={item.img} alt={item.n} className="h-10 w-10 rounded-md object-cover" />
@@ -608,7 +641,7 @@ export function MenuPage({ onAddDish }) {
                 <button onClick={() => handleDeleteClick(item)} className="text-red-600 hover:scale-110 transition-transform">🗑️</button>
               </td>
             </tr>
-          ))}
+          )))}
         </tbody>
       </table>
     </div>

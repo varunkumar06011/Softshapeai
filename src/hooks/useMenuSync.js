@@ -2,13 +2,21 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchMenuFromBackend,
   persistMenu,
-  clearStoredMenu,
   MENU_STORAGE_KEY,
 } from "../services/menuService";
 
+function readStoredMenu() {
+  try {
+    const saved = localStorage.getItem(MENU_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function useMenuSync() {
-  const [menuItems, setMenuItemsState] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [menuItems, setMenuItemsState] = useState(readStoredMenu);
+  const [loading, setLoading] = useState(() => readStoredMenu().length === 0);
   const [error, setError] = useState(null);
 
   const applyMenu = useCallback((items) => {
@@ -20,7 +28,6 @@ export function useMenuSync() {
     setLoading(true);
     setError(null);
     try {
-      clearStoredMenu();
       const items = await fetchMenuFromBackend();
       applyMenu(items);
       return items;
