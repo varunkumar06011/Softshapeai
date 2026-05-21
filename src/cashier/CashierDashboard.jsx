@@ -7,7 +7,7 @@ import {
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity
 } from 'lucide-react';
 import { MENU_DATA } from '../data/menuData';
-import { calculateOrderTotal } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill } from '../shared/utils/billing';
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -43,7 +43,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [pastTransactions]);
 
   const { subtotal, taxes, total } = calculateOrderTotal(cart);
-  const activeOrderCalc = selectedTable?.items ? calculateOrderTotal(selectedTable.items) : { subtotal, taxes, total };
+  const activeOrderCalc = selectedTable ? calculateSessionBill(selectedTable, cart) : { subtotal, taxes, total };
   const activeSubtotal = activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
@@ -52,25 +52,42 @@ const CashierDashboard = ({ onLogout }) => {
     const txnAmount = activeTotal || 0;
     if (txnAmount === 0) return;
 
+    const itemsList = selectedTable && selectedTable.kotHistory 
+      ? selectedTable.kotHistory.flatMap(k => k.items || []) 
+      : cart;
+
     const newTransaction = {
       id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
       kot: `KOT-${Math.floor(1000 + Math.random() * 9000)}`,
       amount: txnAmount,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: new Date().toLocaleDateString('en-GB'),
-      items: cart.length || (selectedTable?.items?.length || 0),
+      timestamp: Date.now(),
+      items: itemsList.length,
+      itemsList: itemsList,
+      captainId: selectedTable?.captainId || 'CASHIER',
       method: method
     };
     
-    setPastTransactions(prev => [newTransaction, ...prev]);
+    setPastTransactions(prev => {
+      const updated = [newTransaction, ...prev];
+      localStorage.setItem('softshape_transactions', JSON.stringify(updated));
+      window.dispatchEvent(new Event('softshape_transactions_updated'));
+      return updated;
+    });
 
     if (selectedTable && selectedTable.id) {
-      setTables(prev => prev.map(t => {
-        if (t.id === selectedTable.id) {
-          return { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null };
-        }
-        return t;
-      }));
+      setTables(prev => {
+         const newTables = prev.map(t => {
+           if (t.id === selectedTable.id) {
+             return { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null };
+           }
+           return t;
+         });
+         localStorage.setItem('softshape_tables', JSON.stringify(newTables));
+         window.dispatchEvent(new Event('softshape_tables_updated'));
+         return newTables;
+      });
     }
 
     setCart([]);
@@ -603,16 +620,8 @@ const CashierDashboard = ({ onLogout }) => {
                          return (
                            <div 
                               key={i} 
-                              onClick={() => isBusy && setSelectedTable({ 
-                                id: table.id, 
-                                guests: table.guests || 4, 
-                                items: table.kotHistory?.flatMap(k => k.items) || [
-                                  { n: 'Mock Item', q: 1, p: table.currentBill || 1310 }
-                                ],
-                                total: table.currentBill || 1310,
-                                time: table.time || '24m ago'
-                              })}
-                              className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-1 cursor-pointer transition-all hover:scale-105 active:scale-95 ${
+                              onClick={() => isBusy && setSelectedTable(table)}
+                              className={`aspect-square rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95 ${
                                 isBusy ? 'bg-red-50 border-[#E53935] text-[#E53935] shadow-sm shadow-red-50' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300'
                               }`}
                            >
@@ -784,7 +793,7 @@ const CashierDashboard = ({ onLogout }) => {
                  <div className="space-y-3 mb-6">
                     <h3 className="text-[9px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-50 pb-1">Order Summary</h3>
                     <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
-                       {selectedTable.items.map((item, idx) => (
+                       {(selectedTable.kotHistory ? selectedTable.kotHistory.flatMap(k => k.items || []) : selectedTable.items || []).map((item, idx) => (
                           <div key={idx} className="flex justify-between items-center">
                              <div className="flex items-center gap-2">
                                 <span className="w-5 h-5 rounded bg-gray-50 flex items-center justify-center text-[9px] font-black text-gray-500">{item.q}x</span>

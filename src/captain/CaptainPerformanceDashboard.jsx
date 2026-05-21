@@ -1,25 +1,117 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Users, Star, TrendingUp } from "lucide-react";
 
+const CAPTAINS_MASTER = [
+  { id: 'C1', name: 'Ajay Kumar', rating: 4.9, speed: "12m", shift: "Morning", stars: 5 },
+  { id: 'C2', name: 'Ravi Behar', rating: 4.7, speed: "15m", shift: "Morning", stars: 4 },
+  { id: 'C3', name: 'Sagar', rating: 4.8, speed: "14m", shift: "Evening", stars: 4 },
+  { id: 'C4', name: 'Durga Prasad', rating: 4.5, speed: "18m", shift: "Evening", stars: 3 },
+  { id: 'C5', name: 'Subbaiah', rating: 4.6, speed: "16m", shift: "Morning", stars: 4 },
+  { id: 'C6', name: 'Happy', rating: 4.9, speed: "11m", shift: "Evening", stars: 5 },
+];
+
 export default function CaptainPerformanceDashboard() {
   const [range, setRange] = useState("Today");
+  const [transactions, setTransactions] = useState(() => {
+    const saved = localStorage.getItem('softshape_transactions');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  const captains = [
-    { name: "Rahul Sharma", rating: 4.9, sales: 18400, orders: 127, topItem: "Chicken Biryani", status: "Online", speed: "12m", shift: "Morning", rank: 1, stars: 5 },
-    { name: "Suresh Kumar", rating: 4.7, sales: 14200, orders: 98, topItem: "Butter Naan", status: "Online", speed: "15m", shift: "Morning", rank: 2, stars: 4 },
-    { name: "Priya Singh", rating: 4.8, sales: 12500, orders: 84, topItem: "Paneer Tikka", status: "Offline", speed: "14m", shift: "Evening", rank: 3, stars: 4 },
-    { name: "Amit Patel", rating: 4.5, sales: 11800, orders: 76, topItem: "Veg Pulav", status: "Online", speed: "18m", shift: "Evening", rank: 4, stars: 3 }
-  ];
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_transactions' && e.newValue) {
+        setTransactions(JSON.parse(e.newValue));
+      }
+    };
+    
+    const handleCustomEvent = () => {
+      const saved = localStorage.getItem('softshape_transactions');
+      if (saved) setTransactions(JSON.parse(saved));
+    };
 
-  const trends = [
-    { hour: "12 PM", sales: 4200 },
-    { hour: "2 PM", sales: 8500 },
-    { hour: "4 PM", sales: 3100 },
-    { hour: "6 PM", sales: 9400 },
-    { hour: "8 PM", sales: 15600 },
-    { hour: "10 PM", sales: 11200 }
-  ];
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('softshape_transactions_updated', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('softshape_transactions_updated', handleCustomEvent);
+    };
+  }, []);
+
+  const { captains, trends } = useMemo(() => {
+    const now = Date.now();
+    let filterMs = 0;
+    if (range === 'Today') filterMs = 24 * 60 * 60 * 1000;
+    else if (range === 'Weekly') filterMs = 7 * 24 * 60 * 60 * 1000;
+    else if (range === 'Monthly') filterMs = 30 * 24 * 60 * 60 * 1000;
+
+    const filteredTxns = transactions.filter(t => (now - (t.timestamp || now)) <= filterMs);
+
+    const captainMap = {};
+    CAPTAINS_MASTER.forEach(c => {
+      captainMap[c.id] = { ...c, sales: 0, orders: 0, itemsCount: {} };
+    });
+
+    filteredTxns.forEach(t => {
+       const cid = t.captainId;
+       if (cid && captainMap[cid]) {
+          captainMap[cid].sales += Number(t.amount || 0);
+          captainMap[cid].orders += 1;
+          
+          if (t.itemsList) {
+             t.itemsList.forEach(item => {
+                const name = item.n;
+                const qty = item.q || 1;
+                captainMap[cid].itemsCount[name] = (captainMap[cid].itemsCount[name] || 0) + qty;
+             });
+          }
+       }
+    });
+
+    const processedCaptains = Object.values(captainMap).map(c => {
+       let topItem = "None";
+       let maxQty = 0;
+       Object.entries(c.itemsCount).forEach(([name, qty]) => {
+          if (qty > maxQty) {
+             maxQty = qty;
+             topItem = name;
+          }
+       });
+       return { ...c, topItem };
+    }).sort((a, b) => b.sales - a.sales);
+
+    let trendBuckets = {};
+    if (range === 'Today') {
+       const hours = [12, 14, 16, 18, 20, 22];
+       hours.forEach(h => {
+          const label = h > 12 ? `${h-12} PM` : `${h} PM`;
+          trendBuckets[label] = 0;
+       });
+       filteredTxns.forEach(t => {
+          const date = new Date(t.timestamp || Date.now());
+          const h = date.getHours();
+          let mappedH = hours.find(hour => h <= hour);
+          if (!mappedH) mappedH = 22;
+          const label = mappedH > 12 ? `${mappedH-12} PM` : `${mappedH} PM`;
+          if(trendBuckets[label] !== undefined) {
+             trendBuckets[label] += Number(t.amount || 0);
+          }
+       });
+    } else {
+       filteredTxns.forEach(t => {
+          const d = t.date || new Date(t.timestamp).toLocaleDateString('en-GB');
+          trendBuckets[d] = (trendBuckets[d] || 0) + Number(t.amount || 0);
+       });
+    }
+
+    const trendsArray = Object.entries(trendBuckets).map(([hourOrDay, sales]) => ({
+       hour: hourOrDay,
+       sales
+    }));
+
+    return { captains: processedCaptains, trends: trendsArray };
+  }, [transactions, range]);
 
   return (
     <div className="space-y-6 font-sans">
