@@ -41,8 +41,16 @@ const CashierDashboard = ({ onLogout }) => {
     localStorage.setItem('softshape_transactions', JSON.stringify(pastTransactions));
   }, [pastTransactions]);
 
+  const subtotal = cart.reduce((sum, item) => sum + (item.p * item.q), 0);
+  const taxes = subtotal * 0.18;
+  const total = subtotal + taxes;
+
+  const activeSubtotal = selectedTable?.items ? selectedTable.items.reduce((sum, item) => sum + (item.p * item.q), 0) : subtotal;
+  const activeTaxes = activeSubtotal * 0.18;
+  const activeTotal = activeSubtotal + activeTaxes;
+
   const handleSettlement = (method = 'UPI') => {
-    const txnAmount = total || selectedTable?.total || 0;
+    const txnAmount = activeTotal || 0;
     if (txnAmount === 0) return;
 
     const newTransaction = {
@@ -56,6 +64,16 @@ const CashierDashboard = ({ onLogout }) => {
     };
     
     setPastTransactions(prev => [newTransaction, ...prev]);
+
+    if (selectedTable && selectedTable.id) {
+      setTables(prev => prev.map(t => {
+        if (t.id === selectedTable.id) {
+          return { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null };
+        }
+        return t;
+      }));
+    }
+
     setCart([]);
     setSelectedTable(null);
     setShowPaymentModal(false);
@@ -64,10 +82,31 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [menuItems, setMenuItems] = useState(MENU_DATA);
 
+  const [tables, setTables] = useState(() => {
+    const saved = localStorage.getItem('softshape_tables');
+    if (saved) return JSON.parse(saved);
+    return Array.from({ length: 24 }, (_, i) => ({
+      id: i + 1,
+      status: i % 5 === 0 ? 'Occupied' : 'Free',
+      guests: i % 5 === 0 ? 4 : 0,
+      time: i % 5 === 0 ? '24m' : null,
+      captainId: i % 5 === 0 ? 'C1' : null,
+      kotHistory: [],
+      currentBill: i % 5 === 0 ? 1020 : 0
+    }));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('softshape_tables', JSON.stringify(tables));
+  }, [tables]);
+
   useEffect(() => {
     const handleStorage = (e) => {
-      if (e.key === 'softshape_menu') {
+      if (e.key === 'softshape_menu' && e.newValue) {
         setMenuItems(JSON.parse(e.newValue));
+      }
+      if (e.key === 'softshape_tables' && e.newValue) {
+        setTables(JSON.parse(e.newValue));
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -85,9 +124,7 @@ const CashierDashboard = ({ onLogout }) => {
     });
   }, [searchQuery, selectedCategory, activeDiet, menuItems]);
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.p * item.q), 0);
-  const taxes = subtotal * 0.18;
-  const total = subtotal + taxes;
+
 
   const addToCart = (item) => {
     setCart(prev => {
@@ -362,7 +399,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                      </div>
                      <div className="p-2 grid grid-cols-6 sm:grid-cols-12 lg:grid-cols-12 gap-1.5">
-                        {(JSON.parse(localStorage.getItem('softshape_tables')) || Array.from({length: 24})).map((table, i) => {
+                        {tables.map((table, i) => {
                            const status = table?.status || 'Free';
                            const colorClass = 
                               status === 'Free' ? 'bg-green-50 border-green-200 text-green-600' :
@@ -371,7 +408,7 @@ const CashierDashboard = ({ onLogout }) => {
                               'bg-red-50 border-red-200 text-red-600';
                            return (
                              <div key={i} className={`h-8 rounded-md border flex items-center justify-center transition-all cursor-pointer ${colorClass}`}>
-                                <span className="text-[9px] font-black">{i + 1}</span>
+                                <span className="text-[9px] font-black">{table.id}</span>
                              </div>
                            );
                         })}
@@ -562,27 +599,25 @@ const CashierDashboard = ({ onLogout }) => {
 
                   {activeTab === 'tables' && (
                     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2">
-                       {Array.from({length: 24}).map((_, i) => {
-                         const isBusy = i % 5 === 0;
+                       {tables.map((table, i) => {
+                         const isBusy = table.status !== 'Free';
                          return (
                            <div 
                               key={i} 
                               onClick={() => isBusy && setSelectedTable({ 
-                                id: i + 1, 
-                                guests: 4, 
-                                items: [
-                                  { n: 'Chicken Biryani', q: 2, p: 450 },
-                                  { n: 'Butter Naan', q: 3, p: 45 },
-                                  { n: 'Paneer Butter Masala', q: 1, p: 320 }
+                                id: table.id, 
+                                guests: table.guests || 4, 
+                                items: table.kotHistory?.flatMap(k => k.items) || [
+                                  { n: 'Mock Item', q: 1, p: table.currentBill || 1310 }
                                 ],
-                                total: 1310,
-                                time: '24m ago'
+                                total: table.currentBill || 1310,
+                                time: table.time || '24m ago'
                               })}
                               className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-1 cursor-pointer transition-all hover:scale-105 active:scale-95 ${
                                 isBusy ? 'bg-red-50 border-[#E53935] text-[#E53935] shadow-sm shadow-red-50' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300'
                               }`}
                            >
-                              <span className="text-xl font-black">{i + 1}</span>
+                              <span className="text-xl font-black">{table.id}</span>
                               <span className="text-[7px] font-black uppercase tracking-widest">{isBusy ? 'Busy' : 'Open'}</span>
                            </div>
                          );
@@ -763,11 +798,11 @@ const CashierDashboard = ({ onLogout }) => {
                  </div>
                  
                  <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-6 border border-gray-100">
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{selectedTable.total}</span></div>
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{(selectedTable.total * 0.18).toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{activeSubtotal}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{activeTaxes.toFixed(0)}</span></div>
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-1">
                        <span className="text-[10px] font-black text-gray-900 uppercase">Running Total</span>
-                       <span className="text-2xl font-black text-[#E53935]">₹{(selectedTable.total * 1.18).toFixed(0)}</span>
+                       <span className="text-2xl font-black text-[#E53935]">₹{activeTotal.toFixed(0)}</span>
                     </div>
                  </div>
 
@@ -779,7 +814,7 @@ const CashierDashboard = ({ onLogout }) => {
                        Add Items
                     </button>
                     <button 
-                       onClick={() => { setShowPaymentModal(true); setSelectedTable(null); }}
+                       onClick={() => { setShowPaymentModal(true); }}
                        className="py-3 rounded-xl bg-[#E53935] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-100"
                     >
                        Settlement
@@ -795,9 +830,9 @@ const CashierDashboard = ({ onLogout }) => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row animate-slide-in">
               <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
-                 <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
+                 <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
                  <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{total.toFixed(0)}</p>
+                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{activeTotal.toFixed(0)}</p>
                  <div className="space-y-3">
                     <div className="flex justify-between border-b border-gray-200 pb-1">
                        <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>

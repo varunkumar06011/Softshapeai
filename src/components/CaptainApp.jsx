@@ -60,8 +60,13 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
     const handleStorage = (e) => {
-      if (e.key === 'softshape_menu') {
+      if (e.key === 'softshape_menu' && e.newValue) {
         setMenuItems(JSON.parse(e.newValue));
+        setIsSyncing(true);
+        setTimeout(() => setIsSyncing(false), 800);
+      }
+      if (e.key === 'softshape_tables' && e.newValue) {
+        setTables(JSON.parse(e.newValue));
         setIsSyncing(true);
         setTimeout(() => setIsSyncing(false), 800);
       }
@@ -220,12 +225,25 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const openTableSession = (table) => {
+    if (table.status !== TABLE_STATUS.FREE && table.captainId && currentCaptain && table.captainId !== currentCaptain.id) {
+      addNotification(`Table already in progress by ${CAPTAINS.find(c => c.id === table.captainId)?.name || 'another captain'}`, 'error');
+      return;
+    }
     setActiveTableId(table.id);
     setCurrentSessionItems([]);
     setView('session');
   };
 
   const addItemToSession = (item) => {
+    if (currentSessionItems.length === 0) {
+      setTables(currentTables => currentTables.map(t => {
+        if (t.id === activeTableId && t.status === TABLE_STATUS.FREE) {
+          return { ...t, status: TABLE_STATUS.OCCUPIED, captainId: currentCaptain?.id };
+        }
+        return t;
+      }));
+    }
+
     setCurrentSessionItems(prev => {
       const existing = prev.find(i => i.n === item.n);
       if (existing) {
@@ -234,6 +252,19 @@ export default function CaptainApp({ onLogout }) {
       return [...prev, { ...item, q: 1, s: 'Pending' }];
     });
     addNotification(`${item.n} added`, 'success');
+  };
+
+  const cancelSession = () => {
+    setCurrentSessionItems([]);
+    if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
+      setTables(currentTables => currentTables.map(t => {
+        if (t.id === activeTable.id) {
+          return { ...t, status: TABLE_STATUS.FREE, captainId: null };
+        }
+        return t;
+      }));
+    }
+    setView('tables');
   };
 
   const updateDraftQty = (name, delta) => {
@@ -396,7 +427,7 @@ export default function CaptainApp({ onLogout }) {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
+    <div className="flex flex-col h-[100dvh] bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
       {/* GLOBAL HEADER */}
       <header className="h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50">
         <div className="flex items-center gap-4">
@@ -639,7 +670,7 @@ export default function CaptainApp({ onLogout }) {
                      </div>
                   </div>
 
-                  <div className="flex-grow overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                  <div className="flex-grow overflow-y-auto p-6 space-y-8 custom-scrollbar min-h-0">
                      {/* KOT LOGS */}
                      {(activeTable?.kotHistory || []).map((kot) => (
                         <div key={kot.id} className="space-y-4">
@@ -665,7 +696,9 @@ export default function CaptainApp({ onLogout }) {
                      <div className="space-y-5 pt-6 border-t-2 border-dashed border-gray-100">
                         <div className="flex items-center justify-between">
                            <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935] flex items-center gap-2"><ShoppingCart size={16} /> New KOT Draft</h4>
-                           {currentSessionItems.length > 0 && <button onClick={() => setCurrentSessionItems([])} className="text-[9px] font-black text-gray-400 uppercase hover:text-red-500 transition-colors">Clear All</button>}
+                           {(currentSessionItems.length > 0 || (activeTable?.captainId === currentCaptain?.id && (!activeTable?.kotHistory || activeTable.kotHistory.length === 0))) && (
+                             <button onClick={cancelSession} className="text-[9px] font-black text-[#E53935] uppercase hover:text-red-700 transition-colors bg-red-50 px-2 py-1 rounded-md border border-red-100">Cancel Session</button>
+                           )}
                         </div>
 
                         {currentSessionItems.length === 0 ? (
@@ -696,7 +729,7 @@ export default function CaptainApp({ onLogout }) {
                      </div>
 
                      {/* TODAY SPECIALS SMART SUGGESTIONS */}
-                     {!isCartMinimized && currentSessionItems.length > 0 && suggestedSpecials.length > 0 && (
+                     {currentSessionItems.length > 0 && suggestedSpecials.length > 0 && (
                         <div className="pt-8 border-t-2 border-dashed border-gray-100">
                            <div className="flex items-center gap-2 mb-4">
                               <Star size={16} className="text-amber-500 fill-amber-500" />
