@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ChartNoAxesCombined, 
   ClipboardList, 
@@ -48,6 +48,24 @@ const card = cardBase + " bg-white";
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
 export function Dashboard({ revenue, ordersCount, activityLog }) {
+  const [tables, setTables] = useState(() => {
+    const saved = localStorage.getItem('softshape_tables');
+    return saved ? JSON.parse(saved) : Array.from({ length: 24 }, (_, i) => ({ id: i + 1, status: 'Free' }));
+  });
+
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_tables' && e.newValue) {
+        setTables(JSON.parse(e.newValue));
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
+  const totalTables = tables.length;
+
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4 font-sans">
     <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base animate-fade-in flex items-center gap-3">
@@ -59,7 +77,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
       {[
         { label: "Today's Revenue", value: `₹${revenue.toLocaleString()}`, sub: "↑12%", color: "text-[#2E7D32]" },
         { label: "Total Orders", value: ordersCount, sub: "live", color: "text-[#1A1A1A]" },
-        { label: "Tables Occupied", value: "14/20", sub: "active", color: "text-[#1A1A1A]" },
+        { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
         { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
       ].map((x) => (
         <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-3 md:p-4 min-w-0 shadow-sm transition-all hover:translate-y-[-2px]"}>
@@ -257,38 +275,62 @@ export function Pos({ onOrderComplete, onKOTSend }) {
 }
 
 export function Tables({ onOpen }) {
-  const data = [
-    { id: 1, status: "occupied", details: "4 guests — ₹1,850 — 45 min" },
-    { id: 2, status: "available", details: "Available" },
-    { id: 3, status: "occupied", details: "2 guests — ₹650 — 20 min" },
-    { id: 4, status: "reserved", details: "Priya 7:00 PM" },
-    { id: 5, status: "occupied", details: "6 guests — ₹3,200 — 1h 10m" },
-    { id: 6, status: "available", details: "Available" },
-    { id: 7, status: "occupied", details: "3 guests — ₹980 — 35 min" },
-    { id: 8, status: "occupied", details: "4 guests — ₹1,354 — 15 min" },
-    { id: 9, status: "available", details: "Available" },
-    { id: 10, status: "reserved", details: "Wedding party 8PM" },
-    { id: 11, status: "occupied", details: "2 guests — ₹480 — 12 min" },
-    { id: 12, status: "available", details: "Available" },
-    { id: 13, status: "occupied", details: "5 guests — ₹2,410 — 53 min" },
-    { id: 14, status: "available", details: "Available" },
-    { id: 15, status: "occupied", details: "4 guests — ₹1,440 — 24 min" },
-    { id: 16, status: "occupied", details: "3 guests — ₹1,140 — 32 min" },
-    { id: 17, status: "available", details: "Available" },
-    { id: 18, status: "occupied", details: "4 guests — ₹1,760 — 41 min" },
-    { id: 19, status: "available", details: "Available" },
-    { id: 20, status: "occupied", details: "2 guests — ₹720 — 18 min" },
-  ];
+  const [tables, setTables] = useState(() => {
+    const saved = localStorage.getItem('softshape_tables');
+    if (saved) return JSON.parse(saved);
+    return Array.from({ length: 24 }, (_, i) => ({
+      id: i + 1,
+      status: 'Free'
+    }));
+  });
+
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_tables' && e.newValue) {
+        setTables(JSON.parse(e.newValue));
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   return <div className="space-y-4 font-sans">
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <h3 className="font-semibold">Floor Plan — Main Hall</h3>
       <select className={input + " w-full sm:max-w-52"}><option>Main Hall</option><option>Terrace</option></select>
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-      {data.map((t) => {
-        const bg = t.status === "occupied" ? "bg-[#B71C1C] text-white border-[#B71C1C]" : t.status === "reserved" ? "bg-[#FFF3E0] text-[#8D4E00]" : "bg-[#E8F5E9] text-[#1B5E20]";
-        const label = t.status === "occupied" ? `Occupied — ${t.details}` : t.status === "reserved" ? `Reserved — ${t.details}` : "Available";
-        return <button key={t.id} onClick={() => t.status === "occupied" && onOpen({ id: t.id, items: "Chicken Dum Biryani x2, Mutton Curry x1, Mango Lassi x2", time: "Seated 45 min ago", bill: "₹1,382" })} className={`${cardBase} ${bg} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
+      {tables.map((t) => {
+        const isFree = !t.status || t.status === 'Free' || t.status === 'available';
+        const isReserved = t.status === 'reserved';
+        
+        // Define colors like Cashier/Captain
+        let bgClass = "bg-[#E8F5E9] text-[#1B5E20]";
+        if (t.status === 'Waiting Bill') {
+           bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17] animate-pulse";
+        } else if (t.status === 'Preparing') {
+           bgClass = "bg-[#FFF3E0] text-[#E65100] border-[#E65100]";
+        } else if (!isFree && !isReserved) {
+           bgClass = "bg-[#B71C1C] text-white border-[#B71C1C]";
+        } else if (isReserved) {
+           bgClass = "bg-[#FFF3E0] text-[#8D4E00]";
+        }
+
+        let details = "Available";
+        if (!isFree && !isReserved) {
+           details = `${t.guests || 0} guests — ₹${t.currentBill || 0}`;
+        } else if (isReserved) {
+           details = t.details || "Reserved";
+        }
+        
+        const label = isFree ? "Available" : isReserved ? `Reserved — ${details}` : `${t.status} — ${details}`;
+        
+        return <button key={t.id} onClick={() => !isFree && onOpen({ 
+           id: t.id, 
+           items: t.kotHistory ? t.kotHistory.flatMap(k => k.items).map(i => `${i.n} x${i.q}`).join(', ') : "View items", 
+           time: t.time || "Recently", 
+           bill: `₹${t.currentBill || 0}` 
+        })} className={`${cardBase} ${bgClass} min-h-[96px] p-3 text-left transition-transform active:scale-95`}><p className="text-lg font-extrabold">T{t.id}</p><p className="text-[10px] font-semibold leading-tight">{label}</p></button>;
       })}
     </div>
     <div className="flex flex-wrap items-center gap-4 rounded-lg bg-white p-3 border border-[#FFCDD2] shadow-sm">
