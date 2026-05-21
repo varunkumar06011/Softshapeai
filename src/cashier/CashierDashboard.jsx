@@ -7,6 +7,7 @@ import {
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity
 } from 'lucide-react';
 import { MENU_DATA } from '../data/menuData';
+import { calculateOrderTotal } from '../shared/utils/billing';
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -41,13 +42,11 @@ const CashierDashboard = ({ onLogout }) => {
     localStorage.setItem('softshape_transactions', JSON.stringify(pastTransactions));
   }, [pastTransactions]);
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.p * item.q), 0);
-  const taxes = subtotal * 0.18;
-  const total = subtotal + taxes;
-
-  const activeSubtotal = selectedTable?.items ? selectedTable.items.reduce((sum, item) => sum + (item.p * item.q), 0) : subtotal;
-  const activeTaxes = activeSubtotal * 0.18;
-  const activeTotal = activeSubtotal + activeTaxes;
+  const { subtotal, taxes, total } = calculateOrderTotal(cart);
+  const activeOrderCalc = selectedTable?.items ? calculateOrderTotal(selectedTable.items) : { subtotal, taxes, total };
+  const activeSubtotal = activeOrderCalc.subtotal;
+  const activeTaxes = activeOrderCalc.taxes;
+  const activeTotal = activeOrderCalc.total;
 
   const handleSettlement = (method = 'UPI') => {
     const txnAmount = activeTotal || 0;

@@ -40,6 +40,7 @@ import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
 import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
 import CreativeCanvas from '../shared/components/CreativeCanvas';
+import { calculateOrderTotal } from '../shared/utils/billing';
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -161,9 +162,7 @@ export function Pos({ onOrderComplete, onKOTSend }) {
     return filtered.slice(0, 50);
   }, [cat, search]);
 
-  const subtotal = cart.reduce((a, c) => a + c.p * c.q, 0);
-  const gst = subtotal * 0.05;
-  const total = subtotal + gst;
+  const { subtotal, taxes: gst, total } = calculateOrderTotal(cart);
 
   const handleSendToKitchen = () => {
     if (cart.length === 0) return;

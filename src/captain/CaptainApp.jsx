@@ -6,6 +6,7 @@ import {
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon
 } from 'lucide-react';
 import { MENU_DATA } from '../data/menuData';
+import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 
 const TABLE_STATUS = {
   FREE: 'Free',
@@ -309,7 +310,7 @@ export default function CaptainApp({ onLogout }) {
         items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' }))
       };
 
-      const addedTotal = currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0);
+      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).total;
 
       setTables(prev => prev.map(t => {
         if (t.id === activeTableId) {
@@ -319,7 +320,7 @@ export default function CaptainApp({ onLogout }) {
             time: t.time || '1m',
             captainId: currentCaptain.id,
             kotHistory: [...(t.kotHistory || []), newKOT],
-            currentBill: (t.currentBill || 0) + addedTotal
+            currentBill: newTotalBill
           };
         }
         return t;
@@ -658,7 +659,7 @@ export default function CaptainApp({ onLogout }) {
                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
                      </div>
                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-black text-gray-900">₹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
+                        <span className="text-sm font-black text-gray-900">₹{calculateSessionBill(activeTable, currentSessionItems).total}</span>
                         {isCartMinimized && (
                           <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
                              <ChevronLeft size={16} className="rotate-90" />
@@ -760,14 +761,14 @@ export default function CaptainApp({ onLogout }) {
                   </div>
 
                   <div className="p-8 bg-white border-t border-gray-100 space-y-6 shrink-0 shadow-[0_-20px_50px_rgba(0,0,0,0.03)] relative z-10">
-                     <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-center">
                         <div className="flex flex-col gap-1">
                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
-                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{(activeTable?.currentBill || 0) + currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</p>
+                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{calculateSessionBill(activeTable, currentSessionItems).total}</p>
                         </div>
                         <div className="text-right flex flex-col gap-1">
                            <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">KOT Draft</span>
-                           <span className="text-lg font-black text-gray-400">₹{currentSessionItems.reduce((acc, i) => acc + (i.p * i.q), 0)}</span>
+                           <span className="text-lg font-black text-gray-400">₹{calculateOrderTotal(currentSessionItems).total}</span>
                         </div>
                      </div>
                      <button 
