@@ -37,36 +37,12 @@ import {
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
 } from 'recharts';
-import { MENU_DATA } from '../data/menuData';
+import { useMenuSync } from '../hooks/useMenuSync';
 import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
 import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
 import CreativeCanvas from '../shared/components/CreativeCanvas';
 import { calculateOrderTotal } from '../shared/utils/billing';
-
-function useMenuSync() {
-  const [menuItems, setMenuItems] = useState(() => {
-    const saved = localStorage.getItem('softshape_menu');
-    return saved ? JSON.parse(saved) : MENU_DATA;
-  });
-
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_menu' && e.newValue) {
-        setMenuItems(JSON.parse(e.newValue));
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
-
-  const updateMenu = (newMenu) => {
-    setMenuItems(newMenu);
-    localStorage.setItem('softshape_menu', JSON.stringify(newMenu));
-  };
-
-  return { menuItems, updateMenu };
-}
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -168,12 +144,7 @@ export function Pos() {
   const [search, setSearch] = useState("");
   const [kotStatus, setKotStatus] = useState(null);
   const [table, setTable] = useState("8");
-  const { menuItems } = useMenuSync();
-  
-  const categories = useMemo(() => {
-    const cats = new Set(menuItems.map(item => item.c));
-    return ["All", ...Array.from(cats)];
-  }, [menuItems]);
+  const { menuItems, categories, loading } = useMenuSync();
 
   const displayItems = useMemo(() => {
     let filtered = menuItems;
@@ -226,13 +197,16 @@ export function Pos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" size={18} />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {availableCategories.map((x) => (
+            {categories.map((x) => (
               <button key={x} onClick={() => setCat(x)} className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-xs font-bold transition-all ${cat === x ? "border-[#E53935] bg-[#E53935] text-white shadow-md shadow-red-100" : "border-[#FFCDD2] bg-white text-[#6B6B6B] hover:bg-[#FFF5F5]"}`}>{x}</button>
             ))}
           </div>
         </div>
+        {loading ? (
+          <p className="text-sm text-[#6B6B6B] py-8 text-center">Syncing menu from server...</p>
+        ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
-          {items.map((x) => (
+          {displayItems.map((x) => (
             <div key={x.n} onClick={() => addToCart(x)} className={card + " p-3 flex flex-col justify-between transition-transform active:scale-95 cursor-pointer group hover:border-[#E53935]"}>
               <div>
                 <p className="font-bold text-sm md:text-base text-[#1A1A1A] line-clamp-1 group-hover:text-[#E53935]">{x.n}</p>
@@ -247,6 +221,7 @@ export function Pos() {
             </div>
           ))}
         </div>
+        )}
       </div>
       <div className="lg:col-span-2 space-y-4">
         <div className={card + " p-4 h-fit lg:sticky lg:top-20 shadow-lg shadow-red-50/50"}>
@@ -497,7 +472,7 @@ export function Tables({ onOpen }) {
 }
 
 export function MenuPage({ onAddDish }) {
-  const { menuItems, updateMenu } = useMenuSync();
+  const { menuItems, updateMenu, loading, error, refreshMenu } = useMenuSync();
   const [filter, setFilter] = useState("");
   const items = useMemo(() => menuItems.filter(x => x.n.toLowerCase().includes(filter.toLowerCase()) || x.c.toLowerCase().includes(filter.toLowerCase())), [filter, menuItems]);
   
@@ -569,9 +544,13 @@ export function MenuPage({ onAddDish }) {
   };
 
   return <div className={card + " p-4 font-sans"}>
+    {error && (
+      <p className="mb-3 text-sm text-red-600 font-medium">{error}</p>
+    )}
     <div className="mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
-        <h3 className="font-semibold text-lg shrink-0">Menu Items</h3>
+        <h3 className="font-semibold text-lg shrink-0">Menu Items {loading && <span className="text-xs font-normal text-gray-400">(syncing…)</span>}</h3>
+        <button type="button" onClick={() => refreshMenu()} className="text-xs font-bold text-[#E53935] hover:underline">Refresh from server</button>
         <input className={input + " h-9 w-full sm:w-64"} placeholder="Search menu..." value={filter} onChange={e => setFilter(e.target.value)} />
       </div>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto justify-end">

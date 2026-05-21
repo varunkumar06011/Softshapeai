@@ -6,7 +6,7 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity
 } from 'lucide-react';
-import { MENU_DATA } from '../data/menuData';
+import { useMenuSync } from '../hooks/useMenuSync';
 import { calculateOrderTotal, calculateSessionBill } from '../shared/utils/billing';
 
 const CashierDashboard = ({ onLogout }) => {
@@ -96,7 +96,7 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification("Payment Success", `Transaction ${newTransaction.id} logged.`, 'success');
   };
 
-  const [menuItems, setMenuItems] = useState(MENU_DATA);
+  const { menuItems, categories, loading: menuLoading } = useMenuSync();
 
   const [tables, setTables] = useState(() => {
     const saved = localStorage.getItem('softshape_tables');
@@ -118,9 +118,6 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     const handleStorage = (e) => {
-      if (e.key === 'softshape_menu' && e.newValue) {
-        setMenuItems(JSON.parse(e.newValue));
-      }
       if (e.key === 'softshape_tables' && e.newValue) {
         setTables(JSON.parse(e.newValue));
       }
@@ -129,8 +126,6 @@ const CashierDashboard = ({ onLogout }) => {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const categories = ['All', 'Starters', 'Main Course', 'Drinks', 'Desserts'];
-  
   const filteredMenu = useMemo(() => {
     return menuItems.filter(item => {
       const matchesSearch = item.n.toLowerCase().includes(searchQuery.toLowerCase());
@@ -450,7 +445,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                   <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-1">
                      <div className="flex gap-1">
-                        {['All', 'Starters', 'Main Course', 'Drinks', 'Desserts'].map(cat => (
+                        {categories.map(cat => (
                            <button 
                               key={cat}
                               onClick={() => setSelectedCategory(cat)}
@@ -480,6 +475,9 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
 
                   <div className="flex-grow overflow-y-auto p-2 bg-gray-50/30 custom-scrollbar">
+                     {menuLoading ? (
+                        <p className="text-center text-xs text-gray-400 py-8 font-bold uppercase tracking-widest">Syncing menu…</p>
+                     ) : (
                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                         {filteredMenu.map((item, idx) => (
                            <div 
@@ -507,6 +505,7 @@ const CashierDashboard = ({ onLogout }) => {
                            </div>
                         ))}
                      </div>
+                     )}
                   </div>
                </div>
 

@@ -5,7 +5,6 @@ import LoginScreen from "./shared/components/LoginScreen";
 import AdminDashboard from "./admin/AdminDashboard";
 import CashierDashboard from "./cashier/CashierDashboard";
 import CaptainApp from "./captain/CaptainApp";
-import { MENU_DATA } from "./data/menuData";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 
 // specialized Kitchen View
@@ -140,8 +139,6 @@ function CaptainAppWrapper() {
   if (localStorage.getItem('captain_auth') !== 'true') return <Navigate to="/captain" replace />;
   return (
     <CaptainApp 
-      captains={[]} 
-      menuData={MENU_DATA} 
       onLogout={() => { localStorage.removeItem('captain_auth'); navigate('/captain'); }} 
     />
   );

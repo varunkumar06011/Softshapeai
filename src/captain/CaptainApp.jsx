@@ -5,7 +5,7 @@ import {
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon
 } from 'lucide-react';
-import { MENU_DATA } from '../data/menuData';
+import { useMenuSync } from '../hooks/useMenuSync';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 
 const TABLE_STATUS = {
@@ -52,28 +52,26 @@ export default function CaptainApp({ onLogout }) {
   const [removedItem, setRemovedItem] = useState(null);
   const removeTimeoutRef = useRef(null);
   
-  // MENU STATE (Persisted and Synced)
-  const [menuItems, setMenuItems] = useState(MENU_DATA);
-
-  useEffect(() => {
-    localStorage.setItem('softshape_menu', JSON.stringify(menuItems));
-  }, [menuItems]);
+  const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenuSync();
 
   useEffect(() => {
     const handleStorage = (e) => {
-      if (e.key === 'softshape_menu' && e.newValue) {
-        setMenuItems(JSON.parse(e.newValue));
-        setIsSyncing(true);
-        setTimeout(() => setIsSyncing(false), 800);
-      }
       if (e.key === 'softshape_tables' && e.newValue) {
         setTables(JSON.parse(e.newValue));
         setIsSyncing(true);
         setTimeout(() => setIsSyncing(false), 800);
       }
     };
+    const onMenuUpdated = () => {
+      setIsSyncing(true);
+      setTimeout(() => setIsSyncing(false), 800);
+    };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    window.addEventListener('softshape_menu_updated', onMenuUpdated);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('softshape_menu_updated', onMenuUpdated);
+    };
   }, []);
 
   // SHARED STATE PERSISTENCE
@@ -110,8 +108,6 @@ export default function CaptainApp({ onLogout }) {
   const [currentSessionItems, setCurrentSessionItems] = useState([]); 
 
   const activeTable = useMemo(() => tables.find(t => t.id === activeTableId), [tables, activeTableId]);
-
-  const categories = ['All', 'Starters', 'Main Course', 'Drinks', 'Desserts'];
 
   const filteredMenu = useMemo(() => {
     return menuItems.filter(item => {
@@ -598,6 +594,9 @@ export default function CaptainApp({ onLogout }) {
 
                   {/* SCROLLABLE MENU GRID */}
                   <div className="flex-grow overflow-y-auto p-6 scroll-smooth">
+                     {menuLoading ? (
+                        <p className="text-center text-xs text-gray-400 py-12 font-black uppercase tracking-widest">Syncing menu…</p>
+                     ) : (
                      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12">
                         {filteredMenu.map((item, idx) => (
                            <div 
@@ -633,6 +632,7 @@ export default function CaptainApp({ onLogout }) {
                            </div>
                         ))}
                      </div>
+                     )}
                   </div>
                </div>
 
