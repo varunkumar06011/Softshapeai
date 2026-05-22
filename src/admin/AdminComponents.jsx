@@ -57,6 +57,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
 
   const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
   const totalTables = tables.length;
+  const liveOrdersCount = tables.reduce((sum, table) => sum + ((table.kotHistory || []).length > 0 ? 1 : 0), 0);
 
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4 font-sans">
@@ -68,7 +69,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       {[
         { label: "Today's Revenue", value: `₹${revenue.toLocaleString()}`, sub: "↑12%", color: "text-[#2E7D32]" },
-        { label: "Total Orders", value: ordersCount, sub: "live", color: "text-[#1A1A1A]" },
+        { label: "Total Orders", value: liveOrdersCount || ordersCount, sub: "live", color: "text-[#1A1A1A]" },
         { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
         { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
       ].map((x) => (
@@ -775,10 +776,25 @@ export function MenuPage({ onAddDish }) {
 }
 
 export function Orders() {
-  const rows = [["#1043", "Dine-In", "Table 8", "3", "₹1,382", "Preparing", "5 min ago", "View"], ["#1042", "Dine-In", "Table 7", "4", "₹850", "Ready", "12 min ago", "View"], ["#1041", "Delivery", "Swiggy — Kiran", "2", "₹890", "Dispatched", "18 min ago", "Track"], ["#1040", "Takeaway", "Walk-in", "1", "₹309", "Ready", "22 min ago", "View"], ["#1039", "Dine-In", "Table 12", "6", "₹2,100", "Served", "35 min ago", "Bill"], ["#1038", "Delivery", "Zomato — Ananya", "3", "₹1,100", "Delivered", "45 min ago", "Done"]];
+  const { tables } = useTableSync();
+  const rows = tables
+    .filter((table) => table.status && table.status !== 'Free')
+    .map((table) => {
+      const items = (table.kotHistory || []).flatMap((kot) => kot.items || []);
+      return {
+        id: `#T${table.id}`,
+        type: 'Dine-In',
+        customer: `Table ${table.id}`,
+        items: items.length,
+        amount: `₹${table.currentBill || calculateOrderTotal(items).subtotal}`,
+        status: table.status,
+        time: table.time || 'Live',
+        action: table.status === 'Waiting Bill' ? 'Bill' : 'View',
+      };
+    });
   return <div className="space-y-4 font-sans">
     <UnifiedOrdersDashboard />
-    <div className="flex gap-2 overflow-x-auto pb-1">{["Dine-In (48)", "Takeaway (23)", "Delivery (18)", "All (89)"].map((x, i) => <button key={x} className={`whitespace-nowrap rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
+    <div className="flex gap-2 overflow-x-auto pb-1">{[`Dine-In (${rows.length})`, `Billing (${rows.filter((row) => row.status === 'Waiting Bill').length})`, `Preparing (${rows.filter((row) => row.status === 'Preparing').length})`, `All (${rows.length})`].map((x, i) => <button key={x} className={`whitespace-nowrap rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
     <div className={card + " overflow-x-auto"}>
       <table className="w-full text-left text-sm whitespace-nowrap">
         <thead className="bg-[#FFEBEE]">
@@ -786,12 +802,17 @@ export function Orders() {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r[0]} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
-              <td className="p-3 font-semibold">{r[0]}</td><td className="p-3">{r[1]}</td><td className="p-3">{r[2]}</td><td className="p-3">{r[3]} items</td><td className="p-3 font-bold">{r[4]}</td>
-              <td className="p-3"><span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-orange-100 text-orange-700">{r[5]}</span></td>
-              <td className="p-3 text-[#6B6B6B]">{r[6]}</td><td className="p-3"><button className="font-semibold text-[#B71C1C] hover:underline">{r[7]}</button></td>
+            <tr key={r.id} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+              <td className="p-3 font-semibold">{r.id}</td><td className="p-3">{r.type}</td><td className="p-3">{r.customer}</td><td className="p-3">{r.items} items</td><td className="p-3 font-bold">{r.amount}</td>
+              <td className="p-3"><span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-orange-100 text-orange-700">{r.status}</span></td>
+              <td className="p-3 text-[#6B6B6B]">{r.time}</td><td className="p-3"><button className="font-semibold text-[#B71C1C] hover:underline">{r.action}</button></td>
             </tr>
           ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={8} className="p-6 text-center text-sm text-[#6B6B6B]">No live dine-in orders yet.</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

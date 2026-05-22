@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { calculateOrderTotal, calculateSessionBill } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
 const CashierDashboard = ({ onLogout }) => {
@@ -42,6 +42,65 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     localStorage.setItem('softshape_transactions', JSON.stringify(pastTransactions));
+  }, [pastTransactions]);
+
+  const { menuItems, categories, loading: menuLoading } = useMenu();
+  const { tables, setTables } = useTableSync();
+
+  useEffect(() => {
+    if (!selectedTable?.backendId) return;
+    const liveTable = tables.find((table) => table.backendId === selectedTable.backendId);
+    if (!liveTable || liveTable.status === 'Free') {
+      setSelectedTable(null);
+      setShowPaymentModal(false);
+      return;
+    }
+    setSelectedTable(liveTable);
+  }, [tables, selectedTable?.backendId]);
+
+  const activeTableOrders = useMemo(() => {
+    return tables
+      .filter((table) => table.status && table.status !== 'Free')
+      .map((table) => {
+        const items = (table.kotHistory || []).flatMap((kot) => kot.items || []);
+        const bill = calculateTableBill(table);
+        return {
+          id: `T${table.id}`,
+          type: 'Dine-In',
+          customer: `Table ${table.id}`,
+          amount: table.currentBill || bill.subtotal,
+          status: table.status,
+          time: table.time || 'Live',
+          items: items.length,
+          kotCount: (table.kotHistory || []).length,
+          table,
+        };
+      })
+      .sort((a, b) => {
+        if (a.status === 'Waiting Bill' && b.status !== 'Waiting Bill') return -1;
+        if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
+        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+      });
+  }, [tables]);
+
+  const liveKotQueue = useMemo(() => {
+    return activeTableOrders.flatMap((order) =>
+      (order.table.kotHistory || []).map((kot) => ({
+        id: kot.id,
+        table: order.table,
+        tableLabel: order.id,
+        time: kot.time || order.time,
+        status: order.status,
+        items: kot.items || [],
+      }))
+    );
+  }, [activeTableOrders]);
+
+  const todaysSales = useMemo(() => {
+    const today = new Date().toLocaleDateString('en-GB');
+    return pastTransactions
+      .filter((txn) => txn.date === today)
+      .reduce((sum, txn) => sum + (txn.amount || 0), 0);
   }, [pastTransactions]);
 
   const { subtotal, taxes, total } = calculateOrderTotal(cart);
@@ -95,10 +154,6 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification("Payment Success", `Transaction ${newTransaction.id} logged.`, 'success');
   };
 
-  const { menuItems, categories, loading: menuLoading } = useMenu();
-
-  const { tables, setTables } = useTableSync();
-
   const filteredMenu = useMemo(
     () =>
       filterMenuItems(menuItems, {
@@ -128,13 +183,6 @@ const CashierDashboard = ({ onLogout }) => {
       return item;
     }).filter(Boolean));
   };
-
-  const orders = [
-    { id: 'T12', type: 'Dine-In', customer: 'Rahul Sharma', amount: 1450, status: 'Preparing', time: '12m ago', items: 4 },
-    { id: 'SW245', type: 'Swiggy', customer: 'Amit K.', amount: 560, status: 'Ready', time: '5m ago', items: 2 },
-    { id: 'T05', type: 'Dine-In', customer: 'Priya M.', amount: 2890, status: 'Served', time: '35m ago', items: 7 },
-    { id: 'ZM981', type: 'Zomato', customer: 'Kiran T.', amount: 890, status: 'Billing Pending', time: '2m ago', items: 3 },
-  ];
 
   const onlineOrders = [
     { id: 'SW-9812', platform: 'Swiggy', items: ['Chicken Biryani x2', 'Coke x2'], amount: 960, status: 'Preparing', time: '4m ago' },
@@ -166,9 +214,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Today's Sale", value: "₹42,850", change: "+12%", icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Active Tables", value: "14/24", change: "58% Occupancy", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Pending KOTs", value: "08", change: "Avg 12m prep", icon: ChefHat, color: "text-orange-600", bg: "bg-orange-50" },
+    { label: "Today's Sale", value: `₹${todaysSales.toFixed(0)}`, change: `${pastTransactions.length} txns`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Active Tables", value: `${activeTableOrders.length}/${tables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Pending KOTs", value: String(liveKotQueue.length).padStart(2, '0'), change: `${activeTableOrders.filter(o => o.status === 'Waiting Bill').length} billing`, icon: ChefHat, color: "text-orange-600", bg: "bg-orange-50" },
     { label: "Online Orders", value: "26", change: "12 Swiggy, 14 Zomato", icon: Monitor, color: "text-purple-600", bg: "bg-purple-50" },
   ];
 
@@ -295,8 +343,8 @@ const CashierDashboard = ({ onLogout }) => {
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-gray-50">
-                              {orders.map(o => (
-                                <tr key={o.id} className="hover:bg-gray-50 transition-colors cursor-pointer">
+                              {activeTableOrders.map(o => (
+                                <tr key={o.id} onClick={() => setSelectedTable(o.table)} className="hover:bg-gray-50 transition-colors cursor-pointer">
                                    <td className="px-3 py-2">
                                       <div className="flex items-center gap-2">
                                          <div className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-[9px] font-black shrink-0">{o.id}</div>
@@ -317,6 +365,13 @@ const CashierDashboard = ({ onLogout }) => {
                                    </td>
                                 </tr>
                               ))}
+                              {activeTableOrders.length === 0 && (
+                                <tr>
+                                  <td colSpan={4} className="px-3 py-8 text-center text-[10px] font-black uppercase tracking-widest text-gray-300">
+                                    No live table orders
+                                  </td>
+                                </tr>
+                              )}
                            </tbody>
                         </table>
                      </div>
@@ -331,21 +386,27 @@ const CashierDashboard = ({ onLogout }) => {
                         </h3>
                      </div>
                      <div className="p-2 space-y-2 overflow-y-auto max-h-[300px] custom-scrollbar">
-                        {[1, 2, 3].map(i => (
-                           <div key={i} className="p-2 rounded-lg border border-gray-100 bg-gray-50/50 hover:border-red-100 transition-all cursor-pointer">
+                        {liveKotQueue.map((kot) => (
+                           <div key={kot.id} className="p-2 rounded-lg border border-gray-100 bg-gray-50/50 hover:border-red-100 transition-all cursor-pointer">
                               <div className="flex justify-between items-start mb-1">
-                                 <span className="text-[8px] font-black text-gray-400 uppercase">KOT-942{i}</span>
+                                 <span className="text-[8px] font-black text-gray-400 uppercase">KOT-{kot.id}</span>
                                  <span className="text-[8px] font-black text-orange-600 flex items-center gap-1">
-                                    <Timer size={10} /> 0{i+4}:22
+                                    <Timer size={10} /> {kot.time}
                                  </span>
                               </div>
-                              <p className="text-[10px] font-black text-gray-900 leading-tight">Table 0{i+2} • {i+1} Items</p>
+                              <p className="text-[10px] font-black text-gray-900 leading-tight">{kot.tableLabel} • {kot.items.length} Items</p>
                               <div className="mt-1 flex gap-1 flex-wrap">
-                                 <span className="text-[7px] font-bold bg-white border border-gray-100 px-1 rounded">Chicken Biryani</span>
-                                 <span className="text-[7px] font-bold bg-white border border-gray-100 px-1 rounded">Naan</span>
+                                 {kot.items.slice(0, 3).map((item, idx) => (
+                                   <span key={`${kot.id}-${idx}`} className="text-[7px] font-bold bg-white border border-gray-100 px-1 rounded">{item.n} x{item.q}</span>
+                                 ))}
                               </div>
                            </div>
                         ))}
+                        {liveKotQueue.length === 0 && (
+                          <div className="p-6 text-center text-[9px] font-black uppercase tracking-widest text-gray-300">
+                            No live KOTs
+                          </div>
+                        )}
                      </div>
                   </div>
                </div>
@@ -503,10 +564,12 @@ const CashierDashboard = ({ onLogout }) => {
                            <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
                         </div>
                         <div className="bg-white rounded-lg border border-gray-200 p-2 flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-md bg-red-50 flex items-center justify-center text-[#E53935] font-black text-sm">T8</div>
+                          <div className="w-7 h-7 rounded-md bg-red-50 flex items-center justify-center text-[#E53935] font-black text-sm">
+                            {selectedTable ? `T${selectedTable.id}` : 'POS'}
+                          </div>
                           <div className="flex-grow min-w-0">
-                             <p className="text-[10px] font-black text-gray-900 truncate">Rahul Sharma</p>
-                             <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest leading-none">Dine-In Serving</p>
+                             <p className="text-[10px] font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.id}` : 'Walk-in Order'}</p>
+                             <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest leading-none">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
                           </div>
                        </div>
                      </div>
@@ -574,7 +637,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </button>
                         <button 
                            onClick={() => setShowPaymentModal(true)}
-                           disabled={cart.length === 0}
+                           disabled={!selectedTable && cart.length === 0}
                            className="col-span-2 py-2.5 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none"
                         >
                            Settle Transaction
@@ -681,19 +744,25 @@ const CashierDashboard = ({ onLogout }) => {
                          <div key={status} className="flex flex-col gap-3">
                             <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-900 border-b-2 border-red-100 pb-1">{status}</h3>
                             <div className="space-y-2">
-                               {[1, 2].map(j => (
-                                 <div key={j} className="p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:border-[#E53935] transition-all cursor-pointer">
-                                    <div className="flex justify-between items-start mb-2">
-                                       <span className="text-[8px] font-black text-gray-400 uppercase">KOT-942{j}</span>
-                                       <span className="text-[8px] font-black text-orange-600">0{j+4}:22</span>
-                                    </div>
-                                    <p className="text-[11px] font-black text-gray-900">Table 0{j+4}</p>
-                                    <div className="mt-2 space-y-0.5 text-[9px] text-gray-500 font-bold">
-                                       <div className="flex justify-between"><span>Chicken Biryani</span><span>x2</span></div>
-                                       <div className="flex justify-between"><span>Paneer Tikka</span><span>x1</span></div>
-                                    </div>
-                                 </div>
-                               ))}
+                               {liveKotQueue
+                                 .filter((kot) => {
+                                   if (status === 'Incoming') return kot.status === 'Occupied';
+                                   return kot.status === status;
+                                 })
+                                 .map((kot) => (
+                                   <div key={`${status}-${kot.id}`} className="p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:border-[#E53935] transition-all cursor-pointer">
+                                      <div className="flex justify-between items-start mb-2">
+                                         <span className="text-[8px] font-black text-gray-400 uppercase">KOT-{kot.id}</span>
+                                         <span className="text-[8px] font-black text-orange-600">{kot.time}</span>
+                                      </div>
+                                      <p className="text-[11px] font-black text-gray-900">{kot.tableLabel}</p>
+                                      <div className="mt-2 space-y-0.5 text-[9px] text-gray-500 font-bold">
+                                         {kot.items.map((item, idx) => (
+                                           <div key={`${kot.id}-${idx}`} className="flex justify-between"><span>{item.n}</span><span>x{item.q}</span></div>
+                                         ))}
+                                      </div>
+                                   </div>
+                                 ))}
                             </div>
                          </div>
                        ))}
