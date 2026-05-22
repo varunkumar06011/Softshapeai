@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { calculateOrderTotal, calculateSessionBill } from '../shared/utils/billing';
+import { filterMenuItems } from '../shared/utils/menuSearch';
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -126,14 +127,15 @@ const CashierDashboard = ({ onLogout }) => {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const filteredMenu = useMemo(() => {
-    return menuItems.filter(item => {
-      const matchesSearch = item.n.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === 'All' || item.c === selectedCategory;
-      const matchesDiet = activeDiet === 'All' || item.t === activeDiet;
-      return matchesSearch && matchesCategory && matchesDiet;
-    });
-  }, [searchQuery, selectedCategory, activeDiet, menuItems]);
+  const filteredMenu = useMemo(
+    () =>
+      filterMenuItems(menuItems, {
+        query: searchQuery,
+        category: selectedCategory,
+        diet: activeDiet,
+      }),
+    [searchQuery, selectedCategory, activeDiet, menuItems]
+  );
 
 
 
@@ -432,51 +434,56 @@ const CashierDashboard = ({ onLogout }) => {
                {/* COMPACT MENU */}
                <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
                   <div className="px-3 py-2 border-b border-gray-100 flex flex-col gap-2">
-                     <div className="flex items-center gap-2">
-                        <div className="relative flex-grow">
-                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={12} />
-                           <input 
-                              type="text" 
-                              placeholder="Search item..." 
-                              className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-4 py-1 text-[10px] font-medium outline-none focus:border-[#E53935]"
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                           />
+                     <div className="relative w-full">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                        <input
+                           type="search"
+                           placeholder="Search by name, category, price, or ID..."
+                           className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-4 py-2 text-[11px] font-medium outline-none focus:border-[#E53935] focus:bg-white"
+                           value={searchQuery}
+                           onChange={(e) => setSearchQuery(e.target.value)}
+                           autoComplete="off"
+                        />
+                     </div>
+                     <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-1">
+                        <div className="flex gap-1">
+                           {categories.map(cat => (
+                              <button
+                                 key={cat}
+                                 onClick={() => setSelectedCategory(cat)}
+                                 className={`px-2 py-1 rounded-md text-[8px] font-black uppercase transition-all border shrink-0 ${
+                                    selectedCategory === cat ? 'bg-[#E53935] border-[#E53935] text-white' : 'bg-white border-gray-200 text-gray-500'
+                                 }`}
+                              >
+                                 {cat}
+                              </button>
+                           ))}
                         </div>
-                  <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-1">
-                     <div className="flex gap-1">
-                        {categories.map(cat => (
-                           <button 
-                              key={cat}
-                              onClick={() => setSelectedCategory(cat)}
-                              className={`px-2 py-1 rounded-md text-[8px] font-black uppercase transition-all border shrink-0 ${
-                                 selectedCategory === cat ? 'bg-[#E53935] border-[#E53935] text-white' : 'bg-white border-gray-200 text-gray-500'
-                              }`}
-                           >
-                              {cat}
-                           </button>
-                        ))}
-                     </div>
-                     <div className="flex gap-1 bg-gray-50 p-0.5 rounded-lg border border-gray-200 shrink-0">
-                        {['All', 'veg', 'non'].map(diet => (
-                           <button 
-                              key={diet}
-                              onClick={() => setActiveDiet(diet)}
-                              className={`px-2 py-1 rounded-[4px] text-[8px] font-black uppercase transition-all ${
-                                 activeDiet === diet ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'
-                              }`}
-                           >
-                              {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
+                        <div className="flex gap-1 bg-gray-50 p-0.5 rounded-lg border border-gray-200 shrink-0">
+                           {['All', 'veg', 'non'].map(diet => (
+                              <button
+                                 key={diet}
+                                 onClick={() => setActiveDiet(diet)}
+                                 className={`px-2 py-1 rounded-[4px] text-[8px] font-black uppercase transition-all ${
+                                    activeDiet === diet ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                                 }`}
+                              >
+                                 {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
+                              </button>
+                           ))}
+                        </div>
                      </div>
                   </div>
 
                   <div className="flex-grow overflow-y-auto p-2 bg-gray-50/30 custom-scrollbar">
                      {menuLoading ? (
                         <p className="text-center text-xs text-gray-400 py-8 font-bold uppercase tracking-widest">Syncing menu…</p>
+                     ) : filteredMenu.length === 0 ? (
+                        <p className="text-center text-xs text-gray-500 py-8 font-bold col-span-full">
+                           {searchQuery.trim()
+                             ? `No items found for "${searchQuery.trim()}"`
+                             : "No items in this category."}
+                        </p>
                      ) : (
                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                         {filteredMenu.map((item, idx) => (

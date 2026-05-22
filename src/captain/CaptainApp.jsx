@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
+import { filterMenuItems } from '../shared/utils/menuSearch';
 
 const TABLE_STATUS = {
   FREE: 'Free',
@@ -119,14 +120,15 @@ export default function CaptainApp({ onLogout }) {
 
   const activeTable = useMemo(() => tables.find(t => t.id === activeTableId), [tables, activeTableId]);
 
-  const filteredMenu = useMemo(() => {
-    return menuItems.filter(item => {
-      const matchesSearch = item.n.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = activeCategory === 'All' || item.c === activeCategory;
-      const matchesDiet = activeDiet === 'All' || item.t === activeDiet;
-      return matchesSearch && matchesCategory && matchesDiet;
-    });
-  }, [searchQuery, activeCategory, activeDiet, menuItems]);
+  const filteredMenu = useMemo(
+    () =>
+      filterMenuItems(menuItems, {
+        query: searchQuery,
+        category: activeCategory,
+        diet: activeDiet,
+      }),
+    [searchQuery, activeCategory, activeDiet, menuItems]
+  );
 
   const suggestedSpecials = useMemo(() => {
     if (currentSessionItems.length === 0) return [];
@@ -568,12 +570,13 @@ export default function CaptainApp({ onLogout }) {
                   <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
                      <div className="relative group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={16} />
-                        <input 
-                           type="text" 
-                           placeholder="Quick search dish by name or ID..." 
+                        <input
+                           type="search"
+                           placeholder="Search by name, category, price, or ID..."
                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-[13px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
                            value={searchQuery}
                            onChange={(e) => setSearchQuery(e.target.value)}
+                           autoComplete="off"
                         />
                      </div>
                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
@@ -614,6 +617,12 @@ export default function CaptainApp({ onLogout }) {
                   <div className="flex-grow overflow-y-auto p-6 scroll-smooth">
                      {menuLoading ? (
                         <p className="text-center text-xs text-gray-400 py-12 font-black uppercase tracking-widest">Syncing menu…</p>
+                     ) : filteredMenu.length === 0 ? (
+                        <p className="text-center text-sm text-gray-500 py-12 font-bold">
+                           {searchQuery.trim()
+                             ? `No dishes found for "${searchQuery.trim()}"`
+                             : "No items in this category."}
+                        </p>
                      ) : (
                      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12">
                         {filteredMenu.map((item, idx) => (
