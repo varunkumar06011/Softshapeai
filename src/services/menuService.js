@@ -138,8 +138,7 @@ export async function fetchMenuFromBackend() {
 
   throw new Error(
     `Cannot reach backend at ${API_BASE}. ` +
-    "Check Railway deployment and ensure the service has a public domain. " +
-    "Go to Railway → your service → Settings → Generate Domain."
+    "Check backend deployment status and ensure the service is active."
   );
 }
 

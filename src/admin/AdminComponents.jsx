@@ -573,7 +573,7 @@ export function MenuPage({ onAddDish }) {
     </div>
     <p className="text-xs text-[#6B6B6B] mb-3">
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
-      {filter ? ` matching "${filter}"` : ""} · synced from Railway backend
+      {filter ? ` matching "${filter}"` : ""} · synced from backend
     </p>
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
       <table className="w-full text-left text-sm whitespace-nowrap">

@@ -52,7 +52,7 @@ async function loadInitialMenu() {
       console.error("[MenuSync] Failed to load initial menu", err);
       _loadError =
         err?.message ||
-        "Could not reach backend. Check VITE_API_URL and Railway deployment.";
+        "Could not reach backend. Check VITE_API_URL and backend deployment.";
       const saved = localStorage.getItem(STORAGE_KEY);
       globalMenu = saved ? JSON.parse(saved) : [];
     }

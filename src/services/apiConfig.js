@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = "https://softshape-backend.up.railway.app";
+const DEFAULT_API_BASE = "https://softshape-backend.onrender.com";
 
 /** Strip trailing slashes — avoids https://host.app//api/... (breaks DNS/fetch) */
 export function normalizeApiBase(url) {

@@ -171,7 +171,7 @@ function acquireSocket(handlers) {
         reconnectionDelay: 2000,
         reconnectionDelayMax: 15000,
         timeout: 10000,
-        // Don't add trailing slash — fixes Railway 502
+        // Don't add trailing slash — fixes reverse proxy 502
         addTrailingSlash: false,
       });
       attachSocketLogging(sharedSocket);
@@ -321,7 +321,7 @@ export function useTableSync() {
 
     // ── REST Polling fallback ──
     // Poll the API every POLL_INTERVAL_MS so that even if Socket.io
-    // is broken (502 on Railway), table changes from other users
+    // is broken (502 on reverse proxy), table changes from other users
     // still appear within a few seconds.
     const pollInterval = setInterval(async () => {
       if (cancelled) return;
