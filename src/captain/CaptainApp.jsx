@@ -346,6 +346,14 @@ export default function CaptainApp({ onLogout }) {
         return;
       }
 
+      // Build local KOT entry for immediate UI feedback
+      const newKOT = {
+        id: Math.floor(1000 + Math.random() * 9000).toString(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' }))
+      };
+      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
+
       // Format items for the API
       const apiItems = currentSessionItems.map(i => ({
         menuItemId: String(i.id || i.menuItemId || i.n || i.name),
@@ -355,26 +363,40 @@ export default function CaptainApp({ onLogout }) {
         notes: i.notes || null,
       }));
 
-      let order;
-      if (activeTable.activeOrder?.id) {
-        order = await updateOrderItems(activeTable.activeOrder.id, apiItems);
-      } else {
-        order = await createOrder({
-          tableId: activeTable.backendId,
-          restaurantId: RESTAURANT_ID,
-          items: apiItems,
-        });
+      // TEST MODE: fire API call but don't block — always proceed locally
+      let order = activeTable.activeOrder || null;
+      try {
+        if (activeTable.activeOrder?.id) {
+          order = await updateOrderItems(activeTable.activeOrder.id, apiItems);
+        } else {
+          order = await createOrder({
+            tableId: activeTable.backendId,
+            restaurantId: RESTAURANT_ID,
+            items: apiItems,
+          });
+        }
+      } catch (apiErr) {
+        console.warn('[TEST MODE] KOT API call failed, proceeding locally:', apiErr.message);
       }
 
-      // Update local activeOrder so requestFinalBill can find the ID
-      setTables(prev => prev.map(t =>
-        t.backendId === activeTable.backendId
-          ? { ...t, activeOrder: order, status: TABLE_STATUS.PREPARING }
-          : t
-      ));
+      // Always update local state so UI moves forward
+      setTables(prev => prev.map(t => {
+        if (t.backendId === activeTable.backendId) {
+          return {
+            ...t,
+            status: TABLE_STATUS.PREPARING,
+            time: t.time || '1m',
+            captainId: currentCaptain.id,
+            kotHistory: [...(t.kotHistory || []), newKOT],
+            currentBill: newTotalBill,
+            activeOrder: order || t.activeOrder,
+          };
+        }
+        return t;
+      }));
 
       setCurrentSessionItems([]);
-      addNotification(`KOT Sent`, 'success');
+      addNotification(`KOT #${newKOT.id} Sent`, 'success');
     } catch (err) {
       console.error(err);
       addNotification("Submission Failed", "error");
@@ -387,14 +409,23 @@ export default function CaptainApp({ onLogout }) {
       const liveTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
       const orderId = liveTable?.activeOrder?.id;
 
-      if (!orderId) {
-        addNotification("Send KOT first before requesting bill", "error");
-        return;
+      // TEST MODE: attempt API call but always proceed locally
+      if (orderId) {
+        try {
+          await requestBilling(orderId);
+        } catch (apiErr) {
+          console.warn('[TEST MODE] Billing API call failed, proceeding locally:', apiErr.message);
+        }
       }
 
-      await requestBilling(orderId);
-      // Don't manually update tables here — the backend emits table:updated
-      // which useTableSync picks up and updates all panels automatically
+      // Always update local state so UI moves forward
+      setTables(prev => prev.map(t => {
+        if (t.id === activeTableId || t.backendId === activeTableId) {
+          return { ...t, status: TABLE_STATUS.BILLING };
+        }
+        return t;
+      }));
+
       addNotification("Billing Requested", 'success');
       setView('tables');
       setActiveTableId(null);

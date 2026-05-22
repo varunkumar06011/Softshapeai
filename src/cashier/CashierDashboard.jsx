@@ -207,14 +207,13 @@ const CashierDashboard = ({ onLogout }) => {
       method: method
     };
     
+    // TEST MODE: attempt API call but always proceed locally
     try {
       if (selectedTable?.activeOrder?.id) {
         await markOrderPaid(selectedTable.activeOrder.id);
       }
     } catch (err) {
-      console.error(err);
-      addNotification("Payment Sync Failed", "Could not mark order paid on server.", 'error');
-      return; // stop here — don't update UI if server call failed
+      console.warn('[TEST MODE] markOrderPaid failed, proceeding locally:', err.message);
     }
 
     setPastTransactions(prev => {
