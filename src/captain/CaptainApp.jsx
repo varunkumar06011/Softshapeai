@@ -390,15 +390,16 @@ export default function CaptainApp({ onLogout }) {
 
   const requestFinalBill = async () => {
     try {
-      // const orderId = activeTable?.activeOrder?.id;
-      // if (!orderId) {
-      //   addNotification("Send KOT before billing", "error");
-      //   return;
-      // }
-
-      // await requestBilling(orderId);
+      const activeTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+      const orderId = activeTable?.activeOrder?.id;
+      if (!orderId) {
+        addNotification("Send KOT before billing", "error");
+        return;
+      }
+      await requestBilling(orderId);
       setTables(prev => prev.map(t => {
-        if (t.id === activeTableId) return { ...t, status: TABLE_STATUS.BILLING };
+        if (t.id === activeTableId || t.backendId === activeTableId)
+          return { ...t, status: TABLE_STATUS.BILLING };
         return t;
       }));
       addNotification("Billing Requested", 'success');

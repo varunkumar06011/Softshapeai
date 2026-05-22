@@ -11,6 +11,8 @@ import { useTableSync } from '../services/tableSyncService';
 import { markOrderPaid } from '../services/orderApi';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
+import { useSocket } from '../hooks/useSocket';
+import { RESTAURANT_ID } from '../services/tableApi';
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -47,6 +49,88 @@ const CashierDashboard = ({ onLogout }) => {
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
+
+  const socket = useSocket(RESTAURANT_ID);
+
+  useEffect(() => {
+    const onBillingRequested = (payload) => {
+      const table = payload?.table;
+      const order = payload?.order;
+      setTables(prev => prev.map(t => {
+        if (t.backendId === table?.id || t.id === table?.number) {
+          return {
+            ...t,
+            status: 'Waiting Bill',
+            activeOrder: order ?? t.activeOrder,
+          };
+        }
+        return t;
+      }));
+      addNotification(
+        "Billing Requested",
+        `Table ${table?.number ?? ''} is requesting the bill`,
+        'warning'
+      );
+    };
+
+    const onTableUpdated = (payload) => {
+      const table = payload?.table;
+      if (!table?.id) return;
+      setTables(prev => prev.map(t => {
+        if (t.backendId === table.id) {
+          return {
+            ...t,
+            status: table.workflowStatus || t.status,
+            currentBill: table.currentBill ?? t.currentBill,
+            activeOrder: table.orders?.[0] ?? t.activeOrder,
+            guests: table.guests ?? t.guests,
+            captainId: table.captainId ?? t.captainId,
+          };
+        }
+        return t;
+      }));
+    };
+
+    const onOrderPaid = (payload) => {
+      const { tableId } = payload;
+      setTables(prev => prev.map(t => {
+        if (t.backendId === tableId) {
+          return { ...t, status: 'Free', currentBill: 0, activeOrder: null, guests: 0 };
+        }
+        return t;
+      }));
+    };
+
+    const onOrderCreated = (payload) => {
+      const order = payload?.order;
+      if (!order?.tableId) return;
+      setTables(prev => prev.map(t => {
+        if (t.backendId === order.tableId) {
+          return { ...t, activeOrder: order, status: 'Occupied' };
+        }
+        return t;
+      }));
+    };
+
+    socket.on('billing:requested', onBillingRequested);
+    socket.on('table:updated', onTableUpdated);
+    socket.on('order:paid', onOrderPaid);
+    socket.on('order:created', onOrderCreated);
+    socket.on('order:updated', ({ order } = {}) => {
+      if (!order?.tableId) return;
+      setTables(prev => prev.map(t =>
+        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+      ));
+    });
+
+    return () => {
+      socket.off('billing:requested', onBillingRequested);
+      socket.off('table:updated', onTableUpdated);
+      socket.off('order:paid', onOrderPaid);
+      socket.off('order:created', onOrderCreated);
+      socket.off('order:updated');
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -131,22 +215,22 @@ const CashierDashboard = ({ onLogout }) => {
       method: method
     };
     
+    try {
+      if (selectedTable?.activeOrder?.id) {
+        await markOrderPaid(selectedTable.activeOrder.id);
+      }
+    } catch (err) {
+      console.error(err);
+      addNotification("Payment Sync Failed", "Could not mark order paid on server.", 'error');
+      return; // stop here — don't update UI if server call failed
+    }
+
     setPastTransactions(prev => {
       const updated = [newTransaction, ...prev];
       localStorage.setItem('softshape_transactions', JSON.stringify(updated));
       window.dispatchEvent(new Event('softshape_transactions_updated'));
       return updated;
     });
-
-    // try {
-    //   if (selectedTable?.activeOrder?.id) {
-    //     await markOrderPaid(selectedTable.activeOrder.id);
-    //   }
-    // } catch (err) {
-    //   console.error(err);
-    //   addNotification("Payment Sync Failed", "Could not mark order paid on server.", 'error');
-    //   return;
-    // }
 
     if (selectedTable && selectedTable.id) {
       setTables(prev => {

@@ -27,6 +27,7 @@ import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
 import { useSocket } from '../hooks/useSocket';
 import { RESTAURANT_ID } from '../services/tableApi';
+import { useTableSync } from '../services/tableSyncService';
 
 const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
 
@@ -66,6 +67,7 @@ const AdminDashboard = ({ onLogout }) => {
     { id: 1, text: "Raju closed Table 4 bill for ₹2,450", time: "2 min ago", type: "success" },
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
+  const { setTables } = useTableSync();
   const socket = useSocket(RESTAURANT_ID);
 
   useEffect(() => {
@@ -80,19 +82,31 @@ const AdminDashboard = ({ onLogout }) => {
     const onOrderUpdated = ({ order }) => pushLog(`Order ${order?.id?.slice(-6) || ''} updated`, "info");
     const onBillingRequested = ({ table }) => pushLog(`Billing requested for Table ${table?.number || ''}`, "warning");
     const onOrderPaid = ({ tableId }) => pushLog(`Payment completed for table ${tableId || ''}`, "success");
+    
+    const onTableUpdated = ({ table } = {}) => {
+      if (!table) return;
+      // refresh tables state in admin — update matching table by backendId
+      setTables(prev => prev.map(t =>
+        t.backendId === table.id
+          ? { ...t, status: table.workflowStatus || t.status, currentBill: table.currentBill ?? t.currentBill }
+          : t
+      ));
+    };
 
     socket.on("order:created", onOrderCreated);
     socket.on("order:updated", onOrderUpdated);
     socket.on("billing:requested", onBillingRequested);
     socket.on("order:paid", onOrderPaid);
+    socket.on("table:updated", onTableUpdated);
 
     return () => {
       socket.off("order:created", onOrderCreated);
       socket.off("order:updated", onOrderUpdated);
       socket.off("billing:requested", onBillingRequested);
       socket.off("order:paid", onOrderPaid);
+      socket.off("table:updated", onTableUpdated);
     };
-  }, [socket]);
+  }, [socket, setTables]);
 
   const title = navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 
