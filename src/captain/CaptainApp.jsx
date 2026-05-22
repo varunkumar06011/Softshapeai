@@ -6,7 +6,7 @@ import {
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
   Target, TrendingUp
 } from 'lucide-react';
-import { useMenu } from '../context/MenuContext';
+import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
