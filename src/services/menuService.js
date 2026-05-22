@@ -6,6 +6,8 @@ export const MENU_QUERY_KEY = ["menu"];
 const DEFAULT_MENU_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
 
+const FETCH_TIMEOUT_MS = 10000; // 10-second timeout per request
+
 const fetchOpts = {
   method: "GET",
   cache: "no-store",
@@ -14,6 +16,20 @@ const fetchOpts = {
     Pragma: "no-cache",
   },
 };
+
+/** Wrap fetch with a timeout so DNS failures fail fast */
+async function fetchWithTimeout(url, options, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
 
 export function readStoredMenu() {
   try {
@@ -78,7 +94,7 @@ async function parseMenuResponse(res, label) {
 async function fetchLeanMenu() {
   const url = apiUrl("/api/menu/items");
   console.log("[MenuService] GET", url);
-  const res = await fetch(url, fetchOpts);
+  const res = await fetchWithTimeout(url, fetchOpts);
   const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
@@ -86,12 +102,12 @@ async function fetchLeanMenu() {
 async function fetchPosViewMenu() {
   const url = apiUrl("/api/menu/pos-view");
   console.log("[MenuService] GET", url);
-  const res = await fetch(url, fetchOpts);
+  const res = await fetchWithTimeout(url, fetchOpts);
   const categories = await parseMenuResponse(res, "Menu pos-view");
   return mapPosViewToMenuItems(categories);
 }
 
-/** Prefer lean /items endpoint; fall back to pos-view */
+/** Prefer lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
 export async function fetchMenuFromBackend() {
   let lean = [];
   try {
@@ -102,10 +118,29 @@ export async function fetchMenuFromBackend() {
 
   if (lean.length > 0) return lean;
 
-  const posView = await fetchPosViewMenu();
+  let posView = [];
+  try {
+    posView = await fetchPosViewMenu();
+  } catch (err) {
+    console.warn("[MenuService] /api/menu/pos-view failed:", err.message);
+  }
+
   if (posView.length > 0) return posView;
 
-  throw new Error("Backend returned an empty menu. Run prisma seed on Railway.");
+  // Final fallback: return cached menu from localStorage
+  const cached = readStoredMenu();
+  if (cached.length > 0) {
+    console.warn(
+      "[MenuService] Backend unreachable — using cached menu from localStorage"
+    );
+    return cached;
+  }
+
+  throw new Error(
+    `Cannot reach backend at ${API_BASE}. ` +
+    "Check Railway deployment and ensure the service has a public domain. " +
+    "Go to Railway → your service → Settings → Generate Domain."
+  );
 }
 
 export function persistMenu(menuItems) {
