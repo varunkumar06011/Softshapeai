@@ -4,6 +4,7 @@ import { API_BASE } from "./apiConfig";
 import { fetchTables, updateTableStatus } from "./tableApi";
 
 const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
+const POLL_INTERVAL_MS = 5000; // Poll every 5 seconds as fallback when socket is down
 
 export const TABLE_STATUS = {
   FREE: "Free",
@@ -124,24 +125,34 @@ function findTableIndex(tables, backendId) {
   return tables.findIndex((t) => t.backendId === backendId);
 }
 
+// ─── Socket Management ───────────────────────────────────────────────
 let sharedSocket = null;
 let socketRefCount = 0;
 let socketListenersAttached = false;
+let socketConnected = false;
 
 function attachSocketLogging(socket) {
   if (socketListenersAttached) return;
   socketListenersAttached = true;
 
   socket.on("connect", () => {
+    socketConnected = true;
     console.log("[Socket] Connected:", socket.id);
   });
 
   socket.on("disconnect", (reason) => {
+    socketConnected = false;
     console.log("[Socket] Disconnected:", reason);
   });
 
   socket.on("connect_error", (err) => {
+    socketConnected = false;
     console.log("[Socket] Connection error:", err.message);
+  });
+
+  socket.on("reconnect_failed", () => {
+    socketConnected = false;
+    console.warn("[Socket] All reconnection attempts failed — falling back to REST polling");
   });
 }
 
@@ -152,12 +163,16 @@ function acquireSocket(handlers) {
     if (!sharedSocket) {
       console.log("[TableSync] Socket.io connecting to", API_BASE);
       sharedSocket = io(API_BASE, {
+        // Match backend: path without trailing slash, polling first
+        path: "/socket.io",
         transports: ["polling", "websocket"],
         reconnection: true,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: 15,
         reconnectionDelay: 2000,
         reconnectionDelayMax: 15000,
         timeout: 10000,
+        // Don't add trailing slash — fixes Railway 502
+        addTrailingSlash: false,
       });
       attachSocketLogging(sharedSocket);
     }
@@ -178,6 +193,7 @@ function acquireSocket(handlers) {
         sharedSocket = null;
         socketRefCount = 0;
         socketListenersAttached = false;
+        socketConnected = false;
       }
     };
   } catch (err) {
@@ -216,6 +232,7 @@ async function persistStatusChanges(prevTables, nextTables) {
   return Promise.all(tasks);
 }
 
+// ─── Hook ────────────────────────────────────────────────────────────
 export function useTableSync() {
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
@@ -232,6 +249,7 @@ export function useTableSync() {
   useEffect(() => {
     let cancelled = false;
 
+    // ── Load tables from API ──
     const loadTables = async () => {
       setIsSyncing(true);
       let apiTables = null;
@@ -262,6 +280,7 @@ export function useTableSync() {
 
     loadTables();
 
+    // ── Socket.io for real-time updates ──
     let releaseSocket = () => {};
 
     try {
@@ -300,9 +319,33 @@ export function useTableSync() {
       console.error("[TableSync] Socket setup failed:", err);
     }
 
+    // ── REST Polling fallback ──
+    // Poll the API every POLL_INTERVAL_MS so that even if Socket.io
+    // is broken (502 on Railway), table changes from other users
+    // still appear within a few seconds.
+    const pollInterval = setInterval(async () => {
+      if (cancelled) return;
+      // If socket is connected and working, skip polling
+      if (socketConnected) return;
+
+      try {
+        const apiTables = await fetchTables();
+        if (cancelled || !apiTables || !Array.isArray(apiTables) || apiTables.length === 0) return;
+
+        setTablesState((current) => {
+          const merged = mergeTablesFromApi(apiTables, current);
+          writeCache(merged);
+          return merged;
+        });
+      } catch {
+        // Silently ignore poll failures — we'll try again next interval
+      }
+    }, POLL_INTERVAL_MS);
+
     return () => {
       cancelled = true;
       releaseSocket();
+      clearInterval(pollInterval);
     };
   }, []);
 
