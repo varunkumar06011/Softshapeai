@@ -1,4 +1,4 @@
-import { API_BASE } from "./apiConfig";
+import { API_BASE, apiUrl } from "./apiConfig";
 
 export const MENU_STORAGE_KEY = "softshape_menu";
 export const MENU_QUERY_KEY = ["menu"];
@@ -76,13 +76,17 @@ async function parseMenuResponse(res, label) {
 }
 
 async function fetchLeanMenu() {
-  const res = await fetch(`${API_BASE}/api/menu/items`, fetchOpts);
+  const url = apiUrl("/api/menu/items");
+  console.log("[MenuService] GET", url);
+  const res = await fetch(url, fetchOpts);
   const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
 
 async function fetchPosViewMenu() {
-  const res = await fetch(`${API_BASE}/api/menu/pos-view`, fetchOpts);
+  const url = apiUrl("/api/menu/pos-view");
+  console.log("[MenuService] GET", url);
+  const res = await fetch(url, fetchOpts);
   const categories = await parseMenuResponse(res, "Menu pos-view");
   return mapPosViewToMenuItems(categories);
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
-import { API_BASE, fetchTables, updateTableStatus } from "./tableApi";
+import { API_BASE } from "./apiConfig";
+import { fetchTables, updateTableStatus } from "./tableApi";
 
 const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
 
@@ -149,6 +150,7 @@ function acquireSocket(handlers) {
 
   try {
     if (!sharedSocket) {
+      console.log("[TableSync] Socket.io connecting to", API_BASE);
       sharedSocket = io(API_BASE, {
         transports: ["polling", "websocket"],
         reconnection: true,

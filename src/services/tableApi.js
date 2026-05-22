@@ -1,4 +1,4 @@
-import { API_BASE } from "./apiConfig";
+import { API_BASE, apiUrl } from "./apiConfig";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -16,7 +16,7 @@ async function parseResponse(res) {
 }
 
 export async function fetchTables() {
-  const res = await fetch(`${API_BASE}/api/tables`, {
+  const res = await fetch(apiUrl("/api/tables"), {
     method: "GET",
     cache: "no-store",
     headers: {
@@ -28,12 +28,12 @@ export async function fetchTables() {
 }
 
 export async function fetchSections() {
-  const res = await fetch(`${API_BASE}/api/tables/sections`);
+  const res = await fetch(apiUrl("/api/tables/sections"));
   return parseResponse(res);
 }
 
 export async function updateTableStatus(tableId, status) {
-  const res = await fetch(`${API_BASE}/api/tables/${tableId}/status`, {
+  const res = await fetch(apiUrl(`/api/tables/${tableId}/status`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -42,7 +42,7 @@ export async function updateTableStatus(tableId, status) {
 }
 
 export async function createTable({ number, capacity, sectionId, restaurantId }) {
-  const res = await fetch(`${API_BASE}/api/tables`, {
+  const res = await fetch(apiUrl("/api/tables"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ number, capacity, sectionId, restaurantId }),
@@ -51,7 +51,7 @@ export async function createTable({ number, capacity, sectionId, restaurantId })
 }
 
 export async function deleteTable(tableId) {
-  const res = await fetch(`${API_BASE}/api/tables/${tableId}`, {
+  const res = await fetch(apiUrl(`/api/tables/${tableId}`), {
     method: "DELETE",
   });
   return parseResponse(res);
