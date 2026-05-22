@@ -370,14 +370,15 @@ export default function CaptainApp({ onLogout }) {
         return t;
       }));
 
-      if (activeTable.activeOrder?.id) {
-        await updateOrderItems(activeTable.activeOrder.id, currentSessionItems);
-      } else {
-        await createOrder({
-          tableId: activeTable.backendId,
-          items: currentSessionItems,
-        });
-      }
+      // MOCK API CALLS
+      // if (activeTable.activeOrder?.id) {
+      //   await updateOrderItems(activeTable.activeOrder.id, currentSessionItems);
+      // } else {
+      //   await createOrder({
+      //     tableId: activeTable.backendId,
+      //     items: currentSessionItems,
+      //   });
+      // }
 
       setCurrentSessionItems([]);
       addNotification(`KOT #${newKOT.id} Sent`, 'success');
@@ -389,13 +390,13 @@ export default function CaptainApp({ onLogout }) {
 
   const requestFinalBill = async () => {
     try {
-      const orderId = activeTable?.activeOrder?.id;
-      if (!orderId) {
-        addNotification("Send KOT before billing", "error");
-        return;
-      }
+      // const orderId = activeTable?.activeOrder?.id;
+      // if (!orderId) {
+      //   addNotification("Send KOT before billing", "error");
+      //   return;
+      // }
 
-      await requestBilling(orderId);
+      // await requestBilling(orderId);
       setTables(prev => prev.map(t => {
         if (t.id === activeTableId) return { ...t, status: TABLE_STATUS.BILLING };
         return t;

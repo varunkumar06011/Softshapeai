@@ -138,15 +138,15 @@ const CashierDashboard = ({ onLogout }) => {
       return updated;
     });
 
-    try {
-      if (selectedTable?.activeOrder?.id) {
-        await markOrderPaid(selectedTable.activeOrder.id);
-      }
-    } catch (err) {
-      console.error(err);
-      addNotification("Payment Sync Failed", "Could not mark order paid on server.", 'error');
-      return;
-    }
+    // try {
+    //   if (selectedTable?.activeOrder?.id) {
+    //     await markOrderPaid(selectedTable.activeOrder.id);
+    //   }
+    // } catch (err) {
+    //   console.error(err);
+    //   addNotification("Payment Sync Failed", "Could not mark order paid on server.", 'error');
+    //   return;
+    // }
 
     if (selectedTable && selectedTable.id) {
       setTables(prev => {
@@ -217,7 +217,29 @@ const CashierDashboard = ({ onLogout }) => {
     setTimeout(() => {
       setIsKotSending(false);
       setIsKotSuccess(true);
-      addNotification("KOT Pushed", `Order for Table ${selectedOrder?.id || 'Walk-in'} sent to kitchen.`, 'success');
+      
+      if (selectedTable) {
+        const newKot = {
+          id: Math.floor(1000 + Math.random() * 9000).toString(),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          items: cart.map(i => ({ ...i, s: 'KOT Sent' }))
+        };
+        const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
+        setTables(prev => prev.map(t => {
+          if (t.id === selectedTable.id) {
+            return {
+              ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              kotHistory: [...(t.kotHistory || []), newKot],
+              currentBill: newTotalBill
+            };
+          }
+          return t;
+        }));
+      }
+
+      addNotification("KOT Pushed", `Order for Table ${selectedTable?.id || 'Walk-in'} sent to kitchen.`, 'success');
+      setCart([]);
       
       // Reset success icon after 2 seconds
       setTimeout(() => setIsKotSuccess(false), 2000);
@@ -647,7 +669,7 @@ const CashierDashboard = ({ onLogout }) => {
                            <span className="text-[7px] font-black uppercase mt-0.5">Draft</span>
                         </button>
                         <button 
-                           onClick={() => setShowPaymentModal(true)}
+                           onClick={() => handleSettlement('UPI')}
                            disabled={!selectedTable && cart.length === 0}
                            className="col-span-2 py-2.5 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none"
                         >
@@ -892,7 +914,7 @@ const CashierDashboard = ({ onLogout }) => {
                        Add Items
                     </button>
                     <button 
-                       onClick={() => { setShowPaymentModal(true); }}
+                       onClick={() => { handleSettlement('UPI'); }}
                        className="py-3 rounded-xl bg-[#E53935] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-100"
                     >
                        Settlement
