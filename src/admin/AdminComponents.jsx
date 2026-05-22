@@ -294,11 +294,11 @@ export function Tables({ onOpen }) {
         // Define colors like Cashier/Captain
         let bgClass = "bg-[#E8F5E9] text-[#1B5E20]";
         if (t.status === 'Waiting Bill') {
-           bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17] animate-pulse";
+           bgClass = "bg-[#FFEBEE] text-[#B71C1C] border-[#E53935] animate-pulse";
         } else if (t.status === 'Preparing') {
-           bgClass = "bg-[#FFF3E0] text-[#E65100] border-[#E65100]";
+           bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17]";
         } else if (!isFree && !isReserved) {
-           bgClass = "bg-[#B71C1C] text-white border-[#B71C1C]";
+           bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17]";
         } else if (isReserved) {
            bgClass = "bg-[#FFF3E0] text-[#8D4E00]";
         }
@@ -368,8 +368,9 @@ export function Tables({ onOpen }) {
     </div>
     <div className="flex flex-wrap items-center gap-4 rounded-lg bg-white p-3 border border-[#FFCDD2] shadow-sm">
       <span className="text-xs font-bold text-[#6B6B6B] uppercase tracking-wider">Status:</span>
-      <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#B71C1C]" /><span className="text-xs font-medium">Occupied</span></div>
+      <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#FFF8E1] border border-[#F57F17]" /><span className="text-xs font-medium">Occupied</span></div>
       <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#E8F5E9] border border-[#1B5E20]" /><span className="text-xs font-medium">Available</span></div>
+      <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#FFEBEE] border border-[#E53935]" /><span className="text-xs font-medium">Billing Requested</span></div>
       <div className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-[#FFF3E0] border border-[#8D4E00]" /><span className="text-xs font-medium">Reserved</span></div>
     </div>
 

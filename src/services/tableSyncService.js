@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { io } from "socket.io-client";
-import { API_BASE } from "./apiConfig";
-import { fetchTables, updateTableSession } from "./tableApi";
+import { getSocket } from "../hooks/useSocket";
+import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
 const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
-const POLL_INTERVAL_MS = 5000; // Poll every 5 seconds as fallback when socket is down
+const POLL_INTERVAL_MS = 5000;
 
 export const TABLE_STATUS = {
   FREE: "Free",
@@ -14,23 +13,11 @@ export const TABLE_STATUS = {
   BILLING: "Waiting Bill",
 };
 
-function toBackendStatus(frontendStatus) {
-  const map = {
-    Free: "AVAILABLE",
-    Occupied: "OCCUPIED",
-    Preparing: "OCCUPIED",
-    Ready: "OCCUPIED",
-    "Waiting Bill": "OCCUPIED",
-    Reserved: "RESERVED",
-    Cleaning: "CLEANING",
-  };
-  return map[frontendStatus] || "AVAILABLE";
-}
-
 function toFrontendStatus(backendStatus) {
   const map = {
     AVAILABLE: "Free",
     OCCUPIED: "Occupied",
+    BILLING_REQUESTED: "Waiting Bill",
     RESERVED: "Reserved",
     CLEANING: "Cleaning",
   };
@@ -50,7 +37,7 @@ function writeCache(tables) {
   try {
     localStorage.setItem(TABLES_CACHE_KEY, JSON.stringify(tables));
   } catch {
-    /* quota or private mode */
+    /* ignore storage failures */
   }
 }
 
@@ -59,14 +46,16 @@ function parseDisplayId(number) {
   return match ? parseInt(match[1], 10) : number;
 }
 
-function defaultSessionFields() {
-  return {
-    guests: 0,
-    time: null,
-    captainId: null,
-    kotHistory: [],
-    currentBill: 0,
-  };
+function flattenSections(payload) {
+  if (!Array.isArray(payload)) return [];
+  if (payload.length > 0 && Array.isArray(payload[0]?.tables)) {
+    return payload.flatMap((section) => section.tables || []);
+  }
+  return payload;
+}
+
+function unwrapTableEvent(payload) {
+  return payload?.table || payload;
 }
 
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
@@ -78,7 +67,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     id: parseDisplayId(row.number),
     number: row.number,
     dbStatus,
-    status: persistedStatus,
+    status: keepWorkflowStatus && existing ? existing.status : persistedStatus,
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
@@ -87,27 +76,23 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     captainId: row.captainId ?? null,
     kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
     currentBill: row.currentBill ?? 0,
+    activeOrder: row.orders?.[0] || row.activeOrder || null,
   };
 
-  if (!existing) return base;
-
-  return {
-    ...base,
-    status: keepWorkflowStatus ? existing.status : persistedStatus,
-  };
+  return base;
 }
 
 function mergeTablesFromApi(apiTables, currentTables) {
-  return apiTables.map((row) => {
+  return flattenSections(apiTables).map((row) => {
     const existing = currentTables.find((t) => t.backendId === row.id);
-    return mapBackendTable(row, existing, { keepWorkflowStatus: false });
+    return mapBackendTable(row, existing);
   });
 }
 
 function createFallbackApiTables() {
   return Array.from({ length: 20 }, (_, i) => ({
     id: String(i + 1),
-    number: `T${i + 1}`,
+    number: i + 1,
     status: "AVAILABLE",
     capacity: 4,
     sectionId: "main-hall",
@@ -124,34 +109,25 @@ function findTableIndex(tables, backendId) {
   return tables.findIndex((t) => t.backendId === backendId);
 }
 
-// ─── Socket Management ───────────────────────────────────────────────
 let sharedSocket = null;
 let socketRefCount = 0;
 let socketListenersAttached = false;
-let socketConnected = false;
 
 function attachSocketLogging(socket) {
   if (socketListenersAttached) return;
   socketListenersAttached = true;
 
   socket.on("connect", () => {
-    socketConnected = true;
     console.log("[Socket] Connected:", socket.id);
+    socket.emit("join", RESTAURANT_ID);
   });
 
   socket.on("disconnect", (reason) => {
-    socketConnected = false;
     console.log("[Socket] Disconnected:", reason);
   });
 
   socket.on("connect_error", (err) => {
-    socketConnected = false;
     console.log("[Socket] Connection error:", err.message);
-  });
-
-  socket.on("reconnect_failed", () => {
-    socketConnected = false;
-    console.warn("[Socket] All reconnection attempts failed — falling back to REST polling");
   });
 }
 
@@ -160,21 +136,11 @@ function acquireSocket(handlers) {
 
   try {
     if (!sharedSocket) {
-      console.log("[TableSync] Socket.io connecting to", API_BASE);
-      sharedSocket = io(API_BASE, {
-        // Match backend: path without trailing slash, polling first
-        path: "/socket.io",
-        transports: ["polling", "websocket"],
-        reconnection: true,
-        reconnectionAttempts: 15,
-        reconnectionDelay: 2000,
-        reconnectionDelayMax: 15000,
-        timeout: 10000,
-        // Don't add trailing slash — fixes reverse proxy 502
-        addTrailingSlash: false,
-      });
+      sharedSocket = getSocket();
       attachSocketLogging(sharedSocket);
     }
+
+    sharedSocket.emit("join", RESTAURANT_ID);
 
     const { onUpdated, onCreated, onDeleted } = handlers;
     sharedSocket.on("table:updated", onUpdated);
@@ -186,14 +152,7 @@ function acquireSocket(handlers) {
       sharedSocket?.off("table:updated", onUpdated);
       sharedSocket?.off("table:created", onCreated);
       sharedSocket?.off("table:deleted", onDeleted);
-      socketRefCount -= 1;
-      if (socketRefCount <= 0 && sharedSocket) {
-        sharedSocket.disconnect();
-        sharedSocket = null;
-        socketRefCount = 0;
-        socketListenersAttached = false;
-        socketConnected = false;
-      }
+      socketRefCount = Math.max(0, socketRefCount - 1);
     };
   } catch (err) {
     console.error("[TableSync] Socket init failed:", err);
@@ -229,10 +188,7 @@ async function persistStatusChanges(prevTables, nextTables) {
         })
           .then((updated) => ({ updated }))
           .catch((err) => {
-            console.error(
-              `[TableSync] Failed to persist status for ${table.number}:`,
-              err
-            );
+            console.error(`[TableSync] Failed to persist ${table.number}:`, err);
             return { error: err };
           })
       );
@@ -242,7 +198,6 @@ async function persistStatusChanges(prevTables, nextTables) {
   return Promise.all(tasks);
 }
 
-// ─── Hook ────────────────────────────────────────────────────────────
 export function useTableSync() {
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
@@ -259,14 +214,12 @@ export function useTableSync() {
   useEffect(() => {
     let cancelled = false;
 
-    // ── Load tables from API ──
     const loadTables = async () => {
       setIsSyncing(true);
       let apiTables = null;
 
       try {
-        apiTables = await fetchTables();
-        console.log("[TableSync] GET /api/tables response:", apiTables);
+        apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
       } catch (err) {
         console.error("[TableSync] GET /api/tables failed:", err);
       }
@@ -274,70 +227,58 @@ export function useTableSync() {
       if (cancelled) return;
 
       setTablesState((current) => {
-        const useFallback =
-          !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-
-        const merged = useFallback
-          ? getFallbackTables(current)
-          : mergeTablesFromApi(apiTables, current);
-
+        const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
+        const merged = useFallback ? getFallbackTables(current) : mergeTablesFromApi(apiTables, current);
         writeCache(merged);
         return merged;
       });
 
-      if (!cancelled) setIsSyncing(false);
+      setIsSyncing(false);
     };
 
     loadTables();
 
-    // ── Socket.io for real-time updates ──
-    let releaseSocket = () => {};
+    const releaseSocket = acquireSocket({
+      onUpdated: (payload) => {
+        if (payload?.restaurantId && payload.restaurantId !== RESTAURANT_ID) return;
+        const updatedTable = unwrapTableEvent(payload);
+        if (!updatedTable?.id) return;
 
-    try {
-      releaseSocket = acquireSocket({
-        onUpdated: (updatedTable) => {
-          console.log("[Socket] table:updated received:", updatedTable);
-          setTablesState((prev) => {
-            const next = prev.map((t) =>
-              t.backendId === updatedTable.id
-                ? mapBackendTable(updatedTable, t, { keepWorkflowStatus: false })
-                : t
-            );
-            writeCache(next);
-            return next;
-          });
-        },
-        onCreated: (newTable) => {
-          console.log("[Socket] table:created received:", newTable);
-          setTablesState((prev) => {
-            if (findTableIndex(prev, newTable.id) !== -1) return prev;
-            const next = [...prev, mapBackendTable(newTable)];
-            writeCache(next);
-            return next;
-          });
-        },
-        onDeleted: ({ id }) => {
-          console.log("[Socket] table:deleted received:", id);
-          setTablesState((prev) => {
-            const next = prev.filter((t) => t.backendId !== id);
-            writeCache(next);
-            return next;
-          });
-        },
-      });
-    } catch (err) {
-      console.error("[TableSync] Socket setup failed:", err);
-    }
+        setTablesState((prev) => {
+          const next = prev.map((t) =>
+            t.backendId === updatedTable.id ? mapBackendTable(updatedTable, t) : t
+          );
+          writeCache(next);
+          return next;
+        });
+      },
+      onCreated: (payload) => {
+        if (payload?.restaurantId && payload.restaurantId !== RESTAURANT_ID) return;
+        const newTable = unwrapTableEvent(payload);
+        if (!newTable?.id) return;
 
-    // ── REST Polling fallback ──
-    // Poll the API every POLL_INTERVAL_MS so that even if Socket.io
-    // is broken (502 on reverse proxy), table changes from other users
-    // still appear within a few seconds.
+        setTablesState((prev) => {
+          if (findTableIndex(prev, newTable.id) !== -1) return prev;
+          const next = [...prev, mapBackendTable(newTable)];
+          writeCache(next);
+          return next;
+        });
+      },
+      onDeleted: ({ id, restaurantId }) => {
+        if (restaurantId && restaurantId !== RESTAURANT_ID) return;
+        setTablesState((prev) => {
+          const next = prev.filter((t) => t.backendId !== id);
+          writeCache(next);
+          return next;
+        });
+      },
+    });
+
     const pollInterval = setInterval(async () => {
       if (cancelled) return;
       try {
-        const apiTables = await fetchTables();
-        if (cancelled || !apiTables || !Array.isArray(apiTables) || apiTables.length === 0) return;
+        const apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
+        if (cancelled || apiTables.length === 0) return;
 
         setTablesState((current) => {
           const merged = mergeTablesFromApi(apiTables, current);
@@ -345,7 +286,7 @@ export function useTableSync() {
           return merged;
         });
       } catch {
-        // Silently ignore poll failures — we'll try again next interval
+        /* polling is a fallback, keep quiet */
       }
     }, POLL_INTERVAL_MS);
 
@@ -359,8 +300,7 @@ export function useTableSync() {
   const setTables = useCallback((updater) => {
     setTablesState((prev) => {
       const current = prev ?? [];
-      const next =
-        typeof updater === "function" ? updater(current) : updater;
+      const next = typeof updater === "function" ? updater(current) : updater;
 
       writeCache(next);
       tablesRef.current = next;

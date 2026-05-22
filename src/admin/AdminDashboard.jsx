@@ -1,4 +1,4 @@
-import React, { useState, useRef, Suspense, lazy } from 'react';
+import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -25,6 +25,8 @@ import {
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
+import { useSocket } from '../hooks/useSocket';
+import { RESTAURANT_ID } from '../services/tableApi';
 
 const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
 
@@ -64,6 +66,33 @@ const AdminDashboard = ({ onLogout }) => {
     { id: 1, text: "Raju closed Table 4 bill for ₹2,450", time: "2 min ago", type: "success" },
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
+  const socket = useSocket(RESTAURANT_ID);
+
+  useEffect(() => {
+    const pushLog = (text, type = "info") => {
+      setActivityLog((prev) => [
+        { id: Date.now(), text, time: "Just now", type },
+        ...prev,
+      ].slice(0, 12));
+    };
+
+    const onOrderCreated = ({ order }) => pushLog(`New order for Table ${order?.table?.number || ''}`, "info");
+    const onOrderUpdated = ({ order }) => pushLog(`Order ${order?.id?.slice(-6) || ''} updated`, "info");
+    const onBillingRequested = ({ table }) => pushLog(`Billing requested for Table ${table?.number || ''}`, "warning");
+    const onOrderPaid = ({ tableId }) => pushLog(`Payment completed for table ${tableId || ''}`, "success");
+
+    socket.on("order:created", onOrderCreated);
+    socket.on("order:updated", onOrderUpdated);
+    socket.on("billing:requested", onBillingRequested);
+    socket.on("order:paid", onOrderPaid);
+
+    return () => {
+      socket.off("order:created", onOrderCreated);
+      socket.off("order:updated", onOrderUpdated);
+      socket.off("billing:requested", onBillingRequested);
+      socket.off("order:paid", onOrderPaid);
+    };
+  }, [socket]);
 
   const title = navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 

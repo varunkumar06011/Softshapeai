@@ -1,5 +1,7 @@
 import { API_BASE, apiUrl } from "./apiConfig";
 
+export const RESTAURANT_ID = "restaurant-001";
+
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
@@ -15,8 +17,8 @@ async function parseResponse(res) {
   return res.json();
 }
 
-export async function fetchTables() {
-  const res = await fetch(apiUrl("/api/tables"), {
+export async function fetchTables(restaurantId = RESTAURANT_ID) {
+  const res = await fetch(apiUrl(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}`), {
     method: "GET",
     cache: "no-store",
     headers: {
@@ -27,8 +29,8 @@ export async function fetchTables() {
   return parseResponse(res);
 }
 
-export async function fetchSections() {
-  const res = await fetch(apiUrl("/api/tables/sections"));
+export async function fetchSections(restaurantId = RESTAURANT_ID) {
+  const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`));
   return parseResponse(res);
 }
 

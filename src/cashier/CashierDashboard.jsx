@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
+import { markOrderPaid } from '../services/orderApi';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
@@ -109,7 +110,7 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
 
-  const handleSettlement = (method = 'UPI') => {
+  const handleSettlement = async (method = 'UPI') => {
     const txnAmount = activeTotal || 0;
     if (txnAmount === 0) return;
 
@@ -136,6 +137,16 @@ const CashierDashboard = ({ onLogout }) => {
       window.dispatchEvent(new Event('softshape_transactions_updated'));
       return updated;
     });
+
+    try {
+      if (selectedTable?.activeOrder?.id) {
+        await markOrderPaid(selectedTable.activeOrder.id);
+      }
+    } catch (err) {
+      console.error(err);
+      addNotification("Payment Sync Failed", "Could not mark order paid on server.", 'error');
+      return;
+    }
 
     if (selectedTable && selectedTable.id) {
       setTables(prev => {
