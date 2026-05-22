@@ -150,11 +150,12 @@ function acquireSocket(handlers) {
   try {
     if (!sharedSocket) {
       sharedSocket = io(API_BASE, {
-        transports: ["websocket", "polling"],
+        transports: ["polling", "websocket"],
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
+        timeout: 20000,
       });
       attachSocketLogging(sharedSocket);
     }
