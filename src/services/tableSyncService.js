@@ -105,6 +105,23 @@ function mergeTablesFromApi(apiTables, currentTables) {
   });
 }
 
+/** Temporary debug fallback — raw API-shaped rows */
+function createFallbackApiTables() {
+  return Array.from({ length: 20 }, (_, i) => ({
+    id: String(i + 1),
+    number: `T${i + 1}`,
+    status: "AVAILABLE",
+    capacity: 4,
+    sectionId: "main-hall",
+    section: { id: "main-hall", name: "Main Hall" },
+  }));
+}
+
+function getFallbackTables(currentTables = []) {
+  console.warn("[TableSync] Using fallback tables (fetch failed or empty)");
+  return mergeTablesFromApi(createFallbackApiTables(), currentTables);
+}
+
 function findTableIndex(tables, backendId) {
   return tables.findIndex((t) => t.backendId === backendId);
 }
@@ -113,30 +130,45 @@ let sharedSocket = null;
 let socketRefCount = 0;
 
 function acquireSocket(handlers) {
-  if (!sharedSocket) {
-    sharedSocket = io(API_BASE, {
-      transports: ["websocket", "polling"],
-      autoConnect: true,
-    });
-  }
+  const noop = () => {};
 
-  const { onUpdated, onCreated, onDeleted } = handlers;
-  sharedSocket.on("table:updated", onUpdated);
-  sharedSocket.on("table:created", onCreated);
-  sharedSocket.on("table:deleted", onDeleted);
-  socketRefCount += 1;
+  try {
+    if (!sharedSocket) {
+      sharedSocket = io(API_BASE, {
+        transports: ["websocket", "polling"],
+        autoConnect: true,
+      });
 
-  return () => {
-    sharedSocket?.off("table:updated", onUpdated);
-    sharedSocket?.off("table:created", onCreated);
-    sharedSocket?.off("table:deleted", onDeleted);
-    socketRefCount -= 1;
-    if (socketRefCount <= 0 && sharedSocket) {
-      sharedSocket.disconnect();
-      sharedSocket = null;
-      socketRefCount = 0;
+      sharedSocket.on("connect", () => {
+        console.log("[TableSync] Socket.io connected");
+      });
+
+      sharedSocket.on("connect_error", (err) => {
+        console.error("[TableSync] Socket.io connect_error:", err);
+      });
     }
-  };
+
+    const { onUpdated, onCreated, onDeleted } = handlers;
+    sharedSocket.on("table:updated", onUpdated);
+    sharedSocket.on("table:created", onCreated);
+    sharedSocket.on("table:deleted", onDeleted);
+    socketRefCount += 1;
+
+    return () => {
+      sharedSocket?.off("table:updated", onUpdated);
+      sharedSocket?.off("table:created", onCreated);
+      sharedSocket?.off("table:deleted", onDeleted);
+      socketRefCount -= 1;
+      if (socketRefCount <= 0 && sharedSocket) {
+        sharedSocket.disconnect();
+        sharedSocket = null;
+        socketRefCount = 0;
+      }
+    };
+  } catch (err) {
+    console.error("[TableSync] Socket init failed:", err);
+    return noop;
+  }
 }
 
 async function persistStatusChanges(prevTables, nextTables) {
@@ -171,7 +203,11 @@ async function persistStatusChanges(prevTables, nextTables) {
 }
 
 export function useTableSync() {
-  const [tables, setTablesState] = useState(() => readCache());
+  const [tables, setTablesState] = useState(() => {
+    const cached = readCache();
+    if (cached.length > 0) return cached;
+    return getFallbackTables([]);
+  });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
 
@@ -184,53 +220,67 @@ export function useTableSync() {
 
     const loadTables = async () => {
       setIsSyncing(true);
+      let apiTables = null;
+
       try {
-        const apiTables = await fetchTables();
-        if (cancelled) return;
-        setTablesState((current) => {
-          const merged = mergeTablesFromApi(apiTables, current);
-          writeCache(merged);
-          return merged;
-        });
+        apiTables = await fetchTables();
+        console.log("[TableSync] GET /api/tables response:", apiTables);
       } catch (err) {
-        console.error("[TableSync] Failed to load tables:", err);
-        if (!cancelled) {
-          setTablesState((current) => (current.length > 0 ? current : []));
-        }
-      } finally {
-        if (!cancelled) setIsSyncing(false);
+        console.error("[TableSync] GET /api/tables failed:", err);
       }
+
+      if (cancelled) return;
+
+      setTablesState((current) => {
+        const useFallback =
+          !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
+
+        const merged = useFallback
+          ? getFallbackTables(current)
+          : mergeTablesFromApi(apiTables, current);
+
+        writeCache(merged);
+        return merged;
+      });
+
+      if (!cancelled) setIsSyncing(false);
     };
 
     loadTables();
 
-    const releaseSocket = acquireSocket({
-      onUpdated: (row) => {
-        setTablesState((current) => {
-          const idx = findTableIndex(current, row.id);
-          if (idx === -1) return current;
-          const next = [...current];
-          next[idx] = mapBackendTable(row, current[idx]);
-          writeCache(next);
-          return next;
-        });
-      },
-      onCreated: (row) => {
-        setTablesState((current) => {
-          if (findTableIndex(current, row.id) !== -1) return current;
-          const next = [...current, mapBackendTable(row)];
-          writeCache(next);
-          return next;
-        });
-      },
-      onDeleted: ({ id }) => {
-        setTablesState((current) => {
-          const next = current.filter((t) => t.backendId !== id);
-          writeCache(next);
-          return next;
-        });
-      },
-    });
+    let releaseSocket = () => {};
+
+    try {
+      releaseSocket = acquireSocket({
+        onUpdated: (row) => {
+          setTablesState((current) => {
+            const idx = findTableIndex(current, row.id);
+            if (idx === -1) return current;
+            const next = [...current];
+            next[idx] = mapBackendTable(row, current[idx]);
+            writeCache(next);
+            return next;
+          });
+        },
+        onCreated: (row) => {
+          setTablesState((current) => {
+            if (findTableIndex(current, row.id) !== -1) return current;
+            const next = [...current, mapBackendTable(row)];
+            writeCache(next);
+            return next;
+          });
+        },
+        onDeleted: ({ id }) => {
+          setTablesState((current) => {
+            const next = current.filter((t) => t.backendId !== id);
+            writeCache(next);
+            return next;
+          });
+        },
+      });
+    } catch (err) {
+      console.error("[TableSync] Socket setup failed:", err);
+    }
 
     return () => {
       cancelled = true;
