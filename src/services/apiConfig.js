@@ -18,6 +18,4 @@ export function apiUrl(path) {
   return `${API_BASE}${normalizedPath}`;
 }
 
-if (import.meta.env.DEV) {
-  console.log("[API] Backend base:", API_BASE);
-}
+console.log("[API] Backend base:", API_BASE);
