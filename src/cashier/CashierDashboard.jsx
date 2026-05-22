@@ -6,7 +6,7 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity
 } from 'lucide-react';
-import { useMenuSync } from '../hooks/useMenuSync';
+import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { calculateOrderTotal, calculateSessionBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -95,7 +95,7 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification("Payment Success", `Transaction ${newTransaction.id} logged.`, 'success');
   };
 
-  const { menuItems, categories, loading: menuLoading } = useMenuSync();
+  const { menuItems, categories, loading: menuLoading } = useMenu();
 
   const { tables, setTables } = useTableSync();
 

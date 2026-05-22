@@ -1,160 +1,277 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { io } from "socket.io-client";
+import { API_BASE, fetchTables, updateTableStatus } from "./tableApi";
 
-// Using PieSocket's free public demo API key for realtime pub/sub without backend config
-const PIESOCKET_API_KEY = "VCXCEuvhGcBDP7XhiJJUDvR1e1PNwgvPAY2ZeMyB";
-const ROOM_ID = "softshape_tables_demo_1";
-const WS_URL = `wss://free.blr2.piesocket.com/v3/${ROOM_ID}?api_key=${PIESOCKET_API_KEY}`;
+const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
 
-const TABLE_STATUS = {
-  FREE: 'Free',
-  OCCUPIED: 'Occupied',
-  PREPARING: 'Preparing',
-  READY: 'Ready',
-  BILLING: 'Waiting Bill'
+export const TABLE_STATUS = {
+  FREE: "Free",
+  OCCUPIED: "Occupied",
+  PREPARING: "Preparing",
+  READY: "Ready",
+  BILLING: "Waiting Bill",
 };
 
-function generateDefaultTables() {
-  return Array.from({ length: 24 }, (_, i) => ({
-    id: i + 1,
-    status: i % 5 === 0 ? TABLE_STATUS.OCCUPIED : TABLE_STATUS.FREE,
-    guests: i % 5 === 0 ? 4 : 0,
-    time: i % 5 === 0 ? '24m' : null,
-    captainId: i % 5 === 0 ? 'C1' : null,
-    kotHistory: i % 5 === 0 ? [
-      { 
-        id: '1001', 
-        time: '12:15 PM', 
-        items: [
-          { n: 'Chicken Biryani', q: 2, p: 450, s: 'Served' },
-          { n: 'Coke', q: 2, p: 60, s: 'Served' }
-        ] 
-      }
-    ] : [],
-    currentBill: i % 5 === 0 ? 1020 : 0
-  }));
-}
+const BACKEND_TO_FRONTEND = {
+  AVAILABLE: TABLE_STATUS.FREE,
+  OCCUPIED: TABLE_STATUS.OCCUPIED,
+  RESERVED: "Reserved",
+  CLEANING: "Cleaning",
+};
 
-// Global state to avoid multiple socket connections in one browser if multiple hooks are used
-let globalSocket = null;
-let globalTables = null;
-const subscribers = new Set();
-let isConnecting = false;
+const FRONTEND_TO_BACKEND = {
+  [TABLE_STATUS.FREE]: "AVAILABLE",
+  [TABLE_STATUS.OCCUPIED]: "OCCUPIED",
+  Reserved: "RESERVED",
+  Cleaning: "CLEANING",
+};
 
-function broadcastUpdate(tables) {
-  if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
-    globalSocket.send(JSON.stringify({ type: 'SYNC_TABLES', payload: tables }));
-  }
-}
+const FRONTEND_ONLY_STATUSES = new Set([
+  TABLE_STATUS.PREPARING,
+  TABLE_STATUS.READY,
+  TABLE_STATUS.BILLING,
+]);
 
-function notifySubscribers() {
-  subscribers.forEach(callback => callback(globalTables));
-}
-
-function initSocket() {
-  if (globalSocket || isConnecting) return;
-  isConnecting = true;
-
+function readCache() {
   try {
-    globalSocket = new WebSocket(WS_URL);
-
-    globalSocket.onopen = () => {
-      console.log("[TableSync] Connected to Realtime Relay");
-      isConnecting = false;
-      // Request latest state from any other connected peer
-      globalSocket.send(JSON.stringify({ type: 'REQUEST_STATE' }));
-      
-      // If no peer answers in 1.5s and we don't have tables, load defaults
-      setTimeout(() => {
-        if (!globalTables) {
-          // Check localStorage as a final fallback before defaults
-          const saved = localStorage.getItem('softshape_tables_v2');
-          globalTables = saved ? JSON.parse(saved) : generateDefaultTables();
-          notifySubscribers();
-          broadcastUpdate(globalTables); // Inform future peers
-        }
-      }, 1500);
-    };
-
-    globalSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'REQUEST_STATE' && globalTables) {
-          // Someone asked for state, and we have it, so send it back
-          broadcastUpdate(globalTables);
-        } else if (data.type === 'SYNC_TABLES' && data.payload) {
-          // Received updated state from another peer
-          globalTables = data.payload;
-          localStorage.setItem('softshape_tables_v2', JSON.stringify(globalTables));
-          notifySubscribers();
-        }
-      } catch (err) {
-        // Ignore parsing errors for non-JSON messages
-      }
-    };
-
-    globalSocket.onclose = () => {
-      console.log("[TableSync] Disconnected. Reconnecting...");
-      globalSocket = null;
-      isConnecting = false;
-      setTimeout(initSocket, 3000);
-    };
-
-    globalSocket.onerror = (err) => {
-      console.error("[TableSync] WebSocket Error", err);
-      globalSocket?.close();
-    };
-  } catch (err) {
-    isConnecting = false;
-    console.error("[TableSync] Connection failed", err);
+    const raw = localStorage.getItem(TABLES_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
   }
+}
+
+function writeCache(tables) {
+  try {
+    localStorage.setItem(TABLES_CACHE_KEY, JSON.stringify(tables));
+  } catch {
+    /* quota or private mode */
+  }
+}
+
+function parseDisplayId(number) {
+  const match = String(number).match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : number;
+}
+
+function defaultSessionFields() {
+  return {
+    guests: 0,
+    time: null,
+    captainId: null,
+    kotHistory: [],
+    currentBill: 0,
+  };
+}
+
+function mapBackendTable(row, existing = null) {
+  const dbStatus = row.status;
+  const persistedStatus = BACKEND_TO_FRONTEND[dbStatus] ?? TABLE_STATUS.FREE;
+
+  const base = {
+    backendId: row.id,
+    id: parseDisplayId(row.number),
+    number: row.number,
+    dbStatus,
+    status:
+      existing && FRONTEND_ONLY_STATUSES.has(existing.status)
+        ? existing.status
+        : persistedStatus,
+    capacity: row.capacity,
+    sectionId: row.sectionId,
+    section: row.section,
+    ...defaultSessionFields(),
+  };
+
+  if (!existing) return base;
+
+  return {
+    ...base,
+    guests: existing.guests ?? 0,
+    time: existing.time ?? null,
+    captainId: existing.captainId ?? null,
+    kotHistory: existing.kotHistory ?? [],
+    currentBill: existing.currentBill ?? 0,
+    status: FRONTEND_ONLY_STATUSES.has(existing.status)
+      ? existing.status
+      : persistedStatus,
+  };
+}
+
+function mergeTablesFromApi(apiTables, currentTables) {
+  return apiTables.map((row) => {
+    const existing = currentTables.find((t) => t.backendId === row.id);
+    return mapBackendTable(row, existing);
+  });
+}
+
+function findTableIndex(tables, backendId) {
+  return tables.findIndex((t) => t.backendId === backendId);
+}
+
+let sharedSocket = null;
+let socketRefCount = 0;
+
+function acquireSocket(handlers) {
+  if (!sharedSocket) {
+    sharedSocket = io(API_BASE, {
+      transports: ["websocket", "polling"],
+      autoConnect: true,
+    });
+  }
+
+  const { onUpdated, onCreated, onDeleted } = handlers;
+  sharedSocket.on("table:updated", onUpdated);
+  sharedSocket.on("table:created", onCreated);
+  sharedSocket.on("table:deleted", onDeleted);
+  socketRefCount += 1;
+
+  return () => {
+    sharedSocket?.off("table:updated", onUpdated);
+    sharedSocket?.off("table:created", onCreated);
+    sharedSocket?.off("table:deleted", onDeleted);
+    socketRefCount -= 1;
+    if (socketRefCount <= 0 && sharedSocket) {
+      sharedSocket.disconnect();
+      sharedSocket = null;
+      socketRefCount = 0;
+    }
+  };
+}
+
+async function persistStatusChanges(prevTables, nextTables) {
+  const tasks = [];
+
+  for (const table of nextTables) {
+    if (!table.backendId) continue;
+
+    const prev = prevTables.find((t) => t.backendId === table.backendId);
+    const nextBackend = FRONTEND_TO_BACKEND[table.status];
+    if (!nextBackend) continue;
+
+    const prevBackend =
+      prev?.dbStatus ?? FRONTEND_TO_BACKEND[prev?.status] ?? "AVAILABLE";
+
+    if (nextBackend !== prevBackend) {
+      tasks.push(
+        updateTableStatus(table.backendId, nextBackend)
+          .then((updated) => ({ table, updated }))
+          .catch((err) => {
+            console.error(
+              `[TableSync] Failed to persist status for ${table.number}:`,
+              err
+            );
+            return { table, error: err };
+          })
+      );
+    }
+  }
+
+  return Promise.all(tasks);
 }
 
 export function useTableSync() {
-  const [tables, setTablesState] = useState(() => {
-    if (globalTables) return globalTables;
-    const saved = localStorage.getItem('softshape_tables_v2');
-    return saved ? JSON.parse(saved) : null;
-  });
-
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [tables, setTablesState] = useState(() => readCache());
+  const [isSyncing, setIsSyncing] = useState(true);
+  const tablesRef = useRef(tables);
 
   useEffect(() => {
-    initSocket();
+    tablesRef.current = tables;
+  }, [tables]);
 
-    const handleUpdate = (newTables) => {
-      setTablesState(newTables);
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTables = async () => {
       setIsSyncing(true);
-      setTimeout(() => setIsSyncing(false), 800);
+      try {
+        const apiTables = await fetchTables();
+        if (cancelled) return;
+        setTablesState((current) => {
+          const merged = mergeTablesFromApi(apiTables, current);
+          writeCache(merged);
+          return merged;
+        });
+      } catch (err) {
+        console.error("[TableSync] Failed to load tables:", err);
+        if (!cancelled) {
+          setTablesState((current) => (current.length > 0 ? current : []));
+        }
+      } finally {
+        if (!cancelled) setIsSyncing(false);
+      }
     };
 
-    subscribers.add(handleUpdate);
-    
-    // Ensure component gets initial global tables if it already exists
-    if (globalTables) {
-      handleUpdate(globalTables);
-    }
+    loadTables();
+
+    const releaseSocket = acquireSocket({
+      onUpdated: (row) => {
+        setTablesState((current) => {
+          const idx = findTableIndex(current, row.id);
+          if (idx === -1) return current;
+          const next = [...current];
+          next[idx] = mapBackendTable(row, current[idx]);
+          writeCache(next);
+          return next;
+        });
+      },
+      onCreated: (row) => {
+        setTablesState((current) => {
+          if (findTableIndex(current, row.id) !== -1) return current;
+          const next = [...current, mapBackendTable(row)];
+          writeCache(next);
+          return next;
+        });
+      },
+      onDeleted: ({ id }) => {
+        setTablesState((current) => {
+          const next = current.filter((t) => t.backendId !== id);
+          writeCache(next);
+          return next;
+        });
+      },
+    });
 
     return () => {
-      subscribers.delete(handleUpdate);
+      cancelled = true;
+      releaseSocket();
     };
   }, []);
 
   const setTables = useCallback((updater) => {
-    const nextTables = typeof updater === 'function' ? updater(globalTables || tables) : updater;
-    globalTables = nextTables;
-    localStorage.setItem('softshape_tables_v2', JSON.stringify(nextTables));
-    
-    // Optimistic local update
-    setTablesState(nextTables);
-    setIsSyncing(true);
-    setTimeout(() => setIsSyncing(false), 800);
+    setTablesState((prev) => {
+      const current = prev ?? [];
+      const next =
+        typeof updater === "function" ? updater(current) : updater;
 
-    // Broadcast globally
-    broadcastUpdate(nextTables);
-    
-    // Notify other components in the same window
-    notifySubscribers();
-  }, [tables]);
+      writeCache(next);
+      tablesRef.current = next;
 
-  return { tables: tables || generateDefaultTables(), setTables, isSyncing, TABLE_STATUS };
+      persistStatusChanges(current, next).then((results) => {
+        if (!results.length) return;
+        setTablesState((latest) => {
+          let updated = latest;
+          for (const result of results) {
+            if (!result.updated) continue;
+            const idx = findTableIndex(updated, result.updated.id);
+            if (idx === -1) continue;
+            const copy = [...updated];
+            copy[idx] = mapBackendTable(result.updated, copy[idx]);
+            updated = copy;
+          }
+          writeCache(updated);
+          return updated;
+        });
+      });
+
+      return next;
+    });
+  }, []);
+
+  return {
+    tables: tables ?? [],
+    setTables,
+    isSyncing,
+    TABLE_STATUS,
+  };
 }

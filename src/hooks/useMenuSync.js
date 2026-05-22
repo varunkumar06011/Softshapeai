@@ -1,56 +1,49 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchMenuFromBackend,
   persistMenu,
+  readStoredMenu,
+  MENU_QUERY_KEY,
   MENU_STORAGE_KEY,
 } from "../services/menuService";
 
-function readStoredMenu() {
-  try {
-    const saved = localStorage.getItem(MENU_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch {
-    return [];
-  }
-}
+const MENU_STALE_MS = 5 * 60 * 1000;
 
 export function useMenuSync() {
-  const [menuItems, setMenuItemsState] = useState(readStoredMenu);
-  const [loading, setLoading] = useState(() => readStoredMenu().length === 0);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
+  const cachedMenu = readStoredMenu();
 
-  const applyMenu = useCallback((items) => {
-    setMenuItemsState(items);
-    persistMenu(items);
-  }, []);
-
-  const refreshMenu = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const {
+    data: menuItems = cachedMenu,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: MENU_QUERY_KEY,
+    queryFn: async () => {
       const items = await fetchMenuFromBackend();
-      applyMenu(items);
+      persistMenu(items);
       return items;
-    } catch (err) {
-      setError(err.message || "Failed to load menu");
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [applyMenu]);
-
-  useEffect(() => {
-    refreshMenu().catch(() => {});
-  }, [refreshMenu]);
+    },
+    placeholderData: cachedMenu.length > 0 ? cachedMenu : undefined,
+    staleTime: MENU_STALE_MS,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: 1,
+  });
 
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === MENU_STORAGE_KEY && e.newValue) {
-        setMenuItemsState(JSON.parse(e.newValue));
+        queryClient.setQueryData(MENU_QUERY_KEY, JSON.parse(e.newValue));
       }
     };
     const onMenuUpdated = (e) => {
-      if (Array.isArray(e.detail)) setMenuItemsState(e.detail);
+      if (Array.isArray(e.detail)) {
+        queryClient.setQueryData(MENU_QUERY_KEY, e.detail);
+      }
     };
     window.addEventListener("storage", onStorage);
     window.addEventListener("softshape_menu_updated", onMenuUpdated);
@@ -58,7 +51,15 @@ export function useMenuSync() {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("softshape_menu_updated", onMenuUpdated);
     };
-  }, []);
+  }, [queryClient]);
+
+  const applyMenu = useCallback(
+    (items) => {
+      queryClient.setQueryData(MENU_QUERY_KEY, items);
+      persistMenu(items);
+    },
+    [queryClient]
+  );
 
   const updateMenu = useCallback(
     (newMenu) => {
@@ -69,14 +70,20 @@ export function useMenuSync() {
 
   const setMenuItems = useCallback(
     (updater) => {
-      setMenuItemsState((prev) => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
+      queryClient.setQueryData(MENU_QUERY_KEY, (prev) => {
+        const current = prev ?? [];
+        const next = typeof updater === "function" ? updater(current) : updater;
         persistMenu(next);
         return next;
       });
     },
-    []
+    [queryClient]
   );
+
+  const refreshMenu = useCallback(async () => {
+    const result = await refetch({ throwOnError: true });
+    return result.data;
+  }, [refetch]);
 
   const categories = useMemo(() => {
     const ordered = [];
@@ -90,12 +97,16 @@ export function useMenuSync() {
     return ["All", ...ordered];
   }, [menuItems]);
 
+  const loading = isLoading && menuItems.length === 0;
+  const isRefreshing = isFetching && !loading;
+
   return {
     menuItems,
     updateMenu,
     setMenuItems,
     loading,
-    error,
+    isRefreshing,
+    error: error?.message ?? null,
     refreshMenu,
     categories,
   };

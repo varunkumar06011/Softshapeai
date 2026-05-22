@@ -5,7 +5,7 @@ import {
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon
 } from 'lucide-react';
-import { useMenuSync } from '../hooks/useMenuSync';
+import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -59,7 +59,7 @@ export default function CaptainApp({ onLogout }) {
     return saved ? JSON.parse(saved) : [];
   });
   
-  const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenuSync();
+  const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenu();
 
   useEffect(() => {
     const handleStorage = (e) => {

@@ -25,7 +25,6 @@ import {
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
-import { MenuProvider } from '../context/MenuContext';
 
 const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
 
@@ -134,7 +133,6 @@ const AdminDashboard = ({ onLogout }) => {
         </header>
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
-          <MenuProvider>
           {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} />}
           {page === "pos" && <Pos onOrderComplete={() => {}} onKOTSend={() => {}} />}
           {page === "tables" && <Tables onOpen={() => {}} />}
@@ -153,7 +151,6 @@ const AdminDashboard = ({ onLogout }) => {
           {page === "inventory" && <Inventory />}
           {page === "pricing" && <Pricing />}
           {page === "settings" && <SettingsPage />}
-          </MenuProvider>
         </main>
       </div>
 
