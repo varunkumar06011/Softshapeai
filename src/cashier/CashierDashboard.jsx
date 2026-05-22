@@ -7,6 +7,7 @@ import {
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
+import { useTableSync } from '../services/tableSyncService';
 import { calculateOrderTotal, calculateSessionBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
@@ -79,15 +80,12 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable && selectedTable.id) {
       setTables(prev => {
-         const newTables = prev.map(t => {
+         return prev.map(t => {
            if (t.id === selectedTable.id) {
              return { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null };
            }
            return t;
          });
-         localStorage.setItem('softshape_tables', JSON.stringify(newTables));
-         window.dispatchEvent(new Event('softshape_tables_updated'));
-         return newTables;
       });
     }
 
@@ -99,33 +97,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const { menuItems, categories, loading: menuLoading } = useMenuSync();
 
-  const [tables, setTables] = useState(() => {
-    const saved = localStorage.getItem('softshape_tables');
-    if (saved) return JSON.parse(saved);
-    return Array.from({ length: 24 }, (_, i) => ({
-      id: i + 1,
-      status: i % 5 === 0 ? 'Occupied' : 'Free',
-      guests: i % 5 === 0 ? 4 : 0,
-      time: i % 5 === 0 ? '24m' : null,
-      captainId: i % 5 === 0 ? 'C1' : null,
-      kotHistory: [],
-      currentBill: i % 5 === 0 ? 1020 : 0
-    }));
-  });
-
-  useEffect(() => {
-    localStorage.setItem('softshape_tables', JSON.stringify(tables));
-  }, [tables]);
-
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_tables' && e.newValue) {
-        setTables(JSON.parse(e.newValue));
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  const { tables, setTables } = useTableSync();
 
   const filteredMenu = useMemo(
     () =>

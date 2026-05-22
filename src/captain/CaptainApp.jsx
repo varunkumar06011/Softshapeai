@@ -6,6 +6,7 @@ import {
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
+import { useTableSync } from '../services/tableSyncService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
@@ -62,11 +63,6 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
     const handleStorage = (e) => {
-      if (e.key === 'softshape_tables' && e.newValue) {
-        setTables(JSON.parse(e.newValue));
-        setIsSyncing(true);
-        setTimeout(() => setIsSyncing(false), 800);
-      }
       if (e.key === 'softshape_specials' && e.newValue) {
         setTodaySpecials(JSON.parse(e.newValue));
         setIsSyncing(true);
@@ -86,35 +82,15 @@ export default function CaptainApp({ onLogout }) {
   }, []);
 
   // SHARED STATE PERSISTENCE
-  const [tables, setTables] = useState(() => {
-    const saved = localStorage.getItem('softshape_tables');
-    if (saved) return JSON.parse(saved);
-    return Array.from({ length: 24 }, (_, i) => ({
-      id: i + 1,
-      status: i % 5 === 0 ? TABLE_STATUS.OCCUPIED : TABLE_STATUS.FREE,
-      guests: i % 5 === 0 ? 4 : 0,
-      time: i % 5 === 0 ? '24m' : null,
-      captainId: i % 5 === 0 ? 'C1' : null,
-      kotHistory: i % 5 === 0 ? [
-        { 
-          id: '1001', 
-          time: '12:15 PM', 
-          items: [
-            { n: 'Chicken Biryani', q: 2, p: 450, s: 'Served' },
-            { n: 'Coke', q: 2, p: 60, s: 'Served' }
-          ] 
-        }
-      ] : [],
-      currentBill: i % 5 === 0 ? 1020 : 0
-    }));
-  });
+  const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
 
   useEffect(() => {
-    localStorage.setItem('softshape_tables', JSON.stringify(tables));
-    setIsSyncing(true);
-    const timer = setTimeout(() => setIsSyncing(false), 800);
-    return () => clearTimeout(timer);
-  }, [tables]);
+    if (tablesSyncing) {
+      setIsSyncing(true);
+      const timer = setTimeout(() => setIsSyncing(false), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [tablesSyncing]);
 
   const [currentSessionItems, setCurrentSessionItems] = useState([]); 
 

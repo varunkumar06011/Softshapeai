@@ -44,6 +44,7 @@ import { STYLES, generateRandomConfig } from '../services/creativeEngine';
 import CreativeCanvas from '../shared/components/CreativeCanvas';
 import { calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSearch';
+import { useTableSync } from '../services/tableSyncService';
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -52,20 +53,7 @@ const card = cardBase + " bg-white";
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
 export function Dashboard({ revenue, ordersCount, activityLog }) {
-  const [tables, setTables] = useState(() => {
-    const saved = localStorage.getItem('softshape_tables');
-    return saved ? JSON.parse(saved) : Array.from({ length: 24 }, (_, i) => ({ id: i + 1, status: 'Free' }));
-  });
-
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_tables' && e.newValue) {
-        setTables(JSON.parse(e.newValue));
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  const { tables } = useTableSync();
 
   const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
   const totalTables = tables.length;
@@ -290,24 +278,7 @@ const CAPTAINS = [
 
 export function Tables({ onOpen }) {
   const [activePopupTableId, setActivePopupTableId] = useState(null);
-  const [tables, setTables] = useState(() => {
-    const saved = localStorage.getItem('softshape_tables');
-    if (saved) return JSON.parse(saved);
-    return Array.from({ length: 24 }, (_, i) => ({
-      id: i + 1,
-      status: 'Free'
-    }));
-  });
-
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_tables' && e.newValue) {
-        setTables(JSON.parse(e.newValue));
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  const { tables } = useTableSync();
 
   return <div className="space-y-4 font-sans">
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
