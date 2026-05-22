@@ -1,4 +1,4 @@
-export const TAX_RATE = 0.05; // 5% GST
+export const TAX_RATE = 0.18; // 18% GST
 
 /**
  * Calculates the subtotal, taxes, and total for a given array of items.

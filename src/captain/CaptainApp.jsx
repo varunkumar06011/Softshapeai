@@ -3,7 +3,8 @@ import {
   LayoutDashboard, ShoppingCart, LogOut, ChevronRight, Clock, Plus, Minus, 
   Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer, 
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
-  FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon
+  FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
+  Target, TrendingUp
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -17,6 +18,30 @@ const TABLE_STATUS = {
   READY: 'Ready',
   BILLING: 'Waiting Bill'
 };
+
+/** Calculate today's revenue settled by a specific captain from transactions store */
+function calculateTodayRevenue(captainId) {
+  if (!captainId) return 0;
+  try {
+    const saved = localStorage.getItem('softshape_transactions');
+    const txns = saved ? JSON.parse(saved) : [];
+    const today = new Date().toLocaleDateString('en-GB');
+    return txns
+      .filter(t => t.captainId === captainId && t.date === today)
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+  } catch { return 0; }
+}
+
+/** Read captain's current assignment from the shared targets store */
+function getAssignment(captainId) {
+  if (!captainId) return null;
+  try {
+    const saved = localStorage.getItem('softshape_captain_targets');
+    if (!saved) return null;
+    const all = JSON.parse(saved);
+    return all[captainId] || null;
+  } catch { return null; }
+}
 
 const CAPTAINS = [
   { id: 'C1', name: 'Ajay Kumar', pin: '1997', initials: 'AK', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
@@ -53,33 +78,54 @@ export default function CaptainApp({ onLogout }) {
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [removedItem, setRemovedItem] = useState(null);
   const removeTimeoutRef = useRef(null);
+
+  // Assignment tracking state
+  const [activeView, setActiveView] = useState('assignment');
+  const [assignment, setAssignment] = useState(() => getAssignment(currentCaptain?.id));
+  const [todayRevenue, setTodayRevenue] = useState(() => calculateTodayRevenue(currentCaptain?.id));
   
-  const [todaySpecials, setTodaySpecials] = useState(() => {
-    const saved = localStorage.getItem('softshape_specials');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
-  const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenu();
+  // Derive today's specials from the live global menu — eliminates dead softshape_specials key
+  const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenuSync();
+
+  const todaySpecials = useMemo(() => {
+    const now = Date.now();
+    return menuItems.filter(
+      i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt)
+    );
+  }, [menuItems]);
 
   useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_specials' && e.newValue) {
-        setTodaySpecials(JSON.parse(e.newValue));
-        setIsSyncing(true);
-        setTimeout(() => setIsSyncing(false), 800);
-      }
-    };
+    // Show the Live Sync indicator whenever the global menu broadcasts an update
     const onMenuUpdated = () => {
       setIsSyncing(true);
       setTimeout(() => setIsSyncing(false), 800);
     };
-    window.addEventListener('storage', handleStorage);
     window.addEventListener('softshape_menu_updated', onMenuUpdated);
     return () => {
-      window.removeEventListener('storage', handleStorage);
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
     };
   }, []);
+
+  // Realtime assignment + revenue sync
+  useEffect(() => {
+    if (!currentCaptain) return;
+    const refresh = () => {
+      setAssignment(getAssignment(currentCaptain.id));
+      setTodayRevenue(calculateTodayRevenue(currentCaptain.id));
+    };
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_captain_targets' || e.key === 'softshape_transactions') refresh();
+    };
+    const handleTxnUpdate = () => setTodayRevenue(calculateTodayRevenue(currentCaptain.id));
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('softshape_transactions_updated', handleTxnUpdate);
+    const poll = setInterval(refresh, 15000);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('softshape_transactions_updated', handleTxnUpdate);
+      clearInterval(poll);
+    };
+  }, [currentCaptain]);
 
   // SHARED STATE PERSISTENCE
   const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
@@ -134,9 +180,10 @@ export default function CaptainApp({ onLogout }) {
   }, [currentSessionItems, menuItems]);
 
   const displaySpecials = useMemo(() => {
-    const activeAdminSpecials = todaySpecials.filter(s => s.available);
-    if (activeAdminSpecials.length > 0) {
-      return activeAdminSpecials.filter(s => !currentSessionItems.find(i => i.n === s.n)).slice(0, 4);
+    // todaySpecials is now derived from live menuItems — always up to date
+    const liveSpecials = todaySpecials.filter(s => !currentSessionItems.find(i => i.n === s.n));
+    if (liveSpecials.length > 0) {
+      return liveSpecials.slice(0, 4);
     }
     return suggestedSpecials;
   }, [todaySpecials, suggestedSpecials, currentSessionItems]);
@@ -302,7 +349,7 @@ export default function CaptainApp({ onLogout }) {
         items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' }))
       };
 
-      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).total;
+      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
 
       setTables(prev => prev.map(t => {
         if (t.id === activeTableId) {
@@ -450,8 +497,173 @@ export default function CaptainApp({ onLogout }) {
         </div>
       </header>
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-grow flex flex-col overflow-hidden relative">
+      {/* CAPTAIN NAV TABS */}
+      <div className="bg-white border-b border-gray-100 px-4 flex shrink-0">
+        <button
+          onClick={() => setActiveView('assignment')}
+          className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${
+            activeView === 'assignment'
+              ? 'border-[#E53935] text-[#E53935]'
+              : 'border-transparent text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <Target size={13} />
+          <span className="hidden xs:inline">ఈరోజు అప్పగింత</span>
+          <span className="xs:hidden">Today</span>
+          {assignment && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5 shrink-0" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveView('tables')}
+          className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${
+            activeView === 'tables'
+              ? 'border-[#E53935] text-[#E53935]'
+              : 'border-transparent text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <LayoutDashboard size={13} />
+          Tables
+          {view === 'session' && (
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ml-0.5 shrink-0" />
+          )}
+        </button>
+      </div>
+
+      {/* TODAY ASSIGNMENT VIEW */}
+      {activeView === 'assignment' && (
+        <div className="flex-grow overflow-y-auto bg-gray-50/40">
+          {!assignment ? (
+            <div className="flex flex-col items-center justify-center h-full min-h-[320px] text-center p-8">
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+                <Target size={26} className="text-gray-300" />
+              </div>
+              <h3 className="text-sm font-black text-gray-700 mb-1">No Assignment Yet</h3>
+              <p className="text-[11px] font-bold text-gray-400 max-w-xs leading-relaxed">
+                Admin hasn&apos;t assigned targets for today. Check back soon.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 sm:p-6 max-w-lg mx-auto space-y-4">
+
+              {/* Captain Identity Card */}
+              <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl ${currentCaptain?.color || 'bg-gray-100 text-gray-600'} flex items-center justify-center text-base font-black shadow-sm shrink-0`}>
+                  {currentCaptain?.initials || '?'}
+                </div>
+                <div className="flex-grow min-w-0">
+                  <h2 className="text-sm font-black text-gray-900 truncate">{currentCaptain?.name}</h2>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Active Session</span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Assigned At</p>
+                  <p className="text-[10px] font-black text-gray-700 mt-0.5">
+                    {assignment.timestamp
+                      ? new Date(assignment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Revenue Target & Progress */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-[#FFF4F4] flex items-center justify-center shrink-0">
+                      <Flame size={14} className="text-[#E53935]" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Daily Revenue Target</span>
+                  </div>
+                  <span className="text-xs font-black text-[#E53935] bg-[#FFF4F4] px-2.5 py-1 rounded-xl">
+                    ₹{(assignment.revenueTarget || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
+                    <span>Progress</span>
+                    <span>{Math.min(100, Math.round((todayRevenue / (assignment.revenueTarget || 1)) * 100))}%</span>
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${Math.min(100, (todayRevenue / (assignment.revenueTarget || 1)) * 100)}%`,
+                        background: 'linear-gradient(to right, #E53935, #FF7043)',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Earned Today</p>
+                    <p className="text-2xl font-black text-gray-900 tracking-tight tabular-nums">₹{todayRevenue.toLocaleString('en-IN')}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Remaining</p>
+                    {Math.max(0, (assignment.revenueTarget || 0) - todayRevenue) === 0 ? (
+                      <p className="text-sm font-black text-emerald-600">✓ Achieved!</p>
+                    ) : (
+                      <p className="text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                        ₹{Math.max(0, (assignment.revenueTarget || 0) - todayRevenue).toLocaleString('en-IN')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Discount Auth */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                    <TrendingUp size={14} className="text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Max Discount Auth</p>
+                    <p className="text-[9px] font-bold text-gray-400 mt-0.5">You can offer up to this discount</p>
+                  </div>
+                </div>
+                <span className="text-3xl font-black text-indigo-600 tabular-nums">{assignment.discountLimit || 0}%</span>
+              </div>
+
+              {/* Status Banner */}
+              <div className={`rounded-2xl p-4 border flex items-center gap-3 ${
+                todayRevenue >= (assignment.revenueTarget || 0)
+                  ? 'bg-emerald-50 border-emerald-200'
+                  : 'bg-[#FFF4F4] border-[#FFCDD2]'
+              }`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  todayRevenue >= (assignment.revenueTarget || 0) ? 'bg-emerald-500' : 'bg-[#E53935]'
+                }`}>
+                  {todayRevenue >= (assignment.revenueTarget || 0)
+                    ? <CheckCircle2 size={18} className="text-white" />
+                    : <Flame size={18} className="text-white" />}
+                </div>
+                <div>
+                  <p className="text-xs font-black text-gray-900">
+                    {todayRevenue >= (assignment.revenueTarget || 0) ? 'Target Achieved! 🎉' : 'Keep Going!'}
+                  </p>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">
+                    {todayRevenue >= (assignment.revenueTarget || 0)
+                      ? `Exceeded by ₹${(todayRevenue - (assignment.revenueTarget || 0)).toLocaleString('en-IN')}`
+                      : `${Math.min(100, Math.round((todayRevenue / (assignment.revenueTarget || 1)) * 100))}% of daily target completed`
+                    }
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MAIN CONTENT AREA — TABLES & SESSION */}
+      <main className={`flex-grow flex flex-col overflow-hidden relative ${activeView !== 'tables' ? 'hidden' : ''}`}>
         {view === 'tables' ? (
           <div className="flex-grow overflow-y-auto p-6 scroll-smooth bg-gray-50/50">
             <div className="max-w-6xl mx-auto">
@@ -662,7 +874,7 @@ export default function CaptainApp({ onLogout }) {
                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
                      </div>
                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-black text-gray-900">₹{calculateSessionBill(activeTable, currentSessionItems).total}</span>
+                        <span className="text-sm font-black text-gray-900">₹{calculateSessionBill(activeTable, currentSessionItems).subtotal}</span>
                         {isCartMinimized && (
                           <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
                              <ChevronLeft size={16} className="rotate-90" />
@@ -767,11 +979,11 @@ export default function CaptainApp({ onLogout }) {
                       <div className="flex justify-between items-center">
                         <div className="flex flex-col gap-1">
                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
-                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{calculateSessionBill(activeTable, currentSessionItems).total}</p>
+                           <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{calculateSessionBill(activeTable, currentSessionItems).subtotal}</p>
                         </div>
                         <div className="text-right flex flex-col gap-1">
                            <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">KOT Draft</span>
-                           <span className="text-lg font-black text-gray-400">₹{calculateOrderTotal(currentSessionItems).total}</span>
+                           <span className="text-lg font-black text-gray-400">₹{calculateOrderTotal(currentSessionItems).subtotal}</span>
                         </div>
                      </div>
                      <button 

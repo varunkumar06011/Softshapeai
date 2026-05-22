@@ -453,7 +453,7 @@ export function Tables({ onOpen }) {
 }
 
 export function MenuPage({ onAddDish }) {
-  const { menuItems, updateMenu, loading, error, refreshMenu } = useMenu();
+  const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu } = useMenu();
   const [filter, setFilter] = useState("");
   const items = useMemo(
     () => menuItems.filter((x) => menuItemMatchesSearch(x, filter)),
@@ -468,13 +468,13 @@ export function MenuPage({ onAddDish }) {
   const handleDeleteClick = (item) => setDeletingItem(item);
   
   const confirmDelete = () => {
-    const newMenu = menuItems.filter(i => i.n !== deletingItem.n);
+    const newMenu = allMenuItems.filter(i => i.n !== deletingItem.n);
     updateMenu(newMenu);
     setDeletingItem(null);
   };
 
   const handleSaveEdit = () => {
-    const newMenu = menuItems.map(i => 
+    const newMenu = allMenuItems.map(i => 
       i.n === editingItem.originalName 
         ? { ...i, n: editingItem.n, c: editingItem.c, p: Number(editingItem.p), t: editingItem.t, img: editingItem.img } 
         : i
@@ -518,11 +518,11 @@ export function MenuPage({ onAddDish }) {
 
   const handleSaveAdd = () => {
     if (!addingItem.n || !addingItem.p) return;
-    if (menuItems.some(i => i.n.toLowerCase() === addingItem.n.toLowerCase())) {
+    if (allMenuItems.some(i => i.n.toLowerCase() === addingItem.n.toLowerCase())) {
        alert("An item with this name already exists.");
        return;
     }
-    const newMenu = [{ n: addingItem.n, c: addingItem.c, p: Number(addingItem.p), t: addingItem.t, img: addingItem.img }, ...menuItems];
+    const newMenu = [{ n: addingItem.n, c: addingItem.c, p: Number(addingItem.p), t: addingItem.t, img: addingItem.img }, ...allMenuItems];
     updateMenu(newMenu);
     setAddingItem(null);
   };

@@ -1,327 +1,188 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { io } from "socket.io-client";
-import { API_BASE, fetchTables, updateTableStatus } from "./tableApi";
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
+// Using PieSocket's free public demo API key for realtime pub/sub without backend config
+const PIESOCKET_API_KEY = "VCXCEuvhGcBDP7XhiJJUDvR1e1PNwgvPAY2ZeMyB";
+const ROOM_ID = "softshape_tables_demo_1";
+const WS_URL = `wss://free.blr2.piesocket.com/v3/${ROOM_ID}?api_key=${PIESOCKET_API_KEY}`;
 
-export const TABLE_STATUS = {
-  FREE: "Free",
-  OCCUPIED: "Occupied",
-  PREPARING: "Preparing",
-  READY: "Ready",
-  BILLING: "Waiting Bill",
+const TABLE_STATUS = {
+  FREE: 'Free',
+  OCCUPIED: 'Occupied',
+  PREPARING: 'Preparing',
+  READY: 'Ready',
+  BILLING: 'Waiting Bill'
 };
 
-const BACKEND_TO_FRONTEND = {
-  AVAILABLE: TABLE_STATUS.FREE,
-  OCCUPIED: TABLE_STATUS.OCCUPIED,
-  RESERVED: "Reserved",
-  CLEANING: "Cleaning",
-};
-
-const FRONTEND_TO_BACKEND = {
-  [TABLE_STATUS.FREE]: "AVAILABLE",
-  [TABLE_STATUS.OCCUPIED]: "OCCUPIED",
-  Reserved: "RESERVED",
-  Cleaning: "CLEANING",
-};
-
-const FRONTEND_ONLY_STATUSES = new Set([
-  TABLE_STATUS.PREPARING,
-  TABLE_STATUS.READY,
-  TABLE_STATUS.BILLING,
-]);
-
-function readCache() {
-  try {
-    const raw = localStorage.getItem(TABLES_CACHE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeCache(tables) {
-  try {
-    localStorage.setItem(TABLES_CACHE_KEY, JSON.stringify(tables));
-  } catch {
-    /* quota or private mode */
-  }
-}
-
-function parseDisplayId(number) {
-  const match = String(number).match(/(\d+)/);
-  return match ? parseInt(match[1], 10) : number;
-}
-
-function defaultSessionFields() {
-  return {
-    guests: 0,
-    time: null,
-    captainId: null,
-    kotHistory: [],
-    currentBill: 0,
-  };
-}
-
-function mapBackendTable(row, existing = null) {
-  const dbStatus = row.status;
-  const persistedStatus = BACKEND_TO_FRONTEND[dbStatus] ?? TABLE_STATUS.FREE;
-
-  const base = {
-    backendId: row.id,
-    id: parseDisplayId(row.number),
-    number: row.number,
-    dbStatus,
-    status:
-      existing && FRONTEND_ONLY_STATUSES.has(existing.status)
-        ? existing.status
-        : persistedStatus,
-    capacity: row.capacity,
-    sectionId: row.sectionId,
-    section: row.section,
-    ...defaultSessionFields(),
-  };
-
-  if (!existing) return base;
-
-  return {
-    ...base,
-    guests: existing.guests ?? 0,
-    time: existing.time ?? null,
-    captainId: existing.captainId ?? null,
-    kotHistory: existing.kotHistory ?? [],
-    currentBill: existing.currentBill ?? 0,
-    status: FRONTEND_ONLY_STATUSES.has(existing.status)
-      ? existing.status
-      : persistedStatus,
-  };
-}
-
-function mergeTablesFromApi(apiTables, currentTables) {
-  return apiTables.map((row) => {
-    const existing = currentTables.find((t) => t.backendId === row.id);
-    return mapBackendTable(row, existing);
-  });
-}
-
-/** Temporary debug fallback — raw API-shaped rows */
-function createFallbackApiTables() {
-  return Array.from({ length: 20 }, (_, i) => ({
-    id: String(i + 1),
-    number: `T${i + 1}`,
-    status: "AVAILABLE",
-    capacity: 4,
-    sectionId: "main-hall",
-    section: { id: "main-hall", name: "Main Hall" },
+function generateDefaultTables() {
+  return Array.from({ length: 24 }, (_, i) => ({
+    id: i + 1,
+    status: i % 5 === 0 ? TABLE_STATUS.OCCUPIED : TABLE_STATUS.FREE,
+    guests: i % 5 === 0 ? 4 : 0,
+    time: i % 5 === 0 ? '24m' : null,
+    captainId: i % 5 === 0 ? 'C1' : null,
+    kotHistory: i % 5 === 0 ? [
+      { 
+        id: '1001', 
+        time: '12:15 PM', 
+        items: [
+          { n: 'Chicken Biryani', q: 2, p: 450, s: 'Served' },
+          { n: 'Coke', q: 2, p: 60, s: 'Served' }
+        ] 
+      }
+    ] : [],
+    currentBill: i % 5 === 0 ? 1020 : 0
   }));
 }
 
-function getFallbackTables(currentTables = []) {
-  console.warn("[TableSync] Using fallback tables (fetch failed or empty)");
-  return mergeTablesFromApi(createFallbackApiTables(), currentTables);
+// Global state to avoid multiple socket connections in one browser if multiple hooks are used
+let globalSocket = null;
+let globalTables = null;
+const subscribers = new Set();
+let isConnecting = false;
+
+function broadcastUpdate(tables) {
+  if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
+    globalSocket.send(JSON.stringify({ type: 'SYNC_TABLES', payload: tables }));
+  }
 }
 
-function findTableIndex(tables, backendId) {
-  return tables.findIndex((t) => t.backendId === backendId);
+function notifySubscribers() {
+  subscribers.forEach(callback => callback(globalTables));
 }
 
-let sharedSocket = null;
-let socketRefCount = 0;
-
-function acquireSocket(handlers) {
-  const noop = () => {};
+function initSocket() {
+  if (globalSocket || isConnecting) return;
+  isConnecting = true;
 
   try {
-    if (!sharedSocket) {
-      sharedSocket = io(API_BASE, {
-        transports: ["websocket", "polling"],
-        autoConnect: true,
-      });
+    globalSocket = new WebSocket(WS_URL);
 
-      sharedSocket.on("connect", () => {
-        console.log("[TableSync] Socket.io connected");
-      });
+    globalSocket.onopen = () => {
+      console.log("[TableSync] Connected to Realtime Relay");
+      isConnecting = false;
+      // Request latest state from any other connected peer
+      globalSocket.send(JSON.stringify({ type: 'REQUEST_STATE' }));
+      
+      // If no peer answers in 1.5s and we don't have tables, load defaults
+      setTimeout(() => {
+        if (!globalTables) {
+          // Check localStorage as a final fallback before defaults
+          const saved = localStorage.getItem('softshape_tables_v2');
+          globalTables = saved ? JSON.parse(saved) : generateDefaultTables();
+          notifySubscribers();
+          broadcastUpdate(globalTables); // Inform future peers
+        }
+      }, 1500);
+    };
 
-      sharedSocket.on("connect_error", (err) => {
-        console.error("[TableSync] Socket.io connect_error:", err);
-      });
-    }
-
-    const { onUpdated, onCreated, onDeleted } = handlers;
-    sharedSocket.on("table:updated", onUpdated);
-    sharedSocket.on("table:created", onCreated);
-    sharedSocket.on("table:deleted", onDeleted);
-    socketRefCount += 1;
-
-    return () => {
-      sharedSocket?.off("table:updated", onUpdated);
-      sharedSocket?.off("table:created", onCreated);
-      sharedSocket?.off("table:deleted", onDeleted);
-      socketRefCount -= 1;
-      if (socketRefCount <= 0 && sharedSocket) {
-        sharedSocket.disconnect();
-        sharedSocket = null;
-        socketRefCount = 0;
+    globalSocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'REQUEST_STATE' && globalTables) {
+          // Someone asked for state, and we have it, so send it back
+          broadcastUpdate(globalTables);
+        } else if (data.type === 'SYNC_TABLES' && data.payload) {
+          // Received updated state from another peer
+          globalTables = data.payload;
+          localStorage.setItem('softshape_tables_v2', JSON.stringify(globalTables));
+          notifySubscribers();
+        }
+      } catch (err) {
+        // Ignore parsing errors for non-JSON messages
       }
     };
+
+    globalSocket.onclose = () => {
+      console.log("[TableSync] Disconnected. Reconnecting...");
+      globalSocket = null;
+      isConnecting = false;
+      setTimeout(initSocket, 3000);
+    };
+
+    globalSocket.onerror = (err) => {
+      console.error("[TableSync] WebSocket Error", err);
+      globalSocket?.close();
+    };
   } catch (err) {
-    console.error("[TableSync] Socket init failed:", err);
-    return noop;
+    isConnecting = false;
+    console.error("[TableSync] Connection failed", err);
   }
-}
-
-async function persistStatusChanges(prevTables, nextTables) {
-  const tasks = [];
-
-  for (const table of nextTables) {
-    if (!table.backendId) continue;
-
-    const prev = prevTables.find((t) => t.backendId === table.backendId);
-    const nextBackend = FRONTEND_TO_BACKEND[table.status];
-    if (!nextBackend) continue;
-
-    const prevBackend =
-      prev?.dbStatus ?? FRONTEND_TO_BACKEND[prev?.status] ?? "AVAILABLE";
-
-    if (nextBackend !== prevBackend) {
-      tasks.push(
-        updateTableStatus(table.backendId, nextBackend)
-          .then((updated) => ({ table, updated }))
-          .catch((err) => {
-            console.error(
-              `[TableSync] Failed to persist status for ${table.number}:`,
-              err
-            );
-            return { table, error: err };
-          })
-      );
-    }
-  }
-
-  return Promise.all(tasks);
 }
 
 export function useTableSync() {
   const [tables, setTablesState] = useState(() => {
-    const cached = readCache();
-    if (cached.length > 0) return cached;
-    return getFallbackTables([]);
+    if (globalTables) return globalTables;
+    const saved = localStorage.getItem('softshape_tables_v2');
+    return saved ? JSON.parse(saved) : null;
   });
-  const [isSyncing, setIsSyncing] = useState(true);
-  const tablesRef = useRef(tables);
+
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
-    tablesRef.current = tables;
-  }, [tables]);
+    initSocket();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadTables = async () => {
+    const handleUpdate = (newTables) => {
+      setTablesState(newTables);
       setIsSyncing(true);
-      let apiTables = null;
-
-      try {
-        apiTables = await fetchTables();
-        console.log("[TableSync] GET /api/tables response:", apiTables);
-      } catch (err) {
-        console.error("[TableSync] GET /api/tables failed:", err);
-      }
-
-      if (cancelled) return;
-
-      setTablesState((current) => {
-        const useFallback =
-          !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-
-        const merged = useFallback
-          ? getFallbackTables(current)
-          : mergeTablesFromApi(apiTables, current);
-
-        writeCache(merged);
-        return merged;
-      });
-
-      if (!cancelled) setIsSyncing(false);
+      setTimeout(() => setIsSyncing(false), 800);
     };
 
-    loadTables();
-
-    let releaseSocket = () => {};
-
-    try {
-      releaseSocket = acquireSocket({
-        onUpdated: (row) => {
-          setTablesState((current) => {
-            const idx = findTableIndex(current, row.id);
-            if (idx === -1) return current;
-            const next = [...current];
-            next[idx] = mapBackendTable(row, current[idx]);
-            writeCache(next);
-            return next;
-          });
-        },
-        onCreated: (row) => {
-          setTablesState((current) => {
-            if (findTableIndex(current, row.id) !== -1) return current;
-            const next = [...current, mapBackendTable(row)];
-            writeCache(next);
-            return next;
-          });
-        },
-        onDeleted: ({ id }) => {
-          setTablesState((current) => {
-            const next = current.filter((t) => t.backendId !== id);
-            writeCache(next);
-            return next;
-          });
-        },
-      });
-    } catch (err) {
-      console.error("[TableSync] Socket setup failed:", err);
+    subscribers.add(handleUpdate);
+    
+    // Ensure component gets initial global tables if it already exists
+    if (globalTables) {
+      handleUpdate(globalTables);
     }
 
+    const handleStorageChange = (e) => {
+      if (e.key === 'softshape_tables_v2' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          globalTables = parsed;
+          handleUpdate(parsed);
+        } catch (err) {}
+      }
+    };
+    
+    const handleCustomEvent = (e) => {
+      if (e.detail) {
+        globalTables = e.detail;
+        handleUpdate(e.detail);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('softshape_tables_updated', handleCustomEvent);
+
     return () => {
-      cancelled = true;
-      releaseSocket();
+      subscribers.delete(handleUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('softshape_tables_updated', handleCustomEvent);
     };
   }, []);
 
   const setTables = useCallback((updater) => {
-    setTablesState((prev) => {
-      const current = prev ?? [];
-      const next =
-        typeof updater === "function" ? updater(current) : updater;
+    const currentData = globalTables || tables || generateDefaultTables();
+    const nextTables = typeof updater === 'function' ? updater(currentData) : updater;
+    globalTables = nextTables;
+    localStorage.setItem('softshape_tables_v2', JSON.stringify(nextTables));
+    
+    // Optimistic local update
+    setTablesState(nextTables);
+    setIsSyncing(true);
+    setTimeout(() => setIsSyncing(false), 800);
 
-      writeCache(next);
-      tablesRef.current = next;
+    // Broadcast globally
+    broadcastUpdate(nextTables);
+    
+    // Notify other components in the same window
+    notifySubscribers();
+    
+    // Dispatch custom event for any legacy listeners
+    try {
+      window.dispatchEvent(new CustomEvent('softshape_tables_updated', { detail: nextTables }));
+    } catch (_) {}
+  }, [tables]);
 
-      persistStatusChanges(current, next).then((results) => {
-        if (!results.length) return;
-        setTablesState((latest) => {
-          let updated = latest;
-          for (const result of results) {
-            if (!result.updated) continue;
-            const idx = findTableIndex(updated, result.updated.id);
-            if (idx === -1) continue;
-            const copy = [...updated];
-            copy[idx] = mapBackendTable(result.updated, copy[idx]);
-            updated = copy;
-          }
-          writeCache(updated);
-          return updated;
-        });
-      });
-
-      return next;
-    });
-  }, []);
-
-  return {
-    tables: tables ?? [],
-    setTables,
-    isSyncing,
-    TABLE_STATUS,
-  };
+  return { tables: tables || generateDefaultTables(), setTables, isSyncing, TABLE_STATUS };
 }
