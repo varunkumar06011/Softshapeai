@@ -19,7 +19,14 @@ async function parseResponse(res) {
 }
 
 export async function fetchTables() {
-  const res = await fetch(`${API_BASE}/api/tables`);
+  const res = await fetch(`${API_BASE}/api/tables`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
+  });
   return parseResponse(res);
 }
 
