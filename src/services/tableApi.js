@@ -41,6 +41,15 @@ export async function updateTableStatus(tableId, status) {
   return parseResponse(res);
 }
 
+export async function updateTableSession(tableId, session) {
+  const res = await fetch(apiUrl(`/api/tables/${tableId}/session`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(session),
+  });
+  return parseResponse(res);
+}
+
 export async function createTable({ number, capacity, sectionId, restaurantId }) {
   const res = await fetch(apiUrl("/api/tables"), {
     method: "POST",

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "./apiConfig";
-import { fetchTables, updateTableStatus } from "./tableApi";
+import { fetchTables, updateTableSession } from "./tableApi";
 
 const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
 const POLL_INTERVAL_MS = 5000; // Poll every 5 seconds as fallback when socket is down
@@ -71,7 +71,7 @@ function defaultSessionFields() {
 
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   const dbStatus = row.status;
-  const persistedStatus = toFrontendStatus(dbStatus);
+  const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
 
   const base = {
     backendId: row.id,
@@ -82,18 +82,17 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
-    ...defaultSessionFields(),
+    guests: row.guests ?? 0,
+    time: row.sessionStartedAt ?? null,
+    captainId: row.captainId ?? null,
+    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
+    currentBill: row.currentBill ?? 0,
   };
 
   if (!existing) return base;
 
   return {
     ...base,
-    guests: existing.guests ?? 0,
-    time: existing.time ?? null,
-    captainId: existing.captainId ?? null,
-    kotHistory: existing.kotHistory ?? [],
-    currentBill: existing.currentBill ?? 0,
     status: keepWorkflowStatus ? existing.status : persistedStatus,
   };
 }
@@ -209,14 +208,25 @@ async function persistStatusChanges(prevTables, nextTables) {
     if (!table.backendId) continue;
 
     const prev = prevTables.find((t) => t.backendId === table.backendId);
-    const nextBackend = toBackendStatus(table.status);
-    const prevBackend = prev
-      ? toBackendStatus(prev.status)
-      : (prev?.dbStatus ?? "AVAILABLE");
+    const sessionChanged =
+      !prev ||
+      table.status !== prev.status ||
+      table.captainId !== prev.captainId ||
+      table.guests !== prev.guests ||
+      table.time !== prev.time ||
+      table.currentBill !== prev.currentBill ||
+      JSON.stringify(table.kotHistory ?? []) !== JSON.stringify(prev.kotHistory ?? []);
 
-    if (nextBackend !== prevBackend) {
+    if (sessionChanged) {
       tasks.push(
-        updateTableStatus(table.backendId, nextBackend)
+        updateTableSession(table.backendId, {
+          status: table.status,
+          captainId: table.captainId ?? null,
+          guests: table.guests ?? 0,
+          time: table.time ?? null,
+          currentBill: table.currentBill ?? 0,
+          kotHistory: table.kotHistory ?? [],
+        })
           .then((updated) => ({ updated }))
           .catch((err) => {
             console.error(
@@ -325,9 +335,6 @@ export function useTableSync() {
     // still appear within a few seconds.
     const pollInterval = setInterval(async () => {
       if (cancelled) return;
-      // If socket is connected and working, skip polling
-      if (socketConnected) return;
-
       try {
         const apiTables = await fetchTables();
         if (cancelled || !apiTables || !Array.isArray(apiTables) || apiTables.length === 0) return;
