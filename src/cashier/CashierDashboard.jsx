@@ -186,7 +186,7 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
 
-  const handleSettlement = async (method = 'UPI') => {
+  const handlePayment = async (method = 'UPI') => {
     const txnAmount = activeTotal || 0;
     if (txnAmount === 0) return;
 
@@ -224,6 +224,7 @@ const CashierDashboard = ({ onLogout }) => {
     });
 
     if (selectedTable && selectedTable.id) {
+      setBillingAlerts(prev => prev.filter(a => a.tableId !== selectedTable.id));
       setTables(prev => {
          return prev.map(t => {
            if (t.id === selectedTable.id) {
