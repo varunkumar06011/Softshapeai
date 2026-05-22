@@ -297,7 +297,7 @@ export function useTableSync() {
     };
   }, []);
 
-  const setTables = useCallback((updater) => {
+  const setTables = useCallback((updater, { skipPersist = false } = {}) => {
     setTablesState((prev) => {
       const current = prev ?? [];
       const next = typeof updater === "function" ? updater(current) : updater;
@@ -305,24 +305,26 @@ export function useTableSync() {
       writeCache(next);
       tablesRef.current = next;
 
-      persistStatusChanges(current, next).then((results) => {
-        if (!results.length) return;
-        setTablesState((latest) => {
-          let updated = latest;
-          for (const result of results) {
-            if (!result.updated) continue;
-            const idx = findTableIndex(updated, result.updated.id);
-            if (idx === -1) continue;
-            const copy = [...updated];
-            copy[idx] = mapBackendTable(result.updated, copy[idx], {
-              keepWorkflowStatus: true,
-            });
-            updated = copy;
-          }
-          writeCache(updated);
-          return updated;
+      if (!skipPersist) {
+        persistStatusChanges(current, next).then((results) => {
+          if (!results.length) return;
+          setTablesState((latest) => {
+            let updated = latest;
+            for (const result of results) {
+              if (!result.updated) continue;
+              const idx = findTableIndex(updated, result.updated.id);
+              if (idx === -1) continue;
+              const copy = [...updated];
+              copy[idx] = mapBackendTable(result.updated, copy[idx], {
+                keepWorkflowStatus: true,
+              });
+              updated = copy;
+            }
+            writeCache(updated);
+            return updated;
+          });
         });
-      });
+      }
 
       return next;
     });

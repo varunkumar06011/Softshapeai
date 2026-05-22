@@ -52,85 +52,77 @@ const CashierDashboard = ({ onLogout }) => {
 
   const socket = useSocket(RESTAURANT_ID);
 
+  // Real-time billing alert state
+  const [billingAlerts, setBillingAlerts] = useState([]);
+
+
   useEffect(() => {
     const onBillingRequested = (payload) => {
-      const table = payload?.table;
-      const order = payload?.order;
-      setTables(prev => prev.map(t => {
-        if (t.backendId === table?.id || t.id === table?.number) {
-          return {
-            ...t,
-            status: 'Waiting Bill',
-            activeOrder: order ?? t.activeOrder,
-          };
-        }
-        return t;
-      }));
+      const { table, order } = payload;
+      if (!table) return;
+
+      // Add to billing alerts queue for cashier attention
+      setBillingAlerts(prev => {
+        const exists = prev.find(a => a.tableBackendId === table.id);
+        if (exists) return prev;
+        return [...prev, {
+          tableBackendId: table.id,
+          tableNumber: table.number,
+          orderId: order?.id,
+          totalAmount: order?.totalAmount ?? 0,
+          requestedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }];
+      });
+
       addNotification(
-        "Billing Requested",
-        `Table ${table?.number ?? ''} is requesting the bill`,
+        "Bill Requested",
+        `Table ${table.number} is requesting the bill`,
         'warning'
       );
     };
 
-    const onTableUpdated = (payload) => {
-      const table = payload?.table;
-      if (!table?.id) return;
-      setTables(prev => prev.map(t => {
-        if (t.backendId === table.id) {
-          return {
-            ...t,
-            status: table.workflowStatus || t.status,
-            currentBill: table.currentBill ?? t.currentBill,
-            activeOrder: table.orders?.[0] ?? t.activeOrder,
-            guests: table.guests ?? t.guests,
-            captainId: table.captainId ?? t.captainId,
-          };
-        }
-        return t;
-      }));
+    const onOrderCreated = (payload) => {
+      const { order } = payload;
+      if (!order?.tableId) return;
+      // useTableSync already updates table state via table:updated event.
+      // Here we just ensure the activeOrder reference on selectedTable stays fresh.
+      if (selectedTable?.backendId === order.tableId) {
+        setSelectedTable(prev => prev ? { ...prev, activeOrder: order } : prev);
+      }
+    };
+
+    const onOrderUpdated = (payload) => {
+      const { order } = payload;
+      if (!order?.tableId) return;
+      if (selectedTable?.backendId === order.tableId) {
+        setSelectedTable(prev => prev ? { ...prev, activeOrder: order } : prev);
+      }
     };
 
     const onOrderPaid = (payload) => {
       const { tableId } = payload;
-      setTables(prev => prev.map(t => {
-        if (t.backendId === tableId) {
-          return { ...t, status: 'Free', currentBill: 0, activeOrder: null, guests: 0 };
-        }
-        return t;
-      }));
-    };
-
-    const onOrderCreated = (payload) => {
-      const order = payload?.order;
-      if (!order?.tableId) return;
-      setTables(prev => prev.map(t => {
-        if (t.backendId === order.tableId) {
-          return { ...t, activeOrder: order, status: 'Occupied' };
-        }
-        return t;
-      }));
+      // Remove from billing alerts
+      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
+      // Clear selectedTable if it was the paid one
+      if (selectedTable?.backendId === tableId) {
+        setSelectedTable(null);
+        setCart([]);
+        setShowPaymentModal(false);
+      }
     };
 
     socket.on('billing:requested', onBillingRequested);
-    socket.on('table:updated', onTableUpdated);
-    socket.on('order:paid', onOrderPaid);
     socket.on('order:created', onOrderCreated);
-    socket.on('order:updated', ({ order } = {}) => {
-      if (!order?.tableId) return;
-      setTables(prev => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
-      ));
-    });
+    socket.on('order:updated', onOrderUpdated);
+    socket.on('order:paid', onOrderPaid);
 
     return () => {
       socket.off('billing:requested', onBillingRequested);
-      socket.off('table:updated', onTableUpdated);
-      socket.off('order:paid', onOrderPaid);
       socket.off('order:created', onOrderCreated);
-      socket.off('order:updated');
+      socket.off('order:updated', onOrderUpdated);
+      socket.off('order:paid', onOrderPaid);
     };
-  }, [socket]);
+  }, [socket, selectedTable?.backendId]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -422,6 +414,41 @@ const CashierDashboard = ({ onLogout }) => {
 
         {/* CONTENT AREA */}
         <main className="flex-grow overflow-hidden flex flex-col">
+          {/* Billing Alert Banner */}
+          {billingAlerts.length > 0 && (
+            <div className="mx-4 mt-3 flex flex-col gap-2">
+              {billingAlerts.map(alert => (
+                <div
+                  key={alert.tableBackendId}
+                  className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:bg-amber-100 transition-all"
+                  onClick={() => {
+                    // Find and select the table so cashier can process payment
+                    const t = tables.find(tbl => tbl.backendId === alert.tableBackendId);
+                    if (t) {
+                      setSelectedTable(t);
+                      setActiveTab('tables');
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-2.5 w-2.5 bg-amber-500 rounded-full animate-pulse" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-900">
+                        Table {alert.tableNumber} — Billing Requested
+                      </p>
+                      <p className="text-xs text-amber-700">
+                        ₹{alert.totalAmount.toFixed(2)} • {alert.requestedAt}
+                      </p>
+                    </div>
+                  </div>
+                  <button className="text-xs font-bold text-amber-700 bg-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition">
+                    Collect →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
           {activeTab === 'dashboard' ? (
             <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
                {/* Stats Row */}
@@ -753,7 +780,7 @@ const CashierDashboard = ({ onLogout }) => {
                            <span className="text-[7px] font-black uppercase mt-0.5">Draft</span>
                         </button>
                         <button 
-                           onClick={() => handleSettlement('UPI')}
+                           onClick={() => handlePayment('UPI')}
                            disabled={!selectedTable && cart.length === 0}
                            className="col-span-2 py-2.5 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none"
                         >
@@ -998,7 +1025,7 @@ const CashierDashboard = ({ onLogout }) => {
                        Add Items
                     </button>
                     <button 
-                       onClick={() => { handleSettlement('UPI'); }}
+                       onClick={() => { handlePayment('UPI'); }}
                        className="py-3 rounded-xl bg-[#E53935] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-100"
                     >
                        Settlement
@@ -1035,7 +1062,7 @@ const CashierDashboard = ({ onLogout }) => {
                     ))}
                  </div>
                  <button 
-                  onClick={() => handleSettlement('UPI')}
+                  onClick={() => handlePayment('UPI')}
                   className="mt-2 py-3 bg-[#10B981] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-100 hover:bg-[#059669]"
                  >
                     Authorize Settlement

@@ -85,12 +85,7 @@ const AdminDashboard = ({ onLogout }) => {
     
     const onTableUpdated = ({ table } = {}) => {
       if (!table) return;
-      // refresh tables state in admin — update matching table by backendId
-      setTables(prev => prev.map(t =>
-        t.backendId === table.id
-          ? { ...t, status: table.workflowStatus || t.status, currentBill: table.currentBill ?? t.currentBill }
-          : t
-      ));
+      pushLog(`Table ${table.number} → ${table.workflowStatus || table.status}`, "info");
     };
 
     socket.on("order:created", onOrderCreated);

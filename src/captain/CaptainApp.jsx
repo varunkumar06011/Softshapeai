@@ -11,6 +11,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { createOrder, requestBilling, updateOrderItems } from '../services/orderApi';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
+import { RESTAURANT_ID } from '../services/tableApi';
 
 const TABLE_STATUS = {
   FREE: 'Free',
@@ -339,49 +340,41 @@ export default function CaptainApp({ onLogout }) {
   const sendIncrementalKOT = async () => {
     try {
       if (currentSessionItems.length === 0) return;
-      if (!currentCaptain) {
-        setIsLoginView(true);
-        return;
-      }
+      if (!currentCaptain) { setIsLoginView(true); return; }
       if (!activeTable?.backendId) {
         addNotification("Table is still syncing", "error");
         return;
       }
-      
-      const newKOT = {
-        id: Math.floor(1000 + Math.random() * 9000).toString(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' }))
-      };
 
-      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
-
-      setTables(prev => prev.map(t => {
-        if (t.id === activeTableId) {
-          return {
-            ...t,
-            status: TABLE_STATUS.PREPARING,
-            time: t.time || '1m',
-            captainId: currentCaptain.id,
-            kotHistory: [...(t.kotHistory || []), newKOT],
-            currentBill: newTotalBill
-          };
-        }
-        return t;
+      // Format items for the API
+      const apiItems = currentSessionItems.map(i => ({
+        menuItemId: String(i.id || i.menuItemId || i.n || i.name),
+        name: i.n || i.name,
+        price: Number(i.p ?? i.price ?? 0),
+        quantity: Number(i.q ?? i.quantity ?? 1),
+        notes: i.notes || null,
       }));
 
-      // MOCK API CALLS
-      // if (activeTable.activeOrder?.id) {
-      //   await updateOrderItems(activeTable.activeOrder.id, currentSessionItems);
-      // } else {
-      //   await createOrder({
-      //     tableId: activeTable.backendId,
-      //     items: currentSessionItems,
-      //   });
-      // }
+      let order;
+      if (activeTable.activeOrder?.id) {
+        order = await updateOrderItems(activeTable.activeOrder.id, apiItems);
+      } else {
+        order = await createOrder({
+          tableId: activeTable.backendId,
+          restaurantId: RESTAURANT_ID,
+          items: apiItems,
+        });
+      }
+
+      // Update local activeOrder so requestFinalBill can find the ID
+      setTables(prev => prev.map(t =>
+        t.backendId === activeTable.backendId
+          ? { ...t, activeOrder: order, status: TABLE_STATUS.PREPARING }
+          : t
+      ));
 
       setCurrentSessionItems([]);
-      addNotification(`KOT #${newKOT.id} Sent`, 'success');
+      addNotification(`KOT Sent`, 'success');
     } catch (err) {
       console.error(err);
       addNotification("Submission Failed", "error");
@@ -390,18 +383,18 @@ export default function CaptainApp({ onLogout }) {
 
   const requestFinalBill = async () => {
     try {
-      const activeTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
-      const orderId = activeTable?.activeOrder?.id;
+      // Re-fetch from live tables in case state is stale
+      const liveTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+      const orderId = liveTable?.activeOrder?.id;
+
       if (!orderId) {
-        addNotification("Send KOT before billing", "error");
+        addNotification("Send KOT first before requesting bill", "error");
         return;
       }
+
       await requestBilling(orderId);
-      setTables(prev => prev.map(t => {
-        if (t.id === activeTableId || t.backendId === activeTableId)
-          return { ...t, status: TABLE_STATUS.BILLING };
-        return t;
-      }));
+      // Don't manually update tables here — the backend emits table:updated
+      // which useTableSync picks up and updates all panels automatically
       addNotification("Billing Requested", 'success');
       setView('tables');
       setActiveTableId(null);
