@@ -3,7 +3,8 @@ import { useGlobalMenuSync } from "../services/menuSyncService";
 
 export function useMenuSync() {
   // isLoadingMenu replaces the old broken `globalMenu.length === 0` check
-  const { globalMenu, isLoadingMenu, setGlobalMenu, refreshMenu } = useGlobalMenuSync();
+  const { globalMenu, isLoadingMenu, loadError, setGlobalMenu, refreshMenu } =
+    useGlobalMenuSync();
 
   const menuItems = useMemo(() => {
     const now = Date.now();
@@ -35,7 +36,7 @@ export function useMenuSync() {
     setMenuItems: setGlobalMenu,
     setGlobalMenu,
     loading: isLoadingMenu,  // Fixed: true only while genuinely loading, not when empty
-    error: null,
+    error: loadError,
     refreshMenu,
     categories,
   };

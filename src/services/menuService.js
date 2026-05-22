@@ -1,13 +1,19 @@
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_BACKEND_URL ||
-  "https://softshape-backend.up.railway.app";
+import { API_BASE } from "./apiConfig";
 
 export const MENU_STORAGE_KEY = "softshape_menu";
 export const MENU_QUERY_KEY = ["menu"];
 
 const DEFAULT_MENU_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
+
+const fetchOpts = {
+  method: "GET",
+  cache: "no-store",
+  headers: {
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
+  },
+};
 
 export function readStoredMenu() {
   try {
@@ -55,27 +61,47 @@ export function mapPosViewToMenuItems(categories) {
   return items;
 }
 
+async function parseMenuResponse(res, label) {
+  if (!res.ok) {
+    let message = `${label} failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 async function fetchLeanMenu() {
-  const res = await fetch(`${API_BASE}/api/menu/items`);
-  if (!res.ok) return null;
-  const items = await res.json();
+  const res = await fetch(`${API_BASE}/api/menu/items`, fetchOpts);
+  const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
 
 async function fetchPosViewMenu() {
-  const res = await fetch(`${API_BASE}/api/menu/pos-view`);
-  if (!res.ok) {
-    throw new Error(`Menu fetch failed (${res.status})`);
-  }
-  const categories = await res.json();
+  const res = await fetch(`${API_BASE}/api/menu/pos-view`, fetchOpts);
+  const categories = await parseMenuResponse(res, "Menu pos-view");
   return mapPosViewToMenuItems(categories);
 }
 
 /** Prefer lean /items endpoint; fall back to pos-view */
 export async function fetchMenuFromBackend() {
-  const lean = await fetchLeanMenu();
-  if (lean && lean.length > 0) return lean;
-  return fetchPosViewMenu();
+  let lean = [];
+  try {
+    lean = await fetchLeanMenu();
+  } catch (err) {
+    console.warn("[MenuService] /api/menu/items failed:", err.message);
+  }
+
+  if (lean.length > 0) return lean;
+
+  const posView = await fetchPosViewMenu();
+  if (posView.length > 0) return posView;
+
+  throw new Error("Backend returned an empty menu. Run prisma seed on Railway.");
 }
 
 export function persistMenu(menuItems) {
@@ -88,3 +114,5 @@ export function persistMenu(menuItems) {
 export function clearStoredMenu() {
   localStorage.removeItem(MENU_STORAGE_KEY);
 }
+
+export { API_BASE };
