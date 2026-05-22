@@ -16,13 +16,15 @@ import {
   Bell, 
   Search, 
   Bot,
-  Send
+  Send,
+  Star
 } from 'lucide-react';
 import { 
   Dashboard, Pos, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory 
 } from './AdminComponents';
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
+import TodaySpecials from './TodaySpecials';
 import { MenuProvider } from '../context/MenuContext';
 
 const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
@@ -32,6 +34,7 @@ const navItems = [
   ["pos", "POS Billing", ShoppingCart],
   ["tables", "Tables", Table2],
   ["menu", "Menu", UtensilsCrossed],
+  ["specials", "Today Specials", Star],
   ["orders", "Orders", ClipboardList],
   ["reports", "Reports", ChartNoAxesCombined],
   ["captains", "Captain Analytics", ChartNoAxesCombined],
@@ -136,6 +139,7 @@ const AdminDashboard = ({ onLogout }) => {
           {page === "pos" && <Pos onOrderComplete={() => {}} onKOTSend={() => {}} />}
           {page === "tables" && <Tables onOpen={() => {}} />}
           {page === "menu" && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
+          {page === "specials" && <TodaySpecials />}
           {page === "orders" && <Orders />}
           {page === "reports" && <Reports />}
           {page === "captains" && (

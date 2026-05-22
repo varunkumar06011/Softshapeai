@@ -52,12 +52,22 @@ export default function CaptainApp({ onLogout }) {
   const [removedItem, setRemovedItem] = useState(null);
   const removeTimeoutRef = useRef(null);
   
+  const [todaySpecials, setTodaySpecials] = useState(() => {
+    const saved = localStorage.getItem('softshape_specials');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
   const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenuSync();
 
   useEffect(() => {
     const handleStorage = (e) => {
       if (e.key === 'softshape_tables' && e.newValue) {
         setTables(JSON.parse(e.newValue));
+        setIsSyncing(true);
+        setTimeout(() => setIsSyncing(false), 800);
+      }
+      if (e.key === 'softshape_specials' && e.newValue) {
+        setTodaySpecials(JSON.parse(e.newValue));
         setIsSyncing(true);
         setTimeout(() => setIsSyncing(false), 800);
       }
@@ -144,6 +154,14 @@ export default function CaptainApp({ onLogout }) {
     suggestions = suggestions.filter(s => !currentSessionItems.find(i => i.n === s.n));
     return suggestions.slice(0, 4);
   }, [currentSessionItems, menuItems]);
+
+  const displaySpecials = useMemo(() => {
+    const activeAdminSpecials = todaySpecials.filter(s => s.available);
+    if (activeAdminSpecials.length > 0) {
+      return activeAdminSpecials.filter(s => !currentSessionItems.find(i => i.n === s.n)).slice(0, 4);
+    }
+    return suggestedSpecials;
+  }, [todaySpecials, suggestedSpecials, currentSessionItems]);
 
   const addNotification = (title, type = 'success') => {
     const id = Date.now();
@@ -730,14 +748,14 @@ export default function CaptainApp({ onLogout }) {
                      </div>
 
                      {/* TODAY SPECIALS SMART SUGGESTIONS */}
-                     {currentSessionItems.length > 0 && suggestedSpecials.length > 0 && (
+                     {currentSessionItems.length > 0 && displaySpecials.length > 0 && (
                         <div className="pt-8 border-t-2 border-dashed border-gray-100">
                            <div className="flex items-center gap-2 mb-4">
                               <Star size={16} className="text-amber-500 fill-amber-500" />
                               <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935]">Today Specials</h4>
                            </div>
                            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x custom-scrollbar">
-                              {suggestedSpecials.map((item, idx) => (
+                              {displaySpecials.map((item, idx) => (
                                  <div 
                                     key={idx} 
                                     onClick={() => setPreviewItem(item)}
