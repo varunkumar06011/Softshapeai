@@ -43,6 +43,7 @@ import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
 import CreativeCanvas from '../shared/components/CreativeCanvas';
 import { calculateOrderTotal } from '../shared/utils/billing';
+import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSearch';
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -146,13 +147,10 @@ export function Pos() {
   const [table, setTable] = useState("8");
   const { menuItems, categories, loading } = useMenu();
 
-  const displayItems = useMemo(() => {
-    let filtered = menuItems;
-    if (cat !== "All") filtered = filtered.filter(x => x.c === cat);
-    if (search) filtered = filtered.filter(x => x.n.toLowerCase().includes(search.toLowerCase()) || x.c.toLowerCase().includes(search.toLowerCase()));
-    
-    return filtered;
-  }, [cat, search, menuItems]);
+  const displayItems = useMemo(
+    () => filterMenuItems(menuItems, { query: search, category: cat }),
+    [cat, search, menuItems]
+  );
 
   const { subtotal, taxes: gst, total } = calculateOrderTotal(cart);
 
@@ -193,8 +191,15 @@ export function Pos() {
       <div className="lg:col-span-3 space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-grow">
-            <input className={input + " pl-10 h-11"} placeholder="Search items..." value={search} onChange={(e) => setSearch(e.target.value)} />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" size={18} />
+            <input
+              type="search"
+              className={input + " pl-10 h-11"}
+              placeholder="Search by name, category, price, or ID..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoComplete="off"
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B] pointer-events-none" size={18} />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             {categories.map((x) => (
@@ -206,6 +211,11 @@ export function Pos() {
           <p className="text-sm text-[#6B6B6B] py-8 text-center">Syncing menu from server...</p>
         ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
+          {displayItems.length === 0 && !loading && (
+            <p className="col-span-full text-sm text-[#6B6B6B] py-8 text-center">
+              {search.trim() ? `No items found for "${search.trim()}"` : "No items in this category."}
+            </p>
+          )}
           {displayItems.map((x) => (
             <div key={x.n} onClick={() => addToCart(x)} className={card + " p-3 flex flex-col justify-between transition-transform active:scale-95 cursor-pointer group hover:border-[#E53935]"}>
               <div>
@@ -475,12 +485,7 @@ export function MenuPage({ onAddDish }) {
   const { menuItems, updateMenu, loading, error, refreshMenu } = useMenu();
   const [filter, setFilter] = useState("");
   const items = useMemo(
-    () =>
-      menuItems.filter(
-        (x) =>
-          x.n.toLowerCase().includes(filter.toLowerCase()) ||
-          x.c.toLowerCase().includes(filter.toLowerCase())
-      ),
+    () => menuItems.filter((x) => menuItemMatchesSearch(x, filter)),
     [filter, menuItems]
   );
   
@@ -567,7 +572,14 @@ export function MenuPage({ onAddDish }) {
           {loading && <span className="text-xs font-normal text-gray-400"> (syncing…)</span>}
         </h3>
         <button type="button" onClick={() => refreshMenu()} className="text-xs font-bold text-[#E53935] hover:underline">Refresh from server</button>
-        <input className={input + " h-9 w-full sm:w-64"} placeholder="Search menu..." value={filter} onChange={e => setFilter(e.target.value)} />
+        <input
+          type="search"
+          className={input + " h-9 w-full sm:w-64"}
+          placeholder="Search by name, category, price, or ID..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          autoComplete="off"
+        />
       </div>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto justify-end">
         <button 
@@ -615,7 +627,9 @@ export function MenuPage({ onAddDish }) {
           ) : items.length === 0 ? (
             <tr>
               <td colSpan={7} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
-                No menu items found. Click &quot;Refresh from server&quot; to load from backend.
+                {filter.trim()
+                  ? `No items found for "${filter.trim()}".`
+                  : 'No menu items loaded. Click "Refresh from server" to load from backend.'}
               </td>
             </tr>
           ) : (
