@@ -909,7 +909,10 @@ const CashierDashboard = ({ onLogout }) => {
                            <span className="text-[7px] font-black uppercase mt-0.5">Draft</span>
                         </button>
                         <button 
-                           onClick={() => handlePayment('UPI')}
+                           onClick={() => {
+                             if (cart.length === 0) return;
+                             setShowMethodPicker(true);
+                           }}
                            disabled={!selectedTable && cart.length === 0}
                            className="col-span-2 py-2.5 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none"
                         >
