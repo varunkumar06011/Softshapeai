@@ -389,12 +389,7 @@ const CashierDashboard = ({ onLogout }) => {
     { id: 'SW-9815', platform: 'Swiggy', items: ['Veg Noodles x2'], amount: 480, status: 'Incoming', time: 'Just now' },
   ];
 
-  const paymentFeed = [
-    { id: 'TXN-45920', method: 'UPI', amount: 2450, status: 'Success', time: '2m ago' },
-    { id: 'TXN-45921', method: 'CASH', amount: 560, status: 'Success', time: '8m ago' },
-    { id: 'TXN-45922', method: 'CARD', amount: 1290, status: 'Success', time: '15m ago' },
-    { id: 'TXN-45923', method: 'UPI', amount: 890, status: 'Success', time: '22m ago' },
-  ];
+
 
   const handleSendKOT = () => {
     if (cart.length === 0) return;
@@ -466,7 +461,6 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'online', label: 'Online Orders', icon: Monitor },
             { id: 'kitchen', label: 'Kitchen Status', icon: ChefHat },
-            { id: 'payments', label: 'Payments', icon: CreditCard },
           ].map((item) => (
             <button
               key={item.id}
@@ -1133,40 +1127,6 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
                   )}
 
-                  {activeTab === 'payments' && (
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                       <div className="p-3 border-b border-gray-100 bg-gray-50/50">
-                          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900">Live Transaction Stream</h3>
-                       </div>
-                       <div className="divide-y divide-gray-50">
-                          {paymentFeed.map(payment => (
-                            <div key={payment.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                               <div className="flex items-center gap-4">
-                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                                    payment.method === 'UPI' ? 'bg-blue-50 text-blue-600' : 
-                                    payment.method === 'CASH' ? 'bg-green-50 text-green-600' : 
-                                    'bg-purple-50 text-purple-600'
-                                  }`}>
-                                     {payment.method === 'UPI' ? <Smartphone size={20} /> : 
-                                      payment.method === 'CASH' ? <Banknote size={20} /> : <CreditCard size={20} />}
-                                  </div>
-                                  <div>
-                                     <p className="text-[10px] font-black text-gray-900">{payment.id}</p>
-                                     <p className="text-[8px] font-bold text-gray-400 uppercase">{payment.time} • via {payment.method}</p>
-                                  </div>
-                               </div>
-                               <div className="text-right">
-                                  <p className="text-[11px] font-black text-gray-900">₹{payment.amount}</p>
-                                  <div className="flex items-center gap-1 justify-end">
-                                     <div className="w-1 h-1 rounded-full bg-green-500" />
-                                     <span className="text-[8px] font-black text-green-600 uppercase">Settled</span>
-                                  </div>
-                               </div>
-                            </div>
-                          ))}
-                       </div>
-                    </div>
-                  )}
                </div>
             </div>
           )}
