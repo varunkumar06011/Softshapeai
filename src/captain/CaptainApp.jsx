@@ -9,6 +9,7 @@ import {
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
 import { createOrder, requestBilling, updateOrderItems } from '../services/orderApi';
+import { printKOTQZ } from '../services/printService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
@@ -181,7 +182,7 @@ export default function CaptainApp({ onLogout }) {
   const removeTimeoutRef = useRef(null);
 
   // Assignment tracking state
-  const [activeView, setActiveView] = useState('assignment');
+  const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
   const [assignment, setAssignment] = useState(() => getAssignment(currentCaptain?.id));
   const [todayRevenue, setTodayRevenue] = useState(() => calculateTodayRevenue(currentCaptain?.id));
   
@@ -448,104 +449,96 @@ export default function CaptainApp({ onLogout }) {
     }
   };
 
-  const sendIncrementalKOT = async () => {
-    try {
-      if (currentSessionItems.length === 0) return;
-      if (!currentCaptain) { setIsLoginView(true); return; }
-      if (!activeTable?.backendId) {
-        addNotification("Table is still syncing", "error");
-        return;
+  const sendIncrementalKOT = () => {
+    if (currentSessionItems.length === 0) return;
+    if (!currentCaptain) { setIsLoginView(true); return; }
+    if (!activeTable?.backendId) {
+      addNotification("Table is still syncing", "error");
+      return;
+    }
+
+    // Build local KOT entry for immediate UI feedback
+    const newKOT = {
+      id: Math.floor(1000 + Math.random() * 9000).toString(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' })),
+      status: 'Incoming',
+      createdAt: Date.now(),
+      itemsReady: 0
+    };
+    const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
+
+    // Format items for the API
+    const apiItems = currentSessionItems.map(i => ({
+      menuItemId: String(i.id || i.menuItemId || i.n || i.name),
+      name: i.n || i.name,
+      price: Number(i.p ?? i.price ?? 0),
+      quantity: Number(i.q ?? i.quantity ?? 1),
+      notes: i.notes || null,
+    }));
+
+    // 1. Update UI immediately — don't wait for API
+    setTables(prev => prev.map(t => {
+      if (t.backendId === activeTable.backendId) {
+        return {
+          ...t,
+          status: TABLE_STATUS.PREPARING,
+          time: t.time || '1m',
+          captainId: currentCaptain.id,
+          kotHistory: [...(t.kotHistory || []), newKOT],
+          currentBill: newTotalBill,
+        };
       }
+      return t;
+    }));
+    setCurrentSessionItems([]);
+    addNotification(`KOT #${newKOT.id} Sent`, 'success');
 
-      // Build local KOT entry for immediate UI feedback
-      const newKOT = {
-        id: Math.floor(1000 + Math.random() * 9000).toString(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' })),
-        status: 'Incoming',
-        createdAt: Date.now(),
-        itemsReady: 0
-      };
-      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
+    // 2b. Print KOT in background
+    printKOTQZ({
+      tableId: activeTable?.id,
+      kotId: newKOT.id,
+      items: currentSessionItems,
+      captainId: currentCaptain?.id,
+    }).catch(err => console.warn('[KOT Print] failed:', err.message));
 
-      // Format items for the API
-      const apiItems = currentSessionItems.map(i => ({
-        menuItemId: String(i.id || i.menuItemId || i.n || i.name),
-        name: i.n || i.name,
-        price: Number(i.p ?? i.price ?? 0),
-        quantity: Number(i.q ?? i.quantity ?? 1),
-        notes: i.notes || null,
-      }));
-
-      // TEST MODE: fire API call but don't block — always proceed locally
-      let order = activeTable.activeOrder || null;
-      try {
-        if (activeTable.activeOrder?.id) {
-          order = await updateOrderItems(activeTable.activeOrder.id, apiItems);
-        } else {
-          order = await createOrder({
-            tableId: activeTable.backendId,
-            restaurantId: RESTAURANT_ID,
-            items: apiItems,
-          });
-        }
-      } catch (apiErr) {
-        console.warn('[TEST MODE] KOT API call failed, proceeding locally:', apiErr.message);
-      }
-
-      // Always update local state so UI moves forward
-      setTables(prev => prev.map(t => {
-        if (t.backendId === activeTable.backendId) {
-          return {
-            ...t,
-            status: TABLE_STATUS.PREPARING,
-            time: t.time || '1m',
-            captainId: currentCaptain.id,
-            kotHistory: [...(t.kotHistory || []), newKOT],
-            currentBill: newTotalBill,
-            activeOrder: order || t.activeOrder,
-          };
-        }
-        return t;
-      }));
-
-      setCurrentSessionItems([]);
-      addNotification(`KOT #${newKOT.id} Sent`, 'success');
-    } catch (err) {
-      console.error(err);
-      addNotification("Submission Failed", "error");
+    // 2. Fire API in background — no await, no blocking
+    if (activeTable.activeOrder?.id) {
+      updateOrderItems(activeTable.activeOrder.id, apiItems).catch(err =>
+        console.warn('[BG] updateOrderItems failed:', err.message)
+      );
+    } else {
+      createOrder({
+        tableId: activeTable.backendId,
+        restaurantId: RESTAURANT_ID,
+        items: apiItems,
+      }).catch(err =>
+        console.warn('[BG] createOrder failed:', err.message)
+      );
     }
   };
 
-  const requestFinalBill = async () => {
-    try {
-      // Re-fetch from live tables in case state is stale
-      const liveTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
-      const orderId = liveTable?.activeOrder?.id;
+  const requestFinalBill = () => {
+    // Re-fetch from live tables in case state is stale
+    const liveTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+    const orderId = liveTable?.activeOrder?.id;
 
-      // TEST MODE: attempt API call but always proceed locally
-      if (orderId) {
-        try {
-          await requestBilling(orderId);
-        } catch (apiErr) {
-          console.warn('[TEST MODE] Billing API call failed, proceeding locally:', apiErr.message);
-        }
+    // 1. Update UI immediately
+    setTables(prev => prev.map(t => {
+      if (t.id === activeTableId || t.backendId === activeTableId) {
+        return { ...t, status: TABLE_STATUS.BILLING };
       }
+      return t;
+    }));
+    addNotification("Billing Requested", 'success');
+    setView('tables');
+    setActiveTableId(null);
 
-      // Always update local state so UI moves forward
-      setTables(prev => prev.map(t => {
-        if (t.id === activeTableId || t.backendId === activeTableId) {
-          return { ...t, status: TABLE_STATUS.BILLING };
-        }
-        return t;
-      }));
-
-      addNotification("Billing Requested", 'success');
-      setView('tables');
-      setActiveTableId(null);
-    } catch (err) {
-      console.error(err);
-      addNotification("Billing Request Failed", "error");
+    // 2. Fire API in background
+    if (orderId) {
+      requestBilling(orderId).catch(err =>
+        console.warn('[BG] requestBilling failed:', err.message)
+      );
     }
   };
 
@@ -721,7 +714,7 @@ export default function CaptainApp({ onLogout }) {
       {/* CAPTAIN NAV TABS */}
       <div className="bg-white border-b border-gray-100 px-4 flex shrink-0">
         <button
-          onClick={() => setActiveView('assignment')}
+          onClick={() => { setActiveView('assignment'); localStorage.setItem('captain_active_tab', 'assignment'); }}
           className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${
             activeView === 'assignment'
               ? 'border-[#E53935] text-[#E53935]'
@@ -736,7 +729,7 @@ export default function CaptainApp({ onLogout }) {
           )}
         </button>
         <button
-          onClick={() => setActiveView('tables')}
+          onClick={() => { setActiveView('tables'); localStorage.setItem('captain_active_tab', 'tables'); }}
           className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${
             activeView === 'tables'
               ? 'border-[#E53935] text-[#E53935]'

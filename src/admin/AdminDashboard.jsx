@@ -28,6 +28,7 @@ import TodaySpecials from './TodaySpecials';
 import { useSocket } from '../hooks/useSocket';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { useTableSync } from '../services/tableSyncService';
+import { fetchTransactions } from '../services/orderApi';
 
 const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
 
@@ -49,7 +50,7 @@ const navItems = [
 ];
 
 const AdminDashboard = ({ onLogout }) => {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(() => localStorage.getItem('admin_active_tab') || 'dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [spireOpen, setSpireOpen] = useState(false);
   const [dishModalOpen, setDishModalOpen] = useState(false);
@@ -60,9 +61,10 @@ const AdminDashboard = ({ onLogout }) => {
   const [mPosted, setMPosted] = useState(false);
   const mUploadRef = useRef(null);
   
-  // Shared State (Mock)
-  const [revenue, setRevenue] = useState(67950);
-  const [ordersCount, setOrdersCount] = useState(89);
+  // Shared State
+  const [revenue, setRevenue] = useState(0);
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([
     { id: 1, text: "Raju closed Table 4 bill for ₹2,450", time: "2 min ago", type: "success" },
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
@@ -103,6 +105,46 @@ const AdminDashboard = ({ onLogout }) => {
     };
   }, [socket, setTables]);
 
+  // ── Real stats fetch ─────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStats = async () => {
+      try {
+        const transactions = await fetchTransactions(RESTAURANT_ID, 500);
+        if (cancelled) return;
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const todayTxns = transactions.filter(txn => {
+          const txnDate = new Date(txn.paidAt || txn.createdAt);
+          return txnDate >= todayStart;
+        });
+
+        setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + (txn.amount || 0), 0)));
+        setOrdersCount(todayTxns.length);
+      } catch (err) {
+        console.warn('[AdminStats] Failed to load stats:', err.message);
+        // Keep at 0 on failure — don’t show stale fake data
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    };
+
+    loadStats();
+    const interval = setInterval(loadStats, 60000);
+
+    const onOrderPaidRefresh = () => loadStats();
+    if (socket) socket.on('order:paid', onOrderPaidRefresh);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (socket) socket.off('order:paid', onOrderPaidRefresh);
+    };
+  }, [socket]);
+
   const title = navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 
   return (
@@ -131,7 +173,7 @@ const AdminDashboard = ({ onLogout }) => {
 
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             {navItems.map(([k, label, Icon]) => (
-              <button key={k} onClick={() => { setPage(k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
+              <button key={k} onClick={() => { setPage(k); localStorage.setItem('admin_active_tab', k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
                 <Icon size={16} /> {label}
               </button>
             ))}
@@ -171,7 +213,7 @@ const AdminDashboard = ({ onLogout }) => {
         </header>
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
-          {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} />}
+          {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} statsLoading={statsLoading} />}
           {page === "pos" && <Pos onOrderComplete={() => {}} onKOTSend={() => {}} />}
           {page === "tables" && <Tables onOpen={() => {}} />}
           {page === "menu" && <MenuPage onAddDish={() => setDishModalOpen(true)} />}

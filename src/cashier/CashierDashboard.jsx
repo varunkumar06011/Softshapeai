@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid } from '../services/orderApi';
+import { markOrderPaid, saveTransaction } from '../services/orderApi';
+import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -16,7 +17,7 @@ import LiveTimer from '../shared/components/LiveTimer';
 import { RESTAURANT_ID } from '../services/tableApi';
 
 const CashierDashboard = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeDiet, setActiveDiet] = useState('All');
@@ -26,6 +27,9 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSending, setIsKotSending] = useState(false);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
+  const [showMethodPicker, setShowMethodPicker] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState(null);
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -139,6 +143,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (!liveTable || liveTable.status === 'Free') {
       setSelectedTable(null);
       setShowPaymentModal(false);
+      setSelectedPaymentMethod('UPI');
       return;
     }
     setSelectedTable(liveTable);
@@ -197,17 +202,23 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
 
-  const handlePayment = async (method = 'UPI') => {
+  const printBill = async (table, total, subtotal, taxes, method) => {
+    const items = table?.kotHistory
+      ? table.kotHistory.flatMap(k => k.items || [])
+      : cart;
+    await printBillQZ({ table, items, subtotal, taxes, total, method });
+  };
+
+  const handlePayment = async (method) => {
     const txnAmount = activeTotal || 0;
     if (txnAmount === 0) return;
 
-    const itemsList = selectedTable && selectedTable.kotHistory 
-      ? selectedTable.kotHistory.flatMap(k => k.items || []) 
+    const itemsList = selectedTable?.kotHistory
+      ? selectedTable.kotHistory.flatMap(k => k.items || [])
       : cart;
 
     const newTransaction = {
       id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-      kot: `KOT-${Math.floor(1000 + Math.random() * 9000)}`,
       amount: txnAmount,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: new Date().toLocaleDateString('en-GB'),
@@ -215,18 +226,24 @@ const CashierDashboard = ({ onLogout }) => {
       items: itemsList.length,
       itemsList: itemsList,
       captainId: selectedTable?.captainId || 'CASHIER',
-      method: method
+      method: method,
+      tableNumber: selectedTable?.id || null,
     };
-    
-    // TEST MODE: attempt API call but always proceed locally
-    try {
-      if (selectedTable?.activeOrder?.id) {
-        await markOrderPaid(selectedTable.activeOrder.id);
-      }
-    } catch (err) {
-      console.warn('[TEST MODE] markOrderPaid failed, proceeding locally:', err.message);
-    }
 
+    // Capture refs before clearing state
+    const tableSnap = selectedTable;
+
+    // 1. Close modals immediately
+    setShowMethodPicker(false);
+    setSelectedTable(null);
+    setSelectedMethod(null);
+    setShowPaymentModal(false);
+    setSelectedPaymentMethod('UPI');
+
+    // 2. Print bill
+    await printBill(tableSnap, txnAmount, activeSubtotal, activeTaxes, method);
+
+    // 3. Update local state instantly
     setPastTransactions(prev => {
       const updated = [newTransaction, ...prev];
       localStorage.setItem('softshape_transactions', JSON.stringify(updated));
@@ -234,22 +251,34 @@ const CashierDashboard = ({ onLogout }) => {
       return updated;
     });
 
-    if (selectedTable && selectedTable.id) {
-      setBillingAlerts(prev => prev.filter(a => a.tableId !== selectedTable.id));
-      setTables(prev => {
-         return prev.map(t => {
-           if (t.id === selectedTable.id) {
-             return { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null };
-           }
-           return t;
-         });
-      });
+    if (tableSnap?.id) {
+      setBillingAlerts(prev => prev.filter(a => a.tableId !== tableSnap.id));
+      setTables(prev => prev.map(t =>
+        t.id === tableSnap.id
+          ? { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
+          : t
+      ));
     }
 
     setCart([]);
-    setSelectedTable(null);
-    setShowPaymentModal(false);
-    addNotification("Payment Success", `Transaction ${newTransaction.id} logged.`, 'success');
+    addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
+
+    // 4. Fire API calls in background — no await, no blocking
+    if (tableSnap?.activeOrder?.id) {
+      markOrderPaid(tableSnap.activeOrder.id)
+        .catch(err => console.warn('[BG] markOrderPaid failed:', err.message));
+    }
+
+    saveTransaction({
+      restaurantId: RESTAURANT_ID,
+      orderId: tableSnap?.activeOrder?.id || null,
+      tableNumber: tableSnap?.id || null,
+      captainId: tableSnap?.captainId || null,
+      amount: txnAmount,
+      method: method,
+      itemCount: itemsList.length,
+      items: itemsList,
+    }).catch(err => console.warn('[BG] saveTransaction failed:', err.message));
   };
 
   const filteredMenu = useMemo(
@@ -399,7 +428,7 @@ const CashierDashboard = ({ onLogout }) => {
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => { setActiveTab(item.id); localStorage.setItem('cashier_active_tab', item.id); }}
               className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 px-4 sm:px-2.5 py-1.5 sm:py-2.5 rounded-xl transition-all group relative shrink-0 min-w-[70px] sm:min-w-0 ${
                 activeTab === item.id 
                 ? 'bg-[#E53935] text-white font-bold shadow-md shadow-red-100' 
@@ -468,7 +497,8 @@ const CashierDashboard = ({ onLogout }) => {
                     const t = tables.find(tbl => tbl.backendId === alert.tableBackendId);
                     if (t) {
                       setSelectedTable(t);
-                      setActiveTab('tables');
+                       setActiveTab('tables');
+                       localStorage.setItem('cashier_active_tab', 'tables');
                     }
                   }}
                 >
@@ -1136,13 +1166,13 @@ const CashierDashboard = ({ onLogout }) => {
 
                  <div className="grid grid-cols-2 gap-3">
                     <button 
-                       onClick={() => { setActiveTab('pos'); setSelectedTable(null); }}
+                       onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setSelectedTable(null); }}
                        className="py-3 rounded-xl border border-gray-200 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50"
                     >
                        Add Items
                     </button>
                     <button 
-                       onClick={() => { handlePayment('UPI'); }}
+                       onClick={() => { setShowMethodPicker(true); }}
                        className="py-3 rounded-xl bg-[#E53935] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-100"
                     >
                        Settlement
@@ -1153,12 +1183,71 @@ const CashierDashboard = ({ onLogout }) => {
         </div>
       )}
 
+      {/* PAYMENT METHOD PICKER */}
+      {showMethodPicker && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-100">
+
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Settle Table {selectedTable?.id}</p>
+                <p className="text-2xl font-black text-gray-900 mt-1">₹{activeTotal.toFixed(0)}</p>
+              </div>
+              <button
+                onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
+                className="p-2 text-gray-400 hover:text-gray-900 bg-gray-50 rounded-lg"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest mb-3">Select Payment Method</p>
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {[
+                  { id: 'UPI',   label: 'UPI',   sub: 'GPay / PhonePe / Paytm' },
+                  { id: 'CARD',  label: 'Card',  sub: 'Debit / Credit' },
+                  { id: 'CASH',  label: 'Cash',  sub: 'Physical currency' },
+                  { id: 'OTHER', label: 'Other', sub: 'Voucher / Mixed' },
+                ].map(({ id, label, sub }) => (
+                  <button
+                    key={id}
+                    onClick={() => setSelectedMethod(id)}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      selectedMethod === id
+                        ? 'border-[#E53935] bg-red-50'
+                        : 'border-gray-100 bg-gray-50 hover:border-gray-200'
+                    }`}
+                  >
+                    <p className={`text-sm font-black ${selectedMethod === id ? 'text-[#E53935]' : 'text-gray-700'}`}>{label}</p>
+                    <p className="text-[9px] text-gray-400 font-medium mt-0.5">{sub}</p>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => selectedMethod && handlePayment(selectedMethod)}
+                disabled={!selectedMethod}
+                className={`w-full py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
+                  selectedMethod
+                    ? 'bg-[#E53935] text-white shadow-lg shadow-red-100 hover:bg-[#c62828]'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                }`}
+              >
+                {selectedMethod ? `Confirm ${selectedMethod} Payment` : 'Select a Method'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* COMPACT SETTLEMENT */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row animate-slide-in">
               <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
-                 <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
+                 <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
                  <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
                  <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{activeTotal.toFixed(0)}</p>
                  <div className="space-y-3">
@@ -1172,14 +1261,22 @@ const CashierDashboard = ({ onLogout }) => {
                  <h3 className="text-[10px] font-black uppercase text-center tracking-widest">Settle Transaction</h3>
                  <div className="grid grid-cols-2 gap-3">
                     {['UPI', 'CARD', 'CASH', 'SPLIT'].map(method => (
-                      <div key={method} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 cursor-pointer ${method === 'UPI' ? 'border-[#E53935] bg-red-50 text-[#E53935]' : 'border-gray-50 bg-gray-50 text-gray-400'}`}>
+                      <div 
+                        key={method} 
+                        onClick={() => setSelectedPaymentMethod(method)}
+                        className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 cursor-pointer transition-all ${
+                          selectedPaymentMethod === method 
+                            ? 'border-[#E53935] bg-red-50 text-[#E53935]' 
+                            : 'border-gray-50 bg-gray-50 text-gray-400'
+                        }`}
+                      >
                          <CreditCard size={20} />
                          <span className="text-[8px] font-black uppercase">{method}</span>
                       </div>
                     ))}
                  </div>
                  <button 
-                  onClick={() => handlePayment('UPI')}
+                  onClick={() => handlePayment(selectedPaymentMethod)}
                   className="mt-2 py-3 bg-[#10B981] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-100 hover:bg-[#059669]"
                  >
                     Authorize Settlement

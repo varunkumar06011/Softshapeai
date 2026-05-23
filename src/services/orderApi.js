@@ -74,3 +74,38 @@ export async function markOrderPaid(orderId) {
   });
   return parseResponse(res);
 }
+
+export async function saveTransaction({
+  restaurantId,
+  orderId,
+  tableNumber,
+  captainId,
+  amount,
+  method,
+  itemCount,
+  items,
+}) {
+  const res = await fetch(apiUrl('/api/transactions'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      restaurantId,
+      orderId,
+      tableNumber,
+      captainId,
+      amount,
+      method,
+      itemCount,
+      items,
+    }),
+  });
+  return parseResponse(res);
+}
+
+export async function fetchTransactions(restaurantId, limit = 50) {
+  const qs = new URLSearchParams({ restaurantId, limit: String(limit) });
+  const res = await fetch(apiUrl(`/api/transactions?${qs}`), {
+    cache: 'no-store',
+  });
+  return parseResponse(res);
+}
