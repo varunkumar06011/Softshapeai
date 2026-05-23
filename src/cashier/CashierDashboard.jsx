@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems } from '../services/orderApi';
+import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -352,6 +352,17 @@ const CashierDashboard = ({ onLogout }) => {
       }
       return t;
     }));
+
+    // Find the active orderId for this table from current state
+    const targetTable = tables.find(t => t.id === tableId || t.backendId === tableId);
+    const orderId = targetTable?.activeOrder?.id || targetTable?.orderId;
+    const statusMap = { Incoming: 'PENDING', Preparing: 'PREPARING', Ready: 'READY' };
+    const backendStatus = statusMap[newStatus];
+    if (orderId && backendStatus) {
+      updateOrderStatus(orderId, backendStatus).catch(err =>
+        console.warn('[KOT Status] sync failed:', err.message)
+      );
+    }
   };
 
   const addToCart = (item) => {

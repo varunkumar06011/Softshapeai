@@ -61,6 +61,15 @@ export async function updateOrderItems(orderId, items) {
   return parseResponse(res);
 }
 
+export async function updateOrderStatus(orderId, status) {
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/status`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  return parseResponse(res);
+}
+
 export async function requestBilling(orderId) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
     method: "POST",

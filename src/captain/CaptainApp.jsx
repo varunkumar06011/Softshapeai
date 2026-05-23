@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
-import { createOrder, requestBilling, updateOrderItems } from '../services/orderApi';
+import { createOrder, requestBilling, updateOrderItems, fetchTransactions } from '../services/orderApi';
 import { printKOTQZ } from '../services/printService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -23,19 +23,6 @@ const TABLE_STATUS = {
   READY: 'Ready',
   BILLING: 'Waiting Bill'
 };
-
-/** Calculate today's revenue settled by a specific captain from transactions store */
-function calculateTodayRevenue(captainId) {
-  if (!captainId) return 0;
-  try {
-    const saved = localStorage.getItem('softshape_transactions');
-    const txns = saved ? JSON.parse(saved) : [];
-    const today = new Date().toLocaleDateString('en-GB');
-    return txns
-      .filter(t => t.captainId === captainId && t.date === today)
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
-  } catch { return 0; }
-}
 
 /** Read captain's current assignment from the shared targets store */
 function getAssignment(captainId) {
@@ -184,7 +171,19 @@ export default function CaptainApp({ onLogout }) {
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
   const [assignment, setAssignment] = useState(() => getAssignment(currentCaptain?.id));
-  const [todayRevenue, setTodayRevenue] = useState(() => calculateTodayRevenue(currentCaptain?.id));
+  const [todayRevenue, setTodayRevenue] = useState(0);
+
+  const loadCaptainRevenue = (captainId) => {
+    if (!captainId) return;
+    const todayDateISO = new Date().toISOString().slice(0, 10);
+    fetchTransactions(RESTAURANT_ID, 500, todayDateISO)
+      .then(txns => {
+        const filtered = txns.filter(t => t.captainId === captainId);
+        const sum = filtered.reduce((acc, t) => acc + (t.amount || 0), 0);
+        setTodayRevenue(sum);
+      })
+      .catch(() => {});
+  };
   
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
   const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenuSync();
@@ -214,14 +213,15 @@ export default function CaptainApp({ onLogout }) {
   // Realtime assignment + revenue sync
   useEffect(() => {
     if (!currentCaptain) return;
+    loadCaptainRevenue(currentCaptain.id);
     const refresh = () => {
       setAssignment(getAssignment(currentCaptain.id));
-      setTodayRevenue(calculateTodayRevenue(currentCaptain.id));
+      loadCaptainRevenue(currentCaptain.id);
     };
     const handleStorage = (e) => {
-      if (e.key === 'softshape_captain_targets' || e.key === 'softshape_transactions') refresh();
+      if (e.key === 'softshape_captain_targets') refresh();
     };
-    const handleTxnUpdate = () => setTodayRevenue(calculateTodayRevenue(currentCaptain.id));
+    const handleTxnUpdate = () => loadCaptainRevenue(currentCaptain.id);
     window.addEventListener('storage', handleStorage);
     window.addEventListener('softshape_transactions_updated', handleTxnUpdate);
     const poll = setInterval(refresh, 15000);
@@ -246,6 +246,9 @@ export default function CaptainApp({ onLogout }) {
   const [currentSessionItems, setCurrentSessionItems] = useState([]); 
 
   const activeTable = useMemo(() => tables.find(t => t.id === activeTableId), [tables, activeTableId]);
+
+  const freeCount = useMemo(() => tables.filter(t => t.status === TABLE_STATUS.FREE).length, [tables]);
+  const busyCount = useMemo(() => tables.filter(t => t.status !== TABLE_STATUS.FREE).length, [tables]);
 
   const filteredMenu = useMemo(
     () =>
@@ -892,11 +895,11 @@ export default function CaptainApp({ onLogout }) {
                  <div className="flex gap-2">
                     <div className="px-4 py-2 bg-white rounded-xl border border-gray-200 flex items-center gap-2">
                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                       <span className="text-[10px] font-black uppercase text-gray-600">14 Free</span>
+                       <span className="text-[10px] font-black uppercase text-gray-600">{freeCount} Free</span>
                     </div>
                     <div className="px-4 py-2 bg-white rounded-xl border border-gray-200 flex items-center gap-2">
                        <div className="w-1.5 h-1.5 bg-[#E53935] rounded-full" />
-                       <span className="text-[10px] font-black uppercase text-gray-600">10 Busy</span>
+                       <span className="text-[10px] font-black uppercase text-gray-600">{busyCount} Busy</span>
                     </div>
                  </div>
               </div>
