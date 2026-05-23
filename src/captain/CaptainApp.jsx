@@ -149,6 +149,12 @@ function EmergencyOverlay({ call, currentCaptain, onAccept }) {
 }
 
 export default function CaptainApp({ onLogout }) {
+  const { outlet } = useOutlet();
+  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
+  const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
+  const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
+  const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
+
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem('active_captain');
     return saved ? JSON.parse(saved) : null;
@@ -193,8 +199,6 @@ export default function CaptainApp({ onLogout }) {
   };
   
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
-  const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
-  const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
   
   const [activeBarMenu, setActiveBarMenu] = useState('food');
   const [activeVariantItem, setActiveVariantItem] = useState(null);
@@ -261,10 +265,6 @@ export default function CaptainApp({ onLogout }) {
   }, [currentCaptain]);
 
   // SHARED STATE PERSISTENCE
-  const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
-
-  const { outlet } = useOutlet();
-  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
 
   // Derived — switch between restaurant and bar floor
   const activeTables = outlet === 'bar' ? barTables : tables;
