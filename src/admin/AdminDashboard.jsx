@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
 import { 
   LayoutDashboard, 
-  ShoppingCart, 
   Table2, 
   UtensilsCrossed, 
   ClipboardList, 
@@ -20,7 +19,7 @@ import {
   Star
 } from 'lucide-react';
 import { 
-  Dashboard, Pos, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory 
+  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory 
 } from './AdminComponents';
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
@@ -34,7 +33,6 @@ const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerform
 
 const navItems = [
   ["dashboard", "Dashboard", LayoutDashboard],
-  ["pos", "POS Billing", ShoppingCart],
   ["tables", "Tables", Table2],
   ["menu", "Menu", UtensilsCrossed],
   ["specials", "Today Specials", Star],
@@ -50,7 +48,11 @@ const navItems = [
 ];
 
 const AdminDashboard = ({ onLogout }) => {
-  const [page, setPage] = useState(() => localStorage.getItem('admin_active_tab') || 'dashboard');
+  const [page, setPage] = useState(() => {
+    const saved = localStorage.getItem('admin_active_tab');
+    if (saved === 'pos') return 'dashboard';
+    return saved || 'dashboard';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [spireOpen, setSpireOpen] = useState(false);
   const [dishModalOpen, setDishModalOpen] = useState(false);
@@ -214,7 +216,6 @@ const AdminDashboard = ({ onLogout }) => {
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
           {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} statsLoading={statsLoading} />}
-          {page === "pos" && <Pos onOrderComplete={() => {}} onKOTSend={() => {}} />}
           {page === "tables" && <Tables onOpen={() => {}} />}
           {page === "menu" && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
           {page === "specials" && <TodaySpecials />}
