@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search, 
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus, 
@@ -56,6 +56,33 @@ const CashierDashboard = ({ onLogout }) => {
   const { tables, setTables } = useTableSync();
 
   const socket = useSocket(RESTAURANT_ID);
+
+  const loadTransactions = useCallback(async () => {
+    setTxnsLoading(true);
+    try {
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const dbTxns = await fetchTransactions(RESTAURANT_ID, 100, todayStr);
+      const mapped = dbTxns.map(txn => ({
+        id: txn.id,
+        kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
+        amount: txn.amount,
+        time: new Date(txn.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: new Date(txn.paidAt).toLocaleDateString('en-GB'),
+        timestamp: new Date(txn.paidAt).getTime(),
+        items: txn.itemCount || 0,
+        itemsList: txn.items || [],
+        captainId: txn.captainId || 'CASHIER',
+        method: txn.method || 'UPI',
+        tableNumber: txn.tableNumber || null,
+      }));
+      localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
+      setPastTransactions(mapped);
+    } catch (err) {
+      console.warn('[Transactions] DB fetch failed, using cache:', err.message);
+    } finally {
+      setTxnsLoading(false);
+    }
+  }, [TX_CACHE_KEY]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -122,6 +149,7 @@ const CashierDashboard = ({ onLogout }) => {
         setCart([]);
         setShowPaymentModal(false);
       }
+      loadTransactions();
     };
 
     socket.on('billing:requested', onBillingRequested);
@@ -135,52 +163,13 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('order:updated', onOrderUpdated);
       socket.off('order:paid', onOrderPaid);
     };
-  }, [socket, selectedTable?.backendId]);
+  }, [socket, selectedTable?.backendId, loadTransactions]);
 
   // ── Load transactions from DB ──────────────────────────────────────────
   useEffect(() => {
-    let cancelled = false;
-
-    const loadTransactions = async () => {
-      setTxnsLoading(true);
-      try {
-        const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
-        const dbTxns = await fetchTransactions(RESTAURANT_ID, 100, todayStr);
-        if (cancelled) return;
-
-        const mapped = dbTxns.map(txn => ({
-          id: txn.id,
-          kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
-          amount: txn.amount,
-          time: new Date(txn.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          date: new Date(txn.paidAt).toLocaleDateString('en-GB'),
-          timestamp: new Date(txn.paidAt).getTime(),
-          items: txn.itemCount || 0,
-          itemsList: txn.items || [],
-          captainId: txn.captainId || 'CASHIER',
-          method: txn.method || 'UPI',
-          tableNumber: txn.tableNumber || null,
-        }));
-
-        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
-        setPastTransactions(mapped);
-      } catch (err) {
-        console.warn('[Transactions] DB fetch failed, using cache:', err.message);
-      } finally {
-        if (!cancelled) setTxnsLoading(false);
-      }
-    };
-
     loadTransactions();
-
-    const onOrderPaidRefresh = () => loadTransactions();
-    if (socket) socket.on('order:paid', onOrderPaidRefresh);
-
-    return () => {
-      cancelled = true;
-      if (socket) socket.off('order:paid', onOrderPaidRefresh);
-    };
-  }, [socket]);
+    return () => {};
+  }, [loadTransactions]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
