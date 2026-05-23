@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction, fetchTransactions } from '../services/orderApi';
+import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -395,41 +395,61 @@ const CashierDashboard = ({ onLogout }) => {
     if (cart.length === 0) return;
     setIsKotSending(true);
     setIsKotSuccess(false);
-    
-    // Simulate real kitchen API call
-    setTimeout(() => {
-      setIsKotSending(false);
-      setIsKotSuccess(true);
-      
-      if (selectedTable) {
-        const newKot = {
-          id: Math.floor(1000 + Math.random() * 9000).toString(),
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          items: cart.map(i => ({ ...i, s: 'KOT Sent' })),
-          status: 'Incoming',
-          createdAt: Date.now(),
-          itemsReady: 0
-        };
-        const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
-        setTables(prev => prev.map(t => {
-          if (t.id === selectedTable.id) {
-            return {
-              ...t,
-              status: t.status === 'Free' ? 'Occupied' : t.status,
-              kotHistory: [...(t.kotHistory || []), newKot],
-              currentBill: newTotalBill
-            };
-          }
-          return t;
-        }));
-      }
 
-      addNotification("KOT Pushed", `Order for Table ${selectedTable?.id || 'Walk-in'} sent to kitchen.`, 'success');
-      setCart([]);
-      
-      // Reset success icon after 2 seconds
-      setTimeout(() => setIsKotSuccess(false), 2000);
-    }, 1200);
+    // Build local KOT for instant UI feedback
+    const newKot = {
+      id: Math.floor(1000 + Math.random() * 9000).toString(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      items: cart.map(i => ({ ...i, s: 'KOT Sent' })),
+      status: 'Incoming',
+      createdAt: Date.now(),
+      itemsReady: 0,
+    };
+
+    // Format items for API
+    const apiItems = cart.map(i => ({
+      menuItemId: String(i.id || i.menuItemId || i.n || i.name),
+      name: i.n || i.name,
+      price: Number(i.p ?? i.price ?? 0),
+      quantity: Number(i.q ?? i.quantity ?? 1),
+      notes: i.notes || null,
+    }));
+
+    // 1. Update UI instantly — fire and forget
+    if (selectedTable) {
+      const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
+      setTables(prev => prev.map(t => {
+        if (t.id === selectedTable.id) {
+          return {
+            ...t,
+            status: t.status === 'Free' ? 'Occupied' : t.status,
+            kotHistory: [...(t.kotHistory || []), newKot],
+            currentBill: newTotalBill,
+          };
+        }
+        return t;
+      }));
+    }
+
+    setCart([]);
+    setIsKotSending(false);
+    setIsKotSuccess(true);
+    addNotification('KOT Pushed', `Order for Table ${selectedTable?.id || 'Walk-in'} sent to kitchen.`, 'success');
+    setTimeout(() => setIsKotSuccess(false), 2000);
+
+    // 2. Fire API in background — no await, no blocking
+    if (selectedTable?.backendId) {
+      if (selectedTable.activeOrder?.id) {
+        updateOrderItems(selectedTable.activeOrder.id, apiItems)
+          .catch(err => console.warn('[BG] updateOrderItems failed:', err.message));
+      } else {
+        createOrder({
+          tableId: selectedTable.backendId,
+          restaurantId: RESTAURANT_ID,
+          items: apiItems,
+        }).catch(err => console.warn('[BG] createOrder failed:', err.message));
+      }
+    }
   };
 
   const stats = [
