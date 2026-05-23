@@ -1176,11 +1176,13 @@ const CashierDashboard = ({ onLogout }) => {
                  </div>
                  
                  <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-6 border border-gray-100">
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{activeSubtotal}</span></div>
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{activeTaxes.toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{(activeSubtotal > 0 ? activeSubtotal : (selectedTable?.currentBill ? selectedTable.currentBill / 1.18 : 0)).toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{(activeTaxes > 0 ? activeTaxes : (selectedTable?.currentBill ? (selectedTable.currentBill / 1.18) * 0.18 : 0)).toFixed(0)}</span></div>
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-1">
                        <span className="text-[10px] font-black text-gray-900 uppercase">Running Total</span>
-                       <span className="text-2xl font-black text-[#E53935]">₹{activeTotal.toFixed(0)}</span>
+                       <span className="text-2xl font-black text-[#E53935]">
+                         ₹{(activeTotal > 0 ? activeTotal : (selectedTable?.currentBill || 0)).toFixed(0)}
+                       </span>
                     </div>
                  </div>
 
@@ -1211,7 +1213,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
               <div>
                 <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Settle Table {selectedTable?.id}</p>
-                <p className="text-2xl font-black text-gray-900 mt-1">₹{activeTotal.toFixed(0)}</p>
+                <p className="text-2xl font-black text-gray-900 mt-1">₹{(activeTotal > 0 ? activeTotal : (selectedTable?.currentBill || 0)).toFixed(0)}</p>
               </div>
               <button
                 onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
@@ -1269,7 +1271,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
                  <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
                  <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{activeTotal.toFixed(0)}</p>
+                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{(activeTotal > 0 ? activeTotal : (selectedTable?.currentBill || 0)).toFixed(0)}</p>
                  <div className="space-y-3">
                     <div className="flex justify-between border-b border-gray-200 pb-1">
                        <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>
