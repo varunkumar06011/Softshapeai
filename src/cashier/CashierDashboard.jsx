@@ -330,10 +330,10 @@ const CashierDashboard = ({ onLogout }) => {
   ];
 
   return (
-    <div className="flex h-screen bg-[#FFF5F5] font-sans overflow-hidden text-[#1A1A1A]">
-      {/* SIDEBAR */}
-      <aside className="w-16 lg:w-60 bg-white border-r border-[#FFCDD2] flex flex-col z-30 transition-all shrink-0">
-        <div className="p-2 lg:p-6 border-b border-[#FFCDD2] flex items-center justify-center shrink-0 bg-white">
+    <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#FFF5F5] font-sans overflow-hidden text-[#1A1A1A]">
+      {/* SIDEBAR / BOTTOM BAR */}
+      <aside className="w-full sm:w-16 lg:w-60 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
+        <div className="hidden sm:flex p-2 lg:p-6 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
           <div className="bg-white p-1 lg:p-3 rounded-xl lg:rounded-[32px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-10 lg:w-36 flex items-center justify-center">
             <img 
               src="/logo softshape.ai.png" 
@@ -343,7 +343,7 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         </div>
 
-        <nav className="flex-grow p-2 space-y-0.5 mt-2">
+        <nav className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-visible p-2 sm:space-y-0.5 sm:mt-2 gap-2 sm:gap-0 scrollbar-hide">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { id: 'pos', label: 'POS Billing', icon: ShoppingCart },
@@ -356,19 +356,20 @@ const CashierDashboard = ({ onLogout }) => {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-3 w-full p-2.5 rounded-xl transition-all group relative ${
+              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 px-4 sm:px-2.5 py-1.5 sm:py-2.5 rounded-xl transition-all group relative shrink-0 min-w-[70px] sm:min-w-0 ${
                 activeTab === item.id 
                 ? 'bg-[#E53935] text-white font-bold shadow-md shadow-red-100' 
                 : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
               }`}
             >
               <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
+              <span className="text-[9px] sm:hidden font-bold leading-none mt-0.5">{item.label.split(' ')[0]}</span>
               <span className="hidden lg:block text-xs uppercase tracking-tight">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="p-2 border-t border-gray-100 mt-auto pb-8">
+        <div className="hidden sm:block p-2 border-t border-gray-100 mt-auto pb-8">
           <button onClick={onLogout} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all">
             <LogOut size={18} />
             <span className="hidden lg:block text-xs font-bold uppercase tracking-tight">Logout</span>
@@ -408,6 +409,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <p className="text-[8px] text-gray-400 font-bold uppercase mt-0.5">Head Cashier</p>
                 </div>
                 <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm shadow-inner">🤵</div>
+                <button onClick={onLogout} className="sm:hidden ml-2 p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50"><LogOut size={16} /></button>
              </div>
           </div>
         </header>
@@ -452,9 +454,9 @@ const CashierDashboard = ({ onLogout }) => {
           {activeTab === 'dashboard' ? (
             <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
                {/* Stats Row */}
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+               <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
                   {stats.map((stat, i) => (
-                    <div key={i} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                    <div key={i} className="min-w-[75vw] sm:min-w-0 snap-start shrink-0 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
                        <div className={`w-9 h-9 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center shrink-0`}>
                           <stat.icon size={18} />
                        </div>
@@ -588,7 +590,7 @@ const CashierDashboard = ({ onLogout }) => {
                            <div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500" /><span className="text-[8px] font-bold text-gray-400 uppercase">Free</span></div>
                         </div>
                      </div>
-                     <div className="p-2 grid grid-cols-6 sm:grid-cols-12 lg:grid-cols-12 gap-1.5">
+                     <div className="p-2 grid grid-cols-4 xs:grid-cols-5 sm:grid-cols-8 lg:grid-cols-12 gap-1.5">
                         {tables.map((table, i) => {
                            const status = table?.status || 'Free';
                            const colorClass = 
@@ -597,8 +599,9 @@ const CashierDashboard = ({ onLogout }) => {
                               status === 'Preparing' ? 'bg-orange-50 border-orange-200 text-orange-600' :
                               'bg-red-50 border-red-200 text-red-600';
                            return (
-                             <div key={i} className={`h-8 rounded-md border flex items-center justify-center transition-all cursor-pointer ${colorClass}`}>
-                                <span className="text-[9px] font-black">{table.id}</span>
+                             <div key={i} className={`h-8 rounded-md border flex flex-col items-center justify-center transition-all cursor-pointer ${colorClass}`}>
+                                <span className="text-[9px] font-black leading-none">{table.id}</span>
+                                {table.captainName && <span className="text-[5px] font-black uppercase tracking-tighter mt-0.5 text-blue-600 truncate px-1 max-w-full">{table.captainName.split(' ')[0]}</span>}
                              </div>
                            );
                         })}
@@ -820,8 +823,13 @@ const CashierDashboard = ({ onLogout }) => {
                            <div 
                               key={i} 
                               onClick={() => !isFree && setSelectedTable(table)}
-                              className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-1 cursor-pointer transition-all hover:scale-105 active:scale-95 ${containerClass}`}
+                              className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-1 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                            >
+                              {table.captainName && (
+                                 <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1 py-0.5 rounded-[4px] text-[6px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
+                                    {table.captainName.split(' ')[0]}
+                                 </div>
+                              )}
                               <span className="text-xl font-black">{table.id}</span>
                               <span className="text-[7px] font-black uppercase tracking-tighter leading-tight mt-0.5">{statusText}</span>
                            </div>

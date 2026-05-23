@@ -56,6 +56,103 @@ const CAPTAINS = [
   { id: 'C6', name: 'Happy', pin: '1996', initials: 'H', color: 'bg-[#F3E8FF] text-[#7E22CE]' },
 ];
 
+function EmergencyOverlay({ call, currentCaptain, onAccept }) {
+  const [timeLeft, setTimeLeft] = useState(12);
+
+  useEffect(() => {
+    // Calculate initial time left based on when it was actually received locally
+    const elapsed = Math.floor((Date.now() - (call.localTimestamp || Date.now())) / 1000);
+    const initial = Math.max(0, 12 - elapsed);
+    setTimeLeft(initial);
+
+    if (initial <= 0) return;
+
+    const timer = setInterval(() => {
+      const currentElapsed = Math.floor((Date.now() - (call.localTimestamp || Date.now())) / 1000);
+      const remaining = Math.max(0, 12 - currentElapsed);
+      setTimeLeft(remaining);
+      if (remaining <= 0) clearInterval(timer);
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [call]);
+
+  const handleAccept = () => {
+    if (navigator.vibrate) navigator.vibrate(200);
+    onAccept(call);
+  };
+
+  const displayTableId = String(call?.tableId || 'UNKNOWN').toUpperCase().replace(/TABLE[- ]?/, '');
+
+  if (timeLeft <= 0) {
+    // Reduced Warning Mode
+    return (
+      <div className="fixed bottom-6 right-6 z-[9999] bg-[#B71C1C] text-white p-4 rounded-2xl shadow-[0_10px_30px_rgba(183,28,28,0.4)] flex items-center gap-4 animate-in slide-in-from-bottom-5 border border-red-500/30">
+        <div className="w-10 h-10 rounded-full bg-white text-[#B71C1C] flex items-center justify-center animate-pulse shrink-0">
+          <Bell size={20} />
+        </div>
+        <div>
+          <h3 className="font-black text-sm uppercase tracking-widest leading-none mb-1">TABLE {displayTableId}</h3>
+          <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest">Needs assistance</p>
+        </div>
+        <button 
+          onClick={handleAccept}
+          className="ml-2 px-4 py-2 bg-white text-[#B71C1C] text-xs font-black uppercase tracking-widest rounded-xl hover:scale-105 active:scale-95 transition-all shadow-sm"
+        >
+          Accept
+        </button>
+      </div>
+    );
+  }
+
+  // Full Screen Emergency Mode
+  return (
+    <div className="fixed inset-0 z-[9999] animate-police-flash text-white flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+      <div className="relative z-10 flex flex-col items-center text-center animate-emergency-shake w-full max-w-2xl">
+        <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-white text-[#E53935] flex items-center justify-center mb-4 sm:mb-6 shadow-[0_0_100px_rgba(255,255,255,0.5)] relative">
+          <div className="absolute inset-0 rounded-full border-4 border-white animate-ping opacity-50" />
+          <Bell className="w-8 h-8 sm:w-12 sm:h-12" />
+        </div>
+        
+        <h1 className="text-2xl sm:text-6xl font-black mb-2 tracking-tighter uppercase drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)]">
+          🚨 CUSTOMER REQUEST
+        </h1>
+        <div className="bg-black/30 backdrop-blur-md px-4 py-3 sm:px-8 sm:py-4 rounded-2xl sm:rounded-3xl mb-6 sm:mb-8 border border-white/20 shadow-xl w-full max-w-3xl">
+          <p className="text-lg sm:text-5xl font-black uppercase text-white drop-shadow-lg">
+            TABLE {displayTableId} NEEDS ASSISTANCE
+          </p>
+        </div>
+        
+        <div className="text-5xl sm:text-7xl font-black mb-4 tabular-nums drop-shadow-md tracking-tight">
+          00:{timeLeft.toString().padStart(2, '0')}
+        </div>
+        
+        {/* Visual Timeline Progress Bar */}
+        <div className="w-full max-w-xs sm:max-w-md bg-black/20 rounded-full h-2 sm:h-3 mb-8 sm:mb-10 overflow-hidden backdrop-blur-sm border border-white/10 shadow-inner">
+          <div 
+            className="bg-white h-full transition-all duration-1000 ease-linear rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"
+            style={{ width: `${(timeLeft / 12) * 100}%` }}
+          />
+        </div>
+        
+        <button
+          onClick={handleAccept}
+          className="px-8 py-4 sm:px-12 sm:py-6 bg-white text-[#E53935] rounded-full text-lg sm:text-2xl font-black uppercase tracking-widest shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:scale-105 active:scale-95 transition-all relative overflow-hidden group"
+        >
+          <div className="absolute inset-0 bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <span className="relative z-10">ACCEPT REQUEST</span>
+        </button>
+        <p className="text-sm font-bold opacity-90 mt-6 uppercase tracking-widest drop-shadow-md">
+          Arrive before timeout
+        </p>
+      </div>
+      
+      {/* Autoplay silent sound loop hack or actual sound if browser allows */}
+      <audio src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA" autoPlay loop className="hidden" />
+    </div>
+  );
+}
+
 export default function CaptainApp({ onLogout }) {
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem('active_captain');
@@ -276,6 +373,15 @@ export default function CaptainApp({ onLogout }) {
       addNotification(`Table already in progress by ${CAPTAINS.find(c => c.id === table.captainId)?.name || 'another captain'}`, 'error');
       return;
     }
+    
+    // Max 4 tables limit check when trying to open a FREE table
+    if ((table.status === TABLE_STATUS.FREE || !table.captainId) && currentCaptain) {
+      const myActiveTables = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+      if (myActiveTables >= 4) {
+        addNotification("You can only manage up to 4 tables at a time. Please close a table first.", "error");
+        return;
+      }
+    }
     setActiveTableId(table.id);
     setCurrentSessionItems([]);
     setView('session');
@@ -442,8 +548,8 @@ export default function CaptainApp({ onLogout }) {
 
   if (isLoginView) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F4F4F5] p-6 font-['Inter',sans-serif]">
-        <div className="w-full max-w-lg bg-white rounded-[40px] p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100">
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F4F5] p-4 sm:p-6 font-['Inter',sans-serif]">
+        <div className="w-full max-w-lg bg-white rounded-[30px] sm:rounded-[40px] p-6 sm:p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100">
           <div className="text-center mb-10">
             <div className="flex flex-col items-center justify-center mb-6 gap-2">
               <img 
@@ -529,56 +635,55 @@ export default function CaptainApp({ onLogout }) {
       
       {/* WAITER CALL EMERGENCY OVERLAY */}
       {activeCalls.length > 0 && activeCalls.some(c => c.status === 'pending') && (
-        <div className="fixed inset-0 z-[9999] bg-[#E53935] text-white flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-          {/* Pulsing background effect */}
-          <div className="absolute inset-0 bg-[#B71C1C] opacity-50 animate-pulse pointer-events-none" />
-          
-          <div className="relative z-10 flex flex-col items-center text-center">
-            <div className="w-24 h-24 rounded-full bg-white text-[#E53935] flex items-center justify-center mb-6 animate-bounce shadow-[0_0_100px_rgba(255,255,255,0.5)]">
-              <Bell size={48} className="animate-wiggle" />
-            </div>
-            
-            <h1 className="text-4xl sm:text-6xl font-black mb-2 tracking-tighter uppercase drop-shadow-md">
-              🚨 CUSTOMER REQUEST
-            </h1>
-            <p className="text-2xl sm:text-4xl font-black opacity-90 mb-12 uppercase">
-              TABLE {activeCalls.find(c => c.status === 'pending')?.tableId} NEEDS ASSISTANCE
-            </p>
-            
-            <button
-              onClick={() => {
-                const call = activeCalls.find(c => c.status === 'pending');
-                if (call && currentCaptain) {
-                  // Vibrate device if supported
-                  if (navigator.vibrate) navigator.vibrate(200);
-                  
-                  // Mark as accepted locally to "lock"
-                  const locked = markWaiterCallAccepted(call.tableId, currentCaptain.id);
-                  if (locked) {
-                     // Broadcast to other captains to dismiss their alerts
-                     broadcastWaiterEvent('captain:accept_waiter_call', {
-                        callId: call.callId,
-                        captainId: currentCaptain.id,
-                        captainName: currentCaptain.name
-                     });
-                     addNotification(`You accepted table ${call.tableId}`, 'success');
-                  } else {
-                     addNotification('Call was already handled', 'error');
-                  }
-                }
-              }}
-              className="px-12 py-6 bg-white text-[#E53935] rounded-full text-2xl font-black uppercase tracking-widest shadow-[0_20px_50px_rgba(0,0,0,0.3)] hover:scale-105 active:scale-95 transition-all"
-            >
-              ACCEPT REQUEST
-            </button>
-            <p className="text-sm font-bold opacity-70 mt-6 uppercase tracking-widest">
-              First Captain to Accept Takes the Request
-            </p>
-          </div>
-          
-          {/* Autoplay silent sound loop hack or actual sound if browser allows */}
-          <audio src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA" autoPlay loop className="hidden" />
-        </div>
+        <EmergencyOverlay 
+          call={activeCalls.find(c => c.status === 'pending')} 
+          currentCaptain={currentCaptain}
+          onAccept={(call) => {
+            if (currentCaptain) {
+              // 1. Limit check: max 4 tables per captain
+              const myActiveTables = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+              if (myActiveTables >= 4) {
+                addNotification("You can only manage up to 4 tables at a time. Let others handle this.", "error");
+                return;
+              }
+
+              // 2. Collision check: Did someone else just lock this table in the live floor map?
+              const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
+              const targetTable = tables.find(t => String(t.id) === String(callTableNumber));
+              if (targetTable && targetTable.captainId && targetTable.captainId !== currentCaptain.id && targetTable.status !== TABLE_STATUS.FREE) {
+                addNotification("Table was already locked by another captain!", "error");
+                clearCall(call.callId);
+                return;
+              }
+
+              const locked = markWaiterCallAccepted(call.tableId, currentCaptain.id);
+              if (locked) {
+                 broadcastWaiterEvent('captain:accept_waiter_call', {
+                    callId: call.callId,
+                    captainId: currentCaptain.id,
+                    captainName: currentCaptain.name
+                 });
+                 addNotification(`You accepted table ${call.tableId}`, 'success');
+                 
+                 // Allocate table to this captain
+                 setTables(prev => prev.map(t => {
+                   if (String(t.id) === String(callTableNumber)) {
+                     return {
+                       ...t,
+                       status: t.status === TABLE_STATUS.FREE ? 'Occupied' : t.status,
+                       captainId: currentCaptain.id,
+                       captainName: currentCaptain.name
+                     };
+                   }
+                   return t;
+                 }));
+              } else {
+                 addNotification("Another captain has already accepted this request!", "error");
+                 clearCall(call.callId);
+              }
+            }
+          }}
+        />
       )}
 
       {/* GLOBAL HEADER */}
@@ -778,7 +883,7 @@ export default function CaptainApp({ onLogout }) {
       {/* MAIN CONTENT AREA — TABLES & SESSION */}
       <main className={`flex-grow flex flex-col overflow-hidden relative ${activeView !== 'tables' ? 'hidden' : ''}`}>
         {view === 'tables' ? (
-          <div className="flex-grow overflow-y-auto p-6 scroll-smooth bg-gray-50/50">
+          <div className="flex-grow overflow-y-auto p-4 sm:p-6 scroll-smooth bg-gray-50/50">
             <div className="max-w-6xl mx-auto">
               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-8">
                  <div>
@@ -805,7 +910,7 @@ export default function CaptainApp({ onLogout }) {
                   <button 
                     key={table.id}
                     onClick={() => openTableSession(table)}
-                    className={`aspect-square p-4 rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
+                    className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
                       table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
                       table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
                       table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
@@ -813,7 +918,14 @@ export default function CaptainApp({ onLogout }) {
                     }`}
                   >
                     <div className="w-full flex justify-between items-start">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">T{table.id}</span>
+                       <div className="flex flex-col items-start gap-0.5">
+                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">T{table.id}</span>
+                         {table.captainName && (
+                           <span className="text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none">
+                             {table.captainName.split(' ')[0]}
+                           </span>
+                         )}
+                       </div>
                        {table.time && (
                          <div className="flex items-center gap-1 text-[9px] font-black opacity-40">
                            <Clock size={10} /> {table.time}
@@ -821,10 +933,10 @@ export default function CaptainApp({ onLogout }) {
                        )}
                     </div>
                     
-                    <span className="text-3xl font-black leading-none">{table.id}</span>
+                    <span className="text-2xl sm:text-3xl font-black leading-none">{table.id}</span>
                     
                     <div className="w-full flex flex-col items-center gap-1.5">
-                       <div className={`w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${
+                       <div className={`w-full py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[7px] sm:text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1 sm:gap-1.5 ${
                           table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
                           table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
                           table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
@@ -931,7 +1043,7 @@ export default function CaptainApp({ onLogout }) {
                              : "No items in this category."}
                         </p>
                      ) : (
-                     <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12">
+                     <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 pb-12">
                         {filteredMenu.map((item, idx) => (
                            <div 
                               key={idx}
@@ -940,7 +1052,7 @@ export default function CaptainApp({ onLogout }) {
                            >
 
 
-                              <div className="h-40 w-full overflow-hidden relative">
+                              <div className="h-28 sm:h-40 w-full overflow-hidden relative">
                                  <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                  <div className={`absolute top-3 right-3 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50`}>
                                     <div className={`w-3.5 h-3.5 rounded-[3px] border-2 flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
@@ -951,7 +1063,7 @@ export default function CaptainApp({ onLogout }) {
                                     <span className="text-[10px] font-black text-white uppercase flex items-center gap-1.5"><Info size={12} /> Show Customer</span>
                                  </div>
                               </div>
-                              <div className="p-4 flex flex-col flex-grow">
+                              <div className="p-3 sm:p-4 flex flex-col flex-grow">
                                  <h4 className="text-[12px] font-black text-gray-900 leading-tight mb-3 flex-grow">{item.n}</h4>
                                  <div className="flex items-center justify-between mt-auto">
                                     <span className="text-sm font-black text-gray-900 tracking-tight">₹{item.p}</span>

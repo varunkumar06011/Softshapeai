@@ -10,7 +10,7 @@ let globalSocket = null;
 let isConnecting = false;
 const subscribers = new Set();
 
-function initSocket() {
+export function initSocket() {
   if (globalSocket || isConnecting) return;
   isConnecting = true;
 
@@ -52,6 +52,24 @@ function initSocket() {
 export function broadcastWaiterEvent(type, payload) {
   if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
     globalSocket.send(JSON.stringify({ type, payload }));
+  } else if (!globalSocket || globalSocket.readyState !== WebSocket.OPEN) {
+    // If socket isn't open yet, we can try to initialize it or just rely on the fallback below
+    initSocket();
+  }
+
+  // Notify all components in the CURRENT tab immediately
+  try {
+    const data = { type, payload };
+    subscribers.forEach(callback => callback(data));
+  } catch (err) {}
+
+  // Local fallback for cross-tab testing (works perfectly on localhost)
+  try {
+    const eventKey = `softshape_local_event_${Date.now()}_${Math.random()}`;
+    localStorage.setItem(eventKey, JSON.stringify({ type, payload }));
+    setTimeout(() => localStorage.removeItem(eventKey), 1000);
+  } catch (e) {
+    console.error("Local fallback failed", e);
   }
 }
 
@@ -64,18 +82,16 @@ export function useWaiterCalls() {
     const handleMessage = (data) => {
       if (data.type === 'customer:call_waiter') {
         const { tableId, callId, timestamp } = data.payload;
-        // Check if we already have it to avoid duplicates
         setActiveCalls(prev => {
           if (prev.find(c => c.callId === callId)) return prev;
-          return [...prev, { tableId, callId, timestamp, status: 'pending' }];
+          return [...prev, { tableId, callId, timestamp, localTimestamp: Date.now(), status: 'pending' }];
         });
       } else if (data.type === 'captain:accept_waiter_call') {
         const { callId, captainId, captainName } = data.payload;
         setActiveCalls(prev => {
           const callExists = prev.find(c => c.callId === callId);
-          if (!callExists) return prev; // Not relevant or already removed
+          if (!callExists) return prev;
           
-          // Update the call to show it was accepted
           return prev.map(c => 
             c.callId === callId 
               ? { ...c, status: 'accepted', acceptedBy: { id: captainId, name: captainName } } 
@@ -83,22 +99,59 @@ export function useWaiterCalls() {
           );
         });
         
-        // Auto-remove accepted calls after a short delay (e.g. 5 seconds)
         setTimeout(() => {
           setActiveCalls(prev => prev.filter(c => c.callId !== callId));
-        }, 5000);
+        }, 12000);
       }
     };
+
+    // Listen to local storage events for instant cross-tab sync
+    const handleStorage = (e) => {
+      if (e.key && e.key.startsWith('softshape_local_event_') && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          handleMessage(data);
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    // Load initial state from local DB to survive Captain Panel refreshes
+    try {
+      const db = JSON.parse(localStorage.getItem('softshape_waiter_calls') || '{}');
+      const pending = Object.values(db).filter(c => c.status === 'pending');
+      if (pending.length > 0) {
+        setActiveCalls(prev => {
+          const newCalls = [...prev];
+          pending.forEach(p => {
+            if (!newCalls.find(c => c.callId === p.callId)) {
+               // Use original timestamp for initial time left calculation
+               newCalls.push({ ...p, localTimestamp: p.timestamp });
+            }
+          });
+          return newCalls;
+        });
+      }
+    } catch (e) {}
 
     subscribers.add(handleMessage);
 
     return () => {
       subscribers.delete(handleMessage);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
   const clearCall = useCallback((callId) => {
     setActiveCalls(prev => prev.filter(c => c.callId !== callId));
+    try {
+      const db = JSON.parse(localStorage.getItem('softshape_waiter_calls') || '{}');
+      const tableKey = Object.keys(db).find(key => db[key].callId === callId);
+      if (tableKey) {
+        delete db[tableKey];
+        localStorage.setItem('softshape_waiter_calls', JSON.stringify(db));
+      }
+    } catch (e) {}
   }, []);
 
   return { activeCalls, clearCall };

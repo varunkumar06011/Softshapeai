@@ -3,7 +3,7 @@ import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, T
 import { useMenuSync } from '../hooks/useMenuSync';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
-import { broadcastWaiterEvent } from '../services/waiterCallService';
+import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
 
 export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   const { menuItems, categories, loading } = useMenuSync();
@@ -17,7 +17,12 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   const [previewItem, setPreviewItem] = useState(null);
 
   // Waiter Call State
+  const { activeCalls } = useWaiterCalls();
   const [callCooldown, setCallCooldown] = useState(0);
+
+  const myCall = activeCalls.find(c => String(c.tableId) === String(tableId));
+  const isAccepted = myCall && myCall.status === 'accepted';
+  const acceptedCaptainName = isAccepted ? myCall.acceptedBy?.name : null;
 
   useEffect(() => {
     let timer;
@@ -26,6 +31,10 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
     }
     return () => clearInterval(timer);
   }, [callCooldown]);
+
+  useEffect(() => {
+    initSocket();
+  }, []);
 
   const filteredMenu = useMemo(() => {
     if (!menuItems) return [];
@@ -345,28 +354,42 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
       <div className="absolute bottom-0 left-0 w-full z-40 px-5 pb-8 pt-20 bg-gradient-to-t from-[#FFF5F5] via-[#FFF5F5]/90 to-transparent pointer-events-none flex flex-col gap-4">
         
         {/* Floating Call Waiter Button - Redesigned to floating animated CTA */}
-        <div className="pointer-events-auto flex justify-center px-1">
-          <button 
-            onClick={handleCallWaiter}
-            disabled={callCooldown > 0}
-            className={`flex items-center gap-3 px-10 py-4 rounded-full shadow-[0_20px_40px_rgba(255,77,79,0.4)] transition-all duration-300 ${
-              callCooldown > 0 
-                ? 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed shadow-sm' 
-                : 'bg-gradient-to-r from-[#FF6B6B] to-[#FF4D4F] text-white hover:scale-105 active:scale-95 animate-[pulse-glow_2s_infinite]'
-            }`}
-          >
-            {callCooldown > 0 ? (
-              <>
-                <Clock size={18} />
-                <span className="text-[12px] font-black uppercase tracking-[0.15em]">Wait {callCooldown}s</span>
-              </>
-            ) : (
-              <>
-                <Bell size={20} className="animate-wiggle" />
-                <span className="text-[12px] font-black uppercase tracking-[0.15em]">Call Waiter</span>
-              </>
-            )}
-          </button>
+        <div className="pointer-events-auto flex justify-center px-1 z-50 relative">
+          {isAccepted ? (
+            <div className="flex items-center gap-3 px-8 py-4 rounded-full shadow-[0_20px_40px_rgba(16,185,129,0.4)] transition-all duration-500 bg-gradient-to-r from-emerald-500 to-green-500 text-white animate-in slide-in-from-bottom-5 zoom-in">
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                <Star size={16} className="text-yellow-300 fill-yellow-300" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-bold text-emerald-100 uppercase tracking-widest leading-none mb-1">Assigned Captain</span>
+                <span className="text-[13px] font-black uppercase tracking-[0.15em] leading-none">
+                  {acceptedCaptainName}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <button 
+              onClick={handleCallWaiter}
+              disabled={callCooldown > 0}
+              className={`flex items-center gap-3 px-10 py-4 rounded-full shadow-[0_20px_40px_rgba(255,77,79,0.4)] transition-all duration-300 ${
+                callCooldown > 0 
+                  ? 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed shadow-sm' 
+                  : 'bg-gradient-to-r from-[#FF6B6B] to-[#FF4D4F] text-white hover:scale-105 active:scale-95 animate-[pulse-glow_2s_infinite]'
+              }`}
+            >
+              {callCooldown > 0 ? (
+                <>
+                  <Clock size={18} />
+                  <span className="text-[12px] font-black uppercase tracking-[0.15em]">Wait {callCooldown}s</span>
+                </>
+              ) : (
+                <>
+                  <Bell size={20} className="animate-wiggle" />
+                  <span className="text-[12px] font-black uppercase tracking-[0.15em]">Call Waiter</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Sticky Cart */}

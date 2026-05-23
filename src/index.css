@@ -95,3 +95,22 @@ body {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
+
+@keyframes policeFlash {
+  0%, 100% { background-color: #B71C1C; }
+  50% { background-color: #0D47A1; }
+}
+
+@keyframes emergencyShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px) rotate(-1deg); }
+  75% { transform: translateX(4px) rotate(1deg); }
+}
+
+.animate-police-flash {
+  animation: policeFlash 0.5s infinite;
+}
+
+.animate-emergency-shake {
+  animation: emergencyShake 0.3s infinite;
+}
