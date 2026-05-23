@@ -102,8 +102,9 @@ export async function saveTransaction({
   return parseResponse(res);
 }
 
-export async function fetchTransactions(restaurantId, limit = 50) {
+export async function fetchTransactions(restaurantId, limit = 100, date = null) {
   const qs = new URLSearchParams({ restaurantId, limit: String(limit) });
+  if (date) qs.set('date', date); // date = 'YYYY-MM-DD'
   const res = await fetch(apiUrl(`/api/transactions?${qs}`), {
     cache: 'no-store',
   });

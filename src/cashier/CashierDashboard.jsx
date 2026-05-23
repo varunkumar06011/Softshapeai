@@ -39,10 +39,12 @@ const CashierDashboard = ({ onLogout }) => {
     return () => clearInterval(timer);
   }, []);
 
+  const TX_CACHE_KEY = `softshape_transactions_${new Date().toLocaleDateString('en-CA')}`;
+
   const [pastTransactions, setPastTransactions] = useState(() => {
     // Start with localStorage cache for instant display
     try {
-      const saved = localStorage.getItem('softshape_transactions');
+      const saved = localStorage.getItem(TX_CACHE_KEY);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -142,7 +144,8 @@ const CashierDashboard = ({ onLogout }) => {
     const loadTransactions = async () => {
       setTxnsLoading(true);
       try {
-        const dbTxns = await fetchTransactions(RESTAURANT_ID, 100);
+        const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const dbTxns = await fetchTransactions(RESTAURANT_ID, 100, todayStr);
         if (cancelled) return;
 
         const mapped = dbTxns.map(txn => ({
@@ -159,7 +162,7 @@ const CashierDashboard = ({ onLogout }) => {
           tableNumber: txn.tableNumber || null,
         }));
 
-        localStorage.setItem('softshape_transactions', JSON.stringify(mapped));
+        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
         setPastTransactions(mapped);
       } catch (err) {
         console.warn('[Transactions] DB fetch failed, using cache:', err.message);
@@ -232,10 +235,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeTableOrders]);
 
   const todaysSales = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-GB');
-    return pastTransactions
-      .filter((txn) => txn.date === today)
-      .reduce((sum, txn) => sum + (txn.amount || 0), 0);
+    return pastTransactions.reduce((sum, txn) => sum + (txn.amount || 0), 0);
   }, [pastTransactions]);
 
   const { subtotal, taxes, total } = calculateOrderTotal(cart);
@@ -288,7 +288,7 @@ const CashierDashboard = ({ onLogout }) => {
     // 3. Update local state instantly
     setPastTransactions(prev => {
       const updated = [newTransaction, ...prev];
-      localStorage.setItem('softshape_transactions', JSON.stringify(updated));
+      localStorage.setItem(TX_CACHE_KEY, JSON.stringify(updated));
       window.dispatchEvent(new Event('softshape_transactions_updated'));
       return updated;
     });
