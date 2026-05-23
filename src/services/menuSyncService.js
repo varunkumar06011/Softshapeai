@@ -157,6 +157,24 @@ export function useGlobalMenuSync() {
     }
   }, [menu]);
 
+  // Sync menu changes across different browser tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const newMenu = JSON.parse(e.newValue);
+          globalMenu = newMenu;
+          setMenu(newMenu);
+          notifySubscribers();
+        } catch (err) {
+          console.error("Failed to parse menu from storage", err);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
+
   return {
     globalMenu: menu || [],
     isLoadingMenu: loading,
