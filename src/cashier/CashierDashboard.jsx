@@ -12,6 +12,7 @@ import { markOrderPaid } from '../services/orderApi';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
+import LiveTimer from '../shared/components/LiveTimer';
 import { RESTAURANT_ID } from '../services/tableApi';
 
 const CashierDashboard = ({ onLogout }) => {
@@ -54,6 +55,14 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
+
+  const addNotification = (title, desc, type = 'success') => {
+    const id = Date.now() + Math.random();
+    setNotifications(prev => [...prev, { id, title, desc, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 3000);
+  };
 
 
   useEffect(() => {
@@ -167,7 +176,9 @@ const CashierDashboard = ({ onLogout }) => {
         table: order.table,
         tableLabel: order.id,
         time: kot.time || order.time,
-        status: order.status,
+        status: kot.status || 'Incoming',
+        createdAt: kot.createdAt || Date.now(),
+        itemsReady: kot.itemsReady || 0,
         items: kot.items || [],
       }))
     );
@@ -253,6 +264,36 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
+  const updateKotStatus = (tableId, kotId, newStatus) => {
+    setTables(prev => prev.map(t => {
+      if (t.id === tableId || t.backendId === tableId) {
+        let allReady = true;
+        const updatedKotHistory = (t.kotHistory || []).map(kot => {
+          if (kot.id === kotId) {
+            const updated = { ...kot, status: newStatus };
+            if (newStatus !== 'Ready') allReady = false;
+            return updated;
+          }
+          if (kot.status !== 'Ready') allReady = false;
+          return kot;
+        });
+        
+        let newTableStatus = t.status;
+        if (newStatus === 'Ready' && allReady && updatedKotHistory.length > 0) {
+          newTableStatus = 'Waiting Bill';
+          addNotification("Order Ready", `All items ready for Table ${t.id}`, "success");
+        } else if (newStatus === 'Preparing') {
+          newTableStatus = 'Preparing';
+        } else if (newStatus === 'Incoming' && t.status !== 'Waiting Bill') {
+          newTableStatus = 'Occupied';
+        }
+
+        return { ...t, status: newTableStatus, kotHistory: updatedKotHistory };
+      }
+      return t;
+    }));
+  };
+
   const addToCart = (item) => {
     setCart(prev => {
       const existing = prev.find(i => i.n === item.n);
@@ -298,7 +339,10 @@ const CashierDashboard = ({ onLogout }) => {
         const newKot = {
           id: Math.floor(1000 + Math.random() * 9000).toString(),
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          items: cart.map(i => ({ ...i, s: 'KOT Sent' }))
+          items: cart.map(i => ({ ...i, s: 'KOT Sent' })),
+          status: 'Incoming',
+          createdAt: Date.now(),
+          itemsReady: 0
         };
         const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
         setTables(prev => prev.map(t => {
@@ -382,11 +426,7 @@ const CashierDashboard = ({ onLogout }) => {
         {/* COMPACT TOP BAR */}
         <header className="h-12 bg-white border-b border-gray-200 px-4 flex items-center justify-between z-20 shrink-0">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100 cursor-pointer hover:bg-gray-100">
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-              <span className="text-[10px] font-black text-gray-700 uppercase tracking-wider">Jubilee Hills</span>
-              <ChevronDown size={12} className="text-gray-400" />
-            </div>
+
             <div className="flex items-center gap-2 text-gray-400">
               <Clock size={14} />
               <span className="text-[10px] font-black tabular-nums">{currentTime.toLocaleTimeString()}</span>
@@ -665,7 +705,7 @@ const CashierDashboard = ({ onLogout }) => {
                              : "No items in this category."}
                         </p>
                      ) : (
-                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                         {filteredMenu.map((item, idx) => (
                            <div 
                               key={idx}
@@ -891,33 +931,102 @@ const CashierDashboard = ({ onLogout }) => {
                   )}
 
                   {activeTab === 'kitchen' && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                       {['Incoming', 'Preparing', 'Ready'].map((status) => (
-                         <div key={status} className="flex flex-col gap-3">
-                            <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-900 border-b-2 border-red-100 pb-1">{status}</h3>
-                            <div className="space-y-2">
+                    <div className="flex flex-col gap-4 h-full">
+                      {/* Smart Summary Header */}
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-2 bg-white p-3 rounded-xl border border-gray-100 shadow-sm shrink-0">
+                        <div className="text-center">
+                          <p className="text-[9px] font-black uppercase text-gray-400">Incoming</p>
+                          <p className="text-lg font-black text-gray-900">{liveKotQueue.filter(k => k.status === 'Incoming' || (!['Preparing', 'Ready'].includes(k.status))).length}</p>
+                        </div>
+                        <div className="text-center border-l border-gray-100">
+                          <p className="text-[9px] font-black uppercase text-gray-400">Preparing</p>
+                          <p className="text-lg font-black text-amber-600">{liveKotQueue.filter(k => k.status === 'Preparing').length}</p>
+                        </div>
+                        <div className="text-center border-l border-gray-100">
+                          <p className="text-[9px] font-black uppercase text-gray-400">Ready</p>
+                          <p className="text-lg font-black text-green-600">{liveKotQueue.filter(k => k.status === 'Ready').length}</p>
+                        </div>
+                        <div className="text-center border-l border-gray-100 hidden md:block">
+                          <p className="text-[9px] font-black uppercase text-gray-400">Delayed</p>
+                          <p className="text-lg font-black text-[#E53935]">
+                            {liveKotQueue.filter(k => k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
+                          </p>
+                        </div>
+                        <div className="text-center border-l border-gray-100 hidden md:block">
+                          <p className="text-[9px] font-black uppercase text-gray-400">Avg Time</p>
+                          <p className="text-lg font-black text-gray-900">8m</p>
+                        </div>
+                        <div className="text-center border-l border-gray-100 hidden md:block">
+                          <p className="text-[9px] font-black uppercase text-gray-400">Active Tables</p>
+                          <p className="text-lg font-black text-gray-900">{activeTableOrders.length}</p>
+                        </div>
+                      </div>
+
+                      {/* Kanban Board */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow min-h-0 overflow-y-auto pb-6">
+                        {['Incoming', 'Preparing', 'Ready'].map((status) => (
+                          <div key={status} className="flex flex-col gap-3 bg-gray-50/50 rounded-xl p-2 h-full border border-gray-100">
+                            <div className="flex justify-between items-center px-1">
+                              <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-900">{status}</h3>
+                              <span className="bg-white text-[9px] font-black px-2 py-0.5 rounded-md border border-gray-200">
+                                {liveKotQueue.filter(k => k.status === status || (status === 'Incoming' && !['Preparing', 'Ready'].includes(k.status))).length}
+                              </span>
+                            </div>
+                            <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-grow">
                                {liveKotQueue
                                  .filter((kot) => {
-                                   if (status === 'Incoming') return kot.status === 'Occupied';
+                                   if (status === 'Incoming') return kot.status === 'Incoming' || (!['Preparing', 'Ready'].includes(kot.status));
                                    return kot.status === status;
                                  })
                                  .map((kot) => (
-                                   <div key={`${status}-${kot.id}`} className="p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:border-[#E53935] transition-all cursor-pointer">
+                                   <div key={`${status}-${kot.id}`} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 group relative overflow-hidden transition-all hover:shadow-md">
                                       <div className="flex justify-between items-start mb-2">
-                                         <span className="text-[8px] font-black text-gray-400 uppercase">KOT-{kot.id}</span>
-                                         <span className="text-[8px] font-black text-orange-600">{kot.time}</span>
+                                         <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-black text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{kot.tableLabel}</span>
+                                            <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">KOT-{kot.id}</span>
+                                         </div>
+                                         <LiveTimer startTime={kot.createdAt} status={kot.status} />
                                       </div>
-                                      <p className="text-[11px] font-black text-gray-900">{kot.tableLabel}</p>
-                                      <div className="mt-2 space-y-0.5 text-[9px] text-gray-500 font-bold">
+                                      
+                                      <div className="mb-3">
+                                         <p className="text-[9px] font-bold text-gray-400 uppercase">Capt. {kot.table.captainName?.split(' ')[0] || 'Walk-in'}</p>
+                                         <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[9px] font-black text-[#E53935] uppercase">{kot.items.length} Items</span>
+                                            <div className="w-1 h-1 rounded-full bg-gray-300" />
+                                            <span className="text-[9px] font-black text-gray-500">{kot.itemsReady || 0}/{kot.items.length} Ready</span>
+                                         </div>
+                                      </div>
+                                      
+                                      <div className="space-y-1 text-[9px] text-gray-600 font-bold border-t border-gray-50 pt-2 mb-3">
                                          {kot.items.map((item, idx) => (
-                                           <div key={`${kot.id}-${idx}`} className="flex justify-between"><span>{item.n}</span><span>x{item.q}</span></div>
+                                           <div key={`${kot.id}-${idx}`} className="flex justify-between items-center">
+                                             <div className="flex items-center gap-1.5">
+                                               <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                               <span className="truncate max-w-[120px]">{item.n}</span>
+                                             </div>
+                                             <span>x{item.q}</span>
+                                           </div>
                                          ))}
+                                      </div>
+
+                                      {/* Actions */}
+                                      <div className="flex gap-2 mt-2">
+                                        {status === 'Incoming' && (
+                                          <button onClick={() => updateKotStatus(kot.table.id, kot.id, 'Preparing')} className="flex-1 bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors">Start Prep</button>
+                                        )}
+                                        {status === 'Preparing' && (
+                                          <button onClick={() => updateKotStatus(kot.table.id, kot.id, 'Ready')} className="flex-1 bg-green-50 text-green-600 hover:bg-green-100 border border-green-200 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors">Mark Ready</button>
+                                        )}
+                                        {status === 'Ready' && (
+                                          <div className="flex-1 bg-gray-50 text-gray-400 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest text-center border border-gray-100">Waiting Pickup</div>
+                                        )}
                                       </div>
                                    </div>
                                  ))}
                             </div>
-                         </div>
-                       ))}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 

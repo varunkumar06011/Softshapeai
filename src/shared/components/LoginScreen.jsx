@@ -33,32 +33,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
         </div>
 
         <div className="space-y-6">
-          {isCashier && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Outlet</label>
-                <div className="relative group">
-                  <select className="w-full h-14 appearance-none rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all group-hover:border-gray-200">
-                    <option>ongole</option>
-                    <option>kandakur</option>
-                    <option>Indiranagar - BLR</option>
-                  </select>
-                  <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Work Shift</label>
-                <div className="relative group">
-                  <select className="w-full h-14 appearance-none rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all group-hover:border-gray-200">
-                    <option>Morning (09-06)</option>
-                    <option>Evening (06-03)</option>
-                    <option>Night (10-07)</option>
-                  </select>
-                  <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
-                </div>
-              </div>
-            </div>
-          )}
+
 
           {isCaptain ? (
             <div className="space-y-6 py-4">
@@ -85,12 +60,12 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
           ) : (
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Terminal ID / Email</label>
-                <input className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" defaultValue={isCashier ? "CASH-HYD-01" : "admin@softshape.ai"} />
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Username</label>
+                <input className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" defaultValue="vgrandlounge@gmail.com" />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Access Password</label>
-                <input className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" defaultValue="••••••••" type="password" />
+                <input className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" defaultValue="Vgrand@1234" type="password" />
               </div>
             </div>
           )}

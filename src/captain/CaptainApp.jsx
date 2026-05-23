@@ -461,7 +461,10 @@ export default function CaptainApp({ onLogout }) {
       const newKOT = {
         id: Math.floor(1000 + Math.random() * 9000).toString(),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' }))
+        items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' })),
+        status: 'Incoming',
+        createdAt: Date.now(),
+        itemsReady: 0
       };
       const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
 
