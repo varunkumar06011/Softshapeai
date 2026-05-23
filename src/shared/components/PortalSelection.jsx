@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Smartphone, ShoppingCart, UserCog } from 'lucide-react';
+import { LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode } from 'lucide-react';
 
 const PortalSelection = ({ onSelect }) => {
   return (
@@ -18,7 +18,7 @@ const PortalSelection = ({ onSelect }) => {
         </div>
       </div>
 
-      <div className="grid w-full max-w-4xl grid-cols-1 gap-6 sm:grid-cols-3 z-10 px-4">
+      <div className="grid w-full max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 z-10 px-4">
         {/* Admin Portal */}
         <button 
           onClick={() => onSelect('admin')}
@@ -53,6 +53,18 @@ const PortalSelection = ({ onSelect }) => {
           </div>
           <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Captain App</h2>
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">Field-ready interface for table orders and service tracking.</p>
+        </button>
+        
+        {/* User Menu View */}
+        <button 
+          onClick={() => onSelect('user-menu')}
+          className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-8 shadow-[0_20px_40px_rgba(183,28,28,0.06)] transition-all duration-500 hover:border-[#B71C1C] hover:bg-white hover:translate-y-[-8px] text-left"
+        >
+          <div className="mb-6 rounded-2xl bg-[#FFF5F5] p-4 text-[#B71C1C] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#B71C1C] group-hover:text-white shadow-inner">
+            <QrCode size={32} strokeWidth={2.5} />
+          </div>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">User Menu View</h2>
+          <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">Interactive QR-based dining experience</p>
         </button>
       </div>
 

@@ -12,6 +12,8 @@ import { createOrder, requestBilling, updateOrderItems } from '../services/order
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
+import { useWaiterCalls, broadcastWaiterEvent } from '../services/waiterCallService';
+import { markWaiterCallAccepted } from '../services/customerSessionService';
 
 const TABLE_STATUS = {
   FREE: 'Free',
@@ -95,6 +97,9 @@ export default function CaptainApp({ onLogout }) {
       i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt)
     );
   }, [menuItems]);
+
+  // Waiter Calls sync
+  const { activeCalls, clearCall } = useWaiterCalls();
 
   useEffect(() => {
     // Show the Live Sync indicator whenever the global menu broadcasts an update
@@ -521,6 +526,61 @@ export default function CaptainApp({ onLogout }) {
 
   return (
     <div className="flex flex-col h-[100dvh] bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
+      
+      {/* WAITER CALL EMERGENCY OVERLAY */}
+      {activeCalls.length > 0 && activeCalls.some(c => c.status === 'pending') && (
+        <div className="fixed inset-0 z-[9999] bg-[#E53935] text-white flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+          {/* Pulsing background effect */}
+          <div className="absolute inset-0 bg-[#B71C1C] opacity-50 animate-pulse pointer-events-none" />
+          
+          <div className="relative z-10 flex flex-col items-center text-center">
+            <div className="w-24 h-24 rounded-full bg-white text-[#E53935] flex items-center justify-center mb-6 animate-bounce shadow-[0_0_100px_rgba(255,255,255,0.5)]">
+              <Bell size={48} className="animate-wiggle" />
+            </div>
+            
+            <h1 className="text-4xl sm:text-6xl font-black mb-2 tracking-tighter uppercase drop-shadow-md">
+              🚨 CUSTOMER REQUEST
+            </h1>
+            <p className="text-2xl sm:text-4xl font-black opacity-90 mb-12 uppercase">
+              TABLE {activeCalls.find(c => c.status === 'pending')?.tableId} NEEDS ASSISTANCE
+            </p>
+            
+            <button
+              onClick={() => {
+                const call = activeCalls.find(c => c.status === 'pending');
+                if (call && currentCaptain) {
+                  // Vibrate device if supported
+                  if (navigator.vibrate) navigator.vibrate(200);
+                  
+                  // Mark as accepted locally to "lock"
+                  const locked = markWaiterCallAccepted(call.tableId, currentCaptain.id);
+                  if (locked) {
+                     // Broadcast to other captains to dismiss their alerts
+                     broadcastWaiterEvent('captain:accept_waiter_call', {
+                        callId: call.callId,
+                        captainId: currentCaptain.id,
+                        captainName: currentCaptain.name
+                     });
+                     addNotification(`You accepted table ${call.tableId}`, 'success');
+                  } else {
+                     addNotification('Call was already handled', 'error');
+                  }
+                }
+              }}
+              className="px-12 py-6 bg-white text-[#E53935] rounded-full text-2xl font-black uppercase tracking-widest shadow-[0_20px_50px_rgba(0,0,0,0.3)] hover:scale-105 active:scale-95 transition-all"
+            >
+              ACCEPT REQUEST
+            </button>
+            <p className="text-sm font-bold opacity-70 mt-6 uppercase tracking-widest">
+              First Captain to Accept Takes the Request
+            </p>
+          </div>
+          
+          {/* Autoplay silent sound loop hack or actual sound if browser allows */}
+          <audio src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA" autoPlay loop className="hidden" />
+        </div>
+      )}
+
       {/* GLOBAL HEADER */}
       <header className="h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50">
         <div className="flex items-center gap-4">

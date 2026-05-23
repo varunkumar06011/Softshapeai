@@ -5,6 +5,7 @@ import LoginScreen from "./shared/components/LoginScreen";
 import AdminDashboard from "./admin/AdminDashboard";
 import CashierDashboard from "./cashier/CashierDashboard";
 import CaptainApp from "./captain/CaptainApp";
+import UserMenuApp from "./user-menu/UserMenuApp";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 
 // specialized Kitchen View
@@ -84,6 +85,8 @@ function App() {
           onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }} 
         />} />
         <Route path="/kitchen" element={<KitchenView />} />
+        <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
+        <Route path="/user-menu/:tableId" element={<UserMenuApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
