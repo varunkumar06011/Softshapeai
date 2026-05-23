@@ -19,8 +19,10 @@ import {
   Star
 } from 'lucide-react';
 import { 
-  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory 
+  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage
 } from './AdminComponents';
+import { useOutlet } from '../context/OutletContext';
+import OutletToggle from '../shared/components/OutletToggle';
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
@@ -72,6 +74,7 @@ const AdminDashboard = ({ onLogout }) => {
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
   const { setTables } = useTableSync();
+  const { outlet } = useOutlet();
   const socket = useSocket(RESTAURANT_ID);
 
   useEffect(() => {
@@ -206,6 +209,7 @@ const AdminDashboard = ({ onLogout }) => {
                {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </div>
           <div className="flex items-center gap-3">
+            <OutletToggle className="hidden sm:flex" />
             <button className="relative rounded-md border border-[#FFCDD2] p-2">
               <Bell size={16} />
               <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E53935] text-[9px] text-white">3</span>
@@ -216,8 +220,10 @@ const AdminDashboard = ({ onLogout }) => {
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
           {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} statsLoading={statsLoading} />}
-          {page === "tables" && <Tables onOpen={() => {}} />}
-          {page === "menu" && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
+          {page === "tables" && outlet === 'restaurant' && <Tables onOpen={() => {}} />}
+          {page === "tables" && outlet === 'bar' && <BarTables />}
+          {page === "menu" && outlet === 'restaurant' && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
+          {page === "menu" && outlet === 'bar' && <BarMenuPage />}
           {page === "specials" && <TodaySpecials />}
           {page === "orders" && <Orders />}
           {page === "reports" && <Reports />}

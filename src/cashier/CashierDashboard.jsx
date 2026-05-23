@@ -15,6 +15,13 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
 import { RESTAURANT_ID } from '../services/tableApi';
+import { useOutlet } from '../context/OutletContext';
+import OutletToggle from '../shared/components/OutletToggle';
+import BarMenuToggle from '../shared/components/BarMenuToggle';
+import VariantPicker from '../shared/components/VariantPicker';
+import { useBarTableSync } from '../services/barTableSyncService';
+import { useBarMenuSync } from '../services/barMenuSyncService';
+import { BAR_ID } from '../services/barApiConfig';
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
@@ -54,6 +61,17 @@ const CashierDashboard = ({ onLogout }) => {
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
+
+  const { outlet } = useOutlet();
+  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
+  const { menuItems: barMenuItems } = useBarMenuSync();
+  const [barMenuTab, setBarMenuTab] = useState('food');
+  const [variantPickerItem, setVariantPickerItem] = useState(null);
+
+  // Derived — restaurant or bar depending on outlet
+  const activeTables = outlet === 'bar' ? barTables : tables;
+  const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
 
   const socket = useSocket(RESTAURANT_ID);
 
@@ -301,7 +319,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     saveTransaction({
-      restaurantId: RESTAURANT_ID,
+      restaurantId: activeRestaurantId,
       orderId: tableSnap?.activeOrder?.id || null,
       tableNumber: tableSnap?.id || null,
       captainId: tableSnap?.captainId || null,
@@ -321,6 +339,26 @@ const CashierDashboard = ({ onLogout }) => {
       }),
     [searchQuery, selectedCategory, activeDiet, menuItems]
   );
+
+  const activeMenuItems = useMemo(() => {
+    if (outlet === 'restaurant') return filteredMenu;
+    return barMenuItems.filter(
+      (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR')
+    );
+  }, [outlet, filteredMenu, barMenuItems, barMenuTab]);
+
+  const handleAddItem = (item) => {
+    if (outlet === 'bar' && item.variants && item.variants.length > 1) {
+      setVariantPickerItem(item);
+    } else {
+      addToCart(item);
+    }
+  };
+
+  const handleVariantSelect = (item, variant) => {
+    addToCart({ ...item, n: `${item.n} (${variant.name})`, p: variant.price });
+    setVariantPickerItem(null);
+  };
 
 
 
@@ -445,7 +483,7 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         createOrder({
           tableId: selectedTable.backendId,
-          restaurantId: RESTAURANT_ID,
+          restaurantId: activeRestaurantId,
           items: apiItems,
         }).catch(err => console.warn('[BG] createOrder failed:', err.message));
       }
@@ -519,6 +557,7 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
 
           <div className="flex items-center gap-3">
+             <OutletToggle className="hidden sm:flex" />
              <div className="hidden sm:flex items-center gap-1.5 bg-red-50 px-2 py-0.5 rounded-md border border-red-100 text-[#E53935]">
                 <Activity size={12} />
                 <span className="text-[9px] font-black uppercase tracking-wider">Live Op-Feed</span>
@@ -740,6 +779,9 @@ const CashierDashboard = ({ onLogout }) => {
                {/* COMPACT MENU */}
                <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
                   <div className="px-3 py-2 border-b border-gray-100 flex flex-col gap-2">
+                     {outlet === 'bar' && (
+                        <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} />
+                     )}
                      <div className="relative w-full">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                         <input
@@ -792,10 +834,10 @@ const CashierDashboard = ({ onLogout }) => {
                         </p>
                      ) : (
                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                        {filteredMenu.map((item, idx) => (
+                        {activeMenuItems.map((item, idx) => (
                            <div 
                               key={idx}
-                              onClick={() => addToCart(item)}
+                              onClick={() => handleAddItem(item)}
                               className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow transition-all cursor-pointer flex flex-col group"
                            >
                               <div className="h-20 w-full overflow-hidden relative">
@@ -932,7 +974,7 @@ const CashierDashboard = ({ onLogout }) => {
 
                   {activeTab === 'tables' && (
                     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2">
-                        {tables.map((table, i) => {
+                        {activeTables.map((table, i) => {
                          const isFree = table.status === 'Free' || !table.status;
                          const isWaitingBill = table.status === 'Waiting Bill';
                          const isBusy = !isFree && !isWaitingBill;
@@ -959,7 +1001,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     {table.captainName.split(' ')[0]}
                                  </div>
                               )}
-                              <span className="text-xl font-black">{table.id}</span>
+                              <span className="text-xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
                               <span className="text-[7px] font-black uppercase tracking-tighter leading-tight mt-0.5">{statusText}</span>
                            </div>
                          );
@@ -1332,6 +1374,11 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         ))}
       </div>
+      <VariantPicker
+        item={variantPickerItem}
+        onSelect={handleVariantSelect}
+        onClose={() => setVariantPickerItem(null)}
+      />
     </div>
   );
 };

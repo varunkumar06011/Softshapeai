@@ -45,6 +45,9 @@ import CreativeCanvas from '../shared/components/CreativeCanvas';
 import { calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSearch';
 import { useTableSync } from '../services/tableSyncService';
+import { useBarTableSync } from '../services/barTableSyncService';
+import { useBarMenuSync } from '../services/barMenuSyncService';
+import BarMenuToggle from '../shared/components/BarMenuToggle';
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -1506,4 +1509,125 @@ export function SettingsPage() {
     <h2 className="text-xl font-bold mb-4">Global Settings</h2>
     <p className="text-sm text-gray-600">Configure outlet details, printers, and user permissions.</p>
   </div>;
+}
+
+export function BarTables() {
+  const { tables } = useBarTableSync();
+
+  return (
+    <div className="space-y-4 font-sans">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h3 className="font-semibold">Floor Plan — Bar Hall</h3>
+        <span className="text-[11px] font-black text-[#B71C1C] uppercase tracking-widest bg-[#FFF5F5] px-3 py-1.5 rounded-full">
+          🍺 Bar • {tables.filter(t => t.status !== 'Free').length} Occupied / {tables.length} Total
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {tables.map((t) => {
+          const isFree = !t.status || t.status === 'Free';
+          let bgClass = "bg-[#E8F5E9] text-[#1B5E20]";
+          if (t.status === 'Waiting Bill') bgClass = "bg-[#FFEBEE] text-[#B71C1C] border-[#E53935] animate-pulse";
+          else if (t.status === 'Preparing') bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17]";
+          else if (!isFree) bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17]";
+
+          return (
+            <div
+              key={t.backendId || t.id}
+              className={`${bgClass} rounded-2xl border-2 min-h-[100px] p-3 flex flex-col justify-between`}
+            >
+              <div className="flex justify-between items-start w-full">
+                <p className="text-xl font-black leading-none">B{t.number ?? t.id}</p>
+                {!isFree && (
+                  <span className="text-[9px] font-black uppercase bg-white/20 px-1.5 py-0.5 rounded">
+                    {t.time || '1m'}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] font-bold mt-2">
+                {isFree ? 'Available' : `${t.status} — ₹${t.currentBill || 0}`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function BarMenuPage() {
+  const { menuItems, loading, error, refreshMenu } = useBarMenuSync();
+  const [barMenuTab, setBarMenuTab] = useState('food');
+  const [filter, setFilter] = useState('');
+
+  const filteredItems = useMemo(() => {
+    const typeFilter = barMenuTab === 'food' ? 'FOOD' : 'LIQUOR';
+    return menuItems.filter(
+      (item) =>
+        item.menuType === typeFilter &&
+        (!filter || item.n.toLowerCase().includes(filter.toLowerCase()))
+    );
+  }, [menuItems, barMenuTab, filter]);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 font-sans">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h3 className="font-semibold">Bar Menu</h3>
+        <div className="flex items-center gap-3">
+          <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} />
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Search..."
+            className="border border-gray-200 rounded-xl px-3 py-1.5 text-[12px] font-bold w-48 focus:outline-none focus:border-[#E53935]"
+          />
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[12px] text-red-600 font-bold">
+          {error} — <button onClick={refreshMenu} className="underline">Retry</button>
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {filteredItems.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100"
+          >
+            <div className="flex items-center gap-3">
+              {item.menuType === 'FOOD' ? (
+                <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${item.t === 'veg' ? 'border-green-600 bg-green-100' : 'border-red-600 bg-red-100'}`} />
+              ) : (
+                <span className="text-[14px]">🥃</span>
+              )}
+              <div>
+                <p className="text-[13px] font-bold text-gray-900">{item.n}</p>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{item.c}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              {item.variants.length === 1 ? (
+                <p className="text-[13px] font-black text-gray-900">₹{item.variants[0].price}</p>
+              ) : (
+                <div className="flex flex-wrap gap-1 justify-end max-w-[180px]">
+                  {item.variants.map((v) => (
+                    <span key={v.id} className="text-[10px] font-bold bg-gray-100 px-2 py-0.5 rounded-full text-gray-700">
+                      {v.name}: ₹{v.price}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

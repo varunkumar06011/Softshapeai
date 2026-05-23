@@ -15,6 +15,13 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { useWaiterCalls, broadcastWaiterEvent } from '../services/waiterCallService';
 import { markWaiterCallAccepted } from '../services/customerSessionService';
+import { useOutlet } from '../context/OutletContext';
+import OutletToggle from '../shared/components/OutletToggle';
+import { useBarTableSync } from '../services/barTableSyncService';
+import { BAR_ID } from '../services/barApiConfig';
+import BarMenuToggle from '../shared/components/BarMenuToggle';
+import { useBarMenuSync } from '../services/barMenuSyncService';
+import VariantPicker from '../shared/components/VariantPicker';
 
 const TABLE_STATUS = {
   FREE: 'Free',
@@ -186,14 +193,35 @@ export default function CaptainApp({ onLogout }) {
   };
   
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
-  const { menuItems, setMenuItems, categories, loading: menuLoading } = useMenuSync();
+  const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
+  const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
+  
+  const [activeBarMenu, setActiveBarMenu] = useState('food');
+  const [activeVariantItem, setActiveVariantItem] = useState(null);
+
+  const activeMenuItems = outlet === 'bar' ? barMenu : restaurantMenu;
+  const setMenuItems = outlet === 'bar' ? () => {} : setRestaurantMenu;
+  const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
+
+  const outletFilteredMenuItems = useMemo(() => {
+    if (outlet === 'bar') {
+      return activeMenuItems.filter(item => item.menuType === (activeBarMenu === 'food' ? 'FOOD' : 'LIQUOR'));
+    }
+    return activeMenuItems;
+  }, [outlet, activeMenuItems, activeBarMenu]);
+
+  const categories = useMemo(() => {
+    if (outlet === 'restaurant') return restaurantCategories;
+    const cats = new Set(outletFilteredMenuItems.map(i => i.c));
+    return ['All', ...Array.from(cats)].filter(Boolean);
+  }, [outlet, restaurantCategories, outletFilteredMenuItems]);
 
   const todaySpecials = useMemo(() => {
     const now = Date.now();
-    return menuItems.filter(
+    return outletFilteredMenuItems.filter(
       i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt)
     );
-  }, [menuItems]);
+  }, [outletFilteredMenuItems]);
 
   // Waiter Calls sync
   const { activeCalls, clearCall } = useWaiterCalls();
@@ -235,6 +263,14 @@ export default function CaptainApp({ onLogout }) {
   // SHARED STATE PERSISTENCE
   const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
 
+  const { outlet } = useOutlet();
+  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
+
+  // Derived — switch between restaurant and bar floor
+  const activeTables = outlet === 'bar' ? barTables : tables;
+  const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
+
   useEffect(() => {
     if (tablesSyncing) {
       setIsSyncing(true);
@@ -252,12 +288,12 @@ export default function CaptainApp({ onLogout }) {
 
   const filteredMenu = useMemo(
     () =>
-      filterMenuItems(menuItems, {
+      filterMenuItems(outletFilteredMenuItems, {
         query: searchQuery,
         category: activeCategory,
         diet: activeDiet,
       }),
-    [searchQuery, activeCategory, activeDiet, menuItems]
+    [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]
   );
 
   const suggestedSpecials = useMemo(() => {
@@ -273,19 +309,19 @@ export default function CaptainApp({ onLogout }) {
 
     let suggestions = [];
     if (hasSoup && !hasBiryani) {
-      suggestions = menuItems.filter(m => m.n.toLowerCase().includes('biryani') || m.n === 'Chicken 65');
+      suggestions = outletFilteredMenuItems.filter(m => m.n.toLowerCase().includes('biryani') || m.n === 'Chicken 65');
     } else if (hasBiryani) {
-      suggestions = menuItems.filter(m => m.c === 'Drinks' || m.c === 'Desserts' || m.n === 'Chicken Lollipop');
+      suggestions = outletFilteredMenuItems.filter(m => m.c === 'Drinks' || m.c === 'Desserts' || m.n === 'Chicken Lollipop');
     } else if (hasStarter) {
-      suggestions = menuItems.filter(m => m.c === 'Main Course' || m.c === 'Drinks');
+      suggestions = outletFilteredMenuItems.filter(m => m.c === 'Main Course' || m.c === 'Drinks');
     } else {
-      suggestions = menuItems.filter(m => m.c === 'Desserts' || m.c === 'Drinks');
+      suggestions = outletFilteredMenuItems.filter(m => m.c === 'Desserts' || m.c === 'Drinks');
     }
     
     // Filter out items already in the cart
     suggestions = suggestions.filter(s => !currentSessionItems.find(i => i.n === s.n));
     return suggestions.slice(0, 4);
-  }, [currentSessionItems, menuItems]);
+  }, [currentSessionItems, outletFilteredMenuItems]);
 
   const displaySpecials = useMemo(() => {
     // todaySpecials is now derived from live menuItems — always up to date
@@ -380,7 +416,7 @@ export default function CaptainApp({ onLogout }) {
     
     // Max 4 tables limit check when trying to open a FREE table
     if ((table.status === TABLE_STATUS.FREE || !table.captainId) && currentCaptain) {
-      const myActiveTables = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+      const myActiveTables = activeTables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
       if (myActiveTables >= 4) {
         addNotification("You can only manage up to 4 tables at a time. Please close a table first.", "error");
         return;
@@ -391,9 +427,9 @@ export default function CaptainApp({ onLogout }) {
     setView('session');
   };
 
-  const addItemToSession = (item) => {
+  const addItemToSession = (item, variant = null) => {
     if (currentSessionItems.length === 0) {
-      setTables(currentTables => currentTables.map(t => {
+      setActiveTables(currentTables => currentTables.map(t => {
         if (t.id === activeTableId && t.status === TABLE_STATUS.FREE) {
           return { ...t, status: TABLE_STATUS.OCCUPIED, captainId: currentCaptain?.id };
         }
@@ -401,20 +437,38 @@ export default function CaptainApp({ onLogout }) {
       }));
     }
 
+    const variantSuffix = variant ? ` (${variant.name})` : '';
+    const finalName = `${item.n}${variantSuffix}`;
+    const finalPrice = variant ? variant.price : item.p;
+
     setCurrentSessionItems(prev => {
-      const existing = prev.find(i => i.n === item.n);
+      const existing = prev.find(i => i.n === finalName);
       if (existing) {
-        return prev.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
+        return prev.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
       }
-      return [...prev, { ...item, q: 1, s: 'Pending' }];
+      return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, s: 'Pending' }];
     });
-    addNotification(`${item.n} added`, 'success');
+    addNotification(`${finalName} added`, 'success');
+  };
+
+  const handleItemClick = (e, item) => {
+    e.stopPropagation();
+    if (outlet === 'bar' && item.menuType === 'LIQUOR' && item.variants?.length > 0) {
+      setActiveVariantItem(item);
+    } else {
+      addItemToSession(item);
+    }
+  };
+
+  const handleVariantSelect = (item, variant) => {
+    setActiveVariantItem(null);
+    addItemToSession(item, variant);
   };
 
   const cancelSession = () => {
     setCurrentSessionItems([]);
     if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
-      setTables(currentTables => currentTables.map(t => {
+      setActiveTables(currentTables => currentTables.map(t => {
         if (t.id === activeTable.id) {
           return { ...t, status: TABLE_STATUS.FREE, captainId: null };
         }
@@ -481,7 +535,7 @@ export default function CaptainApp({ onLogout }) {
     }));
 
     // 1. Update UI immediately — don't wait for API
-    setTables(prev => prev.map(t => {
+    setActiveTables(prev => prev.map(t => {
       if (t.backendId === activeTable.backendId) {
         return {
           ...t,
@@ -513,7 +567,7 @@ export default function CaptainApp({ onLogout }) {
     } else {
       createOrder({
         tableId: activeTable.backendId,
-        restaurantId: RESTAURANT_ID,
+        restaurantId: activeRestaurantId,
         items: apiItems,
       }).catch(err =>
         console.warn('[BG] createOrder failed:', err.message)
@@ -527,7 +581,7 @@ export default function CaptainApp({ onLogout }) {
     const orderId = liveTable?.activeOrder?.id;
 
     // 1. Update UI immediately
-    setTables(prev => prev.map(t => {
+    setActiveTables(prev => prev.map(t => {
       if (t.id === activeTableId || t.backendId === activeTableId) {
         return { ...t, status: TABLE_STATUS.BILLING };
       }
@@ -702,6 +756,7 @@ export default function CaptainApp({ onLogout }) {
         </div>
 
         <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+          <OutletToggle className="hidden sm:flex" />
           <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-20'}`}>
              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Live Sync</span>
@@ -905,7 +960,7 @@ export default function CaptainApp({ onLogout }) {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {tables.map(table => (
+                {activeTables.map(table => (
                   <button 
                     key={table.id}
                     onClick={() => openTableSession(table)}
@@ -918,7 +973,7 @@ export default function CaptainApp({ onLogout }) {
                   >
                     <div className="w-full flex justify-between items-start">
                        <div className="flex flex-col items-start gap-0.5">
-                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">T{table.id}</span>
+                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{outlet === 'bar' ? 'B' : 'T'}{table.number ?? table.id}</span>
                          {table.captainName && (
                            <span className="text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none">
                              {table.captainName.split(' ')[0]}
@@ -932,7 +987,7 @@ export default function CaptainApp({ onLogout }) {
                        )}
                     </div>
                     
-                    <span className="text-2xl sm:text-3xl font-black leading-none">{table.id}</span>
+                    <span className="text-2xl sm:text-3xl font-black leading-none">{table.number ?? table.id}</span>
                     
                     <div className="w-full flex flex-col items-center gap-1.5">
                        <div className={`w-full py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[7px] sm:text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1 sm:gap-1.5 ${
@@ -998,6 +1053,15 @@ export default function CaptainApp({ onLogout }) {
                         />
                      </div>
                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
+                        {outlet === 'bar' && (
+                          <div className="flex justify-center xl:justify-start mr-3">
+                            <BarMenuToggle active={activeBarMenu} onChange={(mode) => {
+                              setActiveBarMenu(mode);
+                              setActiveCategory('All');
+                              setSearchQuery('');
+                            }} />
+                          </div>
+                        )}
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                            {categories.map(cat => (
                               <button 
@@ -1067,7 +1131,7 @@ export default function CaptainApp({ onLogout }) {
                                  <div className="flex items-center justify-between mt-auto">
                                     <span className="text-sm font-black text-gray-900 tracking-tight">₹{item.p}</span>
                                     <button 
-                                       onClick={(e) => { e.stopPropagation(); addItemToSession(item); }}
+                                       onClick={(e) => handleItemClick(e, item)}
                                        className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-[#E53935] hover:bg-[#E53935] hover:text-white transition-all shadow-sm"
                                     >
                                        <Plus size={18} strokeWidth={3} />
@@ -1395,6 +1459,13 @@ export default function CaptainApp({ onLogout }) {
           </div>
         ))}
       </div>
+      
+      {/* VARIANT PICKER */}
+      <VariantPicker 
+        item={activeVariantItem}
+        onSelect={handleVariantSelect}
+        onClose={() => setActiveVariantItem(null)}
+      />
     </div>
   );
 }
