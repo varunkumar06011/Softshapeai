@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction } from '../services/orderApi';
+import { markOrderPaid, saveTransaction, fetchTransactions } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -40,17 +40,15 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
 
   const [pastTransactions, setPastTransactions] = useState(() => {
-    const saved = localStorage.getItem('softshape_transactions');
-    return saved ? JSON.parse(saved) : [
-      { id: 'TXN-98245', kot: 'KOT-8812', amount: 2450, time: '14:22', date: '15/05/26', items: 4, method: 'UPI' },
-      { id: 'TXN-98246', kot: 'KOT-8813', amount: 560, time: '14:45', date: '15/05/26', items: 2, method: 'CASH' },
-      { id: 'TXN-98247', kot: 'KOT-8814', amount: 1290, time: '15:10', date: '15/05/26', items: 3, method: 'CARD' }
-    ];
+    // Start with localStorage cache for instant display
+    try {
+      const saved = localStorage.getItem('softshape_transactions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
-
-  useEffect(() => {
-    localStorage.setItem('softshape_transactions', JSON.stringify(pastTransactions));
-  }, [pastTransactions]);
+  const [txnsLoading, setTxnsLoading] = useState(false);
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
@@ -136,6 +134,50 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('order:paid', onOrderPaid);
     };
   }, [socket, selectedTable?.backendId]);
+
+  // ── Load transactions from DB ──────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTransactions = async () => {
+      setTxnsLoading(true);
+      try {
+        const dbTxns = await fetchTransactions(RESTAURANT_ID, 100);
+        if (cancelled) return;
+
+        const mapped = dbTxns.map(txn => ({
+          id: txn.id,
+          kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
+          amount: txn.amount,
+          time: new Date(txn.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date(txn.paidAt).toLocaleDateString('en-GB'),
+          timestamp: new Date(txn.paidAt).getTime(),
+          items: txn.itemCount || 0,
+          itemsList: txn.items || [],
+          captainId: txn.captainId || 'CASHIER',
+          method: txn.method || 'UPI',
+          tableNumber: txn.tableNumber || null,
+        }));
+
+        localStorage.setItem('softshape_transactions', JSON.stringify(mapped));
+        setPastTransactions(mapped);
+      } catch (err) {
+        console.warn('[Transactions] DB fetch failed, using cache:', err.message);
+      } finally {
+        if (!cancelled) setTxnsLoading(false);
+      }
+    };
+
+    loadTransactions();
+
+    const onOrderPaidRefresh = () => loadTransactions();
+    if (socket) socket.on('order:paid', onOrderPaidRefresh);
+
+    return () => {
+      cancelled = true;
+      if (socket) socket.off('order:paid', onOrderPaidRefresh);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -951,12 +993,18 @@ const CashierDashboard = ({ onLogout }) => {
                              </tbody>
                           </table>
                        </div>
-                       {pastTransactions.length === 0 && (
-                         <div className="p-12 text-center flex flex-col items-center">
+                        {txnsLoading && pastTransactions.length === 0 && (
+                          <div className="p-12 text-center flex flex-col items-center">
+                            <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin mb-3" />
+                            <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Loading Transactions...</p>
+                          </div>
+                        )}
+                        {!txnsLoading && pastTransactions.length === 0 && (
+                          <div className="p-12 text-center flex flex-col items-center">
                             <History size={32} className="text-gray-200 mb-2" />
                             <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">No Recent Transactions</p>
-                         </div>
-                       )}
+                          </div>
+                        )}
                     </div>
                   )}
 
