@@ -46,7 +46,7 @@ import { calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSearch';
 import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
-import { useBarMenuSync, updateBarMenuItem } from '../services/barMenuSyncService';
+import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 import { API_BASE } from '../services/apiConfig';
 import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
@@ -1743,9 +1743,12 @@ export function BarMenuPage() {
 
   // Availability toggle
   const toggleAvailability = (item) => {
-    fetch(`${API_BASE}/api/bar/menu/items/${item.id}/availability`, { method: 'PATCH' })
-      .then((r) => r.ok ? refreshMenu() : Promise.reject())
-      .catch(() => showToast('Toggle failed', 'error'));
+    toggleBarMenuAvailability(
+      item.id,
+      API_BASE,
+      () => showToast(item.isAvailable === false ? 'Item enabled' : 'Item disabled'),
+      () => showToast('Toggle failed', 'error')
+    );
   };
 
   // Delete

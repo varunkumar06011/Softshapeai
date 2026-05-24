@@ -12,7 +12,8 @@ export function mapBarMenuItems(items) {
     c: item.category,
     t: item.isVeg ? "veg" : "non",
     menuType: item.menuType || "FOOD",
-    img: DEFAULT_IMG,
+    img: item.imageUrl || DEFAULT_IMG,
+    isAvailable: item.isAvailable ?? true,
     variants: item.variants || [],
   }));
 }

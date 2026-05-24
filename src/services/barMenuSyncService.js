@@ -64,8 +64,8 @@ export function useBarMenuSync() {
  * then persist to the backend asynchronously.
  *
  * @param {string} itemId  - The item's DB id
- * @param {object} patch   - Fields to change: { n, t, p }
- *                           n → name, t → 'veg'|'non', p → price (single-variant)
+ * @param {object} patch   - Fields to change: { n, t, p, img }
+ *                           n → name, t → 'veg'|'non', p → price (single-variant), img → imageUrl
  * @param {string} apiBase - API base URL (from apiConfig.API_BASE)
  */
 export function updateBarMenuItem(itemId, patch, apiBase) {
@@ -77,6 +77,7 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
     const updated = { ...item };
     if (patch.n !== undefined) updated.n = patch.n;
     if (patch.t !== undefined) updated.t = patch.t;
+    if (patch.img !== undefined) updated.img = patch.img;
     if (patch.p !== undefined) {
       updated.p = Number(patch.p);
       if (updated.variants && updated.variants.length === 1) {
@@ -95,6 +96,7 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
   if (patch.n !== undefined) body.name = patch.n;
   if (patch.t !== undefined) body.isVeg = patch.t === "veg";
   if (patch.p !== undefined) body.price = Number(patch.p);
+  if (patch.img !== undefined) body.imageUrl = patch.img;
 
   fetch(`${apiBase}/api/bar/menu/items/${itemId}`, {
     method: "PATCH",
@@ -110,4 +112,49 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
       }
     })
     .catch((err) => console.warn("[BarMenuSync] PATCH error:", err));
+}
+
+/**
+ * Toggle a bar menu item's availability optimistically.
+ *
+ * @param {string} itemId  - The item's DB id
+ * @param {string} apiBase - API base URL
+ * @param {function} onDone - Optional callback on success (e.g. refreshMenu)
+ * @param {function} onError - Optional callback on failure
+ */
+export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError) {
+  if (!barGlobalMenu) return;
+
+  // Optimistic toggle
+  barGlobalMenu = barGlobalMenu.map((item) => {
+    if (item.id !== itemId) return item;
+    return { ...item, isAvailable: !(item.isAvailable ?? true) };
+  });
+  writeBarMenuCache(barGlobalMenu);
+  notifySubscribers();
+
+  fetch(`${apiBase}/api/bar/menu/items/${itemId}/availability`, { method: "PATCH" })
+    .then((res) => {
+      if (res.ok) {
+        onDone?.();
+      } else {
+        // Revert on failure
+        barGlobalMenu = barGlobalMenu.map((item) => {
+          if (item.id !== itemId) return item;
+          return { ...item, isAvailable: !(item.isAvailable ?? true) };
+        });
+        writeBarMenuCache(barGlobalMenu);
+        notifySubscribers();
+        onError?.();
+      }
+    })
+    .catch(() => {
+      barGlobalMenu = barGlobalMenu.map((item) => {
+        if (item.id !== itemId) return item;
+        return { ...item, isAvailable: !(item.isAvailable ?? true) };
+      });
+      writeBarMenuCache(barGlobalMenu);
+      notifySubscribers();
+      onError?.();
+    });
 }
