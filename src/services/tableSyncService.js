@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
-let _isPersisting = false;
+
 
 const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
 const POLL_INTERVAL_MS = 5000;
@@ -114,6 +114,8 @@ function findTableIndex(tables, backendId) {
 let sharedSocket = null;
 let socketRefCount = 0;
 let socketListenersAttached = false;
+let _persistingCount = 0;
+let _lastLocalUpdate = 0;
 
 function attachSocketLogging(socket) {
   if (socketListenersAttached) return;
@@ -163,7 +165,6 @@ function acquireSocket(handlers) {
 }
 
 async function persistStatusChanges(prevTables, nextTables) {
-  _isPersisting = true;
   const tasks = [];
 
   for (const table of nextTables) {
@@ -198,9 +199,7 @@ async function persistStatusChanges(prevTables, nextTables) {
     }
   }
 
-  return Promise.all(tasks).finally(() => {
-    _isPersisting = false;
-  });
+  return Promise.all(tasks);
 }
 
 export function useTableSync() {
@@ -280,11 +279,16 @@ export function useTableSync() {
     });
 
     const pollInterval = setInterval(async () => {
-      if (_isPersisting) return;
       if (cancelled) return;
+      if (_persistingCount > 0) return;
+
+      const fetchStartedAt = Date.now();
+
       try {
         const apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
         if (cancelled || apiTables.length === 0) return;
+        if (_lastLocalUpdate > fetchStartedAt) return;
+        if (_persistingCount > 0) return;
 
         setTablesState((current) => {
           const merged = mergeTablesFromApi(apiTables, current);
@@ -304,36 +308,36 @@ export function useTableSync() {
   }, []);
 
   const setTables = useCallback((updater, { skipPersist = false } = {}) => {
-    setTablesState((prev) => {
-      const current = prev ?? [];
-      const next = typeof updater === "function" ? updater(current) : updater;
+    const current = tablesRef.current ?? [];
+    const next = typeof updater === "function" ? updater(current) : updater;
 
-      writeCache(next);
-      tablesRef.current = next;
+    writeCache(next);
+    tablesRef.current = next;
+    setTablesState(next);
 
-      if (!skipPersist) {
-        persistStatusChanges(current, next).then((results) => {
-          if (!results.length) return;
-          setTablesState((latest) => {
-            let updated = latest;
-            for (const result of results) {
-              if (!result.updated) continue;
-              const idx = findTableIndex(updated, result.updated.id);
-              if (idx === -1) continue;
-              const copy = [...updated];
-              copy[idx] = mapBackendTable(result.updated, copy[idx], {
-                keepWorkflowStatus: true,
-              });
-              updated = copy;
-            }
-            writeCache(updated);
-            return updated;
-          });
+    if (!skipPersist) {
+      _persistingCount += 1;
+      _lastLocalUpdate = Date.now();
+      persistStatusChanges(current, next).then((results) => {
+        _persistingCount = Math.max(0, _persistingCount - 1);
+        if (!results.length) return;
+        setTablesState((latest) => {
+          let updated = latest;
+          for (const result of results) {
+            if (!result.updated) continue;
+            const idx = findTableIndex(updated, result.updated.id);
+            if (idx === -1) continue;
+            const copy = [...updated];
+            copy[idx] = mapBackendTable(result.updated, copy[idx], {
+              keepWorkflowStatus: true,
+            });
+            updated = copy;
+          }
+          writeCache(updated);
+          return updated;
         });
-      }
-
-      return next;
-    });
+      });
+    }
   }, []);
 
   return {
