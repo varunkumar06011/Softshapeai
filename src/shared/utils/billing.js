@@ -25,22 +25,46 @@ export const calculateOrderTotal = (items) => {
 };
 
 /**
- * Calculates the total bill dynamically from the table's KOT history.
+ * Returns the canonical list of items for a table.
+ * Priority: DB Order items (table.orders[0].items) → kotHistory flattened → table.items fallback.
+ * DB Order items are normalized to the { n, p, q } shape used by billing/print utilities.
  */
-export const calculateTableBill = (table) => {
-  if (!table) {
-    return { subtotal: 0, taxes: 0, total: 0 };
+export const getTableItems = (table) => {
+  if (!table) return [];
+
+  // 1. Prefer DB-backed Order items (set by useTableSync when orders relation is included)
+  const activeOrder = table.activeOrder || (table.orders && table.orders[0]);
+  if (activeOrder?.items && activeOrder.items.length > 0) {
+    return activeOrder.items.map(item => ({
+      n: item.name ?? item.n,
+      p: Number(item.price ?? item.p ?? 0),
+      q: Number(item.quantity ?? item.q ?? 1),
+      notes: item.notes || null,
+    }));
   }
 
-  const allItems = (table.kotHistory && table.kotHistory.length > 0) ? table.kotHistory.flatMap(kot => kot.items || []) : (table.items || []);
-  return calculateOrderTotal(allItems);
+  // 2. Fall back to kotHistory (legacy JSON blob — kept for KOT timeline display)
+  if (table.kotHistory && table.kotHistory.length > 0) {
+    return table.kotHistory.flatMap(kot => kot.items || []);
+  }
+
+  // 3. Last resort: flat items array (used by bar tables)
+  return table.items || [];
+};
+
+/**
+ * Calculates the total bill dynamically from the table's order data.
+ * Prefers DB Order items over kotHistory via getTableItems().
+ */
+export const calculateTableBill = (table) => {
+  if (!table) return { subtotal: 0, taxes: 0, total: 0 };
+  return calculateOrderTotal(getTableItems(table));
 };
 
 /**
  * Calculates the total bill including the unsubmitted (draft) session items.
  */
 export const calculateSessionBill = (table, draftItems = []) => {
-  const allItems = (table?.kotHistory && table.kotHistory.length > 0) ? table.kotHistory.flatMap(kot => kot.items || []) : (table?.items || []);
-  const combined = [...allItems, ...draftItems];
-  return calculateOrderTotal(combined);
+  const committed = getTableItems(table);
+  return calculateOrderTotal([...committed, ...draftItems]);
 };

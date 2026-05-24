@@ -10,7 +10,7 @@ import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
-import { calculateOrderTotal, calculateSessionBill, calculateTableBill } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
@@ -206,7 +206,7 @@ const CashierDashboard = ({ onLogout }) => {
     return activeTables
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
-        const items = (table.kotHistory && table.kotHistory.length > 0) ? table.kotHistory.flatMap(kot => kot.items || []) : (table.items || []);
+        const items = getTableItems(table);
         const bill = calculateTableBill(table);
         return {
           id: `T${table.id}`,
@@ -254,12 +254,8 @@ const CashierDashboard = ({ onLogout }) => {
   const fallbackTotal = selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0;
 
   const printBill = async (table, total, subtotal, taxes, method) => {
-    let items = cart;
-    if (table?.kotHistory && table.kotHistory.length > 0) {
-      items = table.kotHistory.flatMap(k => k.items || []);
-    } else if (table?.items && table.items.length > 0) {
-      items = table.items;
-    }
+    const tableItems = getTableItems(table);
+    const items = tableItems.length > 0 ? tableItems : cart;
     await printBillQZ({ table, items, subtotal, taxes, total, method });
   };
 
@@ -280,12 +276,8 @@ const CashierDashboard = ({ onLogout }) => {
     const subtotalSnap = activeSubtotal;
     const taxesSnap = activeTaxes;
 
-    let itemsList = cart;
-    if (tableSnap?.kotHistory && tableSnap.kotHistory.length > 0) {
-      itemsList = tableSnap.kotHistory.flatMap(k => k.items || []);
-    } else if (tableSnap?.items && tableSnap.items.length > 0) {
-      itemsList = tableSnap.items;
-    }
+    const tableItems = getTableItems(tableSnap);
+    const itemsList = tableItems.length > 0 ? tableItems : cart;
 
     // Step 1: Show loading on button
     setIsPrintingBill(true);

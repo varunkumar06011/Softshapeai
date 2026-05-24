@@ -64,7 +64,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
 
   const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
   const totalTables = tables.length;
-  const liveOrdersCount = tables.reduce((sum, table) => sum + ((table.kotHistory || []).length > 0 ? 1 : 0), 0);
+  const liveOrdersCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
 
   const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
   return <div className="space-y-4 font-sans">
