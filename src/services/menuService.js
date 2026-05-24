@@ -1,4 +1,5 @@
 import { API_BASE, apiUrl } from "./apiConfig";
+import { RESTAURANT_ID } from "./tableApi";
 
 export const MENU_STORAGE_KEY = "softshape_menu";
 export const MENU_QUERY_KEY = ["menu"];
@@ -51,6 +52,7 @@ export function mapFlatMenuItems(items) {
     t: item.isVeg ? "veg" : "non",
     img: item.imageUrl || DEFAULT_MENU_IMAGE,
     desc: item.description || "",
+    menuType: item.menuType,
   }));
 }
 
@@ -71,6 +73,7 @@ export function mapPosViewToMenuItems(categories) {
         t: item.isVeg ? "veg" : "non",
         img: item.imageUrl || DEFAULT_MENU_IMAGE,
         desc: item.description || "",
+        menuType: item.menuType,
       });
     }
   }
@@ -91,16 +94,16 @@ async function parseMenuResponse(res, label) {
   return res.json();
 }
 
-async function fetchLeanMenu() {
-  const url = apiUrl("/api/menu/items");
+async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
+  const url = apiUrl(`/api/menu/items?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
   const res = await fetchWithTimeout(url, fetchOpts);
   const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
 
-async function fetchPosViewMenu() {
-  const url = apiUrl("/api/menu/pos-view");
+async function fetchPosViewMenu(restaurantId = RESTAURANT_ID) {
+  const url = apiUrl(`/api/menu/pos-view?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
   const res = await fetchWithTimeout(url, fetchOpts);
   const categories = await parseMenuResponse(res, "Menu pos-view");
@@ -108,10 +111,10 @@ async function fetchPosViewMenu() {
 }
 
 /** Prefer lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
-export async function fetchMenuFromBackend() {
+export async function fetchMenuFromBackend(restaurantId = RESTAURANT_ID) {
   let lean = [];
   try {
-    lean = await fetchLeanMenu();
+    lean = await fetchLeanMenu(restaurantId);
   } catch (err) {
     console.warn("[MenuService] /api/menu/items failed:", err.message);
   }
@@ -120,7 +123,7 @@ export async function fetchMenuFromBackend() {
 
   let posView = [];
   try {
-    posView = await fetchPosViewMenu();
+    posView = await fetchPosViewMenu(restaurantId);
   } catch (err) {
     console.warn("[MenuService] /api/menu/pos-view failed:", err.message);
   }

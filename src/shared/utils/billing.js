@@ -28,11 +28,11 @@ export const calculateOrderTotal = (items) => {
  * Calculates the total bill dynamically from the table's KOT history.
  */
 export const calculateTableBill = (table) => {
-  if (!table || !table.kotHistory) {
+  if (!table) {
     return { subtotal: 0, taxes: 0, total: 0 };
   }
 
-  const allItems = table.kotHistory.flatMap(kot => kot.items || []);
+  const allItems = (table.kotHistory && table.kotHistory.length > 0) ? table.kotHistory.flatMap(kot => kot.items || []) : (table.items || []);
   return calculateOrderTotal(allItems);
 };
 
@@ -40,7 +40,7 @@ export const calculateTableBill = (table) => {
  * Calculates the total bill including the unsubmitted (draft) session items.
  */
 export const calculateSessionBill = (table, draftItems = []) => {
-  const allItems = table?.kotHistory ? table.kotHistory.flatMap(kot => kot.items || []) : [];
+  const allItems = (table?.kotHistory && table.kotHistory.length > 0) ? table.kotHistory.flatMap(kot => kot.items || []) : (table?.items || []);
   const combined = [...allItems, ...draftItems];
   return calculateOrderTotal(combined);
 };

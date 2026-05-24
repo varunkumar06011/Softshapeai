@@ -100,7 +100,7 @@ const CashierDashboard = ({ onLogout }) => {
     } finally {
       setTxnsLoading(false);
     }
-  }, [TX_CACHE_KEY]);
+  }, [TX_CACHE_KEY, activeRestaurantId]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -205,7 +205,7 @@ const CashierDashboard = ({ onLogout }) => {
     return activeTables
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
-        const items = (table.kotHistory || []).flatMap((kot) => kot.items || []);
+        const items = (table.kotHistory && table.kotHistory.length > 0) ? table.kotHistory.flatMap(kot => kot.items || []) : (table.items || []);
         const bill = calculateTableBill(table);
         return {
           id: `T${table.id}`,
@@ -250,21 +250,28 @@ const CashierDashboard = ({ onLogout }) => {
   const activeSubtotal = activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
+  const fallbackTotal = selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0;
 
   const printBill = async (table, total, subtotal, taxes, method) => {
-    const items = table?.kotHistory
-      ? table.kotHistory.flatMap(k => k.items || [])
-      : cart;
+    let items = cart;
+    if (table?.kotHistory && table.kotHistory.length > 0) {
+      items = table.kotHistory.flatMap(k => k.items || []);
+    } else if (table?.items && table.items.length > 0) {
+      items = table.items;
+    }
     await printBillQZ({ table, items, subtotal, taxes, total, method });
   };
 
   const handlePayment = async (method) => {
-    const txnAmount = activeTotal || 0;
+    const txnAmount = activeTotal > 0 ? activeTotal : fallbackTotal;
     if (txnAmount === 0) return;
 
-    const itemsList = selectedTable?.kotHistory
-      ? selectedTable.kotHistory.flatMap(k => k.items || [])
-      : cart;
+    let itemsList = cart;
+    if (selectedTable?.kotHistory && selectedTable.kotHistory.length > 0) {
+      itemsList = selectedTable.kotHistory.flatMap(k => k.items || []);
+    } else if (selectedTable?.items && selectedTable.items.length > 0) {
+      itemsList = selectedTable.items;
+    }
 
     const newTransaction = {
       id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -302,7 +309,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (tableSnap?.id) {
       setBillingAlerts(prev => prev.filter(a => a.tableId !== tableSnap.id));
-      setTables(prev => prev.map(t =>
+      setActiveTables(prev => prev.map(t =>
         t.id === tableSnap.id
           ? { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
           : t
@@ -340,7 +347,7 @@ const CashierDashboard = ({ onLogout }) => {
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
     if (outlet === 'restaurant') {
-      itemsToFilter = menuItems;
+      itemsToFilter = menuItems.filter(item => item.menuType === 'FOOD');
     } else {
       itemsToFilter = barMenuItems.filter(
         (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR')
@@ -370,7 +377,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
-    setTables(prev => prev.map(t => {
+    setActiveTables(prev => prev.map(t => {
       if (t.id === tableId || t.backendId === tableId) {
         let allReady = true;
         const updatedKotHistory = (t.kotHistory || []).map(kot => {
@@ -419,13 +426,15 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const updateQty = (id, delta) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === id) {
-        const newQty = Math.max(0, item.q + delta);
-        return newQty === 0 ? null : { ...item, q: newQty };
-      }
-      return item;
-    }).filter(Boolean));
+    setCart(prev => {
+      const updated = prev.map(item => {
+        if (item.id === id) {
+          return { ...item, q: item.q + delta };
+        }
+        return item;
+      });
+      return updated.filter(item => item.q > 0);
+    });
   };
 
   const onlineOrders = [
@@ -463,7 +472,7 @@ const CashierDashboard = ({ onLogout }) => {
     // 1. Update UI instantly — fire and forget
     if (selectedTable) {
       const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
-      setTables(prev => prev.map(t => {
+      setActiveTables(prev => prev.map(t => {
         if (t.id === selectedTable.id) {
           return {
             ...t,
@@ -599,8 +608,9 @@ const CashierDashboard = ({ onLogout }) => {
                     const t = activeTables.find(tbl => tbl.backendId === alert.tableBackendId);
                     if (t) {
                       setSelectedTable(t);
-                       setActiveTab('tables');
-                       localStorage.setItem('cashier_active_tab', 'tables');
+                      setShowPaymentModal(true);
+                      setActiveTab('tables');
+                      localStorage.setItem('cashier_active_tab', 'tables');
                     }
                   }}
                 >
@@ -1211,7 +1221,7 @@ const CashierDashboard = ({ onLogout }) => {
            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
               <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl">T{selectedTable.id}</div>
+                    <div className="w-10 h-10 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl">{outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}</div>
                     <div>
                        <h2 className="text-[10px] font-black uppercase text-gray-400 leading-none">Active Session</h2>
                        <p className="text-sm font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
@@ -1223,7 +1233,7 @@ const CashierDashboard = ({ onLogout }) => {
                  <div className="space-y-3 mb-6">
                     <h3 className="text-[9px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-50 pb-1">Order Summary</h3>
                     <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
-                       {(selectedTable.kotHistory ? selectedTable.kotHistory.flatMap(k => k.items || []) : selectedTable.items || []).map((item, idx) => (
+                       {((selectedTable.kotHistory && selectedTable.kotHistory.length > 0) ? selectedTable.kotHistory.flatMap(k => k.items || []) : (selectedTable.items || [])).map((item, idx) => (
                           <div key={idx} className="flex justify-between items-center">
                              <div className="flex items-center gap-2">
                                 <span className="w-5 h-5 rounded bg-gray-50 flex items-center justify-center text-[9px] font-black text-gray-500">{item.q}x</span>
@@ -1236,12 +1246,12 @@ const CashierDashboard = ({ onLogout }) => {
                  </div>
                  
                  <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-6 border border-gray-100">
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{(activeSubtotal > 0 ? activeSubtotal : (selectedTable?.currentBill ? selectedTable.currentBill / 1.18 : 0)).toFixed(0)}</span></div>
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{(activeTaxes > 0 ? activeTaxes : (selectedTable?.currentBill ? (selectedTable.currentBill / 1.18) * 0.18 : 0)).toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.18 : 0)).toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.18) * 0.18 : 0)).toFixed(0)}</span></div>
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-1">
                        <span className="text-[10px] font-black text-gray-900 uppercase">Running Total</span>
                        <span className="text-2xl font-black text-[#E53935]">
-                         ₹{(activeTotal > 0 ? activeTotal : (selectedTable?.currentBill || 0)).toFixed(0)}
+                         ₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}
                        </span>
                     </div>
                  </div>
@@ -1272,8 +1282,8 @@ const CashierDashboard = ({ onLogout }) => {
 
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
               <div>
-                <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Settle Table {selectedTable?.id}</p>
-                <p className="text-2xl font-black text-gray-900 mt-1">₹{(activeTotal > 0 ? activeTotal : (selectedTable?.currentBill || 0)).toFixed(0)}</p>
+                <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
+                <p className="text-2xl font-black text-gray-900 mt-1">₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
               </div>
               <button
                 onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
@@ -1331,7 +1341,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
                  <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
                  <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{(activeTotal > 0 ? activeTotal : (selectedTable?.currentBill || 0)).toFixed(0)}</p>
+                 <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
                  <div className="space-y-3">
                     <div className="flex justify-between border-b border-gray-200 pb-1">
                        <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>

@@ -212,7 +212,7 @@ export default function CaptainApp({ onLogout }) {
     if (outlet === 'bar') {
       return activeMenuItems.filter(item => item.menuType === (activeBarMenu === 'food' ? 'FOOD' : 'LIQUOR'));
     }
-    return activeMenuItems;
+    return activeMenuItems.filter(item => item.menuType === 'FOOD');
   }, [outlet, activeMenuItems, activeBarMenu]);
 
   const categories = useMemo(() => {
@@ -573,7 +573,7 @@ export default function CaptainApp({ onLogout }) {
 
   const requestFinalBill = () => {
     // Re-fetch from live tables in case state is stale
-    const liveTable = tables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+    const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
     const orderId = liveTable?.activeOrder?.id;
 
     // 1. Update UI immediately

@@ -306,7 +306,7 @@ export function Tables({ onOpen }) {
            bgClass = "bg-[#FFF3E0] text-[#8D4E00]";
         }
 
-        const items = t.kotHistory ? t.kotHistory.flatMap(k => k.items || []) : [];
+        const items = (t.kotHistory && t.kotHistory.length > 0) ? t.kotHistory.flatMap(k => k.items || []) : (t.items || []);
         const itemsCount = items.reduce((sum, i) => sum + i.q, 0);
         const captainName = CAPTAINS.find(c => c.id === t.captainId)?.name || t.captainId || 'Staff';
 
@@ -385,7 +385,7 @@ export function Tables({ onOpen }) {
          return null;
       }
       
-      const pItems = pTable.kotHistory ? pTable.kotHistory.flatMap(k => k.items || []) : [];
+      const pItems = (pTable.kotHistory && pTable.kotHistory.length > 0) ? pTable.kotHistory.flatMap(k => k.items || []) : (pTable.items || []);
       const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
       const pCaptainName = CAPTAINS.find(c => c.id === pTable.captainId)?.name || pTable.captainId || 'Staff';
       
