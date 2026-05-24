@@ -468,28 +468,81 @@ export function MenuPage({ onAddDish }) {
     () => menuItems.filter((x) => menuItemMatchesSearch(x, filter)),
     [filter, menuItems]
   );
-  
+
   const [editingItem, setEditingItem] = useState(null);
   const [addingItem, setAddingItem] = useState(null);
   const [deletingItem, setDeletingItem] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteWorking, setDeleteWorking] = useState(false);
 
   const handleEdit = (item) => setEditingItem({ originalName: item.n, ...item });
   const handleDeleteClick = (item) => setDeletingItem(item);
-  
-  const confirmDelete = () => {
-    const newMenu = allMenuItems.filter(i => i.n !== deletingItem.n);
-    updateMenu(newMenu);
-    setDeletingItem(null);
+
+  // ── Cloudinary upload via backend proxy ──────────────────────────────────
+  const uploadImageToCloudinary = async (base64DataUri) => {
+    const res = await fetch(`${API_BASE}/api/menu/upload-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64: base64DataUri }),
+    });
+    if (!res.ok) throw new Error('Image upload failed');
+    const data = await res.json();
+    return data.url;
   };
 
-  const handleSaveEdit = () => {
-    const newMenu = allMenuItems.map(i => 
-      i.n === editingItem.originalName 
-        ? { ...i, n: editingItem.n, c: editingItem.c, p: Number(editingItem.p), t: editingItem.t, img: editingItem.img } 
-        : i
-    );
-    updateMenu(newMenu);
-    setEditingItem(null);
+  // ── confirmDelete — async, soft-delete via backend ───────────────────────
+  const confirmDelete = async () => {
+    if (!deletingItem || deleteWorking) return;
+    setDeleteWorking(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/items/${deletingItem.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        refreshMenu();
+        setDeletingItem(null);
+      } else {
+        alert('Delete failed');
+      }
+    } catch {
+      alert('Delete failed');
+    }
+    setDeleteWorking(false);
+  };
+
+  // ── handleSaveEdit — async, Cloudinary upload then PATCH ─────────────────
+  const handleSaveEdit = async () => {
+    if (!editingItem.n) return;
+    setSaving(true);
+    try {
+      let imageUrl = undefined;
+      if (editingItem.img && editingItem.img.startsWith('data:')) {
+        imageUrl = await uploadImageToCloudinary(editingItem.img);
+      }
+
+      const body = {
+        name: editingItem.n,
+        isVeg: editingItem.t === 'veg',
+        price: Number(editingItem.p),
+        ...(imageUrl !== undefined ? { imageUrl } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/api/menu/items/${editingItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        refreshMenu();
+        setEditingItem(null);
+      } else {
+        alert('Failed to save changes');
+      }
+    } catch (e) {
+      alert(e.message || 'Failed to save changes');
+    }
+    setSaving(false);
   };
 
   const handleImageUpload = (e) => {
@@ -515,7 +568,7 @@ export function MenuPage({ onAddDish }) {
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        
+
         const base64String = canvas.toDataURL('image/jpeg', 0.7);
         if (editingItem) setEditingItem(prev => ({ ...prev, img: base64String }));
         if (addingItem) setAddingItem(prev => ({ ...prev, img: base64String }));
@@ -525,15 +578,39 @@ export function MenuPage({ onAddDish }) {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveAdd = () => {
+  // ── handleSaveAdd — async, Cloudinary upload then POST ───────────────────
+  const handleSaveAdd = async () => {
     if (!addingItem.n || !addingItem.p) return;
-    if (allMenuItems.some(i => i.n.toLowerCase() === addingItem.n.toLowerCase())) {
-       alert("An item with this name already exists.");
-       return;
+    setSaving(true);
+    try {
+      let imageUrl = null;
+      if (addingItem.img && addingItem.img.startsWith('data:')) {
+        imageUrl = await uploadImageToCloudinary(addingItem.img);
+      }
+
+      const res = await fetch(`${API_BASE}/api/menu/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: addingItem.n,
+          category: addingItem.c,
+          isVeg: addingItem.t === 'veg',
+          price: Number(addingItem.p),
+          menuType: 'FOOD',
+          ...(imageUrl ? { imageUrl } : {}),
+        }),
+      });
+
+      if (res.ok) {
+        refreshMenu();
+        setAddingItem(null);
+      } else {
+        alert('Failed to add item');
+      }
+    } catch (e) {
+      alert(e.message || 'Failed to add item');
     }
-    const newMenu = [{ n: addingItem.n, c: addingItem.c, p: Number(addingItem.p), t: addingItem.t, img: addingItem.img }, ...allMenuItems];
-    updateMenu(newMenu);
-    setAddingItem(null);
+    setSaving(false);
   };
 
   return <div className={card + " p-4 font-sans"}>
@@ -695,7 +772,7 @@ export function MenuPage({ onAddDish }) {
           </div>
           <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
             <button onClick={() => setEditingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-            <button onClick={handleSaveEdit} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 rounded-lg shadow-md">Save Changes</button>
+            <button onClick={handleSaveEdit} disabled={saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Saving…' : 'Save Changes'}</button>
           </div>
         </div>
       </div>
@@ -756,7 +833,7 @@ export function MenuPage({ onAddDish }) {
           </div>
           <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
             <button onClick={() => setAddingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-            <button onClick={handleSaveAdd} disabled={!addingItem.n || !addingItem.p} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 disabled:hover:bg-[#E53935] rounded-lg shadow-md">Add Item</button>
+            <button onClick={handleSaveAdd} disabled={!addingItem.n || !addingItem.p || saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Saving…' : 'Add Item'}</button>
           </div>
         </div>
       </div>
@@ -770,12 +847,12 @@ export function MenuPage({ onAddDish }) {
             <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2">
               <AlertCircle size={32} />
             </div>
-            <h3 className="font-black text-xl text-gray-900 tracking-tight">Delete Item?</h3>
-            <p className="text-sm text-gray-500 font-medium">Are you sure you want to permanently remove <span className="font-bold text-gray-900">{deletingItem.n}</span> from the menu? This action cannot be undone.</p>
+            <h3 className="font-black text-xl text-gray-900 tracking-tight">Remove Item?</h3>
+            <p className="text-sm text-gray-500 font-medium"><span className="font-bold text-gray-900">{deletingItem.n}</span> will be hidden from all menus.</p>
           </div>
           <div className="p-4 border-t border-gray-100 flex justify-center gap-3 bg-gray-50/50">
             <button onClick={() => setDeletingItem(null)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
-            <button onClick={confirmDelete} className="flex-1 py-2.5 text-sm font-black text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md transition-colors">Yes, Delete</button>
+            <button onClick={confirmDelete} disabled={deleteWorking} className="flex-1 py-2.5 text-sm font-black text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl shadow-md transition-colors">{deleteWorking ? 'Removing…' : 'Yes, Delete'}</button>
           </div>
         </div>
       </div>
