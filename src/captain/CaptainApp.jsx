@@ -78,6 +78,8 @@ function EmergencyOverlay({ call, currentCaptain, onAccept }) {
   };
 
   const displayTableId = String(call?.tableId || 'UNKNOWN').toUpperCase().replace(/TABLE[- ]?/, '');
+  const sourceLabel = call?.source === 'bar' ? 'Bar' : call?.source === 'restaurant' ? 'Restaurant' : '';
+  const displayLabelUpper = sourceLabel ? `${sourceLabel.toUpperCase()} TABLE ${displayTableId}` : `TABLE ${displayTableId}`;
 
   if (timeLeft <= 0) {
     // Reduced Warning Mode
@@ -87,7 +89,7 @@ function EmergencyOverlay({ call, currentCaptain, onAccept }) {
           <Bell size={20} />
         </div>
         <div>
-          <h3 className="font-black text-sm uppercase tracking-widest leading-none mb-1">TABLE {displayTableId}</h3>
+          <h3 className="font-black text-sm uppercase tracking-widest leading-none mb-1">{displayLabelUpper}</h3>
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest">Needs assistance</p>
         </div>
         <button 
@@ -114,7 +116,7 @@ function EmergencyOverlay({ call, currentCaptain, onAccept }) {
         </h1>
         <div className="bg-black/30 backdrop-blur-md px-4 py-3 sm:px-8 sm:py-4 rounded-2xl sm:rounded-3xl mb-6 sm:mb-8 border border-white/20 shadow-xl w-full max-w-3xl">
           <p className="text-lg sm:text-5xl font-black uppercase text-white drop-shadow-lg">
-            TABLE {displayTableId} NEEDS ASSISTANCE
+            {displayLabelUpper} NEEDS ASSISTANCE
           </p>
         </div>
         
@@ -155,6 +157,15 @@ export default function CaptainApp({ onLogout }) {
   const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { activeCalls, clearCall } = useWaiterCalls();
+
+  const totalActiveTablesCount = useMemo(() => {
+    if (!currentCaptain?.id) return 0;
+    const restActive = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+    const barActive = barTables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+    return restActive + barActive;
+  }, [tables, barTables, currentCaptain?.id]);
+
+  const hasReachedActiveLimit = totalActiveTablesCount >= 4;
 
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem('active_captain');
@@ -410,10 +421,9 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
     
-    // Max 4 tables limit check when trying to open a FREE table
+    // Max 4 tables limit check when trying to open a FREE table (combined count)
     if ((table.status === TABLE_STATUS.FREE || !table.captainId) && currentCaptain) {
-      const myActiveTables = activeTables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
-      if (myActiveTables >= 4) {
+      if (hasReachedActiveLimit) {
         addNotification("You can only manage up to 4 tables at a time. Please close a table first.", "error");
         return;
       }
@@ -683,15 +693,14 @@ export default function CaptainApp({ onLogout }) {
     <div className="flex flex-col h-[100dvh] bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
       
       {/* WAITER CALL EMERGENCY OVERLAY */}
-      {activeCalls.length > 0 && activeCalls.some(c => c.status === 'pending') && (
+      {activeCalls.length > 0 && activeCalls.some(c => c.status === 'pending') && !hasReachedActiveLimit && (
         <EmergencyOverlay 
           call={activeCalls.find(c => c.status === 'pending')} 
           currentCaptain={currentCaptain}
           onAccept={(call) => {
             if (currentCaptain) {
-              // 1. Limit check: max 4 tables per captain
-              const myActiveTables = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
-              if (myActiveTables >= 4) {
+              // 1. Limit check: max 4 tables per captain (combined)
+              if (hasReachedActiveLimit) {
                 addNotification("You can only manage up to 4 tables at a time. Let others handle this.", "error");
                 return;
               }

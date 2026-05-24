@@ -81,10 +81,10 @@ export function useWaiterCalls() {
 
     const handleMessage = (data) => {
       if (data.type === 'customer:call_waiter') {
-        const { tableId, callId, timestamp } = data.payload;
+        const { tableId, callId, timestamp, source } = data.payload;
         setActiveCalls(prev => {
           if (prev.find(c => c.callId === callId)) return prev;
-          return [...prev, { tableId, callId, timestamp, localTimestamp: Date.now(), status: 'pending' }];
+          return [...prev, { tableId, callId, timestamp, localTimestamp: Date.now(), status: 'pending', source }];
         });
       } else if (data.type === 'captain:accept_waiter_call') {
         const { callId, captainId, captainName } = data.payload;
