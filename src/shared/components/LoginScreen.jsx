@@ -1,10 +1,37 @@
-import React from 'react';
-import { ArrowLeft, ChevronDown, CheckCircle2, ShieldCheck, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
 const LoginScreen = ({ role, onLogin, onBack }) => {
   const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
   const isCashier = role === 'cashier';
   const isCaptain = role === 'captain';
+
+  // ── Credential form state (admin / cashier only) ──────────────────────────
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleLogin = () => {
+    // 1. Presence check
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and password.');
+      return;
+    }
+
+    // 2. Validate against env vars (VITE_ prefix — Vite reads import.meta.env)
+    const validEmail    = import.meta.env.VITE_ADMIN_EMAIL;
+    const validPassword = import.meta.env.VITE_ADMIN_PASSWORD;
+
+    if (email.trim() !== validEmail || password !== validPassword) {
+      setError('Invalid email or password.');
+      return;
+    }
+
+    // 3. Correct — proceed
+    setError('');
+    onLogin();
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA] p-6 font-sans relative overflow-hidden">
@@ -34,7 +61,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
 
         <div className="space-y-6">
 
-
+          {/* ── CAPTAIN: profile grid (unchanged) ── */}
           {isCaptain ? (
             <div className="space-y-6 py-4">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Your Profile</label>
@@ -57,16 +84,38 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
                 <input className="w-full h-16 rounded-[24px] border-2 border-gray-50 bg-gray-50 px-5 text-center text-2xl tracking-[1em] font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" type="password" placeholder="••••" maxLength={4} />
               </div>
             </div>
+
           ) : (
+            /* ── ADMIN / CASHIER: controlled credential form ── */
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Username</label>
-                <input className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" defaultValue="vgrandlounge@gmail.com" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                  placeholder="Email address"
+                  autoComplete="username"
+                  className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Access Password</label>
-                <input className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all" defaultValue="Vgrand@1234" type="password" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  placeholder="Password"
+                  autoComplete="current-password"
+                  className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                />
               </div>
+
+              {/* Inline error message */}
+              {error && (
+                <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>
+              )}
             </div>
           )}
 
@@ -78,7 +127,11 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
             <button className="text-[10px] font-black uppercase tracking-widest text-[#E53935] hover:underline">Forgot Access?</button>
           </div>
 
-          <button onClick={onLogin} className="w-full h-16 rounded-[24px] bg-[#E53935] px-6 text-sm font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-[#B71C1C] shadow-2xl shadow-red-100 hover:scale-[1.02] active:scale-[0.98] mt-4 flex items-center justify-center gap-3">
+          {/* Submit button — calls handleLogin for admin/cashier, onLogin directly for captain */}
+          <button
+            onClick={isCaptain ? onLogin : handleLogin}
+            className="w-full h-16 rounded-[24px] bg-[#E53935] px-6 text-sm font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-[#B71C1C] shadow-2xl shadow-red-100 hover:scale-[1.02] active:scale-[0.98] mt-4 flex items-center justify-center gap-3"
+          >
             <ShieldCheck size={20} /> Authenticate Session
           </button>
         </div>
