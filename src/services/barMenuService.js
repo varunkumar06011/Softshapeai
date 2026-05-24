@@ -13,7 +13,7 @@ export function mapBarMenuItems(items) {
     t: item.isVeg ? "veg" : "non",
     menuType: item.menuType || "FOOD",
     img: item.imageUrl || DEFAULT_IMG,
-    isAvailable: item.isAvailable ?? true,
+    isAvailable: item.isAvailable !== false,
     variants: item.variants || [],
   }));
 }
