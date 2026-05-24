@@ -242,6 +242,10 @@ export default function CaptainApp({ onLogout }) {
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [removedItem, setRemovedItem] = useState(null);
   const removeTimeoutRef = useRef(null);
+  // Tracks the confirmed DB order ID for the current table session.
+  // Using a ref (not state) so sendIncrementalKOT always reads the latest
+  // value without needing to be in its dependency array.
+  const activeOrderIdRef = useRef(null);
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
@@ -579,7 +583,23 @@ export default function CaptainApp({ onLogout }) {
     }
   };
 
-  const sendIncrementalKOT = () => {
+  // Reset the active-order ref when the captain navigates away from a table
+  // so the next table session starts fresh.
+  useEffect(() => {
+    if (!activeTableId) {
+      activeOrderIdRef.current = null;
+    } else {
+      // Pre-seed ref from synced table state so second KOT on a reloaded
+      // session doesn't create a duplicate order.
+      const liveOrder = activeTables.find(t => t.backendId === activeTableId || t.id === activeTableId)?.activeOrder;
+      if (liveOrder?.id && !activeOrderIdRef.current) {
+        activeOrderIdRef.current = liveOrder.id;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTableId]);
+
+  const sendIncrementalKOT = async () => {
     if (currentSessionItems.length === 0) return;
     if (!currentCaptain) { setIsLoginView(true); return; }
     if (!activeTable?.backendId) {
@@ -607,7 +627,10 @@ export default function CaptainApp({ onLogout }) {
       notes: i.notes || null,
     }));
 
-    // 1. Update UI immediately — don't wait for API
+    // Snapshot items before clearing — needed for print below
+    const itemsForPrint = [...currentSessionItems];
+
+    // 1. Optimistic UI update — instant, no waiting
     setActiveTables(prev => prev.map(t => {
       if (t.backendId === activeTable.backendId) {
         return {
@@ -624,27 +647,33 @@ export default function CaptainApp({ onLogout }) {
     setCurrentSessionItems([]);
     addNotification(`KOT #${newKOT.id} Sent`, 'success');
 
-    // 2b. Print KOT in background
+    // 2. Print KOT in background (non-blocking)
     printKOTQZ({
       tableId: activeTable?.id,
       kotId: newKOT.id,
-      items: currentSessionItems,
+      items: itemsForPrint,
       captainId: currentCaptain?.id,
     }).catch(err => console.warn('[KOT Print] failed:', err.message));
 
-    // 2. Fire API in background — no await, no blocking
-    if (activeTable.activeOrder?.id) {
-      updateOrderItems(activeTable.activeOrder.id, apiItems).catch(err =>
-        console.warn('[BG] updateOrderItems failed:', err.message)
-      );
-    } else {
-      createOrder({
-        tableId: activeTable.backendId,
-        restaurantId: activeRestaurantId,
-        items: apiItems,
-      }).catch(err =>
-        console.warn('[BG] createOrder failed:', err.message)
-      );
+    // 3. Persist to DB — AWAITED so we know it succeeded.
+    //    Use the ref to track the real DB order ID across KOTs.
+    try {
+      if (activeOrderIdRef.current) {
+        // Subsequent KOT on same table — append items to existing order
+        await updateOrderItems(activeOrderIdRef.current, apiItems);
+      } else {
+        // First KOT — create a brand-new order row
+        const savedOrder = await createOrder({
+          tableId: activeTable.backendId,
+          restaurantId: activeRestaurantId,
+          items: apiItems,
+        });
+        // Store the real DB id so next KOT uses updateOrderItems, not createOrder
+        if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
+      }
+    } catch (err) {
+      console.error('[KOT] DB write failed:', err.message);
+      addNotification('Order save failed — retry or check connection', 'error');
     }
   };
 

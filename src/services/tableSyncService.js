@@ -117,6 +117,14 @@ let socketListenersAttached = false;
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
 
+// Re-fetch callback registered by useTableSync so the reconnect handler
+// can call it without a direct import cycle.
+let _reconnectRefetch = null;
+
+export function registerReconnectRefetch(fn) {
+  _reconnectRefetch = fn;
+}
+
 function attachSocketLogging(socket) {
   if (socketListenersAttached) return;
   socketListenersAttached = true;
@@ -124,6 +132,14 @@ function attachSocketLogging(socket) {
   socket.on("connect", () => {
     console.log("[Socket] Connected:", socket.id);
     socket.emit("join", RESTAURANT_ID);
+
+    // Re-fetch on every reconnect to recover orders missed during the gap.
+    if (_reconnectRefetch) {
+      console.log("[Socket] Reconnected — refetching tables to recover missed events");
+      _reconnectRefetch().catch((err) =>
+        console.warn("[Socket] Reconnect refetch failed:", err.message)
+      );
+    }
   });
 
   socket.on("disconnect", (reason) => {
@@ -241,6 +257,9 @@ export function useTableSync() {
     };
 
     loadTables();
+    // Register so the socket reconnect handler can trigger a refetch
+    // to recover any orders missed while the socket was down.
+    registerReconnectRefetch(loadTables);
 
     const releaseSocket = acquireSocket({
       onUpdated: (payload) => {
