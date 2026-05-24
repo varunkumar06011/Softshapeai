@@ -117,8 +117,16 @@ export default function BarMenu({ tableId }) {
         const flatTables = flattenSections(tablesRes);
         
         if (active) {
-          setCategoriesData(posViewData);
-          setFlatItems(itemsData);
+          // Filter out unavailable items from both data sources
+          const filteredPosView = (posViewData || []).map(cat => ({
+            ...cat,
+            items: (cat.items || []).filter(item => item.isAvailable !== false)
+          })).filter(cat => cat.items.length > 0);
+          
+          const filteredItems = (itemsData || []).filter(item => item.isAvailable !== false);
+          
+          setCategoriesData(filteredPosView);
+          setFlatItems(filteredItems);
           
           // Resolve backend table ID
           const matchNumber = String(tableId).match(/(\d+)/)?.[1] || tableId;

@@ -382,7 +382,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeCategories = useMemo(() => {
     if (outlet === 'restaurant') return categories;
-    const items = barMenuItems.filter(i => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR'));
+    const items = barMenuItems.filter(i => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR') && i.isAvailable !== false);
     const cats = items.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
   }, [outlet, categories, barMenuItems, barMenuTab]);
@@ -393,7 +393,7 @@ const CashierDashboard = ({ onLogout }) => {
       itemsToFilter = menuItems.filter(item => item.menuType === 'FOOD');
     } else {
       itemsToFilter = barMenuItems.filter(
-        (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR')
+        (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR') && i.isAvailable !== false
       );
     }
     

@@ -225,7 +225,7 @@ export default function CaptainApp({ onLogout }) {
 
   const outletFilteredMenuItems = useMemo(() => {
     if (outlet === 'bar') {
-      return activeMenuItems.filter(item => item.menuType === (activeBarMenu === 'food' ? 'FOOD' : 'LIQUOR'));
+      return activeMenuItems.filter(item => item.menuType === (activeBarMenu === 'food' ? 'FOOD' : 'LIQUOR') && item.isAvailable !== false);
     }
     return activeMenuItems.filter(item => item.menuType === 'FOOD');
   }, [outlet, activeMenuItems, activeBarMenu]);
