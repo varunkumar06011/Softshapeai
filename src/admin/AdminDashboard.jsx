@@ -28,6 +28,7 @@ import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
 import { useSocket } from '../hooks/useSocket';
 import { RESTAURANT_ID } from '../services/tableApi';
+import { BAR_ID } from '../services/barApiConfig';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
@@ -75,7 +76,7 @@ const AdminDashboard = ({ onLogout }) => {
   ]);
   const { setTables } = useTableSync();
   const { outlet } = useOutlet();
-  const socket = useSocket(RESTAURANT_ID);
+  const socket = useSocket(outlet === 'bar' ? BAR_ID : RESTAURANT_ID);
 
   useEffect(() => {
     const pushLog = (text, type = "info") => {
@@ -116,7 +117,14 @@ const AdminDashboard = ({ onLogout }) => {
 
     const loadStats = async () => {
       try {
-        const transactions = await fetchTransactions(RESTAURANT_ID, 500);
+        const [restaurantTxns, barTxns] = await Promise.allSettled([
+          fetchTransactions(RESTAURANT_ID, 500),
+          fetchTransactions(BAR_ID, 500),
+        ]);
+        const transactions = [
+          ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
+          ...(barTxns.status === 'fulfilled' ? barTxns.value : []),
+        ];
         if (cancelled) return;
 
         const todayStart = new Date();
@@ -148,7 +156,7 @@ const AdminDashboard = ({ onLogout }) => {
       clearInterval(interval);
       if (socket) socket.off('order:paid', onOrderPaidRefresh);
     };
-  }, [socket]);
+  }, [socket, outlet]);
 
   const title = navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
+let _isPersisting = false;
+
 const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
 const POLL_INTERVAL_MS = 5000;
 
@@ -161,6 +163,7 @@ function acquireSocket(handlers) {
 }
 
 async function persistStatusChanges(prevTables, nextTables) {
+  _isPersisting = true;
   const tasks = [];
 
   for (const table of nextTables) {
@@ -195,7 +198,9 @@ async function persistStatusChanges(prevTables, nextTables) {
     }
   }
 
-  return Promise.all(tasks);
+  return Promise.all(tasks).finally(() => {
+    _isPersisting = false;
+  });
 }
 
 export function useTableSync() {
@@ -275,6 +280,7 @@ export function useTableSync() {
     });
 
     const pollInterval = setInterval(async () => {
+      if (_isPersisting) return;
       if (cancelled) return;
       try {
         const apiTables = flattenSections(await fetchTables(RESTAURANT_ID));

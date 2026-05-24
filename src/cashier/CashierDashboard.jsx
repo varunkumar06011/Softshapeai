@@ -37,6 +37,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
+  const [isPrintingBill, setIsPrintingBill] = useState(false);
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -264,15 +265,49 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handlePayment = async (method) => {
     const txnAmount = activeTotal > 0 ? activeTotal : fallbackTotal;
-    if (txnAmount === 0) return;
-
-    let itemsList = cart;
-    if (selectedTable?.kotHistory && selectedTable.kotHistory.length > 0) {
-      itemsList = selectedTable.kotHistory.flatMap(k => k.items || []);
-    } else if (selectedTable?.items && selectedTable.items.length > 0) {
-      itemsList = selectedTable.items;
+    if (txnAmount === 0) {
+      addNotification(
+        'Cannot Settle',
+        'Bill amount is ₹0. Ensure KOT was sent before settling.',
+        'error'
+      );
+      setShowMethodPicker(false);
+      return;
     }
 
+    // Capture all needed state before any async/state-clearing
+    const tableSnap = selectedTable;
+    const subtotalSnap = activeSubtotal;
+    const taxesSnap = activeTaxes;
+
+    let itemsList = cart;
+    if (tableSnap?.kotHistory && tableSnap.kotHistory.length > 0) {
+      itemsList = tableSnap.kotHistory.flatMap(k => k.items || []);
+    } else if (tableSnap?.items && tableSnap.items.length > 0) {
+      itemsList = tableSnap.items;
+    }
+
+    // Step 1: Show loading on button
+    setIsPrintingBill(true);
+
+    // Step 2: Print bill (mock resolves instantly)
+    try {
+      await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
+    } catch (err) {
+      console.warn('[Settlement] Print failed (non-blocking):', err.message);
+    }
+
+    setIsPrintingBill(false);
+
+    // Step 3: Close modals + clear UI state
+    setShowMethodPicker(false);
+    setSelectedMethod(null);
+    setSelectedTable(null);
+    setShowPaymentModal(false);
+    setSelectedPaymentMethod('UPI');
+    setCart([]);
+
+    // Step 4: Optimistic local state update
     const newTransaction = {
       id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
       amount: txnAmount,
@@ -281,25 +316,11 @@ const CashierDashboard = ({ onLogout }) => {
       timestamp: Date.now(),
       items: itemsList.length,
       itemsList: itemsList,
-      captainId: selectedTable?.captainId || 'CASHIER',
+      captainId: tableSnap?.captainId || 'CASHIER',
       method: method,
-      tableNumber: selectedTable?.id || null,
+      tableNumber: tableSnap?.id || null,
     };
 
-    // Capture refs before clearing state
-    const tableSnap = selectedTable;
-
-    // 1. Close modals immediately
-    setShowMethodPicker(false);
-    setSelectedTable(null);
-    setSelectedMethod(null);
-    setShowPaymentModal(false);
-    setSelectedPaymentMethod('UPI');
-
-    // 2. Print bill
-    await printBill(tableSnap, txnAmount, activeSubtotal, activeTaxes, method);
-
-    // 3. Update local state instantly
     setPastTransactions(prev => {
       const updated = [newTransaction, ...prev];
       localStorage.setItem(TX_CACHE_KEY, JSON.stringify(updated));
@@ -308,7 +329,8 @@ const CashierDashboard = ({ onLogout }) => {
     });
 
     if (tableSnap?.id) {
-      setBillingAlerts(prev => prev.filter(a => a.tableId !== tableSnap.id));
+      // Fix billing alert cleanup — use tableBackendId, not tableId
+      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableSnap.backendId));
       setActiveTables(prev => prev.map(t =>
         t.id === tableSnap.id
           ? { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
@@ -316,10 +338,9 @@ const CashierDashboard = ({ onLogout }) => {
       ));
     }
 
-    setCart([]);
     addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
 
-    // 4. Fire API calls in background — no await, no blocking
+    // Step 5: Fire background API calls — no await, non-blocking
     if (tableSnap?.activeOrder?.id) {
       markOrderPaid(tableSnap.activeOrder.id)
         .catch(err => console.warn('[BG] markOrderPaid failed:', err.message));
@@ -335,6 +356,28 @@ const CashierDashboard = ({ onLogout }) => {
       itemCount: itemsList.length,
       items: itemsList,
     }).catch(err => console.warn('[BG] saveTransaction failed:', err.message));
+
+    // Step 6: Reset table session in DB (clear kotHistory, currentBill, status → Free)
+    const resetSessionPayload = {
+      status: 'Free',
+      kotHistory: [],
+      currentBill: 0,
+      captainId: null,
+      guests: 0,
+    };
+    if (tableSnap?.backendId) {
+      if (outlet === 'bar') {
+        import('../services/barTableApi').then(({ updateBarTableSession }) => {
+          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[BG] resetBarSession failed:', err.message));
+        });
+      } else {
+        import('../services/tableApi').then(({ updateTableSession }) => {
+          updateTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[BG] resetTableSession failed:', err.message));
+        });
+      }
+    }
   };
 
   const activeCategories = useMemo(() => {
@@ -1318,15 +1361,19 @@ const CashierDashboard = ({ onLogout }) => {
               </div>
 
               <button
-                onClick={() => selectedMethod && handlePayment(selectedMethod)}
-                disabled={!selectedMethod}
+                onClick={() => selectedMethod && !isPrintingBill && handlePayment(selectedMethod)}
+                disabled={!selectedMethod || isPrintingBill}
                 className={`w-full py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                  selectedMethod
+                  selectedMethod && !isPrintingBill
                     ? 'bg-[#E53935] text-white shadow-lg shadow-red-100 hover:bg-[#c62828]'
                     : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                 }`}
               >
-                {selectedMethod ? `Confirm ${selectedMethod} Payment` : 'Select a Method'}
+                {isPrintingBill
+                  ? 'Printing Bill...'
+                  : selectedMethod
+                    ? `Confirm ${selectedMethod} Payment`
+                    : 'Select a Method'}
               </button>
             </div>
 

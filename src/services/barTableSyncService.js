@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 
+let _persistingCount = 0;
+let _lastLocalUpdate = 0;
 const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v1";
 const POLL_INTERVAL_MS = 5000;
 
@@ -62,20 +64,29 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
 
+  let mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
+
+  if (existing && _persistingCount > 0) {
+    mergedKotHistory = existing.kotHistory || mergedKotHistory;
+  } else if (existing && existing.kotHistory?.length > mergedKotHistory.length && dbStatus !== "AVAILABLE") {
+    mergedKotHistory = existing.kotHistory;
+  }
+
   const base = {
     backendId: row.id,
     id: parseDisplayId(row.number),
     number: row.number,
     dbStatus,
-    status: keepWorkflowStatus && existing ? existing.status : persistedStatus,
+    status: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.status : persistedStatus,
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
-    guests: row.guests ?? 0,
-    time: row.sessionStartedAt ?? null,
-    captainId: row.captainId ?? null,
-    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
-    currentBill: row.currentBill ?? 0,
+    guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
+    time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ?? null),
+    captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
+    kotHistory: mergedKotHistory,
+    items: row.orders?.[0]?.items || row.activeOrder?.items || [],
+    currentBill: _persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0),
     activeOrder: row.orders?.[0] || row.activeOrder || null,
   };
 
@@ -195,7 +206,13 @@ async function persistStatusChanges(prevTables, nextTables) {
     }
   }
 
-  return Promise.all(tasks);
+  if (tasks.length > 0) {
+    _persistingCount++;
+    return Promise.all(tasks).finally(() => {
+      _persistingCount = Math.max(0, _persistingCount - 1);
+    });
+  }
+  return [];
 }
 
 export function useBarTableSync() {
@@ -275,10 +292,14 @@ export function useBarTableSync() {
     });
 
     const pollInterval = setInterval(async () => {
+      if (_persistingCount > 0) return;
       if (cancelled) return;
+      const fetchStartTime = Date.now();
       try {
         const apiTables = flattenSections(await fetchBarTables());
         if (cancelled || apiTables.length === 0) return;
+
+        if (_persistingCount > 0 || _lastLocalUpdate > fetchStartTime) return;
 
         setTablesState((current) => {
           const merged = mergeTablesFromApi(apiTables, current);
@@ -298,36 +319,38 @@ export function useBarTableSync() {
   }, []);
 
   const setTables = useCallback((updater, { skipPersist = false } = {}) => {
-    setTablesState((prev) => {
-      const current = prev ?? [];
-      const next = typeof updater === "function" ? updater(current) : updater;
+    const current = tablesRef.current ?? [];
+    const next = typeof updater === "function" ? updater(current) : updater;
 
-      writeCache(next);
-      tablesRef.current = next;
+    writeCache(next);
+    tablesRef.current = next;
+    setTablesState(next);
+    
+    _lastLocalUpdate = Date.now();
 
-      if (!skipPersist) {
-        persistStatusChanges(current, next).then((results) => {
-          if (!results.length) return;
-          setTablesState((latest) => {
-            let updated = latest;
-            for (const result of results) {
-              if (!result.updated) continue;
-              const idx = findTableIndex(updated, result.updated.id);
-              if (idx === -1) continue;
-              const copy = [...updated];
-              copy[idx] = mapBackendTable(result.updated, copy[idx], {
-                keepWorkflowStatus: true,
-              });
-              updated = copy;
-            }
-            writeCache(updated);
-            return updated;
-          });
+    if (!skipPersist) {
+      persistStatusChanges(current, next).then((results) => {
+        if (!results || !results.length) return;
+        
+        _lastLocalUpdate = Date.now();
+        setTablesState((latest) => {
+          let updated = latest;
+          for (const result of results) {
+            if (!result.updated) continue;
+            const idx = findTableIndex(updated, result.updated.id);
+            if (idx === -1) continue;
+            const copy = [...updated];
+            copy[idx] = mapBackendTable(result.updated, copy[idx], {
+              keepWorkflowStatus: true,
+            });
+            updated = copy;
+          }
+          writeCache(updated);
+          tablesRef.current = updated;
+          return updated;
         });
-      }
-
-      return next;
-    });
+      });
+    }
   }, []);
 
   return {

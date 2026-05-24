@@ -191,17 +191,19 @@ export default function CaptainApp({ onLogout }) {
   const [activeVariantItem, setActiveVariantItem] = useState(null);
   const [currentSessionItems, setCurrentSessionItems] = useState([]); 
 
-  const loadCaptainRevenue = (captainId) => {
+  const loadCaptainRevenue = useCallback((captainId) => {
     if (!captainId) return;
     const todayDateISO = new Date().toISOString().slice(0, 10);
-    fetchTransactions(RESTAURANT_ID, 500, todayDateISO)
-      .then(txns => {
-        const filtered = txns.filter(t => t.captainId === captainId);
-        const sum = filtered.reduce((acc, t) => acc + (t.amount || 0), 0);
-        setTodayRevenue(sum);
-      })
-      .catch(() => {});
-  };
+    // Fetch from both outlets and sum — captain may serve both
+    const restaurantFetch = fetchTransactions(RESTAURANT_ID, 500, todayDateISO);
+    const barFetch = fetchTransactions(BAR_ID, 500, todayDateISO);
+    Promise.allSettled([restaurantFetch, barFetch]).then(results => {
+      const allTxns = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+      const filtered = allTxns.filter(t => t.captainId === captainId);
+      const sum = filtered.reduce((acc, t) => acc + (t.amount || 0), 0);
+      setTodayRevenue(sum);
+    });
+  }, []);
   
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
   const activeMenuItems = outlet === 'bar' ? barMenu : restaurantMenu;
@@ -233,7 +235,7 @@ export default function CaptainApp({ onLogout }) {
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
 
-  const activeTable = useMemo(() => tables.find(t => t.id === activeTableId), [tables, activeTableId]);
+  const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
   const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
   const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
@@ -307,7 +309,9 @@ export default function CaptainApp({ onLogout }) {
     const handleStorage = (e) => {
       if (e.key === 'softshape_captain_targets') refresh();
     };
-    const handleTxnUpdate = () => loadCaptainRevenue(currentCaptain.id);
+    const handleTxnUpdate = () => {
+      if (currentCaptain?.id) loadCaptainRevenue(currentCaptain.id);
+    };
     window.addEventListener('storage', handleStorage);
     window.addEventListener('softshape_transactions_updated', handleTxnUpdate);
     const poll = setInterval(refresh, 15000);
@@ -316,7 +320,7 @@ export default function CaptainApp({ onLogout }) {
       window.removeEventListener('softshape_transactions_updated', handleTxnUpdate);
       clearInterval(poll);
     };
-  }, [currentCaptain]);
+  }, [currentCaptain, outlet]);
 
   useEffect(() => {
     if (tablesSyncing) {

@@ -46,7 +46,11 @@ import { calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSearch';
 import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
-import { useBarMenuSync } from '../services/barMenuSyncService';
+import { useBarMenuSync, updateBarMenuItem } from '../services/barMenuSyncService';
+import { API_BASE } from '../services/apiConfig';
+import { fetchTransactions } from '../services/orderApi';
+import { RESTAURANT_ID } from '../services/tableApi';
+import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 
 // Shared Styles
@@ -825,37 +829,139 @@ export function Orders() {
 
 export function Reports() {
   const [timeRange, setTimeRange] = useState('Today');
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadAllTransactions = async () => {
+      try {
+        const [resRes, barRes] = await Promise.allSettled([
+          fetchTransactions(RESTAURANT_ID, 500),
+          fetchTransactions(BAR_ID, 500),
+        ]);
+        const all = [
+          ...(resRes.status === 'fulfilled' ? resRes.value : []),
+          ...(barRes.status === 'fulfilled' ? barRes.value : []),
+        ];
+        setTransactions(all);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAllTransactions();
+  }, []);
   
   const data = useMemo(() => {
+    const now = new Date();
+    let filtered = [];
     if (timeRange === 'Today') {
-      return {
-        revenue: "₹48,250",
-        orders: "124",
-        aov: "₹389",
-        topItem: "Chicken Biryani",
-        trend: Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, rev: 1000 + Math.random() * 5000 })),
-        sources: [{ name: "Dine-In", value: 65 }, { name: "Zomato", value: 20 }, { name: "Swiggy", value: 15 }]
-      };
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      filtered = transactions.filter(t => new Date(t.paidAt || t.createdAt) >= todayStart);
+    } else if (timeRange === 'This Week') {
+      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+      filtered = transactions.filter(t => new Date(t.paidAt || t.createdAt) >= weekStart);
+    } else { // This Month
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      filtered = transactions.filter(t => new Date(t.paidAt || t.createdAt) >= monthStart);
     }
-    if (timeRange === 'This Week') {
-      return {
-        revenue: "₹3,47,250",
-        orders: "892",
-        aov: "₹389",
-        topItem: "Paneer Butter Masala",
-        trend: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => ({ time: d, rev: 40000 + Math.random() * 20000 })),
-        sources: [{ name: "Dine-In", value: 55 }, { name: "Zomato", value: 25 }, { name: "Swiggy", value: 20 }]
-      };
+
+    const totalRev = filtered.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const ordersCount = filtered.length;
+    const aov = ordersCount > 0 ? Math.round(totalRev / ordersCount) : 0;
+
+    // Top item extraction
+    const itemCounts = {};
+    filtered.forEach(t => {
+      (t.items || []).forEach(item => {
+        const name = item.name;
+        itemCounts[name] = (itemCounts[name] || 0) + (item.quantity || 1);
+      });
+    });
+    let topItem = "None";
+    let maxCount = 0;
+    Object.entries(itemCounts).forEach(([name, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        topItem = name;
+      }
+    });
+
+    // Trend calculation
+    let trend = [];
+    if (timeRange === 'Today') {
+      const hourly = Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, rev: 0 }));
+      filtered.forEach(t => {
+        const hour = new Date(t.paidAt || t.createdAt).getHours();
+        hourly[hour].rev += t.amount || 0;
+      });
+      trend = hourly;
+    } else if (timeRange === 'This Week') {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const daily = days.map(d => ({ time: d, rev: 0 }));
+      filtered.forEach(t => {
+        const dayIdx = new Date(t.paidAt || t.createdAt).getDay();
+        daily[dayIdx].rev += t.amount || 0;
+      });
+      const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      trend = order.map(name => {
+        const dayIdx = days.indexOf(name);
+        return daily[dayIdx];
+      });
+    } else {
+      const maxDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const daily = Array.from({ length: maxDays }).map((_, i) => ({ time: i + 1, rev: 0 }));
+      filtered.forEach(t => {
+        const date = new Date(t.paidAt || t.createdAt).getDate();
+        if (date <= maxDays) {
+          daily[date - 1].rev += t.amount || 0;
+        }
+      });
+      trend = daily;
     }
+
+    // Sources attribution
+    let dineInCount = 0;
+    let zomatoCount = 0;
+    let swiggyCount = 0;
+    filtered.forEach(t => {
+      const type = (t.type || '').toLowerCase();
+      const serviceType = (t.serviceType || '').toLowerCase();
+      if (type.includes('dine') || serviceType.includes('dine') || (!type.includes('zomato') && !type.includes('swiggy'))) {
+        dineInCount++;
+      } else if (type.includes('zomato')) {
+        zomatoCount++;
+      } else if (type.includes('swiggy')) {
+        swiggyCount++;
+      } else {
+        dineInCount++;
+      }
+    });
+    const totalSources = dineInCount + zomatoCount + swiggyCount || 1;
+    const sources = [
+      { name: "Dine-In", value: Math.round((dineInCount / totalSources) * 100) },
+      { name: "Zomato", value: Math.round((zomatoCount / totalSources) * 100) },
+      { name: "Swiggy", value: Math.round((swiggyCount / totalSources) * 100) }
+    ];
+
     return {
-      revenue: "₹14,82,500",
-      orders: "3,842",
-      aov: "₹385",
-      topItem: "Chicken Biryani",
-      trend: Array.from({ length: 30 }).map((_, i) => ({ time: i + 1, rev: 45000 + Math.random() * 15000 })),
-      sources: [{ name: "Dine-In", value: 50 }, { name: "Zomato", value: 30 }, { name: "Swiggy", value: 20 }]
+      revenue: `₹${totalRev.toLocaleString()}`,
+      orders: ordersCount.toString(),
+      aov: `₹${aov.toLocaleString()}`,
+      topItem,
+      trend,
+      sources
     };
-  }, [timeRange]);
+  }, [transactions, timeRange]);
+
+  if (loading) {
+    return (
+      <div className="flex h-96 items-center justify-center bg-white rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <RefreshCw className="animate-spin text-[#B71C1C]" size={40} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 font-sans">
@@ -884,10 +990,10 @@ export function Reports() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Total Revenue", value: data.revenue, sub: "+12.5% vs last period", icon: DollarSign, color: "text-green-600" },
-          { label: "Orders Count", value: data.orders, sub: "+8.2% vs last period", icon: Package, color: "text-blue-600" },
-          { label: "Avg Order Value", value: data.aov, sub: "-2.1% vs last period", icon: TrendingUp, color: "text-amber-600" },
-          { label: "Top Selling Item", value: data.topItem, sub: "High Margin", icon: Star, color: "text-purple-600" }
+          { label: "Total Revenue", value: data.revenue, sub: "Dynamic Sales Summary", icon: DollarSign, color: "text-green-600" },
+          { label: "Orders Count", value: data.orders, sub: "Real-time Order Volume", icon: Package, color: "text-blue-600" },
+          { label: "Avg Order Value", value: data.aov, sub: "Revenue / Total Orders", icon: TrendingUp, color: "text-amber-600" },
+          { label: "Top Selling Item", value: data.topItem, sub: "Popular item in this period", icon: Star, color: "text-purple-600" }
         ].map((stat, i) => (
           <div key={i} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group">
             <div className={`absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity ${stat.color}`}>
@@ -895,7 +1001,7 @@ export function Reports() {
             </div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-1">{stat.label}</p>
             <p className="text-2xl font-black text-gray-900">{stat.value}</p>
-            <p className={`text-[10px] font-bold mt-2 ${stat.sub.includes('+') ? 'text-green-600' : 'text-red-600'}`}>{stat.sub}</p>
+            <p className="text-[10px] font-bold mt-2 text-gray-500">{stat.sub}</p>
           </div>
         ))}
       </div>
@@ -909,7 +1015,6 @@ export function Reports() {
             </h3>
             <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">
               <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#B71C1C]" /> Gross Sales</div>
-              <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#EF9A9A]" /> Projections</div>
             </div>
           </div>
           <div className="h-[300px] w-full">
@@ -1559,6 +1664,35 @@ export function BarMenuPage() {
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [filter, setFilter] = useState('');
 
+  // Edit modal state
+  const [editItem, setEditItem] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState('veg');
+  const [editPrice, setEditPrice] = useState('');
+  const [editImg, setEditImg] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Add modal state
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addCategory, setAddCategory] = useState('');
+  const [addType, setAddType] = useState('veg');
+  const [addPrice, setAddPrice] = useState('');
+  const [addMenuType, setAddMenuType] = useState('FOOD');
+  const [addImg, setAddImg] = useState(null);
+  const [addSaving, setAddSaving] = useState(false);
+
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteWorking, setDeleteWorking] = useState(false);
+
+  // Toast
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2800);
+  };
+
   const filteredItems = useMemo(() => {
     const typeFilter = barMenuTab === 'food' ? 'FOOD' : 'LIQUOR';
     return menuItems.filter(
@@ -1568,6 +1702,89 @@ export function BarMenuPage() {
     );
   }, [menuItems, barMenuTab, filter]);
 
+  // Image resize helper (canvas → base64)
+  const compressImage = (file, cb) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX = 400;
+        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        cb(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Open edit modal
+  const openEdit = (item) => {
+    setEditItem(item);
+    setEditName(item.n);
+    setEditType(item.t || 'veg');
+    setEditPrice(item.variants.length === 1 ? String(item.variants[0].price) : '');
+    setEditImg(item.img || null);
+  };
+
+  const saveEdit = () => {
+    if (!editName.trim()) return;
+    setEditSaving(true);
+    const patch = { n: editName.trim(), t: editType };
+    if (editPrice !== '') patch.p = Number(editPrice);
+    updateBarMenuItem(editItem.id, patch, API_BASE);
+    setEditSaving(false);
+    setEditItem(null);
+    showToast('Item updated');
+  };
+
+  // Availability toggle
+  const toggleAvailability = (item) => {
+    fetch(`${API_BASE}/api/bar/menu/items/${item.id}/availability`, { method: 'PATCH' })
+      .then((r) => r.ok ? refreshMenu() : Promise.reject())
+      .catch(() => showToast('Toggle failed', 'error'));
+  };
+
+  // Delete
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteWorking(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/bar/menu/items/${deleteTarget.id}`, { method: 'DELETE' });
+      if (res.ok) { showToast('Item deleted'); refreshMenu(); }
+      else showToast('Delete failed', 'error');
+    } catch { showToast('Delete failed', 'error'); }
+    setDeleteWorking(false);
+    setDeleteTarget(null);
+  };
+
+  // Add item
+  const saveAdd = async () => {
+    if (!addName.trim() || !addPrice) return;
+    setAddSaving(true);
+    try {
+      const body = {
+        name: addName.trim(),
+        category: addCategory.trim() || 'General',
+        isVeg: addType === 'veg',
+        price: Number(addPrice),
+        menuType: addMenuType,
+        ...(addImg ? { img: addImg } : {}),
+      };
+      const res = await fetch(`${API_BASE}/api/bar/menu/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) { showToast('Item added'); refreshMenu(); setShowAdd(false); setAddName(''); setAddCategory(''); setAddPrice(''); setAddImg(null); }
+      else showToast('Add failed', 'error');
+    } catch { showToast('Add failed', 'error'); }
+    setAddSaving(false);
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center py-20">
       <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
@@ -1576,16 +1793,30 @@ export function BarMenuPage() {
 
   return (
     <div className="space-y-4 font-sans">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[9999] px-4 py-2 rounded-xl text-white text-[12px] font-bold shadow-lg transition-all ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h3 className="font-semibold">Bar Menu</h3>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} />
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Search..."
-            className="border border-gray-200 rounded-xl px-3 py-1.5 text-[12px] font-bold w-48 focus:outline-none focus:border-[#E53935]"
+            className="border border-gray-200 rounded-xl px-3 py-1.5 text-[12px] font-bold w-40 focus:outline-none focus:border-[#E53935]"
           />
+          <button
+            onClick={() => setShowAdd(true)}
+            className="px-3 py-1.5 bg-[#E53935] text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition"
+          >
+            + Add Item
+          </button>
         </div>
       </div>
 
@@ -1595,14 +1826,18 @@ export function BarMenuPage() {
         </div>
       )}
 
+      {/* Item list */}
       <div className="space-y-1">
         {filteredItems.map((item) => (
           <div
             key={item.id}
-            className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100"
+            className={`flex items-center justify-between p-3 bg-white rounded-xl border transition ${item.isAvailable === false ? 'border-gray-200 opacity-60' : 'border-gray-100'}`}
           >
+            {/* Left */}
             <div className="flex items-center gap-3">
-              {item.menuType === 'FOOD' ? (
+              {item.img ? (
+                <img src={item.img} alt={item.n} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+              ) : item.menuType === 'FOOD' ? (
                 <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${item.t === 'veg' ? 'border-green-600 bg-green-100' : 'border-red-600 bg-red-100'}`} />
               ) : (
                 <span className="text-[14px]">🥃</span>
@@ -1612,11 +1847,13 @@ export function BarMenuPage() {
                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{item.c}</p>
               </div>
             </div>
-            <div className="text-right">
+
+            {/* Right */}
+            <div className="flex items-center gap-2">
               {item.variants.length === 1 ? (
                 <p className="text-[13px] font-black text-gray-900">₹{item.variants[0].price}</p>
               ) : (
-                <div className="flex flex-wrap gap-1 justify-end max-w-[180px]">
+                <div className="flex flex-wrap gap-1 justify-end max-w-[140px]">
                   {item.variants.map((v) => (
                     <span key={v.id} className="text-[10px] font-bold bg-gray-100 px-2 py-0.5 rounded-full text-gray-700">
                       {v.name}: ₹{v.price}
@@ -1624,10 +1861,224 @@ export function BarMenuPage() {
                   ))}
                 </div>
               )}
+
+              {/* Availability toggle */}
+              <button
+                onClick={() => toggleAvailability(item)}
+                title={item.isAvailable === false ? 'Mark available' : 'Mark unavailable'}
+                className={`text-[11px] px-2 py-0.5 rounded-full font-bold border transition ${item.isAvailable === false ? 'border-gray-300 text-gray-400 bg-gray-50' : 'border-green-300 text-green-700 bg-green-50'}`}
+              >
+                {item.isAvailable === false ? 'Off' : 'On'}
+              </button>
+
+              {/* Edit */}
+              <button
+                onClick={() => openEdit(item)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition"
+                title="Edit"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
+                </svg>
+              </button>
+
+              {/* Delete */}
+              <button
+                onClick={() => setDeleteTarget(item)}
+                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition"
+                title="Delete"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0a1 1 0 00-1-1h-4a1 1 0 00-1 1m-4 0h10" />
+                </svg>
+              </button>
             </div>
           </div>
         ))}
+
+        {filteredItems.length === 0 && (
+          <p className="text-center text-[12px] text-gray-400 font-bold py-8">No items found</p>
+        )}
       </div>
+
+      {/* ── EDIT MODAL ── */}
+      {editItem && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl">
+            <h4 className="font-bold text-[14px]">Edit Item</h4>
+
+            {/* Image */}
+            <div className="flex items-center gap-3">
+              {editImg ? (
+                <img src={editImg} alt="" className="w-14 h-14 rounded-xl object-cover border" />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">{editItem.menuType === 'FOOD' ? '🍽️' : '🥃'}</div>
+              )}
+              <label className="cursor-pointer px-3 py-1.5 border border-gray-300 rounded-xl text-[11px] font-bold text-gray-600 hover:border-[#E53935] transition">
+                Change Photo
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                  if (e.target.files[0]) compressImage(e.target.files[0], setEditImg);
+                }} />
+              </label>
+            </div>
+
+            {/* Name */}
+            <div>
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Name</label>
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+              />
+            </div>
+
+            {/* Type (food items only) */}
+            {editItem.menuType === 'FOOD' && (
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Type</label>
+                <div className="flex gap-2 mt-1">
+                  {['veg', 'non'].map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setEditType(t)}
+                      className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold border transition ${editType === t ? (t === 'veg' ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700') : 'border-gray-200 text-gray-500'}`}
+                    >
+                      {t === 'veg' ? '🟢 Veg' : '🔴 Non-Veg'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Price (single-variant only) */}
+            {editItem.variants.length === 1 && (
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Price (₹)</label>
+                <input
+                  type="number"
+                  value={editPrice}
+                  onChange={(e) => setEditPrice(e.target.value)}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                />
+              </div>
+            )}
+
+            {editItem.variants.length > 1 && (
+              <p className="text-[11px] text-gray-400 font-bold">Multi-variant pricing — edit from backend</p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setEditItem(null)} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+              <button
+                onClick={saveEdit}
+                disabled={editSaving || !editName.trim()}
+                className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition"
+              >
+                {editSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ADD MODAL ── */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h4 className="font-bold text-[14px]">Add Bar Item</h4>
+
+            {/* Image */}
+            <div className="flex items-center gap-3">
+              {addImg ? (
+                <img src={addImg} alt="" className="w-14 h-14 rounded-xl object-cover border" />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 text-xs font-bold">Photo</div>
+              )}
+              <label className="cursor-pointer px-3 py-1.5 border border-gray-300 rounded-xl text-[11px] font-bold text-gray-600 hover:border-[#E53935] transition">
+                Upload Photo
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                  if (e.target.files[0]) compressImage(e.target.files[0], setAddImg);
+                }} />
+              </label>
+            </div>
+
+            {/* Menu type toggle */}
+            <div>
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Menu Section</label>
+              <div className="flex gap-2 mt-1">
+                {['FOOD', 'LIQUOR'].map((mt) => (
+                  <button key={mt} onClick={() => setAddMenuType(mt)}
+                    className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold border transition ${addMenuType === mt ? 'border-[#E53935] bg-red-50 text-[#E53935]' : 'border-gray-200 text-gray-500'}`}>
+                    {mt === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Name *</label>
+              <input value={addName} onChange={(e) => setAddName(e.target.value)}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                placeholder="e.g. Chicken Tikka" />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Category</label>
+              <input value={addCategory} onChange={(e) => setAddCategory(e.target.value)}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                placeholder="e.g. Starters" />
+            </div>
+
+            {addMenuType === 'FOOD' && (
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Type</label>
+                <div className="flex gap-2 mt-1">
+                  {['veg', 'non'].map((t) => (
+                    <button key={t} onClick={() => setAddType(t)}
+                      className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold border transition ${addType === t ? (t === 'veg' ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700') : 'border-gray-200 text-gray-500'}`}>
+                      {t === 'veg' ? '🟢 Veg' : '🔴 Non-Veg'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Price (₹) *</label>
+              <input type="number" value={addPrice} onChange={(e) => setAddPrice(e.target.value)}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                placeholder="0" />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={saveAdd} disabled={addSaving || !addName.trim() || !addPrice}
+                className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition">
+                {addSaving ? 'Adding...' : 'Add Item'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE CONFIRM ── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-xs space-y-4 shadow-2xl text-center">
+            <div className="text-3xl">🗑️</div>
+            <p className="font-bold text-[14px]">Delete "{deleteTarget.n}"?</p>
+            <p className="text-[12px] text-gray-500">This cannot be undone.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={confirmDelete} disabled={deleteWorking}
+                className="flex-1 py-2 bg-red-600 text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition">
+                {deleteWorking ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
