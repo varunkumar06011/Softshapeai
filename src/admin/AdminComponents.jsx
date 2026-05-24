@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   ChartNoAxesCombined, 
   ClipboardList, 
@@ -464,9 +464,44 @@ export function Tables({ onOpen }) {
 export function MenuPage({ onAddDish }) {
   const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu, setGlobalMenu } = useMenu();
   const [filter, setFilter] = useState("");
+
+  // ── Admin items: fetched from admin endpoint (includes unavailable) ───
+  const [adminItems, setAdminItems] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(true);
+
+  const fetchAdminItems = useCallback(async () => {
+    try {
+      setAdminLoading(true);
+      const res = await fetch(`${API_BASE}/api/menu/items/admin`);
+      if (!res.ok) throw new Error('Admin fetch failed');
+      const data = await res.json();
+      // Map to POS shape, preserving isAvailable
+      const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+      setAdminItems(data.map(item => ({
+        id: item.id,
+        n: item.name,
+        p: Math.round(item.price ?? 0),
+        c: item.category,
+        t: item.isVeg ? 'veg' : 'non',
+        img: item.imageUrl || DEFAULT_IMG,
+        desc: item.description || '',
+        menuType: item.menuType,
+        isAvailable: item.isAvailable,
+      })));
+    } catch (err) {
+      console.error('[MenuPage] Failed to load admin items:', err);
+      // Fall back to the POS cache so the table still shows something
+      setAdminItems(allMenuItems.map(i => ({ ...i, isAvailable: i.isAvailable !== false })));
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [allMenuItems]);
+
+  useEffect(() => { fetchAdminItems(); }, []);
+
   const items = useMemo(
-    () => menuItems.filter((x) => menuItemMatchesSearch(x, filter)),
-    [filter, menuItems]
+    () => adminItems.filter((x) => menuItemMatchesSearch(x, filter)),
+    [filter, adminItems]
   );
 
   const [editingItem, setEditingItem] = useState(null);
@@ -474,6 +509,58 @@ export function MenuPage({ onAddDish }) {
   const [deletingItem, setDeletingItem] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleteWorking, setDeleteWorking] = useState(false);
+  const [togglingId, setTogglingId] = useState(null);
+
+  // ── Availability toggle with optimistic update ─────────────────────────
+  const handleToggleAvailability = useCallback(async (item) => {
+    if (togglingId) return;
+    const newValue = !item.isAvailable;
+    setTogglingId(item.id);
+
+    // Optimistic UI update
+    setAdminItems(prev =>
+      prev.map(i => i.id === item.id ? { ...i, isAvailable: newValue } : i)
+    );
+
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/items/${item.id}/availability`, {
+        method: 'PATCH',
+      });
+      if (!res.ok) throw new Error('Toggle failed');
+      // Backend confirmed — also refresh the shared POS menu so unavailable items disappear
+      refreshMenu().catch(() => {});
+    } catch (err) {
+      console.error('[MenuPage] Availability toggle failed:', err);
+      // Revert on error
+      setAdminItems(prev =>
+        prev.map(i => i.id === item.id ? { ...i, isAvailable: !newValue } : i)
+      );
+      alert('Could not update availability. Please try again.');
+    } finally {
+      setTogglingId(null);
+    }
+  }, [togglingId, refreshMenu]);
+
+  // ── Dynamic categories ────────────────────────────────────────────────
+  const [dbCategories, setDbCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setCategoriesLoading(true);
+        const res = await fetch(`${API_BASE}/api/menu/categories`);
+        if (!res.ok) throw new Error('Failed to fetch categories');
+        const data = await res.json();
+        setDbCategories(Array.isArray(data) ? data.filter(c => c.isActive !== false) : []);
+      } catch (err) {
+        console.error('[MenuPage] Failed to load categories:', err);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   const handleEdit = (item) => setEditingItem({ originalName: item.n, ...item });
   const handleDeleteClick = (item) => setDeletingItem(item);
@@ -667,14 +754,14 @@ export function MenuPage({ onAddDish }) {
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
         <h3 className="font-semibold text-lg shrink-0">
           Menu Items
-          {!loading && menuItems.length > 0 && (
+          {!adminLoading && adminItems.length > 0 && (
             <span className="ml-2 text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
-              {menuItems.length} synced
+              {adminItems.length} synced
             </span>
           )}
-          {loading && <span className="text-xs font-normal text-gray-400"> (syncing…)</span>}
+          {adminLoading && <span className="text-xs font-normal text-gray-400"> (syncing…)</span>}
         </h3>
-        <button type="button" onClick={() => refreshMenu()} className="text-xs font-bold text-[#E53935] hover:underline">Refresh from server</button>
+        <button type="button" onClick={() => { refreshMenu(); fetchAdminItems(); }} className="text-xs font-bold text-[#E53935] hover:underline">Refresh from server</button>
         <input
           type="search"
           className={input + " h-9 w-full sm:w-64"}
@@ -687,7 +774,7 @@ export function MenuPage({ onAddDish }) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto justify-end">
         <button 
           className="rounded-lg bg-white border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md hover:border-gray-300 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap w-full sm:w-auto" 
-          onClick={() => setAddingItem({ n: '', c: 'Starters', p: '', t: 'veg', img: null })}
+          onClick={() => setAddingItem({ n: '', c: dbCategories[0]?.name ?? '', p: '', t: 'veg', img: null })}
         >
           <span className="text-gray-400 font-black">+</span> Add Item
         </button>
@@ -721,7 +808,7 @@ export function MenuPage({ onAddDish }) {
           </tr>
         </thead>
         <tbody>
-          {loading ? (
+          {adminLoading ? (
             <tr>
               <td colSpan={7} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
                 Syncing menu from server…
@@ -737,7 +824,7 @@ export function MenuPage({ onAddDish }) {
             </tr>
           ) : (
           items.map((item) => (
-            <tr key={item.id || item.n} className="border-b border-[#FFEBEE] hover:bg-[#FFF5F5]">
+            <tr key={item.id || item.n} className={`border-b border-[#FFEBEE] hover:bg-[#FFF5F5] transition-opacity ${item.isAvailable ? '' : 'opacity-60'}`}>
               <td className="px-4 py-2">
                  {item.img ? (
                     <img src={item.img} alt={item.n} className="h-10 w-10 rounded-md object-cover" />
@@ -752,9 +839,29 @@ export function MenuPage({ onAddDish }) {
                 <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
                 {item.t === "veg" ? "Veg" : "Non-Veg"}
               </td>
-              <td className="px-4 py-2"><span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">Available</span></td>
               <td className="px-4 py-2">
-                <button onClick={() => handleEdit(item)} className="text-blue-600 mr-3 hover:scale-110 transition-transform">✏️</button>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  item.isAvailable
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  {item.isAvailable ? 'Available' : 'Unavailable'}
+                </span>
+              </td>
+              <td className="px-4 py-2 flex items-center gap-2">
+                <button
+                  onClick={() => handleToggleAvailability(item)}
+                  disabled={togglingId === item.id}
+                  title={item.isAvailable ? 'Mark Unavailable' : 'Mark Available'}
+                  className={`text-xs font-bold px-2 py-1 rounded-md border transition-all ${
+                    item.isAvailable
+                      ? 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {togglingId === item.id ? '…' : item.isAvailable ? 'Disable' : 'Enable'}
+                </button>
+                <button onClick={() => handleEdit(item)} className="text-blue-600 hover:scale-110 transition-transform">✏️</button>
                 <button onClick={() => handleDeleteClick(item)} className="text-red-600 hover:scale-110 transition-transform">🗑️</button>
               </td>
             </tr>
@@ -790,12 +897,24 @@ export function MenuPage({ onAddDish }) {
             <div className="grid grid-cols-2 gap-4">
                <div>
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
-                  <select value={editingItem.c} onChange={e => setEditingItem({...editingItem, c: e.target.value})} className={input + " w-full bg-gray-50"}>
-                     <option value="Starters">Starters</option>
-                     <option value="Main Course">Main Course</option>
-                     <option value="Drinks">Drinks</option>
-                     <option value="Desserts">Desserts</option>
+                  <select
+                    value={editingItem.c}
+                    onChange={e => setEditingItem({...editingItem, c: e.target.value})}
+                    className={input + " w-full bg-gray-50"}
+                    disabled={categoriesLoading}
+                  >
+                    <option value="">
+                      {categoriesLoading ? 'Loading...' : 'Select a category'}
+                    </option>
+                    {dbCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
                   </select>
+                  {dbCategories.length === 0 && !categoriesLoading && (
+                    <p style={{ color: 'orange', fontSize: '0.75rem', marginTop: '4px' }}>
+                      No categories found. Add categories first.
+                    </p>
+                  )}
                </div>
                <div>
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Price (₹)</label>
@@ -851,12 +970,24 @@ export function MenuPage({ onAddDish }) {
             <div className="grid grid-cols-2 gap-4">
                <div>
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
-                  <select value={addingItem.c} onChange={e => setAddingItem({...addingItem, c: e.target.value})} className={input + " w-full bg-gray-50"}>
-                     <option value="Starters">Starters</option>
-                     <option value="Main Course">Main Course</option>
-                     <option value="Drinks">Drinks</option>
-                     <option value="Desserts">Desserts</option>
+                  <select
+                    value={addingItem.c}
+                    onChange={e => setAddingItem({...addingItem, c: e.target.value})}
+                    className={input + " w-full bg-gray-50"}
+                    disabled={categoriesLoading}
+                  >
+                    <option value="">
+                      {categoriesLoading ? 'Loading...' : 'Select a category'}
+                    </option>
+                    {dbCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
                   </select>
+                  {dbCategories.length === 0 && !categoriesLoading && (
+                    <p style={{ color: 'orange', fontSize: '0.75rem', marginTop: '4px' }}>
+                      No categories found. Add categories first.
+                    </p>
+                  )}
                </div>
                <div>
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Price (₹)</label>

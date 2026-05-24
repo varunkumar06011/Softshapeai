@@ -53,6 +53,9 @@ export function mapFlatMenuItems(items) {
     img: item.imageUrl || DEFAULT_MENU_IMAGE,
     desc: item.description || "",
     menuType: item.menuType,
+    // isAvailable is only present on admin endpoint items;
+    // POS /items filters to available=true so field is absent there — default true
+    isAvailable: item.isAvailable !== false,
   }));
 }
 
