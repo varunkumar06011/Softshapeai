@@ -1756,7 +1756,9 @@ export function BarMenuPage() {
   const [addType, setAddType] = useState('veg');
   const [addPrice, setAddPrice] = useState('');
   const [addMenuType, setAddMenuType] = useState('FOOD');
-  const [addImg, setAddImg] = useState(null);
+  const [addImg, setAddImg] = useState(null);        // raw File object
+  const [addImgPreview, setAddImgPreview] = useState(''); // object URL for preview
+  const [addUploading, setAddUploading] = useState(false); // true while Cloudinary upload in-flight
   const [addSaving, setAddSaving] = useState(false);
 
   // Delete state
@@ -1872,24 +1874,54 @@ export function BarMenuPage() {
   };
 
   // Add item
+  const resetAddModal = () => {
+    setShowAdd(false);
+    setAddName('');
+    setAddCategory('');
+    setAddPrice('');
+    setAddImg(null);
+    setAddImgPreview('');
+  };
+
   const saveAdd = async () => {
     if (!addName.trim() || !addPrice) return;
     setAddSaving(true);
     try {
+      // Step 1: if a file was picked, compress then upload to Cloudinary via backend proxy
+      let imageUrl = '';
+      if (addImg) {
+        setAddUploading(true);
+        try {
+          // Compress to base64 first (reuse existing helper)
+          const base64 = await new Promise((resolve, reject) => {
+            compressImage(addImg, (b64) => resolve(b64));
+          });
+          // Upload via backend proxy (same as Edit modal)
+          imageUrl = await uploadImageToCloudinary(base64);
+        } catch {
+          showToast('Image upload failed', 'error');
+          setAddUploading(false);
+          setAddSaving(false);
+          return;
+        }
+        setAddUploading(false);
+      }
+
+      // Step 2: POST with the CDN imageUrl (or empty string if no image)
       const body = {
         name: addName.trim(),
         category: addCategory.trim() || 'General',
         isVeg: addType === 'veg',
         price: Number(addPrice),
         menuType: addMenuType,
-        ...(addImg ? { img: addImg } : {}),
+        ...(imageUrl ? { imageUrl } : {}),
       };
       const res = await fetch(`${API_BASE}/api/bar/menu/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (res.ok) { showToast('Item added'); refreshMenu(); setShowAdd(false); setAddName(''); setAddCategory(''); setAddPrice(''); setAddImg(null); }
+      if (res.ok) { showToast('Item added'); refreshMenu(); resetAddModal(); }
       else showToast('Add failed', 'error');
     } catch { showToast('Add failed', 'error'); }
     setAddSaving(false);
@@ -2099,15 +2131,19 @@ export function BarMenuPage() {
 
             {/* Image */}
             <div className="flex items-center gap-3">
-              {addImg ? (
-                <img src={addImg} alt="" className="w-14 h-14 rounded-xl object-cover border" />
+              {addImgPreview ? (
+                <img src={addImgPreview} alt="" className="w-14 h-14 rounded-xl object-cover border" />
               ) : (
                 <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 text-xs font-bold">Photo</div>
               )}
               <label className="cursor-pointer px-3 py-1.5 border border-gray-300 rounded-xl text-[11px] font-bold text-gray-600 hover:border-[#E53935] transition">
                 Upload Photo
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                  if (e.target.files[0]) compressImage(e.target.files[0], setAddImg);
+                  const file = e.target.files[0];
+                  if (file) {
+                    setAddImg(file);                               // store raw File for upload
+                    setAddImgPreview(URL.createObjectURL(file));   // object URL for instant preview
+                  }
                 }} />
               </label>
             </div>
@@ -2161,10 +2197,10 @@ export function BarMenuPage() {
             </div>
 
             <div className="flex gap-2 pt-1">
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
-              <button onClick={saveAdd} disabled={addSaving || !addName.trim() || !addPrice}
+              <button onClick={resetAddModal} disabled={addSaving || addUploading} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition">Cancel</button>
+              <button onClick={saveAdd} disabled={addSaving || addUploading || !addName.trim() || !addPrice}
                 className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition">
-                {addSaving ? 'Adding...' : 'Add Item'}
+                {addUploading ? 'Uploading image...' : addSaving ? 'Adding...' : 'Add Item'}
               </button>
             </div>
           </div>
