@@ -46,7 +46,7 @@ const WAITER_CALL_COOLDOWN_MS = 15000; // 15 seconds
  * Validates if a table is allowed to call a waiter.
  * Enforces the 15-second cooldown securely on the "backend".
  */
-export function validateAndCreateWaiterCall(tableId) {
+export function validateAndCreateWaiterCall(tableId, source) {
   const db = readDB(WAITER_CALLS_KEY);
   
   const existingCall = db[tableId];
@@ -71,7 +71,8 @@ export function validateAndCreateWaiterCall(tableId) {
     tableId,
     timestamp: now,
     status: 'pending', // pending, accepted, resolved
-    handledBy: null
+    handledBy: null,
+    source
   };
 
   writeDB(WAITER_CALLS_KEY, db);

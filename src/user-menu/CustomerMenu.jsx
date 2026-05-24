@@ -11,6 +11,24 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [dietFilter, setDietFilter] = useState('All'); // All, Veg, Non-Veg
   const [cart, setCart] = useState([]);
+
+  const getEngagement = (id, name) => {
+    const hash = String(id || name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const purchases = (hash * 17) % 4800 + 200; // range: 200 to 5000
+    const wishlist = (hash * 31) % 5800 + 200;  // range: 200 to 6000
+    
+    const formatVal = (val) => {
+      if (val >= 1000) {
+        return `${(val / 1000).toFixed(1).replace('.0', '')}K+`;
+      }
+      return String(val);
+    };
+    
+    return {
+      purchases: formatVal(purchases),
+      wishlist: formatVal(wishlist)
+    };
+  };
   
   // Modals state
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
@@ -90,13 +108,14 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
   const handleCallWaiter = () => {
     if (callCooldown > 0) return;
-    const validation = validateAndCreateWaiterCall(tableId);
+    const validation = validateAndCreateWaiterCall(tableId, 'restaurant');
     
     if (validation.success) {
       broadcastWaiterEvent('customer:call_waiter', {
         tableId,
         callId: validation.callId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        source: 'restaurant'
       });
       setCallCooldown(15);
     } else {
@@ -231,9 +250,9 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                         
                         {/* Compact Stats */}
                         <div className="flex items-center gap-2 mb-2 text-[9px] font-bold text-gray-400">
-                          <span className="flex items-center gap-1"><TrendingUp size={10} className="text-emerald-500"/> 1.5K+ purchases</span>
+                          <span className="flex items-center gap-1"><TrendingUp size={10} className="text-emerald-500"/> {getEngagement(item.id, item.n).purchases} purchases</span>
                           <span>•</span>
-                          <span className="flex items-center gap-1"><Heart size={10} className="text-[#FF4D4F]"/> 1.75K+ wishlist</span>
+                          <span className="flex items-center gap-1"><Heart size={10} className="text-[#FF4D4F]"/> {getEngagement(item.id, item.n).wishlist} wishlist</span>
                         </div>
 
                         <div className="mt-auto">
@@ -301,9 +320,9 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                   
                   {/* Compact Stats */}
                   <div className="flex items-center gap-1.5 mb-2 text-[8px] sm:text-[9px] font-bold text-gray-400">
-                    <span className="flex items-center gap-0.5"><TrendingUp size={9} className="text-emerald-500"/> 1.5K+</span>
+                    <span className="flex items-center gap-0.5"><TrendingUp size={9} className="text-emerald-500"/> {getEngagement(item.id, item.n).purchases}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-0.5"><Heart size={9} className="text-[#FF4D4F]"/> 1.75K+</span>
+                    <span className="flex items-center gap-0.5"><Heart size={9} className="text-[#FF4D4F]"/> {getEngagement(item.id, item.n).wishlist}</span>
                   </div>
                   
                   <div className="flex items-center justify-between mt-auto">
