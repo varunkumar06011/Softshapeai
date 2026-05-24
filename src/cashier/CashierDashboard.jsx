@@ -616,7 +616,7 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
 
           <div className="flex items-center gap-3">
-             <OutletToggle className="hidden sm:flex" />
+             <OutletToggle className="flex" />
              <div className="hidden sm:flex items-center gap-1.5 bg-red-50 px-2 py-0.5 rounded-md border border-red-100 text-[#E53935]">
                 <Activity size={12} />
                 <span className="text-[9px] font-black uppercase tracking-wider">Live Op-Feed</span>

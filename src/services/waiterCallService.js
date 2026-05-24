@@ -112,6 +112,22 @@ export function useWaiterCalls() {
           const data = JSON.parse(e.newValue);
           handleMessage(data);
         } catch (err) {}
+      } else if (e.key === 'softshape_waiter_calls' && e.newValue) {
+        try {
+          const db = JSON.parse(e.newValue);
+          const pending = Object.values(db).filter(c => c.status === 'pending');
+          setActiveCalls(prev => {
+            const newCalls = [...prev];
+            let changed = false;
+            pending.forEach(p => {
+              if (!newCalls.find(c => c.callId === p.callId)) {
+                newCalls.push({ ...p, localTimestamp: p.timestamp });
+                changed = true;
+              }
+            });
+            return changed ? newCalls : prev;
+          });
+        } catch (err) {}
       }
     };
     window.addEventListener('storage', handleStorage);

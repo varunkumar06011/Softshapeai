@@ -217,7 +217,7 @@ const AdminDashboard = ({ onLogout }) => {
                {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </div>
           <div className="flex items-center gap-3">
-            <OutletToggle className="hidden sm:flex" />
+            <OutletToggle className="flex" />
             <button className="relative rounded-md border border-[#FFCDD2] p-2">
               <Bell size={16} />
               <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E53935] text-[9px] text-white">3</span>

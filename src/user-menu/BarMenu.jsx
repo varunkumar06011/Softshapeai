@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2 } from 'lucide-react';
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
 import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
@@ -80,6 +80,25 @@ export default function BarMenu({ tableId }) {
   // Waiter Call State
   const { activeCalls } = useWaiterCalls();
   const [callCooldown, setCallCooldown] = useState(0);
+
+  const [isScrolledDown, setIsScrolledDown] = useState(false);
+  const lastScrollTop = useRef(0);
+
+  const handleScroll = (e) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    const diff = scrollTop - lastScrollTop.current;
+    
+    if (scrollTop <= 10) {
+      setIsScrolledDown(false);
+    } else if (Math.abs(diff) > 5) {
+      if (diff > 0 && scrollTop > 50) {
+        setIsScrolledDown(true);
+      } else if (diff < 0) {
+        setIsScrolledDown(false);
+      }
+    }
+    lastScrollTop.current = scrollTop;
+  };
 
   const myCall = activeCalls.find(c => String(c.tableId) === String(tableId));
   const isAccepted = myCall && myCall.status === 'accepted';
@@ -380,34 +399,46 @@ export default function BarMenu({ tableId }) {
       <div className={`absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b ${activeMenuType === 'liquor' ? 'from-amber-500/10' : 'from-red-500/10'} to-transparent pointer-events-none transition-all duration-500`} />
 
       {/* Header */}
-      <header className="px-6 pt-10 pb-5 shrink-0 relative z-20">
-        <div className="flex justify-between items-start mb-4">
-          <div className="animate-in fade-in slide-in-from-left-4">
-            <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">BAR TABLE {tableId.replace('table-', '')}</h1>
-            <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${activeMenuType === 'liquor' ? 'bg-amber-600 animate-pulse' : 'bg-[#FF4D4F] animate-pulse'}`} />
-              Premium Lounge Experience
-            </p>
+      <header className={`px-4 sm:px-6 transition-all duration-300 ease-in-out shrink-0 relative z-20 ${
+        isScrolledDown ? 'pt-3 pb-2 bg-[#FFF5F5] border-b border-red-100/30' : 'pt-6 sm:pt-10 pb-4'
+      }`}>
+        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          isScrolledDown ? 'h-0 opacity-0 mb-0 pointer-events-none' : 'h-16 opacity-100 mb-3'
+        }`}>
+          <div className="flex justify-between items-start">
+            <div className="animate-in fade-in slide-in-from-left-4">
+              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">BAR TABLE {tableId.replace('table-', '')}</h1>
+              <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${activeMenuType === 'liquor' ? 'bg-amber-600 animate-pulse' : 'bg-[#FF4D4F] animate-pulse'}`} />
+                Premium Lounge Experience
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Search */}
-        <div className="relative group shadow-[0_10px_30px_rgba(183,28,28,0.04)] rounded-2xl transition-all hover:shadow-[0_10px_30px_rgba(183,28,28,0.08)] mb-4">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-red-300 group-focus-within:text-[#B71C1C] transition-colors" size={18} />
+        <div className={`relative group shadow-[0_10px_30px_rgba(183,28,28,0.04)] rounded-xl sm:rounded-2xl transition-all hover:shadow-[0_10px_30px_rgba(183,28,28,0.08)] transition-all duration-300 ${
+          isScrolledDown ? 'mb-2' : 'mb-3 sm:mb-4'
+        }`}>
+          <Search className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-red-300 group-focus-within:text-[#B71C1C] transition-colors" size={16} />
           <input
             type="search"
             placeholder={activeMenuType === 'liquor' ? "Search fine spirits & drinks..." : "Search bar appetizers & food..."}
-            className="w-full bg-white border border-red-50 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold outline-none focus:border-[#B71C1C]/30 focus:ring-4 focus:ring-red-50/50 transition-all text-gray-800 placeholder-gray-400"
+            className={`w-full bg-white border border-red-50 pl-10 sm:pl-12 pr-4 text-xs sm:text-sm font-bold outline-none focus:border-[#B71C1C]/30 focus:ring-4 focus:ring-red-50/50 transition-all text-gray-800 placeholder-gray-400 transition-all duration-300 ${
+              isScrolledDown ? 'py-2 rounded-xl' : 'py-3.5 sm:py-4 rounded-2xl'
+            }`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
 
         {/* Menu Type Selector */}
-        <div className="flex items-center bg-white/80 border border-red-50 rounded-2xl p-1 gap-1 shadow-sm max-w-xs mx-auto">
+        <div className={`flex items-center bg-white/80 border border-red-50 rounded-xl sm:rounded-2xl p-0.5 sm:p-1 gap-1 shadow-sm max-w-xs mx-auto transition-all duration-300`}>
           <button
             onClick={() => { setActiveMenuType('food'); setActiveCategory('All'); }}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+              isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
+            } ${
               activeMenuType === 'food'
                 ? 'bg-gradient-to-r from-[#FF6B6B] to-[#FF4D4F] text-white shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -417,7 +448,9 @@ export default function BarMenu({ tableId }) {
           </button>
           <button
             onClick={() => { setActiveMenuType('liquor'); setActiveCategory('All'); }}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+              isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
+            } ${
               activeMenuType === 'liquor'
                 ? 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -429,14 +462,16 @@ export default function BarMenu({ tableId }) {
       </header>
 
       {/* Filters & Categories */}
-      <div className="shrink-0 relative z-10 sticky top-0 bg-[#FFF5F5]/90 backdrop-blur-xl border-b border-red-50 pb-2">
+      <div className="shrink-0 relative z-10 sticky top-0 bg-[#FFF5F5]/90 backdrop-blur-xl border-b border-red-50 pb-1.5 sm:pb-2">
         {/* Diet Toggle */}
-        <div className="px-6 py-2 flex gap-2">
+        <div className={`px-4 sm:px-6 flex gap-1.5 sm:gap-2 transition-all duration-300 ease-in-out overflow-hidden ${
+          isScrolledDown ? 'h-0 opacity-0 py-0 mb-0 pointer-events-none' : 'h-10 py-2'
+        }`}>
           {['All', 'Veg', 'Non-Veg'].map(diet => (
             <button
               key={diet}
               onClick={() => setDietFilter(diet)}
-              className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${
+              className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-md text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${
                 dietFilter === diet 
                   ? (diet === 'Veg' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : diet === 'Non-Veg' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-gray-200 text-gray-800 border border-gray-300')
                   : 'bg-white text-gray-400 border border-gray-200 hover:bg-gray-50'
@@ -448,14 +483,20 @@ export default function BarMenu({ tableId }) {
         </div>
         
         {/* Category Tab Scroll */}
-        <div className="px-6 py-2 overflow-x-auto scrollbar-hide flex gap-3">
+        <div className={`px-4 sm:px-6 overflow-x-auto scrollbar-hide flex gap-2 sm:gap-3 transition-all duration-300 ease-in-out ${
+          isScrolledDown ? 'py-1' : 'py-1.5 sm:py-2'
+        }`}>
           {displayCategories.map(cat => {
             const isSelected = activeCategory === cat;
             return (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0 border flex items-center gap-1.5 ${
+                className={`transition-all duration-300 shrink-0 border flex items-center gap-1 sm:gap-1.5 ${
+                  isScrolledDown 
+                    ? 'px-4 py-1.5 text-[9px] rounded-full' 
+                    : 'px-5 sm:px-6 py-2.5 sm:py-3 text-[10px] rounded-full'
+                } ${
                   isSelected 
                     ? activeMenuType === 'liquor'
                       ? 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white border-transparent shadow-[0_10px_20px_rgba(183,28,28,0.2)] scale-105'
@@ -471,39 +512,42 @@ export default function BarMenu({ tableId }) {
       </div>
 
       {/* Menu List */}
-      <div className="flex-grow overflow-y-auto px-6 pt-6 pb-56 space-y-5 scroll-smooth z-0">
-        <div className="grid grid-cols-1 gap-5">
+      <div 
+        onScroll={handleScroll}
+        className="flex-grow overflow-y-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-36 sm:pb-40 space-y-5 scroll-smooth z-0"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {itemsToDisplay.map(item => {
             const qty = cart.find(i => i.n.startsWith(item.name || item.n))?.q || 0;
             return (
               <div 
                 key={item.id} 
                 onClick={() => setPreviewItem(item)}
-                className="cursor-pointer bg-white border border-red-50 rounded-[28px] p-4 flex gap-5 items-center group hover:shadow-[0_15px_30px_rgba(183,28,28,0.06)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
+                className="cursor-pointer bg-white border border-red-50 rounded-2xl xs:rounded-[28px] p-3 xs:p-4 flex gap-3 xs:gap-5 items-center group hover:shadow-[0_15px_30px_rgba(183,28,28,0.06)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
               >
-                <div className="w-24 h-24 rounded-[20px] overflow-hidden shrink-0 relative shadow-inner">
+                <div className="w-20 h-20 xs:w-24 xs:h-24 sm:w-28 sm:h-28 rounded-xl xs:rounded-[20px] sm:rounded-[24px] overflow-hidden shrink-0 relative shadow-inner">
                   <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                   
                   {/* Veg/Non indicator */}
                   <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm p-1 rounded-md shadow-sm">
-                    <div className={`w-2.5 h-2.5 rounded-full ${item.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                    <div className={`w-2 h-2 xs:w-2.5 xs:h-2.5 rounded-full ${item.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
                   </div>
                 </div>
 
                 <div className="flex-grow min-w-0 py-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest truncate">{item.c}</span>
+                  <div className="flex items-center gap-1.5 xs:gap-2 mb-1">
+                    <span className="text-[9px] font-bold text-red-500/80 uppercase tracking-wider truncate">{item.c}</span>
                     {item.menuType === 'LIQUOR' && (
-                      <span className="text-[8px] font-black bg-amber-50 text-amber-700 border border-amber-200/50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                      <span className="text-[7px] xs:text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200/50 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
                         🥃 Liquor
                       </span>
                     )}
                   </div>
 
-                  <h3 className="font-black text-sm sm:text-base text-gray-900 leading-tight mb-1 pr-2">{item.n}</h3>
+                  <h3 className="font-bold text-sm sm:text-base text-gray-800 tracking-tight leading-snug mb-1 pr-2">{item.n}</h3>
                   
                   {/* Stats */}
-                  <div className="flex items-center gap-1.5 mb-2 text-[8px] sm:text-[9px] font-bold text-gray-400">
+                  <div className="flex items-center gap-1.5 mb-1.5 xs:mb-2 text-[8px] xs:text-[9px] font-bold text-gray-400">
                     <span className="flex items-center gap-0.5"><TrendingUp size={9} className="text-emerald-500"/> {getEngagement(item.id, item.n).purchases}</span>
                     <span>•</span>
                     <span className="flex items-center gap-0.5"><Heart size={9} className="text-[#B71C1C]"/> {getEngagement(item.id, item.n).wishlist}</span>
@@ -511,26 +555,26 @@ export default function BarMenu({ tableId }) {
                   
                   <div className="flex items-center justify-between mt-auto">
                     <div>
-                      <span className="text-lg font-black text-[#B71C1C]">₹{item.p}</span>
+                      <span className="text-sm xs:text-lg font-black text-[#B71C1C]">₹{item.p}</span>
                       {item.variants && item.variants.length > 1 && (
-                        <span className="text-[9px] font-bold text-gray-400 ml-1.5">({item.variants.length} Options)</span>
+                        <span className="text-[8px] xs:text-[9px] font-bold text-gray-400 ml-1 xs:ml-1.5 shrink-0">({item.variants.length} Opt)</span>
                       )}
                     </div>
                     
                     {/* Add to Cart Actions */}
                     {qty > 0 ? (
-                      <div className="flex items-center gap-2 bg-red-50 rounded-full px-2 py-1.5 border border-red-100">
+                      <div className="flex items-center gap-1 xs:gap-2 bg-red-50 rounded-full px-1.5 xs:px-2 py-1 xs:py-1.5 border border-red-100">
                         {/* If it's a simple item without multiple variants, show quick controls, else click to manage */}
                         {item.variants && item.variants.length > 1 ? (
-                          <span className="text-[9px] font-black px-2 text-gray-500 uppercase tracking-widest">Added</span>
+                          <span className="text-[8px] xs:text-[9px] font-black px-1.5 xs:px-2 text-gray-500 uppercase tracking-widest">Added</span>
                         ) : (
                           <>
-                            <button onClick={(e) => { e.stopPropagation(); const cartItem = cart.find(i => i.id === item.id); if (cartItem) removeFromCart(cartItem); }} className="w-7 h-7 rounded-full bg-white text-[#B71C1C] flex items-center justify-center hover:bg-gray-50 transition-colors shadow-sm">
-                              <Minus size={14} />
+                            <button onClick={(e) => { e.stopPropagation(); const cartItem = cart.find(i => i.id === item.id); if (cartItem) removeFromCart(cartItem); }} className="w-6 h-6 xs:w-7 xs:h-7 rounded-full bg-white text-[#B71C1C] flex items-center justify-center hover:bg-gray-50 transition-colors shadow-sm">
+                              <Minus size={12} />
                             </button>
                             <span className="text-xs font-black w-4 text-center text-gray-900">{qty}</span>
-                            <button onClick={(e) => addToCart(item, null, e)} className="w-7 h-7 rounded-full bg-[#B71C1C] text-white flex items-center justify-center hover:bg-[#E53935] transition-colors shadow-sm">
-                              <Plus size={14} />
+                            <button onClick={(e) => addToCart(item, null, e)} className="w-6 h-6 xs:w-7 xs:h-7 rounded-full bg-[#B71C1C] text-white flex items-center justify-center hover:bg-[#E53935] transition-colors shadow-sm">
+                              <Plus size={12} />
                             </button>
                           </>
                         )}
@@ -538,7 +582,7 @@ export default function BarMenu({ tableId }) {
                     ) : (
                       <button 
                         onClick={(e) => addToCart(item, null, e)}
-                        className="px-5 py-2.5 rounded-full bg-white border border-red-100 text-[10px] font-black uppercase tracking-widest text-[#B71C1C] hover:bg-[#B71C1C] hover:text-white transition-all shadow-sm group-hover:border-[#B71C1C]"
+                        className="px-3.5 xs:px-5 py-2 xs:py-2.5 rounded-full bg-white border border-red-100 text-[9px] xs:text-[10px] font-black uppercase tracking-widest text-[#B71C1C] hover:bg-[#B71C1C] hover:text-white transition-all shadow-sm group-hover:border-[#B71C1C]"
                       >
                         Add
                       </button>
@@ -551,75 +595,79 @@ export default function BarMenu({ tableId }) {
         </div>
       </div>
 
-      {/* Floating CTA & Sticky Cart */}
-      <div className="absolute bottom-0 left-0 w-full z-40 px-5 pb-8 pt-20 bg-gradient-to-t from-[#FFF5F5] via-[#FFF5F5]/90 to-transparent pointer-events-none flex flex-col gap-4">
-        
-        {/* Floating Call Waiter */}
-        <div className="pointer-events-auto flex justify-center px-1 z-50 relative">
-          {isAccepted ? (
-            <div className="flex items-center gap-3 px-8 py-4 rounded-full shadow-[0_20px_40px_rgba(16,185,129,0.4)] transition-all duration-500 bg-gradient-to-r from-emerald-500 to-green-500 text-white animate-in slide-in-from-bottom-5 zoom-in">
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                <Star size={16} className="text-yellow-300 fill-yellow-300" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[9px] font-bold text-emerald-100 uppercase tracking-widest leading-none mb-1">Assigned Captain</span>
-                <span className="text-[13px] font-black uppercase tracking-[0.15em] leading-none">
-                  {acceptedCaptainName}
-                </span>
-              </div>
+      {/* Floating Call Waiter Button */}
+      <div 
+        className={`absolute right-4 sm:right-6 z-50 transition-all duration-300 ease-in-out ${
+          cart.length > 0 
+            ? 'bottom-[84px] xs:bottom-[92px] sm:bottom-[100px]' 
+            : 'bottom-6 sm:bottom-8'
+        }`}
+      >
+        {isAccepted ? (
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full shadow-[0_12px_30px_rgba(16,185,129,0.3)] bg-gradient-to-r from-emerald-500 to-green-500 text-white animate-in slide-in-from-bottom-5 zoom-in pointer-events-auto max-w-[180px] sm:max-w-[220px]">
+            <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shrink-0">
+              <Star size={12} className="text-yellow-300 fill-yellow-300" />
             </div>
-          ) : (
-            <button 
-              onClick={handleCallWaiter}
-              disabled={callCooldown > 0}
-              className={`flex items-center gap-3 px-10 py-4 rounded-full shadow-[0_20px_40px_rgba(183,28,28,0.25)] transition-all duration-300 ${
-                callCooldown > 0 
-                  ? 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed shadow-sm' 
-                  : 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white hover:scale-105 active:scale-95 animate-[pulse-glow_2s_infinite]'
-              }`}
-            >
-              {callCooldown > 0 ? (
-                <>
-                  <Clock size={18} />
-                  <span className="text-[12px] font-black uppercase tracking-[0.15em]">Wait {callCooldown}s</span>
-                </>
-              ) : (
-                <>
-                  <Bell size={20} className="animate-wiggle" />
-                  <span className="text-[12px] font-black uppercase tracking-[0.15em]">Call Waiter</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[8px] font-bold text-emerald-100 uppercase tracking-widest leading-none mb-0.5">Captain</span>
+              <span className="text-[11px] font-black uppercase tracking-wider leading-none truncate">
+                {acceptedCaptainName}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <button 
+            onClick={handleCallWaiter}
+            disabled={callCooldown > 0}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-full shadow-[0_10px_25px_rgba(183,28,28,0.25)] transition-all duration-300 pointer-events-auto cursor-pointer focus:outline-none hover:scale-105 active:scale-95 ${
+              callCooldown > 0 
+                ? 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed shadow-sm' 
+                : 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white animate-[pulse-glow_2s_infinite]'
+            }`}
+          >
+            {callCooldown > 0 ? (
+              <>
+                <Clock size={14} className="shrink-0" />
+                <span className="text-[10px] font-black uppercase tracking-wider">Wait {callCooldown}s</span>
+              </>
+            ) : (
+              <>
+                <Bell size={14} className="animate-wiggle shrink-0" />
+                <span className="text-[10px] font-black uppercase tracking-wider">Call Waiter</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
 
-        {/* Sticky Cart Drawer */}
-        {cart.length > 0 && (
-          <div className="pointer-events-auto bg-white border border-red-50 p-5 rounded-[32px] shadow-[0_20px_50px_rgba(183,28,28,0.12)] flex items-center justify-between animate-in slide-in-from-bottom-10">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center relative shadow-inner border border-red-100">
-                <ShoppingBag size={20} className="text-[#B71C1C]" />
-                <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#B71C1C] text-white text-[10px] font-black flex items-center justify-center shadow-md">
+      {/* Sticky Bottom Cart Bar */}
+      {cart.length > 0 && (
+        <div className="fixed bottom-0 left-0 w-full z-40 px-4 pb-4 pt-8 bg-gradient-to-t from-[#FFF5F5] via-[#FFF5F5]/90 to-transparent pointer-events-none">
+          <div className="max-w-3xl mx-auto pointer-events-auto bg-white border border-red-50 p-3 sm:p-3.5 rounded-2xl sm:rounded-3xl shadow-[0_15px_40px_rgba(183,28,28,0.12)] flex items-center justify-between animate-in slide-in-from-bottom-10">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-50 flex items-center justify-center relative shadow-inner border border-red-100 shrink-0">
+                <ShoppingBag size={18} className="text-[#B71C1C]" />
+                <div className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-[#B71C1C] text-white text-[8px] sm:text-[10px] font-black flex items-center justify-center shadow-md">
                   {cart.reduce((s, i) => s + i.q, 0)}
                 </div>
               </div>
-              <div>
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Your Bar Order</p>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-xl font-black leading-none text-gray-900">₹{total}</span>
+              <div className="min-w-0">
+                <p className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Your Bar Order</p>
+                <div className="flex items-baseline gap-1 sm:gap-2">
+                  <span className="text-base sm:text-xl font-black leading-none text-gray-900">₹{total}</span>
                 </div>
               </div>
             </div>
             
             <button 
               onClick={() => setIsOrderModalOpen(true)}
-              className="px-8 py-4 rounded-full bg-gray-900 text-white text-[11px] font-black uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
+              className="px-5 sm:px-8 py-2.5 sm:py-3.5 rounded-full bg-gray-900 text-white text-[9px] sm:text-[11px] font-black uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer"
             >
               View Order
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Quick Preview Modal */}
       {previewItem && (
