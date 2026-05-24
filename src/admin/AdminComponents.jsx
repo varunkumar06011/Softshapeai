@@ -478,16 +478,25 @@ export function MenuPage({ onAddDish }) {
   const handleEdit = (item) => setEditingItem({ originalName: item.n, ...item });
   const handleDeleteClick = (item) => setDeletingItem(item);
 
-  // ── Cloudinary upload via backend proxy ──────────────────────────────────
+  // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
   const uploadImageToCloudinary = async (base64DataUri) => {
-    const res = await fetch(`${API_BASE}/api/menu/upload-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64: base64DataUri }),
-    });
-    if (!res.ok) throw new Error('Image upload failed');
+    // Convert base64 data URI → Blob for multipart/form-data upload
+    const [, b64] = base64DataUri.split(',');
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+
+    const formData = new FormData();
+    formData.append('file', blob, 'image.jpg');
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      { method: 'POST', body: formData }
+    );
     const data = await res.json();
-    return data.url;
+    if (!data.secure_url) throw new Error(data?.error?.message || 'Cloudinary upload failed');
+    return data.secure_url;
   };
 
   // ── confirmDelete — async, soft-delete via backend ───────────────────────
@@ -1846,16 +1855,25 @@ export function BarMenuPage() {
     setEditImg(item.img || null);
   };
 
-  // Cloudinary upload proxy — sends base64 data URI to backend, gets CDN URL back
+  // Cloudinary direct upload — bypasses backend proxy for 2-4s vs 10-15s latency
   const uploadImageToCloudinary = async (base64DataUri) => {
-    const res = await fetch(`${API_BASE}/api/bar/menu/upload-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64: base64DataUri }),
-    });
-    if (!res.ok) throw new Error('Image upload failed');
+    // Convert base64 data URI → Blob for multipart/form-data upload
+    const [, b64] = base64DataUri.split(',');
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+
+    const formData = new FormData();
+    formData.append('file', blob, 'image.jpg');
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      { method: 'POST', body: formData }
+    );
     const data = await res.json();
-    return data.url;
+    if (!data.secure_url) throw new Error(data?.error?.message || 'Cloudinary upload failed');
+    return data.secure_url;
   };
 
   const saveEdit = async () => {
