@@ -713,7 +713,7 @@ export default function CaptainApp({ onLogout }) {
 
               // 2. Collision check: Did someone else just lock this table in the live floor map?
               const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
-              const targetTable = tables.find(t => String(t.id) === String(callTableNumber));
+              const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber));
               if (targetTable && targetTable.captainId && targetTable.captainId !== currentCaptain.id && targetTable.status !== TABLE_STATUS.FREE) {
                 addNotification("Table was already locked by another captain!", "error");
                 clearCall(call.callId);
