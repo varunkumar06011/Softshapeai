@@ -462,7 +462,7 @@ export function Tables({ onOpen }) {
 }
 
 export function MenuPage({ onAddDish }) {
-  const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu } = useMenu();
+  const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu, setGlobalMenu } = useMenu();
   const [filter, setFilter] = useState("");
   const items = useMemo(
     () => menuItems.filter((x) => menuItemMatchesSearch(x, filter)),
@@ -499,8 +499,11 @@ export function MenuPage({ onAddDish }) {
         method: 'DELETE',
       });
       if (res.ok) {
-        refreshMenu();
+        // Optimistic update: remove item from local state immediately
+        setGlobalMenu(prev => prev.filter(i => i.id !== deletingItem.id));
         setDeletingItem(null);
+        // Background sync to confirm with server (no loading spinner)
+        refreshMenu().catch(() => {});
       } else {
         alert('Delete failed');
       }
@@ -534,8 +537,25 @@ export function MenuPage({ onAddDish }) {
       });
 
       if (res.ok) {
-        refreshMenu();
+        const serverItem = await res.json();
+        // Build optimistic POS-shaped item from backend response
+        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+        const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? serverItem?.variants?.[0];
+        const optimisticItem = {
+          id: editingItem.id,
+          n: body.name,
+          p: Math.round(body.price),
+          c: editingItem.c,
+          t: body.isVeg ? 'veg' : 'non',
+          img: imageUrl ?? editingItem.img ?? DEFAULT_IMG,
+          desc: editingItem.desc ?? '',
+          menuType: editingItem.menuType,
+        };
+        // Apply optimistic update instantly — no loading flash
+        setGlobalMenu(prev => prev.map(i => i.id === editingItem.id ? optimisticItem : i));
         setEditingItem(null);
+        // Background re-sync to confirm server state
+        refreshMenu().catch(() => {});
       } else {
         alert('Failed to save changes');
       }
@@ -602,8 +622,25 @@ export function MenuPage({ onAddDish }) {
       });
 
       if (res.ok) {
-        refreshMenu();
+        const serverItem = await res.json();
+        // Map backend item to POS shape for optimistic insert
+        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+        const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? serverItem?.variants?.[0];
+        const optimisticItem = {
+          id: serverItem.id,
+          n: serverItem.name,
+          p: Math.round(defaultVariant?.price ?? Number(addingItem.p)),
+          c: serverItem.category?.name ?? addingItem.c,
+          t: serverItem.isVeg ? 'veg' : 'non',
+          img: serverItem.imageUrl || imageUrl || DEFAULT_IMG,
+          desc: serverItem.description || '',
+          menuType: serverItem.menuType,
+        };
+        // Append new item instantly — no loading flash
+        setGlobalMenu(prev => [...prev, optimisticItem]);
         setAddingItem(null);
+        // Background re-sync
+        refreshMenu().catch(() => {});
       } else {
         alert('Failed to add item');
       }
@@ -1841,7 +1878,7 @@ export function BarMenuPage() {
 
     const patch = { n: editName.trim(), t: editType };
     if (editPrice !== '') patch.p = Number(editPrice);
-    if (imageUrl !== undefined) patch.imageUrl = imageUrl;
+    if (imageUrl !== undefined) patch.img = imageUrl;   // updateBarMenuItem maps patch.img → body.imageUrl
 
     updateBarMenuItem(editItem.id, patch, API_BASE);
     setEditSaving(false);
