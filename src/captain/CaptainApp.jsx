@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
   LayoutDashboard, ShoppingCart, LogOut, ChevronRight, Clock, Plus, Minus, 
   Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer, 
