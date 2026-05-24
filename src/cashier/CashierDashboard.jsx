@@ -46,7 +46,8 @@ const CashierDashboard = ({ onLogout }) => {
     return () => clearInterval(timer);
   }, []);
 
-  const TX_CACHE_KEY = `softshape_transactions_${new Date().toLocaleDateString('en-CA')}`;
+  const { outlet } = useOutlet();
+  const TX_CACHE_KEY = `softshape_transactions_${outlet}_${new Date().toLocaleDateString('en-CA')}`;
 
   const [pastTransactions, setPastTransactions] = useState(() => {
     // Start with localStorage cache for instant display
@@ -62,7 +63,6 @@ const CashierDashboard = ({ onLogout }) => {
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
 
-  const { outlet } = useOutlet();
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
   const { menuItems: barMenuItems } = useBarMenuSync();
   const [barMenuTab, setBarMenuTab] = useState('food');
@@ -73,13 +73,13 @@ const CashierDashboard = ({ onLogout }) => {
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
 
-  const socket = useSocket(RESTAURANT_ID);
+  const socket = useSocket(activeRestaurantId);
 
   const loadTransactions = useCallback(async () => {
     setTxnsLoading(true);
     try {
       const todayStr = new Date().toLocaleDateString('en-CA');
-      const dbTxns = await fetchTransactions(RESTAURANT_ID, 100, todayStr);
+      const dbTxns = await fetchTransactions(activeRestaurantId, 100, todayStr);
       const mapped = dbTxns.map(txn => ({
         id: txn.id,
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
@@ -187,7 +187,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     loadTransactions();
     return () => {};
-  }, [loadTransactions]);
+  }, [loadTransactions, outlet]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -330,22 +330,29 @@ const CashierDashboard = ({ onLogout }) => {
     }).catch(err => console.warn('[BG] saveTransaction failed:', err.message));
   };
 
-  const filteredMenu = useMemo(
-    () =>
-      filterMenuItems(menuItems, {
-        query: searchQuery,
-        category: selectedCategory,
-        diet: activeDiet,
-      }),
-    [searchQuery, selectedCategory, activeDiet, menuItems]
-  );
+  const activeCategories = useMemo(() => {
+    if (outlet === 'restaurant') return categories;
+    const items = barMenuItems.filter(i => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR'));
+    const cats = items.map(i => i.category || i.c).filter(Boolean);
+    return ['All', ...new Set(cats)];
+  }, [outlet, categories, barMenuItems, barMenuTab]);
 
   const activeMenuItems = useMemo(() => {
-    if (outlet === 'restaurant') return filteredMenu;
-    return barMenuItems.filter(
-      (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR')
-    );
-  }, [outlet, filteredMenu, barMenuItems, barMenuTab]);
+    let itemsToFilter = [];
+    if (outlet === 'restaurant') {
+      itemsToFilter = menuItems;
+    } else {
+      itemsToFilter = barMenuItems.filter(
+        (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR')
+      );
+    }
+    
+    return filterMenuItems(itemsToFilter, {
+      query: searchQuery,
+      category: selectedCategory,
+      diet: activeDiet,
+    });
+  }, [outlet, menuItems, barMenuItems, barMenuTab, searchQuery, selectedCategory, activeDiet]);
 
   const handleAddItem = (item) => {
     if (outlet === 'bar' && item.variants && item.variants.length > 1) {
@@ -392,7 +399,7 @@ const CashierDashboard = ({ onLogout }) => {
     }));
 
     // Find the active orderId for this table from current state
-    const targetTable = tables.find(t => t.id === tableId || t.backendId === tableId);
+    const targetTable = activeTables.find(t => t.id === tableId || t.backendId === tableId);
     const orderId = targetTable?.activeOrder?.id || targetTable?.orderId;
     const statusMap = { Incoming: 'PENDING', Preparing: 'PREPARING', Ready: 'READY' };
     const backendStatus = statusMap[newStatus];
@@ -589,7 +596,7 @@ const CashierDashboard = ({ onLogout }) => {
                   className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:bg-amber-100 transition-all"
                   onClick={() => {
                     // Find and select the table so cashier can process payment
-                    const t = tables.find(tbl => tbl.backendId === alert.tableBackendId);
+                    const t = activeTables.find(tbl => tbl.backendId === alert.tableBackendId);
                     if (t) {
                       setSelectedTable(t);
                        setActiveTab('tables');
@@ -756,7 +763,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                      </div>
                      <div className="p-2 grid grid-cols-4 xs:grid-cols-5 sm:grid-cols-8 lg:grid-cols-12 gap-1.5">
-                        {tables.map((table, i) => {
+                        {activeTables.map((table, i) => {
                            const status = table?.status || 'Free';
                            const colorClass = 
                               status === 'Free' ? 'bg-green-50 border-green-200 text-green-600' :
@@ -795,7 +802,7 @@ const CashierDashboard = ({ onLogout }) => {
                      </div>
                      <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-1">
                         <div className="flex gap-1">
-                           {categories.map(cat => (
+                           {activeCategories.map(cat => (
                               <button
                                  key={cat}
                                  onClick={() => setSelectedCategory(cat)}
@@ -826,7 +833,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <div className="flex-grow overflow-y-auto p-2 bg-gray-50/30 custom-scrollbar">
                      {menuLoading ? (
                         <p className="text-center text-xs text-gray-400 py-8 font-bold uppercase tracking-widest">Syncing menu…</p>
-                     ) : filteredMenu.length === 0 ? (
+                     ) : activeMenuItems.length === 0 ? (
                         <p className="text-center text-xs text-gray-500 py-8 font-bold col-span-full">
                            {searchQuery.trim()
                              ? `No items found for "${searchQuery.trim()}"`

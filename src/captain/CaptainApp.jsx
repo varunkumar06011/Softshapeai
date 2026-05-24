@@ -154,6 +154,7 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
   const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
+  const { activeCalls, clearCall } = useWaiterCalls();
 
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem('active_captain');
@@ -186,6 +187,10 @@ export default function CaptainApp({ onLogout }) {
   const [assignment, setAssignment] = useState(() => getAssignment(currentCaptain?.id));
   const [todayRevenue, setTodayRevenue] = useState(0);
 
+  const [activeBarMenu, setActiveBarMenu] = useState('food');
+  const [activeVariantItem, setActiveVariantItem] = useState(null);
+  const [currentSessionItems, setCurrentSessionItems] = useState([]); 
+
   const loadCaptainRevenue = (captainId) => {
     if (!captainId) return;
     const todayDateISO = new Date().toISOString().slice(0, 10);
@@ -199,10 +204,6 @@ export default function CaptainApp({ onLogout }) {
   };
   
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
-  
-  const [activeBarMenu, setActiveBarMenu] = useState('food');
-  const [activeVariantItem, setActiveVariantItem] = useState(null);
-
   const activeMenuItems = outlet === 'bar' ? barMenu : restaurantMenu;
   const setMenuItems = outlet === 'bar' ? () => {} : setRestaurantMenu;
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
@@ -227,64 +228,15 @@ export default function CaptainApp({ onLogout }) {
     );
   }, [outletFilteredMenuItems]);
 
-  // Waiter Calls sync
-  const { activeCalls, clearCall } = useWaiterCalls();
-
-  useEffect(() => {
-    // Show the Live Sync indicator whenever the global menu broadcasts an update
-    const onMenuUpdated = () => {
-      setIsSyncing(true);
-      setTimeout(() => setIsSyncing(false), 800);
-    };
-    window.addEventListener('softshape_menu_updated', onMenuUpdated);
-    return () => {
-      window.removeEventListener('softshape_menu_updated', onMenuUpdated);
-    };
-  }, []);
-
-  // Realtime assignment + revenue sync
-  useEffect(() => {
-    if (!currentCaptain) return;
-    loadCaptainRevenue(currentCaptain.id);
-    const refresh = () => {
-      setAssignment(getAssignment(currentCaptain.id));
-      loadCaptainRevenue(currentCaptain.id);
-    };
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_captain_targets') refresh();
-    };
-    const handleTxnUpdate = () => loadCaptainRevenue(currentCaptain.id);
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener('softshape_transactions_updated', handleTxnUpdate);
-    const poll = setInterval(refresh, 15000);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('softshape_transactions_updated', handleTxnUpdate);
-      clearInterval(poll);
-    };
-  }, [currentCaptain]);
-
-  // SHARED STATE PERSISTENCE
-
   // Derived — switch between restaurant and bar floor
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
 
-  useEffect(() => {
-    if (tablesSyncing) {
-      setIsSyncing(true);
-      const timer = setTimeout(() => setIsSyncing(false), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [tablesSyncing]);
-
-  const [currentSessionItems, setCurrentSessionItems] = useState([]); 
-
   const activeTable = useMemo(() => tables.find(t => t.id === activeTableId), [tables, activeTableId]);
 
-  const freeCount = useMemo(() => tables.filter(t => t.status === TABLE_STATUS.FREE).length, [tables]);
-  const busyCount = useMemo(() => tables.filter(t => t.status !== TABLE_STATUS.FREE).length, [tables]);
+  const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
+  const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
 
   const filteredMenu = useMemo(
     () =>
@@ -331,6 +283,50 @@ export default function CaptainApp({ onLogout }) {
     }
     return suggestedSpecials;
   }, [todaySpecials, suggestedSpecials, currentSessionItems]);
+
+  useEffect(() => {
+    // Show the Live Sync indicator whenever the global menu broadcasts an update
+    const onMenuUpdated = () => {
+      setIsSyncing(true);
+      setTimeout(() => setIsSyncing(false), 800);
+    };
+    window.addEventListener('softshape_menu_updated', onMenuUpdated);
+    return () => {
+      window.removeEventListener('softshape_menu_updated', onMenuUpdated);
+    };
+  }, []);
+
+  // Realtime assignment + revenue sync
+  useEffect(() => {
+    if (!currentCaptain) return;
+    loadCaptainRevenue(currentCaptain.id);
+    const refresh = () => {
+      setAssignment(getAssignment(currentCaptain.id));
+      loadCaptainRevenue(currentCaptain.id);
+    };
+    const handleStorage = (e) => {
+      if (e.key === 'softshape_captain_targets') refresh();
+    };
+    const handleTxnUpdate = () => loadCaptainRevenue(currentCaptain.id);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('softshape_transactions_updated', handleTxnUpdate);
+    const poll = setInterval(refresh, 15000);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('softshape_transactions_updated', handleTxnUpdate);
+      clearInterval(poll);
+    };
+  }, [currentCaptain]);
+
+  useEffect(() => {
+    if (tablesSyncing) {
+      setIsSyncing(true);
+      const timer = setTimeout(() => setIsSyncing(false), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [tablesSyncing]);
+
+  // SHARED STATE PERSISTENCE
 
   const addNotification = (title, type = 'success') => {
     const id = Date.now();
