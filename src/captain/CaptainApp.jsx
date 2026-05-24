@@ -158,15 +158,7 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { activeCalls, clearCall } = useWaiterCalls();
 
-  const totalActiveTablesCount = useMemo(() => {
-    if (!currentCaptain?.id) return 0;
-    const restActive = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
-    const barActive = barTables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
-    return restActive + barActive;
-  }, [tables, barTables, currentCaptain?.id]);
-
-  const hasReachedActiveLimit = totalActiveTablesCount >= 4;
-
+  // ── All useState/useRef declarations FIRST (before any useMemo that references them) ──
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem('active_captain');
     return saved ? JSON.parse(saved) : null;
@@ -200,7 +192,17 @@ export default function CaptainApp({ onLogout }) {
 
   const [activeBarMenu, setActiveBarMenu] = useState('food');
   const [activeVariantItem, setActiveVariantItem] = useState(null);
-  const [currentSessionItems, setCurrentSessionItems] = useState([]); 
+  const [currentSessionItems, setCurrentSessionItems] = useState([]);
+
+  // ── Derived / memoised values (safe now that all state is declared above) ──
+  const totalActiveTablesCount = useMemo(() => {
+    if (!currentCaptain?.id) return 0;
+    const restActive = tables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+    const barActive = barTables.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
+    return restActive + barActive;
+  }, [tables, barTables, currentCaptain?.id]);
+
+  const hasReachedActiveLimit = totalActiveTablesCount >= 4;
 
   const loadCaptainRevenue = useCallback((captainId) => {
     if (!captainId) return;
