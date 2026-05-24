@@ -191,7 +191,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
-    const liveTable = tables.find((table) => table.backendId === selectedTable.backendId);
+    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
     if (!liveTable || liveTable.status === 'Free') {
       setSelectedTable(null);
       setShowPaymentModal(false);
@@ -199,10 +199,10 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
     setSelectedTable(liveTable);
-  }, [tables, selectedTable?.backendId]);
+  }, [activeTables, selectedTable?.backendId]);
 
   const activeTableOrders = useMemo(() => {
-    return tables
+    return activeTables
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
         const items = (table.kotHistory || []).flatMap((kot) => kot.items || []);
@@ -224,7 +224,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
         return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
       });
-  }, [tables]);
+  }, [activeTables]);
 
   const liveKotQueue = useMemo(() => {
     return activeTableOrders.flatMap((order) =>
