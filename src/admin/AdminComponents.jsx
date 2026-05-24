@@ -1730,16 +1730,46 @@ export function BarMenuPage() {
     setEditImg(item.img || null);
   };
 
-  const saveEdit = () => {
+  // Cloudinary upload proxy — sends base64 data URI to backend, gets CDN URL back
+  const uploadImageToCloudinary = async (base64DataUri) => {
+    const res = await fetch(`${API_BASE}/api/bar/menu/upload-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64: base64DataUri }),
+    });
+    if (!res.ok) throw new Error('Image upload failed');
+    const data = await res.json();
+    return data.url;
+  };
+
+  const saveEdit = async () => {
     if (!editName.trim()) return;
     setEditSaving(true);
+
+    let imageUrl = undefined;
+    if (editImg && editImg.startsWith('data:')) {
+      // New local file picked — upload to Cloudinary first
+      try {
+        imageUrl = await uploadImageToCloudinary(editImg);
+      } catch {
+        showToast('Image upload failed', 'error');
+        setEditSaving(false);
+        return;
+      }
+    }
+    // If editImg is an existing https URL — skip (don't re-upload)
+    // If editImg is null — skip (don't touch imageUrl)
+
     const patch = { n: editName.trim(), t: editType };
     if (editPrice !== '') patch.p = Number(editPrice);
+    if (imageUrl !== undefined) patch.imageUrl = imageUrl;
+
     updateBarMenuItem(editItem.id, patch, API_BASE);
     setEditSaving(false);
     setEditItem(null);
     showToast('Item updated');
   };
+
 
   // Availability toggle
   const toggleAvailability = (item) => {
@@ -1753,7 +1783,7 @@ export function BarMenuPage() {
 
   // Delete
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleteWorking) return; // guard double-tap
     setDeleteWorking(true);
     try {
       const res = await fetch(`${API_BASE}/api/bar/menu/items/${deleteTarget.id}`, { method: 'DELETE' });
@@ -2069,8 +2099,8 @@ export function BarMenuPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-5 w-full max-w-xs space-y-4 shadow-2xl text-center">
             <div className="text-3xl">🗑️</div>
-            <p className="font-bold text-[14px]">Delete "{deleteTarget.n}"?</p>
-            <p className="text-[12px] text-gray-500">This cannot be undone.</p>
+            <p className="font-bold text-[14px]">Remove "{deleteTarget.n}"?</p>
+            <p className="text-[12px] text-gray-500">This item will be hidden from all menus.</p>
             <div className="flex gap-2">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
               <button onClick={confirmDelete} disabled={deleteWorking}
