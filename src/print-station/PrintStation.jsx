@@ -64,7 +64,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
     if (item.notes) cmds.push(`  ** ${item.notes} **\n`);
   });
   cmds.push(divider(), '\n\n', CMD.CUT);
-  return cmds.map(c => ({ type: 'raw', format: 'plain', data: c }));
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
 function buildBillCommands({ tableNumber, items, totalAmount }) {
@@ -108,7 +108,7 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
     '\n\n\n',
     CMD.CUT,
   );
-  return cmds.map(c => ({ type: 'raw', format: 'plain', data: c }));
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
 // ── QZ Tray singleton ────────────────────────────────────────────────────────

@@ -130,15 +130,16 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
       body: JSON.stringify({ orderId })
     });
     const data = await response.json();
-    if (data) {
-      await sendToPrinter(BILLING_PRINTER, data);
+      // Ensure the API response is always wrapped in an array for QZ Tray
+      const printData = Array.isArray(data) ? data : [data];
+      await sendToPrinter(BILLING_PRINTER, printData);
       return { success: true };
-    }
+
   }
 
   // Fallback if no orderId or data is null
   const commands = buildBillCommands({ table, items, subtotal, taxes, total, method });
-  const formattedData = commands.map(c => ({ type: 'raw', format: 'plain', data: c }));
+  const formattedData = [{ type: 'raw', format: 'plain', data: commands.join('') }];
   await sendToPrinter(BILLING_PRINTER, formattedData);
   return { success: true };
 }
