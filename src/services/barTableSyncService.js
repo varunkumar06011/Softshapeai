@@ -4,7 +4,7 @@ import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
-const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v2";
+const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v3";
 const POLL_INTERVAL_MS = 5000;
 
 export const TABLE_STATUS = {
@@ -94,15 +94,36 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
 }
 
 function mergeTablesFromApi(apiTables, currentTables) {
-  return flattenSections(apiTables).map((row) => {
-    const existing = currentTables.find((t) => t.backendId === row.id);
+  let flat = flattenSections(apiTables);
+  
+  // Strictly enforce 30 tables capacity locally
+  const existingNumbers = new Set(flat.map((t) => Number(t.number)));
+  const missing = [];
+  for (let i = 1; i <= 30; i++) {
+    if (!existingNumbers.has(i)) {
+      missing.push({
+        id: `local-${i}`,
+        number: i,
+        status: "AVAILABLE",
+        capacity: 4,
+        sectionId: "main-hall",
+        section: { id: "main-hall", name: "Main Hall" },
+      });
+    }
+  }
+  
+  // Combine API tables with any missing local tables, sorted by table number
+  flat = [...flat, ...missing].sort((a, b) => Number(a.number) - Number(b.number));
+
+  return flat.map((row) => {
+    const existing = currentTables.find((t) => t.backendId === row.id || (row.id.startsWith("local-") && t.number === row.number));
     return mapBackendTable(row, existing);
   });
 }
 
 function createFallbackApiTables() {
   return Array.from({ length: 30 }, (_, i) => ({
-    id: String(i + 1),
+    id: `local-${i + 1}`,
     number: i + 1,
     status: "AVAILABLE",
     capacity: 4,
