@@ -35,7 +35,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
         onLogin('admin');
         return;
       }
-      setError('Invalid email or password. (Expected: cashier@011 / Cashier123)');
+      setError('Invalid email or password.');
       return;
     }
 
@@ -47,7 +47,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     }
 
     if (email.trim() !== validEmail || password !== validPassword) {
-      setError(`Invalid email or password. (Expected: ${validEmail} / ${validPassword})`);
+      setError('Invalid email or password.');
       return;
     }
 
