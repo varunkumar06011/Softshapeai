@@ -101,7 +101,7 @@ function mergeTablesFromApi(apiTables, currentTables) {
 }
 
 function createFallbackApiTables() {
-  return Array.from({ length: 20 }, (_, i) => ({
+  return Array.from({ length: 30 }, (_, i) => ({
     id: String(i + 1),
     number: i + 1,
     status: "AVAILABLE",
