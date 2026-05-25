@@ -87,14 +87,23 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
 // ── QZ Tray Connection ────────────────────────
 async function connectQZ() {
   const qz = (await import('qz-tray')).default;
-  qz.api.setCertificatePromise(() => Promise.resolve(QZ_CERT));
-  qz.api.setSignaturePromise(toSign =>
-    fetch(`${import.meta.env.VITE_API_URL}/api/print/qz-sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toSign })
-    }).then(r => r.json()).then(d => d.signature)
-  );
+
+  qz.security.setCertificatePromise(function(resolve, _reject) {
+    resolve(QZ_CERT);
+  });
+
+  qz.security.setSignaturePromise(function(toSign) {
+    return function(resolve, reject) {
+      fetch(`${import.meta.env.VITE_API_URL}/api/print/qz-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toSign }),
+      })
+        .then(r => r.json())
+        .then(d => resolve(d.signature))
+        .catch(reject);
+    };
+  });
 
   if (!qz.websocket.isActive()) {
     try {
