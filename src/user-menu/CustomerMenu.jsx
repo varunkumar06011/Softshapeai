@@ -167,7 +167,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
         }`}>
           <div className="flex justify-between items-start">
             <div className="animate-in fade-in slide-in-from-left-4">
-              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">TABLE {tableId}</h1>
+              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">TABLE {tableId.replace('table-', '')}</h1>
               <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#FF4D4F] animate-pulse" />
                 Live Interactive Dining Experience
