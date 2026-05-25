@@ -6,7 +6,7 @@ import { useMenu } from '../context/MenuContext';
 
 const CAPTAINS = [
   { id: 'C1', name: 'Ajay Kumar', initials: 'AK', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
-  { id: 'C2', name: 'Ravi Behar', initials: 'RB', color: 'bg-[#EEF2FF] text-[#4338CA]' },
+  { id: 'C2', name: 'Raja Behera', initials: 'RB', color: 'bg-[#EEF2FF] text-[#4338CA]' },
   { id: 'C3', name: 'Sagar', initials: 'S', color: 'bg-[#ECFDF5] text-[#047857]' },
   { id: 'C4', name: 'Durga Prasad', initials: 'DP', color: 'bg-[#FFF1F2] text-[#BE123C]' },
   { id: 'C5', name: 'Subbaiah', initials: 'SU', color: 'bg-[#FEF3C7] text-[#D97706]' },
