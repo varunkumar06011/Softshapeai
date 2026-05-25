@@ -618,13 +618,15 @@ export default function CaptainApp({ onLogout }) {
     };
     const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
 
-    // Format items for the API
+    // Format items for the API — menuType MUST be included so the backend
+    // can split food → KOT (kitchen) and liquor → BAR_KOT (bar printer).
     const apiItems = currentSessionItems.map(i => ({
       menuItemId: String(i.id || i.menuItemId || i.n || i.name),
       name: i.n || i.name,
       price: Number(i.p ?? i.price ?? 0),
       quantity: Number(i.q ?? i.quantity ?? 1),
       notes: i.notes || null,
+      menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
     }));
 
     // Snapshot items before clearing — needed for print below
