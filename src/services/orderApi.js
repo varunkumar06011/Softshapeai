@@ -23,6 +23,7 @@ export function toOrderItems(items) {
     price: Number(item.price ?? item.p ?? 0),
     quantity: Number(item.quantity ?? item.q ?? 1),
     notes: item.notes || null,
+    menuType: (item.menuType || item.type || "FOOD").toUpperCase() === "LIQUOR" ? "LIQUOR" : "FOOD",
   }));
 }
 

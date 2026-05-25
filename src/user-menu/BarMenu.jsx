@@ -349,7 +349,8 @@ export default function BarMenu({ tableId }) {
         name: i.n,
         price: Number(i.p),
         quantity: Number(i.q),
-        notes: null
+        notes: null,
+        menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
       }));
 
       if (activeOrderId) {
