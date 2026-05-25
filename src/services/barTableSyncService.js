@@ -4,7 +4,7 @@ import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
-const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v1";
+const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v2";
 const POLL_INTERVAL_MS = 5000;
 
 export const TABLE_STATUS = {
@@ -143,7 +143,7 @@ function attachSocketLogging(socket) {
 }
 
 function acquireSocket(handlers) {
-  const noop = () => {};
+  const noop = () => { };
 
   try {
     if (!sharedSocket) {
@@ -325,13 +325,13 @@ export function useBarTableSync() {
     writeCache(next);
     tablesRef.current = next;
     setTablesState(next);
-    
+
     _lastLocalUpdate = Date.now();
 
     if (!skipPersist) {
       persistStatusChanges(current, next).then((results) => {
         if (!results || !results.length) return;
-        
+
         _lastLocalUpdate = Date.now();
         setTablesState((latest) => {
           let updated = latest;

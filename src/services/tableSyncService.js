@@ -4,7 +4,7 @@ import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
 
 
-const TABLES_CACHE_KEY = "softshape_tables_cache_v3";
+const TABLES_CACHE_KEY = "softshape_tables_cache_v4";
 const POLL_INTERVAL_MS = 5000;
 
 export const TABLE_STATUS = {
@@ -92,7 +92,7 @@ function mergeTablesFromApi(apiTables, currentTables) {
 }
 
 function createFallbackApiTables() {
-  return Array.from({ length: 20 }, (_, i) => ({
+  return Array.from({ length: 30 }, (_, i) => ({
     id: String(i + 1),
     number: i + 1,
     status: "AVAILABLE",
