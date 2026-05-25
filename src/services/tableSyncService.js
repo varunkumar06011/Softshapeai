@@ -74,7 +74,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     sectionId: row.sectionId,
     section: row.section,
     guests: row.guests ?? 0,
-    time: row.sessionStartedAt ?? null,
+    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
     captainId: row.captainId ?? null,
     kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
     currentBill: row.currentBill ?? 0,
