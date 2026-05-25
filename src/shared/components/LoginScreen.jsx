@@ -47,7 +47,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     }
 
     if (email.trim() !== validEmail || password !== validPassword) {
-      setError('Invalid email or password.');
+      setError(`Invalid email or password. (Expected: ${validEmail} / ${validPassword})`);
       return;
     }
 
