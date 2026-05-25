@@ -200,8 +200,10 @@ export default function PrintStation() {
 
       socket.on('connect', () => {
         setSockOk(true);
-        // Join all rooms so we catch jobs regardless of restaurantId
-        socket.emit('join', '__print_station__');
+        // Join both restaurant rooms so we receive print_job events
+        // from all outlets (restaurant + bar).
+        socket.emit('join', 'restaurant-001');
+        socket.emit('join', 'bar-001');
         pushLog('Socket connected ✓');
       });
       socket.on('disconnect', () => {
