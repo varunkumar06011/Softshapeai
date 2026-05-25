@@ -1162,8 +1162,11 @@ export default function CaptainApp({ onLogout }) {
                         <button
                           key={cat}
                           onClick={() => setActiveCategory(cat)}
-                          className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 ${activeCategory === cat ? 'bg-[#E53935] border-[#E53935] text-white shadow-md shadow-red-100' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
-                            }`}
+                          className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 ${
+                            activeCategory === cat
+                              ? 'bg-gradient-to-r from-[#E53935] to-[#FF7043] text-white border-transparent shadow-[0_8px_16px_rgba(229,57,53,0.15)] scale-[1.03]'
+                              : 'bg-white border-gray-100 text-gray-400 hover:bg-red-50/10 hover:text-gray-700'
+                          }`}
                         >
                           {cat}
                         </button>
@@ -1199,40 +1202,145 @@ export default function CaptainApp({ onLogout }) {
                         : "No items in this category."}
                     </p>
                   ) : (
-                    <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 pb-12">
-                      {filteredMenu.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-white rounded-3xl border border-gray-100 overflow-hidden hover:border-[#E53935] hover:shadow-2xl transition-all cursor-pointer flex flex-col group active:scale-98 relative"
-                          onClick={() => setPreviewItem(item)}
-                        >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 pb-12">
+                      {filteredMenu.map((item, idx) => {
+                        const totalQty = currentSessionItems.filter(i => i.n.startsWith(item.n)).reduce((acc, i) => acc + i.q, 0);
+                        const isVeg = item.t === 'veg';
 
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => setPreviewItem(item)}
+                            className="cursor-pointer bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden"
+                          >
+                            {/* Chef Special Badge */}
+                            {item.isSpecial && (
+                              <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
+                                <Star size={6} className="fill-white" /> Special
+                              </div>
+                            )}
 
-                          <div className="h-28 sm:h-40 w-full overflow-hidden relative">
-                            <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                            <div className={`absolute top-3 right-3 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50`}>
-                              <div className={`w-3.5 h-3.5 rounded-[3px] border-2 flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
+                            {/* Image container */}
+                            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl sm:rounded-[20px] overflow-hidden shrink-0 relative shadow-inner bg-gray-50 border border-gray-100/50">
+                              <img
+                                src={item.img}
+                                alt={item.n}
+                                className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-700 ease-out"
+                              />
+                              
+                              {/* Premium Veg/Non-veg indicator square overlay */}
+                              <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm p-0.5 rounded-[4px] shadow-sm border border-gray-100 flex items-center justify-center">
+                                <div className={`w-3.5 h-3.5 rounded-[3px] border-[1.5px] flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
+                                  <div className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
+                                </div>
                               </div>
                             </div>
-                            <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4 z-10">
-                              <span className="text-[10px] font-black text-white uppercase flex items-center gap-1.5"><Info size={12} /> Show Customer</span>
+
+                            {/* Content section */}
+                            <div className="flex-grow min-w-0 py-0.5 flex flex-col justify-between h-full">
+                              <div>
+                                {/* Category Tag & Spice Level */}
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest truncate">
+                                    {item.c || 'Dish'}
+                                  </span>
+                                  {item.spice > 0 && (
+                                    <span className="flex items-center gap-0.5 text-[8px] font-bold text-orange-600 bg-orange-50 border border-orange-100 px-1 py-0.2 rounded shrink-0">
+                                      <Flame size={8} className="fill-orange-600" /> Lvl {item.spice}
+                                    </span>
+                                  )}
+                                  {item.menuType === 'LIQUOR' && (
+                                    <span className="text-[7px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
+                                      🥃 Liquor
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Item Name (Swiggy/Zomato style bold typography) */}
+                                <h3 className="font-extrabold text-xs sm:text-[13px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
+                                  {item.n}
+                                </h3>
+
+                                {/* Item Short Description */}
+                                {item.desc && (
+                                  <p className="text-[10px] text-gray-400 font-medium line-clamp-1 leading-normal">
+                                    {item.desc}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Price & Action button */}
+                              <div className="flex items-center justify-between mt-2.5">
+                                <div className="flex items-baseline">
+                                  <span className="text-[11px] font-bold text-[#E53935] mr-0.5">₹</span>
+                                  <span className="text-sm sm:text-base font-black text-gray-900 tracking-tight">
+                                    {item.p}
+                                  </span>
+                                  {item.variants && item.variants.length > 0 && (
+                                    <span className="text-[8px] font-bold text-gray-400 ml-1.5 shrink-0">
+                                      ({item.variants.length} Opt)
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Add/Quantity control buttons */}
+                                <div onClick={(e) => e.stopPropagation()}>
+                                  {totalQty > 0 ? (
+                                    <div className="flex items-center gap-1 bg-red-50/80 rounded-full p-0.5 border border-red-100 shadow-sm">
+                                      {/* If the item has variants, let them select via preview/variant picker, else use quick minus/plus */}
+                                      {item.variants && item.variants.length > 0 ? (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPreviewItem(item);
+                                          }}
+                                          className="px-3 py-1 text-[9px] font-black text-[#E53935] uppercase tracking-wider"
+                                        >
+                                          {totalQty} Added
+                                        </button>
+                                      ) : (
+                                        <>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              updateDraftQty(item.n, -1);
+                                            }}
+                                            className="w-6.5 h-6.5 rounded-full bg-white text-[#E53935] flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-red-100"
+                                          >
+                                            <Minus size={10} strokeWidth={3.5} />
+                                          </button>
+                                          <span className="text-xs font-black w-4 text-center text-gray-900">
+                                            {totalQty}
+                                          </span>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              addItemToSession(item);
+                                            }}
+                                            className="w-6.5 h-6.5 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"
+                                          >
+                                            <Plus size={10} strokeWidth={3.5} />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleItemClick(e, item);
+                                      }}
+                                      className="px-4 py-1.5 rounded-full bg-white border border-red-100 text-[9px] font-black uppercase tracking-widest text-[#E53935] hover:bg-[#E53935] hover:text-white hover:border-[#E53935] transition-all shadow-sm active:scale-95 duration-200"
+                                    >
+                                      Add
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          <div className="p-3 sm:p-4 flex flex-col flex-grow">
-                            <h4 className="text-[12px] font-black text-gray-900 leading-tight mb-3 flex-grow">{item.n}</h4>
-                            <div className="flex items-center justify-between mt-auto">
-                              <span className="text-sm font-black text-gray-900 tracking-tight">₹{item.p}</span>
-                              <button
-                                onClick={(e) => handleItemClick(e, item)}
-                                className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-[#E53935] hover:bg-[#E53935] hover:text-white transition-all shadow-sm"
-                              >
-                                <Plus size={18} strokeWidth={3} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
