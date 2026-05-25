@@ -4,7 +4,7 @@ import { Users, Star, TrendingUp } from "lucide-react";
 
 const CAPTAINS_MASTER = [
   { id: 'C1', name: 'Ajay Kumar', rating: 4.9, speed: "12m", shift: "Morning", stars: 5 },
-  { id: 'C2', name: 'Ravi Behar', rating: 4.7, speed: "15m", shift: "Morning", stars: 4 },
+  { id: 'C2', name: 'Raja Behera', rating: 4.7, speed: "15m", shift: "Morning", stars: 4 },
   { id: 'C3', name: 'Sagar', rating: 4.8, speed: "14m", shift: "Evening", stars: 4 },
   { id: 'C4', name: 'Durga Prasad', rating: 4.5, speed: "18m", shift: "Evening", stars: 3 },
   { id: 'C5', name: 'Subbaiah', rating: 4.6, speed: "16m", shift: "Morning", stars: 4 },
@@ -115,22 +115,22 @@ export default function CaptainPerformanceDashboard() {
 
   return (
     <div className="space-y-6 font-sans">
-      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-[#FFCDD2] shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center text-[#B71C1C]">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-[#FFCDD2] shadow-sm">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center text-[#B71C1C] shrink-0">
             <Users size={20} />
           </div>
-          <div>
-            <h2 className="font-black text-gray-900 tracking-tight">Captain Intelligence</h2>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Performance & Service Quality</p>
+          <div className="min-w-0">
+            <h2 className="font-black text-gray-900 tracking-tight truncate">Captain Intelligence</h2>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">Performance & Service Quality</p>
           </div>
         </div>
-        <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
+        <div className="flex bg-[#F4F4F5] p-1 rounded-xl w-full sm:w-auto overflow-x-auto scrollbar-hide shrink-0">
           {['Today', 'Weekly', 'Monthly'].map(r => (
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? 'bg-white text-[#B71C1C] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? 'bg-white text-[#B71C1C] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
             >
               {r}
             </button>

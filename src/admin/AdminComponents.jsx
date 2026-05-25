@@ -277,7 +277,7 @@ export function Pos() {
 
 const CAPTAINS = [
   { id: 'C1', name: 'Ajay Kumar' },
-  { id: 'C2', name: 'Ravi Behar' },
+  { id: 'C2', name: 'Raja Behera' },
   { id: 'C3', name: 'Sagar' },
   { id: 'C4', name: 'Durga Prasad' },
   { id: 'C5', name: 'Subbaiah' },

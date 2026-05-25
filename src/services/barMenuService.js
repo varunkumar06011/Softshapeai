@@ -38,5 +38,5 @@ export function readBarMenuCache() {
 export function writeBarMenuCache(items) {
   try {
     localStorage.setItem(BAR_MENU_CACHE_KEY, JSON.stringify(items));
-  } catch {}
+  } catch { }
 }

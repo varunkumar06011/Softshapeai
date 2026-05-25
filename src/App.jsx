@@ -218,14 +218,19 @@ function AdminLoginWrapper() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('admin_auth') === 'true');
   if (isLoggedIn) return <Navigate to="/admin/dashboard" replace />;
   return (
-    <LoginScreen role="admin" onLogin={() => { localStorage.setItem('admin_auth', 'true'); setIsLoggedIn(true); }} onBack={() => navigate('/')} />
+    <LoginScreen role="admin" onLogin={(roleType) => { 
+      localStorage.setItem('admin_auth', 'true'); 
+      localStorage.setItem('admin_auth_role', roleType || 'admin');
+      setIsLoggedIn(true); 
+    }} onBack={() => navigate('/')} />
   );
 }
 
 function AdminDashboardWrapper() {
   const navigate = useNavigate();
   if (localStorage.getItem('admin_auth') !== 'true') return <Navigate to="/admin" replace />;
-  return <AdminDashboard onLogout={() => { localStorage.removeItem('admin_auth'); navigate('/admin'); }} />;
+  const role = localStorage.getItem('admin_auth_role') || 'admin';
+  return <AdminDashboard role={role} onLogout={() => { localStorage.removeItem('admin_auth'); localStorage.removeItem('admin_auth_role'); navigate('/admin'); }} />;
 }
 
 function CashierLoginWrapper() {

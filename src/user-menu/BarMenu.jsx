@@ -24,14 +24,14 @@ export default function BarMenu({ tableId }) {
     const hash = String(id || name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const purchases = (hash * 17) % 4800 + 200; // range: 200 to 5000
     const wishlist = (hash * 31) % 5800 + 200;  // range: 200 to 6000
-    
+
     const formatVal = (val) => {
       if (val >= 1000) {
         return `${(val / 1000).toFixed(1).replace('.0', '')}K+`;
       }
       return String(val);
     };
-    
+
     return {
       purchases: formatVal(purchases),
       wishlist: formatVal(wishlist)
@@ -63,13 +63,13 @@ export default function BarMenu({ tableId }) {
   const [categoriesData, setCategoriesData] = useState([]);
   const [flatItems, setFlatItems] = useState([]);
   const [tableBackendId, setTableBackendId] = useState(null);
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMenuType, setActiveMenuType] = useState('liquor'); // 'food' or 'liquor'
   const [activeCategory, setActiveCategory] = useState('All');
   const [dietFilter, setDietFilter] = useState('All'); // All, Veg, Non-Veg
   const [cart, setCart] = useState([]);
-  
+
   // Modals state
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
@@ -87,7 +87,7 @@ export default function BarMenu({ tableId }) {
   const handleScroll = (e) => {
     const scrollTop = e.currentTarget.scrollTop;
     const diff = scrollTop - lastScrollTop.current;
-    
+
     if (scrollTop <= 10) {
       setIsScrolledDown(false);
     } else if (Math.abs(diff) > 5) {
@@ -127,33 +127,33 @@ export default function BarMenu({ tableId }) {
           fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
           fetchBarTables()
         ]);
-        
+
         if (!posViewRes.ok) throw new Error(`POS-view failed: ${posViewRes.status}`);
         if (!itemsRes.ok) throw new Error(`Items failed: ${itemsRes.status}`);
-        
+
         const posViewData = await posViewRes.json();
         const itemsData = await itemsRes.json();
         const flatTables = flattenSections(tablesRes);
-        
+
         if (active) {
           // Filter out unavailable items from both data sources
           const filteredPosView = (posViewData || []).map(cat => ({
             ...cat,
             items: (cat.items || []).filter(item => item.isAvailable !== false)
           })).filter(cat => cat.items.length > 0);
-          
+
           const filteredItems = (itemsData || []).filter(item => item.isAvailable !== false);
-          
+
           setCategoriesData(filteredPosView);
           setFlatItems(filteredItems);
-          
+
           // Resolve backend table ID
           const matchNumber = String(tableId).match(/(\d+)/)?.[1] || tableId;
           const matchedTable = flatTables.find(t => String(t.number) === String(matchNumber) || String(t.id) === String(matchNumber));
           if (matchedTable) {
             setTableBackendId(matchedTable.id);
           }
-          
+
           setLoading(false);
         }
       } catch (err) {
@@ -201,11 +201,11 @@ export default function BarMenu({ tableId }) {
   // Filter items to render
   const itemsToDisplay = useMemo(() => {
     let items = [];
-    
+
     // If search query is active, search globally on flatItems matching menuType
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
-      items = flatItems.filter(item => 
+      items = flatItems.filter(item =>
         item.name?.toLowerCase().includes(q) &&
         (item.menuType || 'FOOD').toUpperCase() === activeMenuType.toUpperCase()
       ).map(item => ({
@@ -235,7 +235,7 @@ export default function BarMenu({ tableId }) {
       const isLiquor = (item.menuType || '').toUpperCase() === 'LIQUOR';
       let finalImg = item.imageUrl || item.img;
       const foodPlaceholder = "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
-      
+
       if (isLiquor && (!finalImg || finalImg === foodPlaceholder)) {
         finalImg = getLiquorImage(item.name || item.n);
       } else if (!finalImg) {
@@ -308,7 +308,7 @@ export default function BarMenu({ tableId }) {
   const handleCallWaiter = () => {
     if (callCooldown > 0) return;
     const validation = validateAndCreateWaiterCall(tableId, 'bar');
-    
+
     if (validation.success) {
       broadcastWaiterEvent('customer:call_waiter', {
         tableId,
@@ -329,20 +329,20 @@ export default function BarMenu({ tableId }) {
       alert("Table session is not fully synchronized yet. Please try again in a few seconds.");
       return;
     }
-    
+
     setIsPlacingOrder(true);
     try {
       // 1. Fetch latest table state to verify activeOrder
       const tablesRes = await fetchBarTables();
       const flatTables = flattenSections(tablesRes);
       const matched = flatTables.find(t => String(t.id) === String(tableBackendId));
-      
+
       if (!matched) {
         throw new Error("Could not verify table session on server.");
       }
-      
+
       const activeOrderId = matched.orders?.[0]?.id || matched.activeOrder?.id;
-      
+
       // Format items for POS api compatibility
       const apiItems = cart.map(i => ({
         menuItemId: String(i.id),
@@ -351,7 +351,7 @@ export default function BarMenu({ tableId }) {
         quantity: Number(i.q),
         notes: null
       }));
-      
+
       if (activeOrderId) {
         await updateOrderItems(activeOrderId, apiItems);
       } else {
@@ -361,7 +361,7 @@ export default function BarMenu({ tableId }) {
           items: apiItems
         });
       }
-      
+
       setCart([]);
       setIsOrderModalOpen(false);
       setShowSuccessModal(true);
@@ -394,17 +394,15 @@ export default function BarMenu({ tableId }) {
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#FFF5F5] text-gray-900 font-['Inter',sans-serif] overflow-hidden relative">
-      
+
       {/* Background Decor */}
       <div className={`absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b ${activeMenuType === 'liquor' ? 'from-amber-500/10' : 'from-red-500/10'} to-transparent pointer-events-none transition-all duration-500`} />
 
       {/* Header */}
-      <header className={`px-4 sm:px-6 transition-all duration-300 ease-in-out shrink-0 relative z-20 ${
-        isScrolledDown ? 'pt-3 pb-2 bg-[#FFF5F5] border-b border-red-100/30' : 'pt-6 sm:pt-10 pb-4'
-      }`}>
-        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
-          isScrolledDown ? 'h-0 opacity-0 mb-0 pointer-events-none' : 'h-16 opacity-100 mb-3'
+      <header className={`px-4 sm:px-6 transition-all duration-300 ease-in-out shrink-0 relative z-20 ${isScrolledDown ? 'pt-3 pb-2 bg-[#FFF5F5] border-b border-red-100/30' : 'pt-6 sm:pt-10 pb-4'
         }`}>
+        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isScrolledDown ? 'h-0 opacity-0 mb-0 pointer-events-none' : 'h-16 opacity-100 mb-3'
+          }`}>
           <div className="flex justify-between items-start">
             <div className="animate-in fade-in slide-in-from-left-4">
               <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">BAR TABLE {tableId.replace('table-', '')}</h1>
@@ -417,16 +415,14 @@ export default function BarMenu({ tableId }) {
         </div>
 
         {/* Search */}
-        <div className={`relative group shadow-[0_10px_30px_rgba(183,28,28,0.04)] rounded-xl sm:rounded-2xl transition-all hover:shadow-[0_10px_30px_rgba(183,28,28,0.08)] transition-all duration-300 ${
-          isScrolledDown ? 'mb-2' : 'mb-3 sm:mb-4'
-        }`}>
+        <div className={`relative group shadow-[0_10px_30px_rgba(183,28,28,0.04)] rounded-xl sm:rounded-2xl transition-all hover:shadow-[0_10px_30px_rgba(183,28,28,0.08)] transition-all duration-300 ${isScrolledDown ? 'mb-2' : 'mb-3 sm:mb-4'
+          }`}>
           <Search className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-red-300 group-focus-within:text-[#B71C1C] transition-colors" size={16} />
           <input
             type="search"
             placeholder={activeMenuType === 'liquor' ? "Search fine spirits & drinks..." : "Search bar appetizers & food..."}
-            className={`w-full bg-white border border-red-50 pl-10 sm:pl-12 pr-4 text-xs sm:text-sm font-bold outline-none focus:border-[#B71C1C]/30 focus:ring-4 focus:ring-red-50/50 transition-all text-gray-800 placeholder-gray-400 transition-all duration-300 ${
-              isScrolledDown ? 'py-2 rounded-xl' : 'py-3.5 sm:py-4 rounded-2xl'
-            }`}
+            className={`w-full bg-white border border-red-50 pl-10 sm:pl-12 pr-4 text-xs sm:text-sm font-bold outline-none focus:border-[#B71C1C]/30 focus:ring-4 focus:ring-red-50/50 transition-all text-gray-800 placeholder-gray-400 transition-all duration-300 ${isScrolledDown ? 'py-2 rounded-xl' : 'py-3.5 sm:py-4 rounded-2xl'
+              }`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -436,25 +432,21 @@ export default function BarMenu({ tableId }) {
         <div className={`flex items-center bg-white/80 border border-red-50 rounded-xl sm:rounded-2xl p-0.5 sm:p-1 gap-1 shadow-sm max-w-xs mx-auto transition-all duration-300`}>
           <button
             onClick={() => { setActiveMenuType('food'); setActiveCategory('All'); }}
-            className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-              isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
-            } ${
-              activeMenuType === 'food'
+            className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
+              } ${activeMenuType === 'food'
                 ? 'bg-gradient-to-r from-[#FF6B6B] to-[#FF4D4F] text-white shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
           >
             🍗 Food
           </button>
           <button
             onClick={() => { setActiveMenuType('liquor'); setActiveCategory('All'); }}
-            className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-              isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
-            } ${
-              activeMenuType === 'liquor'
+            className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
+              } ${activeMenuType === 'liquor'
                 ? 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
           >
             🥃 Liquor
           </button>
@@ -464,45 +456,40 @@ export default function BarMenu({ tableId }) {
       {/* Filters & Categories */}
       <div className="shrink-0 relative z-10 sticky top-0 bg-[#FFF5F5]/90 backdrop-blur-xl border-b border-red-50 pb-1.5 sm:pb-2">
         {/* Diet Toggle */}
-        <div className={`px-4 sm:px-6 flex gap-1.5 sm:gap-2 transition-all duration-300 ease-in-out overflow-hidden ${
-          isScrolledDown ? 'h-0 opacity-0 py-0 mb-0 pointer-events-none' : 'h-10 py-2'
-        }`}>
+        <div className={`px-4 sm:px-6 flex gap-1.5 sm:gap-2 transition-all duration-300 ease-in-out overflow-hidden ${isScrolledDown ? 'h-0 opacity-0 py-0 mb-0 pointer-events-none' : 'h-10 py-2'
+          }`}>
           {['All', 'Veg', 'Non-Veg'].map(diet => (
             <button
               key={diet}
               onClick={() => setDietFilter(diet)}
-              className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-md text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${
-                dietFilter === diet 
+              className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-md text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${dietFilter === diet
                   ? (diet === 'Veg' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : diet === 'Non-Veg' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-gray-200 text-gray-800 border border-gray-300')
                   : 'bg-white text-gray-400 border border-gray-200 hover:bg-gray-50'
-              }`}
+                }`}
             >
               {diet === 'All' ? 'Any' : diet}
             </button>
           ))}
         </div>
-        
+
         {/* Category Tab Scroll */}
-        <div className={`px-4 sm:px-6 overflow-x-auto scrollbar-hide flex gap-2 sm:gap-3 transition-all duration-300 ease-in-out ${
-          isScrolledDown ? 'py-1' : 'py-1.5 sm:py-2'
-        }`}>
+        <div className={`px-4 sm:px-6 overflow-x-auto scrollbar-hide flex gap-2 sm:gap-3 transition-all duration-300 ease-in-out ${isScrolledDown ? 'py-1' : 'py-1.5 sm:py-2'
+          }`}>
           {displayCategories.map(cat => {
             const isSelected = activeCategory === cat;
             return (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`transition-all duration-300 shrink-0 border flex items-center gap-1 sm:gap-1.5 ${
-                  isScrolledDown 
-                    ? 'px-4 py-1.5 text-[9px] rounded-full' 
+                className={`transition-all duration-300 shrink-0 border flex items-center gap-1 sm:gap-1.5 ${isScrolledDown
+                    ? 'px-4 py-1.5 text-[9px] rounded-full'
                     : 'px-5 sm:px-6 py-2.5 sm:py-3 text-[10px] rounded-full'
-                } ${
-                  isSelected 
+                  } ${isSelected
                     ? activeMenuType === 'liquor'
                       ? 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white border-transparent shadow-[0_10px_20px_rgba(183,28,28,0.2)] scale-105'
-                      : 'bg-gradient-to-r from-[#FF4D4F] to-[#FF6B6B] text-white border-transparent shadow-[0_10px_20px_rgba(255,77,79,0.2)] scale-105' 
+                      : 'bg-gradient-to-r from-[#FF4D4F] to-[#FF6B6B] text-white border-transparent shadow-[0_10px_20px_rgba(255,77,79,0.2)] scale-105'
                     : 'bg-white border-red-50 text-gray-500 hover:bg-red-50/50 hover:text-gray-900 shadow-sm'
-                }`}
+                  }`}
               >
                 {cat}
               </button>
@@ -512,7 +499,7 @@ export default function BarMenu({ tableId }) {
       </div>
 
       {/* Menu List */}
-      <div 
+      <div
         onScroll={handleScroll}
         className="flex-grow overflow-y-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-36 sm:pb-40 space-y-5 scroll-smooth z-0"
       >
@@ -520,14 +507,14 @@ export default function BarMenu({ tableId }) {
           {itemsToDisplay.map(item => {
             const qty = cart.find(i => i.n.startsWith(item.name || item.n))?.q || 0;
             return (
-              <div 
-                key={item.id} 
+              <div
+                key={item.id}
                 onClick={() => setPreviewItem(item)}
                 className="cursor-pointer bg-white border border-red-50 rounded-2xl xs:rounded-[28px] p-3 xs:p-4 flex gap-3 xs:gap-5 items-center group hover:shadow-[0_15px_30px_rgba(183,28,28,0.06)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
               >
                 <div className="w-20 h-20 xs:w-24 xs:h-24 sm:w-28 sm:h-28 rounded-xl xs:rounded-[20px] sm:rounded-[24px] overflow-hidden shrink-0 relative shadow-inner">
                   <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                  
+
                   {/* Veg/Non indicator */}
                   <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm p-1 rounded-md shadow-sm">
                     <div className={`w-2 h-2 xs:w-2.5 xs:h-2.5 rounded-full ${item.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
@@ -545,14 +532,14 @@ export default function BarMenu({ tableId }) {
                   </div>
 
                   <h3 className="font-bold text-sm sm:text-base text-gray-800 tracking-tight leading-snug mb-1 pr-2">{item.n}</h3>
-                  
+
                   {/* Stats */}
                   <div className="flex items-center gap-1.5 mb-1.5 xs:mb-2 text-[8px] xs:text-[9px] font-bold text-gray-400">
-                    <span className="flex items-center gap-0.5"><TrendingUp size={9} className="text-emerald-500"/> {getEngagement(item.id, item.n).purchases}</span>
+                    <span className="flex items-center gap-0.5"><TrendingUp size={9} className="text-emerald-500" /> {getEngagement(item.id, item.n).purchases}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-0.5"><Heart size={9} className="text-[#B71C1C]"/> {getEngagement(item.id, item.n).wishlist}</span>
+                    <span className="flex items-center gap-0.5"><Heart size={9} className="text-[#B71C1C]" /> {getEngagement(item.id, item.n).wishlist}</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between mt-auto">
                     <div>
                       <span className="text-sm xs:text-lg font-black text-[#B71C1C]">₹{item.p}</span>
@@ -560,7 +547,7 @@ export default function BarMenu({ tableId }) {
                         <span className="text-[8px] xs:text-[9px] font-bold text-gray-400 ml-1 xs:ml-1.5 shrink-0">({item.variants.length} Opt)</span>
                       )}
                     </div>
-                    
+
                     {/* Add to Cart Actions */}
                     {qty > 0 ? (
                       <div className="flex items-center gap-1 xs:gap-2 bg-red-50 rounded-full px-1.5 xs:px-2 py-1 xs:py-1.5 border border-red-100">
@@ -580,7 +567,7 @@ export default function BarMenu({ tableId }) {
                         )}
                       </div>
                     ) : (
-                      <button 
+                      <button
                         onClick={(e) => addToCart(item, null, e)}
                         className="px-3.5 xs:px-5 py-2 xs:py-2.5 rounded-full bg-white border border-red-100 text-[9px] xs:text-[10px] font-black uppercase tracking-widest text-[#B71C1C] hover:bg-[#B71C1C] hover:text-white transition-all shadow-sm group-hover:border-[#B71C1C]"
                       >
@@ -596,12 +583,11 @@ export default function BarMenu({ tableId }) {
       </div>
 
       {/* Floating Call Waiter Button */}
-      <div 
-        className={`absolute right-4 sm:right-6 z-50 transition-all duration-300 ease-in-out ${
-          cart.length > 0 
-            ? 'bottom-[84px] xs:bottom-[92px] sm:bottom-[100px]' 
+      <div
+        className={`absolute right-4 sm:right-6 z-50 transition-all duration-300 ease-in-out ${cart.length > 0
+            ? 'bottom-[84px] xs:bottom-[92px] sm:bottom-[100px]'
             : 'bottom-6 sm:bottom-8'
-        }`}
+          }`}
       >
         {isAccepted ? (
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full shadow-[0_12px_30px_rgba(16,185,129,0.3)] bg-gradient-to-r from-emerald-500 to-green-500 text-white animate-in slide-in-from-bottom-5 zoom-in pointer-events-auto max-w-[180px] sm:max-w-[220px]">
@@ -616,14 +602,13 @@ export default function BarMenu({ tableId }) {
             </div>
           </div>
         ) : (
-          <button 
+          <button
             onClick={handleCallWaiter}
             disabled={callCooldown > 0}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-full shadow-[0_10px_25px_rgba(183,28,28,0.25)] transition-all duration-300 pointer-events-auto cursor-pointer focus:outline-none hover:scale-105 active:scale-95 ${
-              callCooldown > 0 
-                ? 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed shadow-sm' 
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-full shadow-[0_10px_25px_rgba(183,28,28,0.25)] transition-all duration-300 pointer-events-auto cursor-pointer focus:outline-none hover:scale-105 active:scale-95 ${callCooldown > 0
+                ? 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed shadow-sm'
                 : 'bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white animate-[pulse-glow_2s_infinite]'
-            }`}
+              }`}
           >
             {callCooldown > 0 ? (
               <>
@@ -658,8 +643,8 @@ export default function BarMenu({ tableId }) {
                 </div>
               </div>
             </div>
-            
-            <button 
+
+            <button
               onClick={() => setIsOrderModalOpen(true)}
               className="px-5 sm:px-8 py-2.5 sm:py-3.5 rounded-full bg-gray-900 text-white text-[9px] sm:text-[11px] font-black uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer"
             >
@@ -675,23 +660,23 @@ export default function BarMenu({ tableId }) {
           <div className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="h-64 w-full relative">
               <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
-              <button 
+              <button
                 onClick={() => setPreviewItem(null)}
                 className="absolute top-4 right-4 w-10 h-10 bg-black/50 backdrop-blur-md rounded-full text-white flex items-center justify-center hover:bg-black/70 transition-colors"
               >
                 <X size={20} />
               </button>
-              
+
               <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2">
-                 <div className={`w-3 h-3 rounded-full ${previewItem.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">{previewItem.t}</span>
+                <div className={`w-3 h-3 rounded-full ${previewItem.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">{previewItem.t}</span>
               </div>
             </div>
-            
+
             <div className="p-8">
               <h2 className="text-2xl font-black text-gray-900 mb-2 leading-tight">{previewItem.n}</h2>
               <p className="text-sm font-bold text-gray-500 mb-4">{previewItem.c}</p>
-              
+
               <div className="bg-red-50/50 rounded-2xl p-4 mb-6">
                 <p className="text-xs font-semibold text-gray-600 leading-relaxed">
                   Enjoy our premium lounge curation. Crafted with absolute precision for your tasting pleasure.
@@ -705,9 +690,9 @@ export default function BarMenu({ tableId }) {
                 <div>
                   <span className="text-3xl font-black text-[#B71C1C]">₹{previewItem.p}</span>
                 </div>
-                
+
                 {previewItem.variants && previewItem.variants.length > 1 ? (
-                  <button 
+                  <button
                     onClick={() => { setVariantPickerItem(previewItem); setPreviewItem(null); }}
                     className="px-6 py-3.5 rounded-full bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md"
                   >
@@ -725,7 +710,7 @@ export default function BarMenu({ tableId }) {
                       </button>
                     </div>
                   ) : (
-                    <button 
+                    <button
                       onClick={() => addToCart(previewItem)}
                       className="px-8 py-4 rounded-full bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white text-[12px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_10px_20px_rgba(183,28,28,0.2)]"
                     >
@@ -741,7 +726,7 @@ export default function BarMenu({ tableId }) {
 
       {/* Variant Picker Modal */}
       {variantPickerItem && (
-        <VariantPicker 
+        <VariantPicker
           item={variantPickerItem}
           onSelect={handleVariantSelect}
           onClose={() => setVariantPickerItem(null)}
@@ -757,14 +742,14 @@ export default function BarMenu({ tableId }) {
                 <h2 className="text-2xl font-black text-gray-900">Your Bar Order</h2>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Ready to sync with POS</p>
               </div>
-              <button 
+              <button
                 onClick={() => setIsOrderModalOpen(false)}
                 className="w-10 h-10 bg-gray-100 rounded-full text-gray-600 flex items-center justify-center hover:bg-gray-200 transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="flex-grow overflow-y-auto p-6 space-y-6">
               {cart.map(item => (
                 <div key={item.n} className="flex items-center gap-4">
@@ -773,7 +758,7 @@ export default function BarMenu({ tableId }) {
                     <h3 className="font-black text-sm text-gray-900 truncate">{item.n}</h3>
                     <p className="text-sm font-black text-[#B71C1C] mt-1">₹{item.p * item.q}</p>
                   </div>
-                  
+
                   <div className="flex items-center gap-3 bg-gray-50 rounded-full px-2 py-1 border border-gray-200">
                     <button onClick={() => removeFromCart(item)} className="w-8 h-8 rounded-full bg-white text-gray-600 flex items-center justify-center hover:bg-gray-100 transition-colors shadow-sm">
                       <Minus size={14} />
@@ -795,7 +780,7 @@ export default function BarMenu({ tableId }) {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={handleConfirmOrder}
                 disabled={isPlacingOrder}
                 className="w-full py-4.5 rounded-full bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white text-sm font-black uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-[0_15px_30px_rgba(183,28,28,0.2)] mt-2 flex items-center justify-center disabled:opacity-50"
@@ -811,7 +796,7 @@ export default function BarMenu({ tableId }) {
       <AnimatePresence>
         {showSuccessModal && (
           <div className="fixed inset-0 z-[101] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
@@ -824,7 +809,7 @@ export default function BarMenu({ tableId }) {
               <p className="text-sm font-bold text-gray-500 mb-6">
                 Your order has been sent to the POS and is being prepared by our bartenders.
               </p>
-              <button 
+              <button
                 onClick={() => setShowSuccessModal(false)}
                 className="w-full py-4 rounded-full bg-gray-900 text-white font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
               >

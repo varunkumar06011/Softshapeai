@@ -19,17 +19,41 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     }
 
     // 2. Validate against env vars (VITE_ prefix — Vite reads import.meta.env)
-    const validEmail    = import.meta.env.VITE_ADMIN_EMAIL;
-    const validPassword = import.meta.env.VITE_ADMIN_PASSWORD;
+    const validEmail    = import.meta.env.VITE_ADMIN_EMAIL || 'admin@example.com';
+    const validPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'password123';
+    
+    // Check for Cashier credentials
+    if (isCashier) {
+      if (email.trim() === 'cashier@011' && password === 'Cashier123') {
+        setError('');
+        onLogin('cashier');
+        return;
+      }
+      // Also fallback/allow admin credentials for cashier terminal if needed
+      if (email.trim() === validEmail && password === validPassword) {
+        setError('');
+        onLogin('admin');
+        return;
+      }
+      setError('Invalid email or password. (Expected: cashier@011 / Cashier123)');
+      return;
+    }
+
+    // Check for Admin / Manager credentials
+    if (email.trim() === 'Vgrandmanager01' && password === 'Vgrand@123') {
+      setError('');
+      onLogin('manager');
+      return;
+    }
 
     if (email.trim() !== validEmail || password !== validPassword) {
       setError('Invalid email or password.');
       return;
     }
 
-    // 3. Correct — proceed
+    // 3. Correct — proceed as admin
     setError('');
-    onLogin();
+    onLogin('admin');
   };
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -66,7 +90,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
             <div className="space-y-6 py-4">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Your Profile</label>
               <div className="grid grid-cols-2 gap-4">
-                {['Ajay Kumar', 'Ravi Behar', 'Sagar', 'Durga Prasad', 'Subbaiah', 'Happy'].map(name => (
+                {['Ajay Kumar', 'Raja Behera', 'Sagar', 'Durga Prasad', 'Subbaiah', 'Happy'].map(name => (
                   <button
                     key={name}
                     onClick={() => { }}

@@ -50,11 +50,12 @@ const navItems = [
   ["settings", "Settings", Settings],
 ];
 
-const AdminDashboard = ({ onLogout }) => {
+const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [page, setPage] = useState(() => {
     const saved = localStorage.getItem('admin_active_tab');
+    if (role === 'manager' && saved !== 'tables' && saved !== 'captains') return 'tables';
     if (saved === 'pos') return 'dashboard';
-    return saved || 'dashboard';
+    return saved || (role === 'manager' ? 'tables' : 'dashboard');
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [spireOpen, setSpireOpen] = useState(false);
@@ -158,7 +159,11 @@ const AdminDashboard = ({ onLogout }) => {
     };
   }, [socket, outlet]);
 
-  const title = navItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
+  const displayNavItems = role === 'manager' 
+    ? navItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
+    : navItems;
+
+  const title = displayNavItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A] font-sans">
@@ -185,7 +190,7 @@ const AdminDashboard = ({ onLogout }) => {
           </div>
 
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-            {navItems.map(([k, label, Icon]) => (
+            {displayNavItems.map(([k, label, Icon]) => (
               <button key={k} onClick={() => { setPage(k); localStorage.setItem('admin_active_tab', k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
                 <Icon size={16} /> {label}
               </button>
@@ -197,7 +202,7 @@ const AdminDashboard = ({ onLogout }) => {
           <div className="flex items-center justify-between rounded-lg border border-white/20 p-2">
             <div className="flex items-center gap-2 overflow-hidden">
               <div className="h-7 w-7 rounded-full bg-white/20 flex-shrink-0" />
-              <div className="text-[10px] font-bold truncate">Admin User</div>
+              <div className="text-[10px] font-bold truncate">{role === 'manager' ? 'Manager User' : 'Admin User'}</div>
             </div>
             <LogOut size={14} className="flex-shrink-0 cursor-pointer hover:text-[#EF9A9A]" onClick={onLogout} />
           </div>
@@ -249,11 +254,14 @@ const AdminDashboard = ({ onLogout }) => {
         </main>
       </div>
 
-      <button onClick={() => setSpireOpen(true)} className="fixed bottom-6 right-6 z-30 flex items-center gap-3 rounded-full bg-[#E53935] px-6 py-4 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 group">
-        <Sparkles size={18} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
-      </button>
-
-      <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
+      {role !== 'manager' && (
+        <>
+          <button onClick={() => setSpireOpen(true)} className="fixed bottom-6 right-6 z-30 flex items-center gap-3 rounded-full bg-[#E53935] px-6 py-4 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 group">
+            <Sparkles size={18} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
+          </button>
+          <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
+        </>
+      )}
 
       {/* Spire.ai Assistant Side Drawer */}
       {spireOpen && (
