@@ -610,7 +610,7 @@ export default function CaptainApp({ onLogout }) {
     // Build local KOT entry for immediate UI feedback
     const newKOT = {
       id: Math.floor(1000 + Math.random() * 9000).toString(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date().toISOString(),
       items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' })),
       status: 'Incoming',
       createdAt: Date.now(),
@@ -636,7 +636,7 @@ export default function CaptainApp({ onLogout }) {
         return {
           ...t,
           status: TABLE_STATUS.PREPARING,
-          time: t.time || '1m',
+          time: t.time || new Date().toISOString(),
           captainId: currentCaptain.id,
           kotHistory: [...(t.kotHistory || []), newKOT],
           currentBill: newTotalBill,
