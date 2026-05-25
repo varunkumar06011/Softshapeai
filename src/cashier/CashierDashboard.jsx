@@ -266,9 +266,8 @@ const CashierDashboard = ({ onLogout }) => {
   const fallbackTotal = selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0;
 
   const printBill = async (table, total, subtotal, taxes, method) => {
-    const tableItems = getTableItems(table);
-    const items = tableItems.length > 0 ? tableItems : cart;
-    await printBillQZ({ table, items, subtotal, taxes, total, method });
+    const orderId = table?.activeOrder?.id || table?.orderId || null;
+    await printBillQZ({ orderId });
   };
 
   const handlePayment = async (method) => {

@@ -1,15 +1,8 @@
-// ─────────────────────────────────────────────
-// printService.js
-// QZ Tray print service — MOCK MODE
-// To enable real printing later:
-//   1. npm install qz-tray
-//   2. Set MOCK_MODE = false
-//   3. Fill in PRINTER_NAME with actual printer name
-//   4. Add certificate + signing logic
-// ─────────────────────────────────────────────
+import { QZ_CERT } from './certificate.js';
 
-const MOCK_MODE = true;//keep false in real mode
-const PRINTER_NAME = 'POS_PRINTER'; // replace with real printer name later
+const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
+const BAR_PRINTER = import.meta.env.VITE_BAR_PRINTER_NAME || 'BAR_PRINTER';
+const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
 
 // ── ESC/POS helpers ──────────────────────────
 const ESC = '\x1B';
@@ -40,7 +33,7 @@ function divider(char = '-', width = 32) {
   return char.repeat(width) + '\n';
 }
 
-// ── Bill receipt builder ─────────────────────
+// ── Bill receipt builder (Fallback) ──────────
 export function buildBillCommands({ table, items, subtotal, taxes, total, method, restaurantName = 'SOFTSHAPE RESTAURANT' }) {
   const lines = [];
 
@@ -73,7 +66,7 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
 
   lines.push(divider());
   lines.push(padRight('Subtotal', 'Rs.' + Number(subtotal).toFixed(0)) + '\n');
-  lines.push(padRight('GST (18%)', 'Rs.' + Number(taxes).toFixed(0)) + '\n');
+  lines.push(padRight('GST (5%)', 'Rs.' + Number(taxes).toFixed(0)) + '\n');
   lines.push(divider('='));
   lines.push(CMD.BOLD_ON);
   lines.push(padRight('TOTAL', 'Rs.' + Number(total).toFixed(0)) + '\n');
@@ -91,71 +84,108 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   return lines;
 }
 
-// ── KOT builder ──────────────────────────────
-export function buildKOTCommands({ tableId, kotId, items, captainId }) {
-  const lines = [];
+// ── QZ Tray Connection ────────────────────────
+async function connectQZ() {
+  const qz = (await import('qz-tray')).default;
+  qz.api.setCertificatePromise(() => Promise.resolve(QZ_CERT));
+  qz.api.setSignaturePromise(toSign =>
+    fetch(`${import.meta.env.VITE_API_URL}/api/print/qz-sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toSign })
+    }).then(r => r.json()).then(d => d.signature)
+  );
 
-  lines.push(CMD.INIT);
-  lines.push(CMD.ALIGN_CENTER);
-  lines.push(CMD.BOLD_ON + CMD.DOUBLE_HEIGHT);
-  lines.push('*** KOT ***\n');
-  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF);
-  lines.push(divider());
-
-  lines.push(CMD.ALIGN_LEFT);
-  lines.push(`Table  : ${tableId}\n`);
-  lines.push(`KOT ID : ${kotId}\n`);
-  lines.push(`Captain: ${captainId || 'N/A'}\n`);
-  lines.push(`Time   : ${new Date().toLocaleTimeString('en-IN')}\n`);
-  lines.push(divider());
-
-  lines.push(CMD.BOLD_ON);
-  lines.push('ITEMS\n');
-  lines.push(CMD.BOLD_OFF);
-  lines.push(divider());
-
-  items.forEach(item => {
-    const name = String(item.n || item.name || '');
-    const qty = String(item.q || item.quantity || 1);
-    lines.push(CMD.BOLD_ON + `${qty}x ${name}\n` + CMD.BOLD_OFF);
-    if (item.notes) lines.push(`   Note: ${item.notes}\n`);
-  });
-
-  lines.push(divider());
-  lines.push(CMD.ALIGN_CENTER);
-  lines.push('\n\n\n');
-  lines.push(CMD.CUT);
-
-  return lines;
+  if (!qz.websocket.isActive()) {
+    try {
+      await qz.websocket.connect();
+    } catch (err) {
+      throw new Error('QZ Tray is not running on this computer. Please start QZ Tray.');
+    }
+  }
+  return qz;
 }
 
-// ── Main print function ───────────────────────
-export async function printReceipt(commands) {
-  if (MOCK_MODE) {
-    // MOCK: log to console, show no errors
-    console.log('[PrintService MOCK] Would send to printer:', PRINTER_NAME);
-    console.log('[PrintService MOCK] Commands:', commands.join(''));
-    return { success: true, mock: true };
+async function sendToPrinter(printerName, data) {
+  const qz = await connectQZ();
+  const config = qz.configs.create(printerName);
+  await qz.print(config, data);
+}
+
+// ── API Print functions ───────────────────────
+export async function printBillQZ({ table, items, subtotal, taxes, total, method, orderId }) {
+  if (orderId) {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/print/receipt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId })
+    });
+    const data = await response.json();
+    if (data) {
+      await sendToPrinter(BILLING_PRINTER, data);
+      return { success: true };
+    }
   }
 
-  // REAL: uncomment when QZ Tray is installed + configured
-  // const qz = (await import('qz-tray')).default;
-  // await qz.api.setCertificatePromise(...);
-  // await qz.api.setSignaturePromise(...);
-  // if (!qz.websocket.isActive()) await qz.websocket.connect();
-  // const config = qz.configs.create(PRINTER_NAME);
-  // const data = commands.map(c => ({ type: 'raw', format: 'plain', data: c }));
-  // await qz.print(config, data);
-  // return { success: true, mock: false };
-}
-
-// ── Convenience wrappers ──────────────────────
-export async function printBillQZ({ table, items, subtotal, taxes, total, method }) {
+  // Fallback if no orderId or data is null
   const commands = buildBillCommands({ table, items, subtotal, taxes, total, method });
-  return printReceipt(commands);
+  const formattedData = commands.map(c => ({ type: 'raw', format: 'plain', data: c }));
+  await sendToPrinter(BILLING_PRINTER, formattedData);
+  return { success: true };
 }
 
-export async function printKOTQZ({ tableId, kotId, items, captainId }) {
-  const commands = buildKOTCommands({ tableId, kotId, items, captainId });
-  return printReceipt(commands);
+export async function printKOTQZ({ tableId, kotId, items, captainId, orderId }) {
+  const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR')
+    .map(i => ({
+      name: i.n || i.name, quantity: i.q || i.quantity,
+      price: i.p || i.price, notes: i.notes || null, type: 'food'
+    }));
+
+  const liquorItems = items.filter(i => i.menuType === 'LIQUOR')
+    .map(i => ({
+      name: i.n || i.name, quantity: i.q || i.quantity,
+      price: i.p || i.price, notes: i.notes || null, type: 'liquor'
+    }));
+
+  const printPromises = [];
+
+  if (foodItems.length > 0) {
+    const foodPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/food-kot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: foodItems })
+    })
+      .then(r => r.json())
+      .then(data => data ? sendToPrinter(KITCHEN_PRINTER, data) : null)
+      .catch(err => {
+        err.message = `Kitchen Printer Failed: ${err.message}`;
+        throw err;
+      });
+    printPromises.push(foodPrint);
+  }
+
+  if (liquorItems.length > 0) {
+    const liquorPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/liquor-kot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: liquorItems })
+    })
+      .then(r => r.json())
+      .then(data => data ? sendToPrinter(BAR_PRINTER, data) : null)
+      .catch(err => {
+        err.message = `Bar Printer Failed: ${err.message}`;
+        throw err;
+      });
+    printPromises.push(liquorPrint);
+  }
+
+  const results = await Promise.allSettled(printPromises);
+
+  const failures = results.filter(r => r.status === 'rejected');
+  if (failures.length > 0) {
+    const errorMsgs = failures.map(f => f.reason.message).join(' | ');
+    throw new Error(errorMsgs);
+  }
+
+  return { success: true };
 }
