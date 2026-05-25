@@ -8,7 +8,28 @@ const WS_URL = `wss://free.blr2.piesocket.com/v3/${WAITER_CALL_ROOM}?api_key=${P
 
 let globalSocket = null;
 let isConnecting = false;
+let reconnectAttempts = 0;
+let pingInterval = null;
+const MAX_RECONNECT_DELAY = 30000; // cap at 30s
 const subscribers = new Set();
+
+function getReconnectDelay() {
+  // Exponential backoff: 3s, 6s, 12s, 24s, 30s max
+  return Math.min(3000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+}
+
+function startPing() {
+  stopPing();
+  pingInterval = setInterval(() => {
+    if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
+      try { globalSocket.send(JSON.stringify({ type: 'ping' })); } catch (_) {}
+    }
+  }, 25000); // every 25s — keeps connection alive
+}
+
+function stopPing() {
+  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+}
 
 export function initSocket() {
   if (globalSocket || isConnecting) return;
@@ -20,12 +41,14 @@ export function initSocket() {
     globalSocket.onopen = () => {
       console.log('[WaiterCallSync] Connected to Realtime Relay');
       isConnecting = false;
+      reconnectAttempts = 0; // reset backoff on success
+      startPing();
     };
 
     globalSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        // Notify all subscribers of the new event
+        if (data.type === 'ping' || data.type === 'pong') return; // ignore keepalives
         subscribers.forEach(callback => callback(data));
       } catch (err) {
         console.error("Failed to parse socket message", err);
@@ -33,10 +56,13 @@ export function initSocket() {
     };
 
     globalSocket.onclose = () => {
-      console.log('[WaiterCallSync] Disconnected. Reconnecting in 3s...');
+      const delay = getReconnectDelay();
+      console.log(`[WaiterCallSync] Disconnected. Reconnecting in ${delay / 1000}s... (attempt ${reconnectAttempts + 1})`);
       globalSocket = null;
       isConnecting = false;
-      setTimeout(initSocket, 3000);
+      stopPing();
+      reconnectAttempts++;
+      setTimeout(initSocket, delay);
     };
 
     globalSocket.onerror = () => {
