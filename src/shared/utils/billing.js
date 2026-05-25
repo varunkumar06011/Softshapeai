@@ -1,26 +1,44 @@
-export const TAX_RATE = 0.18; // 18% GST
-
 /**
  * Calculates the subtotal, taxes, and total for a given array of items.
  * Each item must have `p` (price) and `q` (quantity).
  */
 export const calculateOrderTotal = (items) => {
   if (!items || !Array.isArray(items) || items.length === 0) {
-    return { subtotal: 0, taxes: 0, total: 0 };
+    return { subtotal: 0, taxes: 0, total: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
   }
 
-  const subtotal = items.reduce((sum, item) => {
+  let foodSubtotal = 0;
+  let liquorSubtotal = 0;
+
+  items.forEach((item) => {
+    if (item.removedFromBill) return;
     const price = Number(item.p ?? item.price ?? 0);
     const qty = Number(item.q ?? item.quantity ?? 1);
-    return sum + (price * qty);
-  }, 0);
-  const taxes = subtotal * TAX_RATE;
-  const total = subtotal + taxes;
+    
+    // Fallback to 'food' if type is not strictly 'liquor'
+    const type = item.type === 'liquor' ? 'liquor' : (item.menuItem?.menuType === 'LIQUOR' ? 'liquor' : 'food');
+    
+    if (type === 'liquor') {
+      liquorSubtotal += price * qty;
+    } else {
+      foodSubtotal += price * qty;
+    }
+  });
+
+  const cgst = 0;
+  const sgst = 0;
+  const taxes = 0;
+  const subtotal = foodSubtotal + liquorSubtotal;
+  const total = subtotal;
 
   return {
     subtotal: Number(subtotal.toFixed(2)),
-    taxes: Number(taxes.toFixed(2)),
-    total: Number(total.toFixed(2))
+    taxes: 0,
+    total: Number(total.toFixed(2)),
+    foodSubtotal: Number(foodSubtotal.toFixed(2)),
+    liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
+    cgst: 0,
+    sgst: 0
   };
 };
 
@@ -36,10 +54,12 @@ export const getTableItems = (table) => {
   const activeOrder = table.activeOrder || (table.orders && table.orders[0]);
   if (activeOrder?.items && activeOrder.items.length > 0) {
     return activeOrder.items.map(item => ({
+      id: item.id,
       n: item.name ?? item.n,
       p: Number(item.price ?? item.p ?? 0),
       q: Number(item.quantity ?? item.q ?? 1),
       notes: item.notes || null,
+      removedFromBill: !!item.removedFromBill,
     }));
   }
 

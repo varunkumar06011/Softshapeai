@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus } from '../services/orderApi';
+import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -46,6 +46,11 @@ const CashierDashboard = ({ onLogout }) => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const [removedItemIds, setRemovedItemIds] = useState([]);
+  useEffect(() => {
+    setRemovedItemIds([]);
+  }, [selectedTable?.backendId]);
 
   const { outlet } = useOutlet();
   const TX_CACHE_KEY = `softshape_transactions_${outlet}_${new Date().toLocaleDateString('en-CA')}`;
@@ -247,7 +252,13 @@ const CashierDashboard = ({ onLogout }) => {
   }, [pastTransactions]);
 
   const { subtotal, taxes, total } = calculateOrderTotal(cart);
-  const activeOrderCalc = selectedTable ? calculateSessionBill(selectedTable, cart) : { subtotal, taxes, total };
+  const activeOrderCalc = useMemo(() => {
+    if (!selectedTable) return { subtotal, taxes, total };
+    const items = getTableItems(selectedTable).map(i => 
+      removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
+    );
+    return calculateOrderTotal([...items, ...cart]);
+  }, [selectedTable, cart, subtotal, taxes, total, removedItemIds]);
   const activeSubtotal = activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
@@ -275,6 +286,7 @@ const CashierDashboard = ({ onLogout }) => {
     const tableSnap = selectedTable;
     const subtotalSnap = activeSubtotal;
     const taxesSnap = activeTaxes;
+    const removedItemIdsSnap = removedItemIds;
 
     const tableItems = getTableItems(tableSnap);
     const itemsList = tableItems.length > 0 ? tableItems : cart;
@@ -298,6 +310,7 @@ const CashierDashboard = ({ onLogout }) => {
     setShowPaymentModal(false);
     setSelectedPaymentMethod('UPI');
     setCart([]);
+    setRemovedItemIds([]);
 
     // Step 4: Optimistic local state update
     const newTransaction = {
@@ -334,8 +347,16 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Step 5: Fire background API calls — no await, non-blocking
     if (tableSnap?.activeOrder?.id) {
-      markOrderPaid(tableSnap.activeOrder.id)
-        .catch(err => console.warn('[BG] markOrderPaid failed:', err.message));
+      (async () => {
+        try {
+          if (removedItemIdsSnap.length > 0) {
+            await settleOrder(tableSnap.activeOrder.id, removedItemIdsSnap, 'Cashier');
+          }
+          await markOrderPaid(tableSnap.activeOrder.id);
+        } catch (err) {
+          console.warn('[BG] order settlement/pay failed:', err.message);
+        }
+      })();
     }
 
     saveTransaction({
@@ -1281,8 +1302,7 @@ const CashierDashboard = ({ onLogout }) => {
                  </div>
                  
                  <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-6 border border-gray-100">
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.18 : 0)).toFixed(0)}</span></div>
-                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Taxes (18%)</span><span>₹{(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.18) * 0.18 : 0)).toFixed(0)}</span></div>
+                    <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal || 0)).toFixed(0)}</span></div>
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-1">
                        <span className="text-[10px] font-black text-gray-900 uppercase">Running Total</span>
                        <span className="text-2xl font-black text-[#E53935]">

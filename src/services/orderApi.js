@@ -84,6 +84,15 @@ export async function markOrderPaid(orderId) {
   return parseResponse(res);
 }
 
+export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier') {
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ removedItemIds, removedBy }),
+  });
+  return parseResponse(res);
+}
+
 export async function saveTransaction({
   restaurantId,
   orderId,
