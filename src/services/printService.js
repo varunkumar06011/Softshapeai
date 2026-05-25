@@ -129,11 +129,13 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId })
     });
-    const data = await response.json();
-      // Ensure the API response is always wrapped in an array for QZ Tray
-      const printData = Array.isArray(data) ? data : [data];
+    const res = await response.json();
+    // Backend returns { data: [...], breakdown: {...} } — extract .data
+    if (res && res.data) {
+      const printData = Array.isArray(res.data) ? res.data : [res.data];
       await sendToPrinter(BILLING_PRINTER, printData);
       return { success: true };
+    }
 
   }
 
@@ -166,7 +168,11 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId }) 
       body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: foodItems })
     })
       .then(r => r.json())
-      .then(data => data ? sendToPrinter(KITCHEN_PRINTER, data) : null)
+      .then(res => {
+        if (!res || !res.data) return null;
+        const printData = Array.isArray(res.data) ? res.data : [res.data];
+        return sendToPrinter(KITCHEN_PRINTER, printData);
+      })
       .catch(err => {
         err.message = `Kitchen Printer Failed: ${err.message}`;
         throw err;
@@ -181,7 +187,11 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId }) 
       body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: liquorItems })
     })
       .then(r => r.json())
-      .then(data => data ? sendToPrinter(BAR_PRINTER, data) : null)
+      .then(res => {
+        if (!res || !res.data) return null;
+        const printData = Array.isArray(res.data) ? res.data : [res.data];
+        return sendToPrinter(BAR_PRINTER, printData);
+      })
       .catch(err => {
         err.message = `Bar Printer Failed: ${err.message}`;
         throw err;
