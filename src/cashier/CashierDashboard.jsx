@@ -31,6 +31,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cart, setCart] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(null);
+  const [showTableModal, setShowTableModal] = useState(false);
   const [isKotSending, setIsKotSending] = useState(false);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -193,13 +194,12 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!selectedTable?.backendId) return;
     const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
-    if (!liveTable || liveTable.status === 'Free') {
-      setSelectedTable(null);
-      setShowPaymentModal(false);
-      setSelectedPaymentMethod('UPI');
-      return;
+    
+    // Only update if we found a fresher version of the table.
+    // NEVER wipe the selected table automatically to prevent race conditions.
+    if (liveTable) {
+      setSelectedTable(liveTable);
     }
-    setSelectedTable(liveTable);
   }, [activeTables, selectedTable?.backendId]);
 
   const activeTableOrders = useMemo(() => {
@@ -231,6 +231,7 @@ const CashierDashboard = ({ onLogout }) => {
     return activeTableOrders.flatMap((order) =>
       (order.table.kotHistory || []).map((kot) => ({
         id: kot.id,
+        type: kot.type || 'FOOD',
         table: order.table,
         tableLabel: order.id,
         time: kot.time || order.time,
@@ -396,6 +397,16 @@ const CashierDashboard = ({ onLogout }) => {
     });
   }, [outlet, menuItems, barMenuItems, barMenuTab, searchQuery, selectedCategory, activeDiet]);
 
+  const handleTableSelect = (table) => {
+    setSelectedTable(table);
+    if (!table.status || table.status === 'Free') {
+      setActiveTab('pos');
+      localStorage.setItem('cashier_active_tab', 'pos');
+    } else {
+      setShowTableModal(true);
+    }
+  };
+
   const handleAddItem = (item) => {
     if (outlet === 'bar' && item.variants && item.variants.length > 1) {
       setVariantPickerItem(item);
@@ -453,6 +464,12 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const addToCart = (item) => {
+    if (!selectedTable) {
+      addNotification('Select Table', 'Please assign a table before adding items.', 'warning');
+      setActiveTab('tables');
+      localStorage.setItem('cashier_active_tab', 'tables');
+      return;
+    }
     setCart(prev => {
       const existing = prev.find(i => i.n === item.n);
       if (existing) return prev.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
@@ -480,22 +497,42 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-  const handleSendKOT = () => {
+  const handleSmartKOT = () => {
     if (cart.length === 0) return;
     setIsKotSending(true);
     setIsKotSuccess(false);
 
-    // Build local KOT for instant UI feedback
-    const newKot = {
-      id: Math.floor(1000 + Math.random() * 9000).toString(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      items: cart.map(i => ({ ...i, s: 'KOT Sent' })),
-      status: 'Incoming',
-      createdAt: Date.now(),
-      itemsReady: 0,
-    };
+    const foodItems = cart.filter(i => i.menuType === 'FOOD' || !i.menuType);
+    const barItems = cart.filter(i => i.menuType === 'LIQUOR');
 
-    // Format items for API
+    const kotsToCreate = [];
+    const timestamp = Date.now();
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (foodItems.length > 0) {
+      kotsToCreate.push({
+        id: Math.floor(1000 + Math.random() * 9000).toString(),
+        type: 'FOOD',
+        time: timeStr,
+        items: foodItems.map(i => ({ ...i, s: 'KOT Sent' })),
+        status: 'Incoming',
+        createdAt: timestamp,
+        itemsReady: 0,
+      });
+    }
+
+    if (barItems.length > 0) {
+      kotsToCreate.push({
+        id: Math.floor(1000 + Math.random() * 9000).toString(),
+        type: 'LIQUOR',
+        time: timeStr,
+        items: barItems.map(i => ({ ...i, s: 'KOT Sent' })),
+        status: 'Incoming',
+        createdAt: timestamp + 1,
+        itemsReady: 0,
+      });
+    }
+
     const apiItems = cart.map(i => ({
       menuItemId: String(i.id || i.menuItemId || i.n || i.name),
       name: i.n || i.name,
@@ -504,15 +541,14 @@ const CashierDashboard = ({ onLogout }) => {
       notes: i.notes || null,
     }));
 
-    // 1. Update UI instantly — fire and forget
     if (selectedTable) {
       const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
       setActiveTables(prev => prev.map(t => {
-        if (t.id === selectedTable.id) {
+        if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
           return {
             ...t,
             status: t.status === 'Free' ? 'Occupied' : t.status,
-            kotHistory: [...(t.kotHistory || []), newKot],
+            kotHistory: [...(t.kotHistory || []), ...kotsToCreate],
             currentBill: newTotalBill,
           };
         }
@@ -523,13 +559,23 @@ const CashierDashboard = ({ onLogout }) => {
     setCart([]);
     setIsKotSending(false);
     setIsKotSuccess(true);
-    addNotification('KOT Pushed', `Order for Table ${selectedTable?.id || 'Walk-in'} sent to kitchen.`, 'success');
+    addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
 
-    // 2. Fire API in background — no await, no blocking
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
-        updateOrderItems(selectedTable.activeOrder.id, apiItems)
+        const existingItems = (selectedTable.activeOrder.items || []).map(i => ({
+          menuItemId: String(i.menuItemId || i.id || i.name),
+          name: i.name || i.n,
+          price: Number(i.price || i.p || 0),
+          quantity: Number(i.quantity || i.q || 1),
+          notes: i.notes || null,
+        }));
+        
+        // Merge previous KOT items with new cart items to prevent backend overwrite
+        const mergedApiItems = [...existingItems, ...apiItems];
+        
+        updateOrderItems(selectedTable.activeOrder.id, mergedApiItems)
           .catch(err => console.warn('[BG] updateOrderItems failed:', err.message));
       } else {
         createOrder({
@@ -747,7 +793,7 @@ const CashierDashboard = ({ onLogout }) => {
                     </h3>
                   </div>
                   <div className="p-2 space-y-2 overflow-y-auto max-h-[300px] custom-scrollbar">
-                    {liveKotQueue.map((kot) => (
+                    {liveKotQueue.filter(k => k.type === 'FOOD').map((kot) => (
                       <div key={kot.id} className="p-2 rounded-lg border border-gray-100 bg-gray-50/50 hover:border-red-100 transition-all cursor-pointer">
                         <div className="flex justify-between items-start mb-1">
                           <span className="text-[8px] font-black text-gray-400 uppercase">KOT-{kot.id}</span>
@@ -763,9 +809,9 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       </div>
                     ))}
-                    {liveKotQueue.length === 0 && (
+                    {liveKotQueue.filter(k => k.type === 'FOOD').length === 0 && (
                       <div className="p-6 text-center text-[9px] font-black uppercase tracking-widest text-gray-300">
-                        No live KOTs
+                        No live FOOD KOTs
                       </div>
                     )}
                   </div>
@@ -814,7 +860,7 @@ const CashierDashboard = ({ onLogout }) => {
                             status === 'Preparing' ? 'bg-orange-50 border-orange-200 text-orange-600' :
                               'bg-red-50 border-red-200 text-red-600';
                       return (
-                        <div key={i} className={`h-8 rounded-md border flex flex-col items-center justify-center transition-all cursor-pointer ${colorClass}`}>
+                        <div key={i} onClick={() => handleTableSelect(table)} className={`h-8 rounded-md border flex flex-col items-center justify-center transition-all cursor-pointer ${colorClass}`}>
                           <span className="text-[9px] font-black leading-none">{table.id}</span>
                           {table.captainName && <span className="text-[5px] font-black uppercase tracking-tighter mt-0.5 text-blue-600 truncate px-1 max-w-full">{table.captainName.split(' ')[0]}</span>}
                         </div>
@@ -926,14 +972,19 @@ const CashierDashboard = ({ onLogout }) => {
                       </h2>
                       <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
                     </div>
-                    <div className="bg-white rounded-lg border border-gray-200 p-2 flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-md bg-red-50 flex items-center justify-center text-[#E53935] font-black text-sm">
-                        {selectedTable ? `T${selectedTable.id}` : 'POS'}
+                    <div className="bg-white rounded-lg border border-gray-200 p-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-md bg-red-50 flex items-center justify-center text-[#E53935] font-black text-sm">
+                          {selectedTable ? (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`) : 'POS'}
+                        </div>
+                        <div className="flex-grow min-w-0">
+                          <p className="text-[10px] font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.id}` : 'Walk-in Order'}</p>
+                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest leading-none">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
+                        </div>
                       </div>
-                      <div className="flex-grow min-w-0">
-                        <p className="text-[10px] font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.id}` : 'Walk-in Order'}</p>
-                        <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest leading-none">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
-                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-[9px] font-bold hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200">
+                        {selectedTable ? 'Change' : '+ Table'}
+                      </button>
                     </div>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4">
@@ -942,70 +993,97 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
 
                 <div className="flex-grow overflow-y-auto p-2 space-y-2 custom-scrollbar">
-                  {cart.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center opacity-30">
-                      <Package size={24} className="mb-1" />
-                      <p className="text-[8px] font-black uppercase">Pending Items</p>
-                    </div>
-                  ) : (
-                    cart.map((item) => (
-                      <div key={item.id} className="flex gap-2 pb-2 border-b border-gray-50">
+                  {(() => {
+                    const sessionItems = selectedTable 
+                      ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({...i, isKotSent: true, kotId: k.id}))) 
+                      : [];
+                    const pendingItems = cart.map(i => ({...i, isKotSent: false}));
+                    const displayCart = [...sessionItems, ...pendingItems];
+
+                    if (displayCart.length === 0) {
+                      return (
+                        <div className="h-full flex flex-col items-center justify-center opacity-30">
+                          <Package size={24} className="mb-1" />
+                          <p className="text-[8px] font-black uppercase">Pending Items</p>
+                        </div>
+                      );
+                    }
+
+                    return displayCart.map((item, idx) => (
+                      <div key={item.id || idx} className={`flex gap-2 pb-2 border-b border-gray-50 ${item.isKotSent ? 'opacity-60' : ''}`}>
                         <div className="flex-grow min-w-0">
                           <div className="flex justify-between items-start mb-0.5">
-                            <p className="text-[9px] font-bold text-gray-900 truncate">{item.n}</p>
+                            <p className="text-[9px] font-bold text-gray-900 truncate flex items-center gap-1">
+                              {item.n}
+                              {item.isKotSent && <span className="text-[6px] font-black uppercase tracking-widest bg-green-50 text-green-600 px-1 py-0.5 rounded ml-1">KOT Sent</span>}
+                            </p>
                             <p className="text-[9px] font-black text-gray-900">₹{item.p * item.q}</p>
                           </div>
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center bg-gray-100 rounded-md p-0.5">
-                              <button onClick={() => updateQty(item.id, -1)} className="p-1 text-gray-500"><Minus size={8} /></button>
-                              <span className="w-5 text-center text-[9px] font-black">{item.q}</span>
-                              <button onClick={() => updateQty(item.id, 1)} className="p-1 text-gray-500"><Plus size={8} /></button>
-                            </div>
-                            <button className="text-[7px] font-black text-[#E53935] uppercase">Edit</button>
+                            {item.isKotSent ? (
+                              <div className="flex items-center gap-1 text-[8px] font-black text-gray-400">
+                                <span>QTY: {item.q}</span>
+                                <span>•</span>
+                                <span>KOT-{item.kotId}</span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center bg-gray-100 rounded-md p-0.5">
+                                  <button onClick={() => updateQty(item.id, -1)} className="p-1 text-gray-500"><Minus size={8} /></button>
+                                  <span className="w-5 text-center text-[9px] font-black">{item.q}</span>
+                                  <button onClick={() => updateQty(item.id, 1)} className="p-1 text-gray-500"><Plus size={8} /></button>
+                                </div>
+                                <button className="text-[7px] font-black text-[#E53935] uppercase">Edit</button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </div>
 
                 <div className="p-3 border-t border-gray-100 bg-gray-50/50 space-y-2">
                   <div className="space-y-0.5">
                     <div className="flex justify-between text-[8px] font-bold text-gray-400 uppercase tracking-widest">
                       <span>Subtotal</span>
-                      <span>₹{subtotal}</span>
+                      <span>₹{(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
                     </div>
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200">
                       <span className="text-[9px] font-black text-gray-900">NET TOTAL</span>
-                      <span className="text-xl font-black text-[#E53935]">₹{total.toFixed(0)}</span>
+                      <span className="text-xl font-black text-[#E53935]">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
-                      onClick={handleSendKOT}
+                      onClick={handleSmartKOT}
                       disabled={isKotSending || cart.length === 0}
-                      className={`flex flex-col items-center justify-center p-1.5 rounded-lg border transition-all ${isKotSuccess ? 'bg-green-500 border-green-500 text-white' :
+                      className={`col-span-2 flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                           isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
                             'bg-white border-gray-200 text-gray-600 hover:border-[#E53935] hover:text-[#E53935]'
                         }`}
                     >
-                      {isKotSuccess ? <Check size={14} /> : isKotSending ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                      <span className="text-[7px] font-black uppercase mt-0.5">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT'}</span>
+                      {isKotSuccess ? <Check size={16} /> : isKotSending ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                      <span className="text-[8px] font-black uppercase mt-1 tracking-widest">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
                     </button>
-                    <button className="flex flex-col items-center justify-center p-1.5 rounded-lg border border-gray-200 bg-white text-gray-600">
+                    <button className="flex flex-col items-center justify-center py-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-[#E53935] hover:text-[#E53935] transition-all">
                       <History size={14} />
                       <span className="text-[7px] font-black uppercase mt-0.5">Draft</span>
                     </button>
                     <button
                       onClick={() => {
-                        if (cart.length === 0) return;
+                        if (cart.length > 0) {
+                          addNotification('Pending Items', 'Push pending items to KOT before generating final bill.', 'warning');
+                          return;
+                        }
+                        if (!selectedTable) return;
                         setShowMethodPicker(true);
                       }}
                       disabled={!selectedTable && cart.length === 0}
-                      className="col-span-2 py-2.5 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none"
+                      className="py-2 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none transition-all hover:bg-[#c62828]"
                     >
-                      Settle Transaction
+                      FINAL BILL
                     </button>
                   </div>
                 </div>
@@ -1040,7 +1118,7 @@ const CashierDashboard = ({ onLogout }) => {
                       return (
                         <div
                           key={i}
-                          onClick={() => !isFree && setSelectedTable(table)}
+                          onClick={() => handleTableSelect(table)}
                           className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-1 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                         >
                           {table.captainName && (
@@ -1119,20 +1197,20 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2 bg-white p-3 rounded-xl border border-gray-100 shadow-sm shrink-0">
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase text-gray-400">Incoming</p>
-                        <p className="text-lg font-black text-gray-900">{liveKotQueue.filter(k => k.status === 'Incoming' || (!['Preparing', 'Ready'].includes(k.status))).length}</p>
+                        <p className="text-lg font-black text-gray-900">{liveKotQueue.filter(k => k.type === 'FOOD' && (k.status === 'Incoming' || (!['Preparing', 'Ready'].includes(k.status)))).length}</p>
                       </div>
                       <div className="text-center border-l border-gray-100">
                         <p className="text-[9px] font-black uppercase text-gray-400">Preparing</p>
-                        <p className="text-lg font-black text-amber-600">{liveKotQueue.filter(k => k.status === 'Preparing').length}</p>
+                        <p className="text-lg font-black text-amber-600">{liveKotQueue.filter(k => k.type === 'FOOD' && k.status === 'Preparing').length}</p>
                       </div>
                       <div className="text-center border-l border-gray-100">
                         <p className="text-[9px] font-black uppercase text-gray-400">Ready</p>
-                        <p className="text-lg font-black text-green-600">{liveKotQueue.filter(k => k.status === 'Ready').length}</p>
+                        <p className="text-lg font-black text-green-600">{liveKotQueue.filter(k => k.type === 'FOOD' && k.status === 'Ready').length}</p>
                       </div>
                       <div className="text-center border-l border-gray-100 hidden md:block">
                         <p className="text-[9px] font-black uppercase text-gray-400">Delayed</p>
                         <p className="text-lg font-black text-[#E53935]">
-                          {liveKotQueue.filter(k => k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
+                          {liveKotQueue.filter(k => k.type === 'FOOD' && k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
                         </p>
                       </div>
                       <div className="text-center border-l border-gray-100 hidden md:block">
@@ -1152,12 +1230,13 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="flex justify-between items-center px-1">
                             <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-900">{status}</h3>
                             <span className="bg-white text-[9px] font-black px-2 py-0.5 rounded-md border border-gray-200">
-                              {liveKotQueue.filter(k => k.status === status || (status === 'Incoming' && !['Preparing', 'Ready'].includes(k.status))).length}
+                              {liveKotQueue.filter(k => k.type === 'FOOD' && (k.status === status || (status === 'Incoming' && !['Preparing', 'Ready'].includes(k.status)))).length}
                             </span>
                           </div>
                           <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-grow">
                             {liveKotQueue
                               .filter((kot) => {
+                                if (kot.type !== 'FOOD') return false;
                                 if (status === 'Incoming') return kot.status === 'Incoming' || (!['Preparing', 'Ready'].includes(kot.status));
                                 return kot.status === status;
                               })
@@ -1243,7 +1322,7 @@ const CashierDashboard = ({ onLogout }) => {
       </div>
 
       {/* TABLE DETAILS MODAL */}
-      {selectedTable && (
+      {showTableModal && selectedTable && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
             <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
@@ -1254,7 +1333,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <p className="text-sm font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
                 </div>
               </div>
-              <button onClick={() => setSelectedTable(null)} className="p-2 text-gray-400 hover:text-gray-900 bg-white rounded-lg border border-gray-100"><X size={18} /></button>
+              <button onClick={() => setShowTableModal(false)} className="p-2 text-gray-400 hover:text-gray-900 bg-white rounded-lg border border-gray-100"><X size={18} /></button>
             </div>
             <div className="p-4 bg-white">
               <div className="space-y-3 mb-6">
@@ -1285,7 +1364,7 @@ const CashierDashboard = ({ onLogout }) => {
 
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setSelectedTable(null); }}
+                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); }}
                   className="py-3 rounded-xl border border-gray-200 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50"
                 >
                   Add Items
