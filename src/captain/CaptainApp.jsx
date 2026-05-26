@@ -526,12 +526,16 @@ export default function CaptainApp({ onLogout }) {
     const finalName = `${item.n}${variantSuffix}`;
     const finalPrice = variant ? variant.price : item.p;
 
+    // Detect custom ML variant and set notes field
+    const isCustomMl = variant?.id === 'custom';
+    const notes = isCustomMl ? variant.name : (item.notes ?? null);
+
     setCurrentSessionItems(prev => {
       const existing = prev.find(i => i.n === finalName);
       if (existing) {
         return prev.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
       }
-      return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, s: 'Pending' }];
+      return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, notes, s: 'Pending' }];
     });
     addNotification(`${finalName} added`, 'success');
   };

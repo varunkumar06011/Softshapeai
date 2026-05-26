@@ -622,7 +622,16 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleVariantSelect = (item, variant) => {
-    addToCart({ ...item, n: `${item.n} (${variant.name})`, p: variant.price });
+    // Detect custom ML variant and set notes field
+    const isCustomMl = variant?.id === 'custom';
+    const notes = isCustomMl ? variant.name : (item.notes ?? null);
+
+    addToCart({
+      ...item,
+      n: `${item.n} (${variant.name})`,
+      p: variant.price,
+      notes
+    });
     setVariantPickerItem(null);
     setSearchQuery('');
     setSelectedCategory('All');
