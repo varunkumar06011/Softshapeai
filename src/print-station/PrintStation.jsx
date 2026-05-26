@@ -88,7 +88,16 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
   if (item) {
     cmds.push(pad(String(item.name || ''), 22) + pad(String(item.quantity || 1), 4) + '\n');
   }
-  cmds.push(divider(), '\n\n', CMD.CUT);
+  cmds.push(
+    divider(),
+    '\n',
+    CMD.ALIGN_CENTER,
+    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    'CANCELLED\n',
+    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    '\n',
+    CMD.CUT
+  );
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
@@ -98,8 +107,12 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
     CMD.INIT,
     CMD.ALIGN_CENTER,
     CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
-    'BILL RECEIPT\n',
+    'Vgrand Lounge\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    '\n',
+    CMD.BOLD_ON,
+    'BILL RECEIPT\n',
+    CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_LEFT,
     `Table : ${tableNumber}\n`,
@@ -130,7 +143,8 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
     divider(),
     CMD.ALIGN_CENTER,
     'Thank you! Visit again.\n',
-    'Powered by Softshape.ai\n',
+    '\n',
+    'Powered by VTech - Softshape.ai\n',
     '\n\n\n',
     CMD.CUT,
   );
