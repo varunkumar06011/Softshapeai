@@ -76,7 +76,18 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     guests: row.guests ?? 0,
     time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
     captainId: row.captainId ?? null,
-    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
+    kotHistory: Array.isArray(row.kotHistory)
+      ? row.kotHistory.map((kot, ki) => {
+          const existingKot = existing?.kotHistory?.[ki];
+          return {
+            ...kot,
+            items: kot.items ? kot.items.map((item, ii) => ({
+              ...item,
+              orderItemId: existingKot?.items?.[ii]?.orderItemId ?? item.orderItemId,
+            })) : [],
+          };
+        })
+      : [],
     currentBill: row.currentBill ?? 0,
     activeOrder: row.orders?.[0] || row.activeOrder || null,
   };
