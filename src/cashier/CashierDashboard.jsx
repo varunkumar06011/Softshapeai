@@ -1723,85 +1723,84 @@ const CashierDashboard = ({ onLogout }) => {
                     ))}
                   </div>
                 )}
-
               </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* TABLE DETAILS MODAL */}
+         {/* TABLE DETAILS MODAL */}
       {showTableModal && selectedTable && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
             <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl border border-red-750 shadow-sm">
+                <div className="w-16 h-16 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-2xl border-2 border-red-700 shadow-md transform hover:rotate-1 transition-transform">
                   {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
                 </div>
                 <div>
-                  <h2 className="text-xs font-black uppercase text-gray-400 leading-none tracking-wider">Active Session</h2>
-                  <p className="text-base md:text-lg font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
+                  <h2 className="text-[11px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
+                  <p className="text-lg sm:text-xl font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowTableModal(false)} 
-                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white rounded-xl border border-gray-150"
+                className="p-3 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
               >
-                <X size={20} />
+                <X size={22} />
               </button>
             </div>
 
-            <div className="p-4 bg-white">
+            <div className="p-5 bg-white">
               {/* ── Order Summary (read-only view) ─────────────────── */}
-              <div className="space-y-3 mb-4">
-                <h3 className="text-[9px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-50 pb-1">
+              <div className="space-y-3.5 mb-5">
+                <h3 className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1.5">
                   Order Summary
                 </h3>
-                <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
                   {getTableItems(selectedTable)
                     .filter(i => !i.removedFromBill)
                     .map((item, idx) => (
-                      <div key={item.id || idx} className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded bg-gray-50 flex items-center justify-center text-[9px] font-black text-gray-500">{item.q}x</span>
-                          <span className="text-[11px] font-bold text-gray-800">{item.n}</span>
+                      <div key={item.id || idx} className="flex justify-between items-center py-0.5">
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-xs font-black text-gray-600">{item.q}x</span>
+                          <span className="text-xs sm:text-sm font-bold text-gray-800">{item.n}</span>
                         </div>
-                        <span className="text-[11px] font-black text-gray-900">₹{(item.p * item.q).toFixed(0)}</span>
+                        <span className="text-xs sm:text-sm font-black text-gray-900">₹{(item.p * item.q).toFixed(0)}</span>
                       </div>
                     ))}
                 </div>
               </div>
 
               {/* ── Totals ──────────────────────────────────────────── */}
-              <div className="bg-gray-50 rounded-xl p-4 space-y-2 mb-6 border border-gray-150 shadow-sm">
-                <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-widest"><span>Subtotal</span><span className="font-black text-gray-800">₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.05 : 0)).toFixed(0)}</span></div>
-                <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-widest"><span>GST (5%)</span><span className="font-black text-gray-800">₹{(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.05) * 0.05 : 0)).toFixed(0)}</span></div>
-                <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 mt-2">
-                  <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">Running Total</span>
-                  <span className="text-3xl font-black text-[#E53935] tracking-tight">
+              <div className="bg-gray-50/90 rounded-2xl p-5 space-y-2.5 mb-6 border border-gray-200 shadow-sm">
+                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.05 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5%)</span><span className="font-black text-gray-800">₹{(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.05) * 0.05 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2.5">
+                  <span className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-widest">Running Total</span>
+                  <span className="text-3xl sm:text-4xl font-black text-[#E53935] tracking-tight">
                     ₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}
                   </span>
                 </div>
               </div>
 
               {/* ── Action buttons ──────────────────────────────────── */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); }}
-                  className="py-3 rounded-xl border border-gray-200 text-[9px] font-black uppercase tracking-widest hover:bg-gray-50 cursor-pointer"
+                  className="py-3.5 rounded-xl border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-gray-50 hover:border-gray-450 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm hover:shadow cursor-pointer"
                 >
                   Add Items
                 </button>
                 <button
                   onClick={() => setShowBillEditor(true)}
-                  className="py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-black uppercase tracking-widest hover:bg-amber-100 cursor-pointer"
+                  className="py-3.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm hover:shadow-amber-100/50 cursor-pointer"
                 >
                   Edit Bill
                 </button>
                 <button
                   onClick={() => setShowMethodPicker(true)}
-                  className="py-3 rounded-xl bg-[#E53935] text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-red-100 cursor-pointer"
+                  className="py-3.5 rounded-xl bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] hover:scale-[1.02] active:scale-95 shadow-lg shadow-red-500/20 cursor-pointer"
                 >
                   Settlement
                 </button>
@@ -1812,9 +1811,9 @@ const CashierDashboard = ({ onLogout }) => {
                 <div className="mt-3 pt-3 border-t border-gray-100">
                   <button
                     onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
-                    className="w-full py-2.5 rounded-xl border border-blue-200 text-blue-700 text-[9px] font-black uppercase tracking-widest hover:bg-blue-50 transition-all duration-150 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <ArrowRightLeft size={12} />
+                    <ArrowRightLeft size={14} />
                     Move Table
                   </button>
                 </div>
@@ -1846,40 +1845,40 @@ const CashierDashboard = ({ onLogout }) => {
 
         return (
           <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]">
+            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]">
 
               {/* Header */}
-              <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Edit Bill</p>
-                  <p className="text-sm font-black text-gray-900 mt-0.5">
+                  <p className="text-xs sm:text-sm font-black uppercase text-gray-400 tracking-wider">Edit Bill</p>
+                  <p className="text-lg sm:text-xl font-black text-gray-900 mt-1">
                     Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-[8px] font-black uppercase text-gray-400">New Total</p>
-                    <p className="text-lg font-black text-[#E53935]">₹{liveTotal.toFixed(0)}</p>
+                    <p className="text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">New Total</p>
+                    <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{liveTotal.toFixed(0)}</p>
                   </div>
                   <button
                     onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillAdditions([]); setBillEditSearch(''); }}
-                    className="p-2 text-gray-400 hover:text-gray-900 bg-white rounded-lg border border-gray-100"
+                    className="p-3 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
                   >
-                    <X size={16} />
+                    <X size={22} />
                   </button>
                 </div>
               </div>
 
-              <div className="overflow-y-auto flex-1 p-4 space-y-4">
+              <div className="overflow-y-auto flex-1 p-5 space-y-6">
 
                 {/* ── Remove Section ── */}
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">
+                  <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-gray-400 mb-3 pb-1 border-b border-gray-100">
                     Current Items — tap to remove
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2.5">
                     {committedItems.length === 0 && (
-                      <p className="text-[10px] text-gray-400 text-center py-3">No items on this order</p>
+                      <p className="text-sm text-gray-400 text-center py-5">No items on this order</p>
                     )}
                     {committedItems.map((item, idx) => {
                       const isMarked = billRemovals.includes(item.id);
@@ -1892,21 +1891,21 @@ const CashierDashboard = ({ onLogout }) => {
                               isMarked ? prev.filter(x => x !== item.id) : [...prev, item.id]
                             );
                           }}
-                          className={`flex justify-between items-center p-2.5 rounded-xl border-2 cursor-pointer transition-all select-none
+                          className={`flex justify-between items-center p-3.5 sm:p-4 rounded-2xl border-2 cursor-pointer transition-all duration-150 select-none hover:scale-[1.01] active:scale-[0.99]
                             ${isMarked
                               ? 'border-red-200 bg-red-50 opacity-60'
-                              : 'border-gray-100 bg-gray-50 hover:border-red-200 hover:bg-red-50'}`}
+                              : 'border-gray-100 bg-gray-50 hover:border-red-250 hover:bg-red-50/30'}`}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3.5">
                             {isMarked
-                              ? <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center"><X size={10} className="text-white" /></div>
-                              : <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
+                              ? <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-sm"><X size={12} className="text-white" /></div>
+                              : <div className="w-6 h-6 rounded-full border-2 border-gray-300 bg-white shadow-inner" />
                             }
-                            <span className={`text-[11px] font-bold ${isMarked ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                            <span className={`text-sm sm:text-base font-bold ${isMarked ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                               {item.q}× {item.n}
                             </span>
                           </div>
-                          <span className={`text-[11px] font-black ${isMarked ? 'text-red-400' : 'text-gray-700'}`}>
+                          <span className={`text-sm sm:text-base font-black ${isMarked ? 'text-red-550' : 'text-gray-900'}`}>
                             {isMarked ? '−' : ''}₹{(item.p * item.q).toFixed(0)}
                           </span>
                         </div>
@@ -1917,24 +1916,24 @@ const CashierDashboard = ({ onLogout }) => {
 
                 {/* ── Add Section ── */}
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">
+                  <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-gray-400 mb-3 pb-1 border-b border-gray-100">
                     Add Items to Bill
                   </p>
 
                   {/* Search */}
-                  <div className="relative mb-2">
+                  <div className="relative mb-3.5">
                     <input
                       type="text"
                       value={billEditSearch}
                       onChange={e => setBillEditSearch(e.target.value)}
                       placeholder="Search menu item..."
-                      className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-gray-200 text-[11px] font-medium text-gray-800 focus:outline-none focus:border-amber-400 bg-gray-50"
+                      className="w-full pl-5 pr-5 py-3.5 rounded-2xl border border-gray-200 text-sm sm:text-base font-semibold text-gray-850 focus:outline-none focus:border-amber-400 focus:bg-white bg-gray-50 transition-all shadow-inner"
                     />
                   </div>
 
                   {/* Search results */}
                   {searchResults.length > 0 && (
-                    <div className="space-y-1 mb-3 max-h-[140px] overflow-y-auto">
+                    <div className="space-y-1.5 mb-3.5 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
                       {searchResults.map(m => (
                         <div
                           key={m.id}
@@ -1942,7 +1941,7 @@ const CashierDashboard = ({ onLogout }) => {
                             setBillAdditions(prev => {
                               const exists = prev.findIndex(x => x.menuItemId === String(m.id));
                               if (exists !== -1) {
-                                return prev.map((x, i) => i === exists ? { ...x, quantity: x.quantity + 1 } : x);
+                                  return prev.map((x, i) => i === exists ? { ...x, quantity: x.quantity + 1 } : x);
                               }
                               return [...prev, {
                                 menuItemId: String(m.id),
@@ -1954,10 +1953,10 @@ const CashierDashboard = ({ onLogout }) => {
                             });
                             setBillEditSearch('');
                           }}
-                          className="flex justify-between items-center p-2.5 rounded-xl border border-gray-100 bg-gray-50 hover:border-amber-300 hover:bg-amber-50 cursor-pointer transition-all"
+                          className="flex justify-between items-center p-3.5 rounded-xl border border-gray-200 bg-gray-50 hover:border-amber-300 hover:bg-amber-50 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99]"
                         >
-                          <span className="text-[11px] font-bold text-gray-800">{m.name || m.n}</span>
-                          <span className="text-[11px] font-black text-amber-600">+ ₹{Number(m.basePrice ?? m.p ?? 0).toFixed(0)}</span>
+                          <span className="text-sm sm:text-base font-bold text-gray-850">{m.name || m.n}</span>
+                          <span className="text-sm sm:text-base font-black text-amber-600">+ ₹{Number(m.basePrice ?? m.p ?? 0).toFixed(0)}</span>
                         </div>
                       ))}
                     </div>
@@ -1965,36 +1964,36 @@ const CashierDashboard = ({ onLogout }) => {
 
                   {/* Added items list */}
                   {billAdditions.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-[8px] font-black uppercase tracking-widest text-amber-500 mb-1">Added</p>
+                    <div className="space-y-2.5">
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-amber-500 mb-1">Added</p>
                       {billAdditions.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-2.5 rounded-xl border-2 border-amber-200 bg-amber-50">
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1">
+                        <div key={idx} className="flex justify-between items-center p-3.5 sm:p-4 rounded-2xl border-2 border-amber-250 bg-amber-50/70 shadow-sm animate-fade-in">
+                          <div className="flex items-center gap-3.5">
+                            <div className="flex items-center gap-2 bg-amber-100/50 p-1.5 rounded-xl border border-amber-200">
                               <button
                                 onClick={() => setBillAdditions(prev =>
                                   prev[idx].quantity <= 1
                                     ? prev.filter((_, i) => i !== idx)
                                     : prev.map((x, i) => i === idx ? { ...x, quantity: x.quantity - 1 } : x)
                                 )}
-                                className="w-5 h-5 rounded-full bg-amber-200 flex items-center justify-center text-amber-700 font-black text-xs hover:bg-amber-300"
+                                className="w-7 h-7 rounded-full bg-white flex items-center justify-center text-amber-800 font-black text-sm hover:bg-amber-200 border border-amber-200 transition-all duration-100 active:scale-90 cursor-pointer"
                               >−</button>
-                              <span className="text-[10px] font-black text-amber-700 w-4 text-center">{item.quantity}</span>
+                              <span className="text-sm font-black text-amber-800 w-5 text-center">{item.quantity}</span>
                               <button
                                 onClick={() => setBillAdditions(prev =>
                                   prev.map((x, i) => i === idx ? { ...x, quantity: x.quantity + 1 } : x)
                                 )}
-                                className="w-5 h-5 rounded-full bg-amber-200 flex items-center justify-center text-amber-700 font-black text-xs hover:bg-amber-300"
+                                className="w-7 h-7 rounded-full bg-white flex items-center justify-center text-amber-800 font-black text-sm hover:bg-amber-200 border border-amber-200 transition-all duration-100 active:scale-90 cursor-pointer"
                               >+</button>
                             </div>
-                            <span className="text-[11px] font-bold text-amber-800">{item.name}</span>
+                            <span className="text-sm sm:text-base font-bold text-amber-800">{item.name}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-black text-amber-700">+₹{(item.price * item.quantity).toFixed(0)}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm sm:text-base font-black text-amber-700">+₹{(item.price * item.quantity).toFixed(0)}</span>
                             <button
                               onClick={() => setBillAdditions(prev => prev.filter((_, i) => i !== idx))}
-                              className="text-amber-400 hover:text-red-500"
-                            ><X size={12} /></button>
+                              className="text-amber-450 hover:text-red-500 transition-colors cursor-pointer"
+                            ><X size={16} /></button>
                           </div>
                         </div>
                       ))}
@@ -2004,10 +2003,10 @@ const CashierDashboard = ({ onLogout }) => {
               </div>
 
               {/* Footer */}
-              <div className="p-4 border-t border-gray-100 shrink-0 space-y-2">
+              <div className="p-5 border-t border-gray-100 shrink-0 space-y-3">
                 {(billRemovals.length > 0 || billAdditions.length > 0) && (
-                  <div className="flex gap-2 text-[9px] font-black uppercase text-gray-400">
-                    {billRemovals.length > 0 && <span className="text-red-500">{billRemovals.length} item(s) removed</span>}
+                  <div className="flex gap-2 text-xs sm:text-sm font-black uppercase text-gray-500">
+                    {billRemovals.length > 0 && <span className="text-red-550">{billRemovals.length} item(s) removed</span>}
                     {billRemovals.length > 0 && billAdditions.length > 0 && <span>·</span>}
                     {billAdditions.length > 0 && <span className="text-amber-500">{billAdditions.reduce((s,i) => s + i.quantity, 0)} item(s) added</span>}
                   </div>
@@ -2015,10 +2014,10 @@ const CashierDashboard = ({ onLogout }) => {
                 <button
                   onClick={handleBillEditSave}
                   disabled={isSavingBillEdit || (billRemovals.length === 0 && billAdditions.length === 0)}
-                  className={`w-full py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all
+                  className={`w-full py-4.5 sm:py-5 rounded-2xl text-sm sm:text-base font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95
                     ${!isSavingBillEdit && (billRemovals.length > 0 || billAdditions.length > 0)
-                      ? 'bg-amber-500 text-white hover:bg-amber-600'
-                      : 'bg-gray-100 text-gray-300 cursor-not-allowed'}`}
+                      ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-500/10 cursor-pointer'
+                      : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'}`}
                 >
                   {isSavingBillEdit ? 'Saving...' : 'Save Bill Changes'}
                 </button>
