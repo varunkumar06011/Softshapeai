@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
-import { createOrder, requestBilling, updateOrderItems, fetchTransactions } from '../services/orderApi';
+import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem } from '../services/orderApi';
 import { printKOTQZ } from '../services/printService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -255,6 +255,10 @@ export default function CaptainApp({ onLogout }) {
   const [activeBarMenu, setActiveBarMenu] = useState('food');
   const [activeVariantItem, setActiveVariantItem] = useState(null);
   const [currentSessionItems, setCurrentSessionItems] = useState([]);
+
+  // Cancel-item state: { [orderItemId]: true }
+  const [cancelLoading,  setCancelLoading]  = useState({});
+  const [cancelConfirm,  setCancelConfirm]  = useState({});
 
   // ── Derived / memoised values (safe now that all state is declared above) ──
   const totalActiveTablesCount = useMemo(() => {
@@ -665,7 +669,30 @@ export default function CaptainApp({ onLogout }) {
     try {
       if (activeOrderIdRef.current) {
         // Subsequent KOT on same table — append items to existing order
-        await updateOrderItems(activeOrderIdRef.current, apiItems);
+        const updatedOrder = await updateOrderItems(activeOrderIdRef.current, apiItems);
+        // Stitch real DB orderItemId onto this KOT's items for cancel support
+        const savedItems = updatedOrder?.items ?? [];
+        setActiveTables(prev => prev.map(t => {
+          if (t.backendId !== activeTable.backendId) return t;
+          const allPrevIds = new Set(
+            (t.kotHistory || []).flatMap(k => k.items.map(i => i.orderItemId).filter(Boolean))
+          );
+          return {
+            ...t,
+            kotHistory: (t.kotHistory || []).map(kot => {
+              if (kot.id !== newKOT.id) return kot;
+              return {
+                ...kot,
+                items: kot.items.map(kotI => {
+                  const matched = savedItems.find(si =>
+                    si.name === (kotI.n || kotI.name) && !allPrevIds.has(si.id)
+                  );
+                  return matched ? { ...kotI, orderItemId: matched.id } : kotI;
+                }),
+              };
+            }),
+          };
+        }));
       } else {
         // First KOT — create a brand-new order row
         const savedOrder = await createOrder({
@@ -675,10 +702,99 @@ export default function CaptainApp({ onLogout }) {
         });
         // Store the real DB id so next KOT uses updateOrderItems, not createOrder
         if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
+        // Stitch real DB orderItemId onto this KOT's items for cancel support
+        const savedItems = savedOrder?.items ?? [];
+        setActiveTables(prev => prev.map(t => {
+          if (t.backendId !== activeTable.backendId) return t;
+          return {
+            ...t,
+            kotHistory: (t.kotHistory || []).map(kot => {
+              if (kot.id !== newKOT.id) return kot;
+              return {
+                ...kot,
+                items: kot.items.map(kotI => {
+                  const matched = savedItems.find(si =>
+                    si.name === (kotI.n || kotI.name)
+                  );
+                  return matched ? { ...kotI, orderItemId: matched.id } : kotI;
+                }),
+              };
+            }),
+          };
+        }));
       }
     } catch (err) {
       console.error('[KOT] DB write failed:', err.message);
       addNotification('Order save failed — retry or check connection', 'error');
+    }
+  };
+
+  // ── Cancel a sent KOT item ───────────────────────────────────────────────────
+  const [cancelConfirm, setCancelConfirm] = useState({}); // { [orderItemId]: true }
+  const [cancelLoading, setCancelLoading] = useState({}); // { [orderItemId]: true }
+
+  const cancelKotItem = async (kotItem, kotId) => {
+    if (!kotItem.orderItemId) {
+      addNotification('Cannot cancel — item ID missing. Refresh and retry.', 'error');
+      return;
+    }
+    if (!activeOrderIdRef.current) {
+      addNotification('No active order found for this table.', 'error');
+      return;
+    }
+
+    setCancelLoading(prev => ({ ...prev, [kotItem.orderItemId]: true }));
+
+    // Optimistic UI — mark item as CANCELLED immediately
+    setActiveTables(prev => prev.map(t => {
+      if (t.backendId !== activeTable?.backendId) return t;
+      return {
+        ...t,
+        kotHistory: (t.kotHistory || []).map(kot => {
+          if (kot.id !== kotId) return kot;
+          return {
+            ...kot,
+            items: kot.items.map(i =>
+              i.orderItemId === kotItem.orderItemId ? { ...i, s: 'Cancelled' } : i
+            ),
+          };
+        }),
+        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem.p ?? 0) * (kotItem.q ?? 1)),
+      };
+    }));
+
+    try {
+      await cancelOrderItem(
+        activeOrderIdRef.current,
+        kotItem.orderItemId,
+        currentCaptain?.name || currentCaptain?.id || 'Captain',
+        activeTable?.number ?? activeTable?.id
+      );
+      addNotification(`${kotItem.n} cancelled`, 'success');
+      // Backend emits CANCEL_KOT print_job → PrintStation handles it
+    } catch (err) {
+      console.error('[CancelKOT]', err.message);
+      addNotification(`Cancel failed: ${err.message}`, 'error');
+      // Revert optimistic update
+      setActiveTables(prev => prev.map(t => {
+        if (t.backendId !== activeTable?.backendId) return t;
+        return {
+          ...t,
+          kotHistory: (t.kotHistory || []).map(kot => {
+            if (kot.id !== kotId) return kot;
+            return {
+              ...kot,
+              items: kot.items.map(i =>
+                i.orderItemId === kotItem.orderItemId ? { ...i, s: 'KOT Sent' } : i
+              ),
+            };
+          }),
+          currentBill: (t.currentBill ?? 0) + (kotItem.p ?? 0) * (kotItem.q ?? 1),
+        };
+      }));
+    } finally {
+      setCancelLoading(prev => ({ ...prev, [kotItem.orderItemId]: false }));
+      setCancelConfirm(prev => ({ ...prev, [kotItem.orderItemId]: false }));
     }
   };
 
@@ -1391,18 +1507,51 @@ export default function CaptainApp({ onLogout }) {
                         <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time}</span>
                       </div>
                       <div className="space-y-3">
-                        {kot.items.map((item, iIdx) => (
-                          <div key={iIdx} className="flex justify-between items-center group">
-                            <div className="flex items-center gap-3">
-                              <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
-                              <p className="text-[11px] font-bold text-gray-700">{item.n}</p>
+                        {kot.items.map((item, iIdx) => {
+                          const isCancelled = item.s === 'Cancelled';
+                          const isLoading   = cancelLoading[item.orderItemId];
+                          const isConfirming = cancelConfirm[item.orderItemId];
+                          const canCancel   = !isCancelled && !!item.orderItemId;
+                          return (
+                            <div key={iIdx} className={`flex justify-between items-center group transition-opacity ${isCancelled ? 'opacity-50' : ''}`}>
+                              <div className="flex items-center gap-3">
+                                <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
+                                <p className={`text-[11px] font-bold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.n}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isCancelled ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-red-50 text-red-500 text-[8px] font-black uppercase tracking-widest border border-red-100">Cancelled</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-md bg-green-50 text-green-600 text-[8px] font-black uppercase tracking-widest border border-green-100">{item.s}</span>
+                                )}
+                                {canCancel && (
+                                  isLoading ? (
+                                    <Loader2 size={13} className="animate-spin text-red-400 shrink-0" />
+                                  ) : isConfirming ? (
+                                    <button
+                                      onClick={() => cancelKotItem(item, kot.id)}
+                                      className="px-2 py-0.5 rounded-md bg-red-600 text-white text-[8px] font-black uppercase tracking-widest hover:bg-red-700 transition-colors whitespace-nowrap"
+                                    >
+                                      Confirm?
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => setCancelConfirm(prev => ({ ...prev, [item.orderItemId]: true }))}
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50"
+                                      title="Cancel item"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  )
+                                )}
+                              </div>
                             </div>
-                            <span className="px-2 py-0.5 rounded-md bg-green-50 text-green-600 text-[8px] font-black uppercase tracking-widest border border-green-100">{item.s}</span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
+
 
                   {/* ACTIVE DRAFT */}
                   <div className="space-y-5 pt-6 border-t-2 border-dashed border-gray-100">

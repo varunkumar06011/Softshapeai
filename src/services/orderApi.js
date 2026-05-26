@@ -130,3 +130,12 @@ export async function fetchTransactions(restaurantId, limit = 100, date = null, 
   });
   return parseResponse(res);
 }
+
+export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber) {
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderItemId, cancelledBy, tableNumber }),
+  });
+  return parseResponse(res);
+}

@@ -67,6 +67,32 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
+function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
+  const cmds = [
+    CMD.INIT,
+    CMD.ALIGN_CENTER,
+    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    'CANCEL ITEM\n',
+    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    divider(),
+    CMD.ALIGN_LEFT,
+    `Table : ${tableNumber}\n`,
+    `Time  : ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
+    `By    : ${cancelledBy || 'Staff'}\n`,
+    divider(),
+    CMD.BOLD_ON,
+    pad('ITEM', 22) + pad('QTY', 4) + '\n',
+    CMD.BOLD_OFF,
+    divider(),
+  ];
+  if (item) {
+    cmds.push(pad(String(item.name || ''), 22) + pad(String(item.quantity || 1), 4) + '\n');
+  }
+  cmds.push(divider(), '\n\n', CMD.CUT);
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
+}
+
+
 function buildBillCommands({ tableNumber, items, totalAmount }) {
   const cmds = [
     CMD.INIT,
@@ -224,6 +250,9 @@ export default function PrintStation() {
           } else if (type === 'BILL') {
             cmds    = buildBillCommands(data);
             printer = BILLING_PRINTER;
+          } else if (type === 'CANCEL_KOT') {
+            cmds    = buildCancelKOTCommands(data);
+            printer = data.item?.menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
           } else {
             pushLog(`Unknown print_job type: ${type}`, false);
             return;
