@@ -88,10 +88,7 @@ export async function connectQZ() {
  * @param printerName - Exact Windows printer name
  * @param data - Array returned by the backend build* functions
  */
-async function sendToPrinter(
-  printerName: string,
-  data: Array<object | string>
-) {
+async function sendToPrinter(printerName, data) {
   await connectQZ();
 
   const config = qz.configs.create(printerName);
@@ -101,21 +98,21 @@ async function sendToPrinter(
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /** Send data to the Food KOT printer (kitchen) */
-export async function printToFoodKOT(data: Array<object | string>) {
+export async function printToFoodKOT(data) {
   const printerName = import.meta.env.VITE_KOT_FOOD_PRINTER_NAME;
   if (!printerName) throw new Error("VITE_KOT_FOOD_PRINTER_NAME is not configured");
   await sendToPrinter(printerName, data);
 }
 
 /** Send data to the Liquor KOT printer (bar) */
-export async function printToLiquorKOT(data: Array<object | string>) {
+export async function printToLiquorKOT(data) {
   const printerName = import.meta.env.VITE_KOT_LIQUOR_PRINTER_NAME;
   if (!printerName) throw new Error("VITE_KOT_LIQUOR_PRINTER_NAME is not configured");
   await sendToPrinter(printerName, data);
 }
 
 /** Send data to the Receipt printer (cashier) */
-export async function printToReceipt(data: Array<object | string>) {
+export async function printToReceipt(data) {
   const printerName = import.meta.env.VITE_RECEIPT_PRINTER_NAME;
   if (!printerName) throw new Error("VITE_RECEIPT_PRINTER_NAME is not configured");
   await sendToPrinter(printerName, data);
