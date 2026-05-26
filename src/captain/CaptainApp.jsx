@@ -929,7 +929,7 @@ export default function CaptainApp({ onLogout }) {
                   <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Assigned At</p>
                   <p className="text-[10px] font-black text-gray-700 mt-0.5">
                     {assignment.timestamp
-                      ? new Date(assignment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      ? new Date(assignment.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
                       : '—'}
                   </p>
                 </div>

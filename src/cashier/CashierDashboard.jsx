@@ -54,7 +54,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [selectedTable?.backendId]);
 
   const { outlet } = useOutlet();
-  const TX_CACHE_KEY = `softshape_transactions_${outlet}_${new Date().toLocaleDateString('en-CA')}`;
+  const TX_CACHE_KEY = `softshape_transactions_${outlet}_${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })}`;
 
   const [pastTransactions, setPastTransactions] = useState(() => {
     // Start with localStorage cache for instant display
@@ -161,7 +161,7 @@ const CashierDashboard = ({ onLogout }) => {
           tableNumber: table.number,
           orderId: order?.id,
           totalAmount: order?.totalAmount ?? 0,
-          requestedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          requestedAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
         }];
       });
 
@@ -345,8 +345,8 @@ const CashierDashboard = ({ onLogout }) => {
       txnNumber: null,
       displayId: 'Transaction —',   // will update on loadTransactions after save
       amount: txnAmount,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      date: new Date().toLocaleDateString('en-GB'),
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
+      date: new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
       timestamp: Date.now(),
       items: itemsList.length,
       itemsList: itemsList,
@@ -559,7 +559,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const kotsToCreate = [];
     const timestamp = Date.now();
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
     if (foodItems.length > 0) {
       kotsToCreate.push({
@@ -700,7 +700,7 @@ const CashierDashboard = ({ onLogout }) => {
 
             <div className="flex items-center gap-2 text-gray-400">
               <Clock size={14} />
-              <span className="text-[10px] font-black tabular-nums">{currentTime.toLocaleTimeString()}</span>
+              <span className="text-[10px] font-black tabular-nums">{currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
             </div>
           </div>
 

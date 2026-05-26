@@ -11,7 +11,7 @@ export function mapBarMenuItems(items) {
     p: Math.round(item.price ?? 0),
     c: item.category,
     t: item.isVeg ? "veg" : "non",
-    menuType: item.menuType || "FOOD",
+    menuType: item.menuType || "LIQUOR",
     img: item.imageUrl || DEFAULT_IMG,
     isAvailable: item.isAvailable !== false,
     variants: item.variants || [],
