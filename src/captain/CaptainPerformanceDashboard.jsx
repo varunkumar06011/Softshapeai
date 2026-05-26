@@ -24,7 +24,7 @@ export default function CaptainPerformanceDashboard() {
         setTransactions(JSON.parse(e.newValue));
       }
     };
-    
+
     const handleCustomEvent = () => {
       const saved = localStorage.getItem('softshape_transactions');
       if (saved) setTransactions(JSON.parse(saved));
@@ -32,7 +32,7 @@ export default function CaptainPerformanceDashboard() {
 
     window.addEventListener('storage', handleStorage);
     window.addEventListener('softshape_transactions_updated', handleCustomEvent);
-    
+
     return () => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('softshape_transactions_updated', handleCustomEvent);
@@ -54,60 +54,60 @@ export default function CaptainPerformanceDashboard() {
     });
 
     filteredTxns.forEach(t => {
-       const cid = t.captainId;
-       if (cid && captainMap[cid]) {
-          captainMap[cid].sales += Number(t.amount || 0);
-          captainMap[cid].orders += 1;
-          
-          if (t.itemsList) {
-             t.itemsList.forEach(item => {
-                const name = item.n;
-                const qty = item.q || 1;
-                captainMap[cid].itemsCount[name] = (captainMap[cid].itemsCount[name] || 0) + qty;
-             });
-          }
-       }
+      const cid = t.captainId;
+      if (cid && captainMap[cid]) {
+        captainMap[cid].sales += Number(t.amount || 0);
+        captainMap[cid].orders += 1;
+
+        if (t.itemsList) {
+          t.itemsList.forEach(item => {
+            const name = item.n;
+            const qty = item.q || 1;
+            captainMap[cid].itemsCount[name] = (captainMap[cid].itemsCount[name] || 0) + qty;
+          });
+        }
+      }
     });
 
     const processedCaptains = Object.values(captainMap).map(c => {
-       let topItem = "None";
-       let maxQty = 0;
-       Object.entries(c.itemsCount).forEach(([name, qty]) => {
-          if (qty > maxQty) {
-             maxQty = qty;
-             topItem = name;
-          }
-       });
-       return { ...c, topItem };
+      let topItem = "None";
+      let maxQty = 0;
+      Object.entries(c.itemsCount).forEach(([name, qty]) => {
+        if (qty > maxQty) {
+          maxQty = qty;
+          topItem = name;
+        }
+      });
+      return { ...c, topItem };
     }).sort((a, b) => b.sales - a.sales);
 
     let trendBuckets = {};
     if (range === 'Today') {
-       const hours = [12, 14, 16, 18, 20, 22];
-       hours.forEach(h => {
-          const label = h > 12 ? `${h-12} PM` : `${h} PM`;
-          trendBuckets[label] = 0;
-       });
-       filteredTxns.forEach(t => {
-          const date = new Date(t.timestamp || Date.now());
-          const h = date.getHours();
-          let mappedH = hours.find(hour => h <= hour);
-          if (!mappedH) mappedH = 22;
-          const label = mappedH > 12 ? `${mappedH-12} PM` : `${mappedH} PM`;
-          if(trendBuckets[label] !== undefined) {
-             trendBuckets[label] += Number(t.amount || 0);
-          }
-       });
+      const hours = [12, 14, 16, 18, 20, 22];
+      hours.forEach(h => {
+        const label = h > 12 ? `${h - 12} PM` : `${h} PM`;
+        trendBuckets[label] = 0;
+      });
+      filteredTxns.forEach(t => {
+        const date = new Date(t.timestamp || Date.now());
+        const h = date.getHours();
+        let mappedH = hours.find(hour => h <= hour);
+        if (!mappedH) mappedH = 22;
+        const label = mappedH > 12 ? `${mappedH - 12} PM` : `${mappedH} PM`;
+        if (trendBuckets[label] !== undefined) {
+          trendBuckets[label] += Number(t.amount || 0);
+        }
+      });
     } else {
-       filteredTxns.forEach(t => {
-          const d = t.date || new Date(t.timestamp).toLocaleDateString('en-GB');
-          trendBuckets[d] = (trendBuckets[d] || 0) + Number(t.amount || 0);
-       });
+      filteredTxns.forEach(t => {
+        const d = t.date || new Date(t.timestamp).toLocaleDateString('en-GB');
+        trendBuckets[d] = (trendBuckets[d] || 0) + Number(t.amount || 0);
+      });
     }
 
     const trendsArray = Object.entries(trendBuckets).map(([hourOrDay, sales]) => ({
-       hour: hourOrDay,
-       sales
+      hour: hourOrDay,
+      sales
     }));
 
     return { captains: processedCaptains, trends: trendsArray };
@@ -142,28 +142,28 @@ export default function CaptainPerformanceDashboard() {
         {captains.slice(0, 4).map((c, i) => (
           <div key={i} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
             <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
-               <Star size={48} className="text-[#B71C1C]" />
+              <Star size={48} className="text-[#B71C1C]" />
             </div>
             <div className="flex items-center gap-3 mb-4">
-               <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">{c.name[0]}</div>
-               <div>
-                  <p className="font-black text-gray-900">{c.name}</p>
-                  <p className="text-[10px] font-bold text-[#F57F17]">{"★".repeat(c.stars)} {c.rating}</p>
-               </div>
+              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">{c.name[0]}</div>
+              <div>
+                <p className="font-black text-gray-900">{c.name}</p>
+                <p className="text-[10px] font-bold text-[#F57F17]">{"★".repeat(c.stars)} {c.rating}</p>
+              </div>
             </div>
             <div className="space-y-3">
-               <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Sales Today</span>
-                  <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
-               </div>
-               <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
-                  <span className="text-sm font-black text-gray-900">{c.orders}</span>
-               </div>
-               <div className="pt-3 border-t border-gray-50 flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Top Item</span>
-                  <span className="text-[10px] font-black text-[#B71C1C] uppercase truncate max-w-[100px]">{c.topItem}</span>
-               </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Sales Today</span>
+                <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
+                <span className="text-sm font-black text-gray-900">{c.orders}</span>
+              </div>
+              <div className="pt-3 border-t border-gray-50 flex justify-between items-center">
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Top Item</span>
+                <span className="text-[10px] font-black text-[#B71C1C] uppercase truncate max-w-[100px]">{c.topItem}</span>
+              </div>
             </div>
           </div>
         ))}
@@ -178,8 +178,8 @@ export default function CaptainPerformanceDashboard() {
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="99%" height="100%">
               <BarChart data={trends}>
-                <XAxis dataKey="hour" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                <YAxis tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                <XAxis dataKey="hour" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} />
                 <Bar dataKey="sales" fill="#B71C1C" radius={[4, 4, 0, 0]} barSize={40} />
               </BarChart>
@@ -193,7 +193,7 @@ export default function CaptainPerformanceDashboard() {
             {captains.map((c, i) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{i+1}</span>
+                  <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{i + 1}</span>
                   <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">{c.name.split(' ').map(n => n[0]).join('')}</div>
                   <div>
                     <p className="text-xs font-black text-gray-900">{c.name}</p>

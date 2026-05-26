@@ -294,10 +294,10 @@ export default function CaptainApp({ onLogout }) {
 
   const outletFilteredMenuItems = useMemo(() => {
     if (outlet === 'bar') {
-      return activeMenuItems.filter(item => item.menuType === (activeBarMenu === 'food' ? 'FOOD' : 'LIQUOR') && item.isAvailable !== false);
+      return activeMenuItems.filter(item => item.isAvailable !== false);
     }
     return activeMenuItems.filter(item => item.menuType === 'FOOD');
-  }, [outlet, activeMenuItems, activeBarMenu]);
+  }, [outlet, activeMenuItems]);
 
   const categories = useMemo(() => {
     if (outlet === 'restaurant') return restaurantCategories;
@@ -600,7 +600,7 @@ export default function CaptainApp({ onLogout }) {
         activeOrderIdRef.current = liveOrder.id;
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTableId]);
 
   const sendIncrementalKOT = async () => {
@@ -994,8 +994,8 @@ export default function CaptainApp({ onLogout }) {
         <button
           onClick={() => { setActiveView('assignment'); localStorage.setItem('captain_active_tab', 'assignment'); }}
           className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeView === 'assignment'
-              ? 'border-[#E53935] text-[#E53935]'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
+            ? 'border-[#E53935] text-[#E53935]'
+            : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}
         >
           <Target size={13} />
@@ -1008,8 +1008,8 @@ export default function CaptainApp({ onLogout }) {
         <button
           onClick={() => { setActiveView('tables'); localStorage.setItem('captain_active_tab', 'tables'); }}
           className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeView === 'tables'
-              ? 'border-[#E53935] text-[#E53935]'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
+            ? 'border-[#E53935] text-[#E53935]'
+            : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}
         >
           <LayoutDashboard size={13} />
@@ -1123,8 +1123,8 @@ export default function CaptainApp({ onLogout }) {
 
               {/* Status Banner */}
               <div className={`rounded-2xl p-4 border flex items-center gap-3 ${todayRevenue >= (assignment.revenueTarget || 0)
-                  ? 'bg-emerald-50 border-emerald-200'
-                  : 'bg-[#FFF4F4] border-[#FFCDD2]'
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-[#FFF4F4] border-[#FFCDD2]'
                 }`}>
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${todayRevenue >= (assignment.revenueTarget || 0) ? 'bg-emerald-500' : 'bg-[#E53935]'
                   }`}>
@@ -1181,9 +1181,9 @@ export default function CaptainApp({ onLogout }) {
                     key={table.id}
                     onClick={() => openTableSession(table)}
                     className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
-                        table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
-                          table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
-                            'bg-red-50 border-red-100 text-red-600'
+                      table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
+                        table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
+                          'bg-red-50 border-red-100 text-red-600'
                       }`}
                   >
                     <div className="w-full flex justify-between items-start">
@@ -1202,8 +1202,8 @@ export default function CaptainApp({ onLogout }) {
 
                     <div className="w-full flex flex-col items-center gap-1.5">
                       <div className={`w-full py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[7px] sm:text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1 sm:gap-1.5 ${table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
-                          table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
-                            table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                        table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
+                          table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
                         }`}>
                         {table.status}
                       </div>
@@ -1250,61 +1250,99 @@ export default function CaptainApp({ onLogout }) {
               {/* MENU INTERFACE */}
               <div className={`flex-grow flex flex-col overflow-hidden bg-gray-50/30 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} border-b lg:border-b-0 lg:border-r border-gray-100 transition-all duration-300`}>
                 {/* STICKY MENU BAR */}
-                <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
-                  <div className="relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={16} />
-                    <input
-                      type="search"
-                      placeholder="Search by name, category, price, or ID..."
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-[13px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
-                    {outlet === 'bar' && (
-                      <div className="flex justify-center xl:justify-start mr-3">
-                        <BarMenuToggle active={activeBarMenu} onChange={(mode) => {
-                          setActiveBarMenu(mode);
-                          setActiveCategory('All');
-                          setSearchQuery('');
-                        }} />
+                {outlet === 'bar' ? (
+                  <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300">
+                    <div className="px-4 py-3 flex flex-col gap-3">
+                      <div className="relative group">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#E53935]" size={18} />
+                        <input
+                          type="search"
+                          placeholder="Search fine spirits, drinks & food..."
+                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-10 pr-4 py-2.5 text-sm font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          autoComplete="off"
+                        />
                       </div>
-                    )}
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                      {categories.map(cat => (
-                        <button
-                          key={cat}
-                          onClick={() => setActiveCategory(cat)}
-                          className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 ${
-                            activeCategory === cat
-                              ? 'bg-gradient-to-r from-[#E53935] to-[#FF7043] text-white border-transparent shadow-[0_8px_16px_rgba(229,57,53,0.15)] scale-[1.03]'
-                              : 'bg-white border-gray-100 text-gray-400 hover:bg-red-50/10 hover:text-gray-700'
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
+                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide scroll-smooth flex-grow">
+                          {categories.map(cat => (
+                            <button
+                              key={cat}
+                              onClick={() => setActiveCategory(cat)}
+                              className={`px-5 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all border shrink-0 ${activeCategory === cat
+                                  ? 'bg-gradient-to-r from-[#E53935] to-[#B71C1C] text-white border-transparent shadow-[0_4px_12px_rgba(229,57,53,0.2)] scale-[1.02]'
+                                  : 'bg-white border-gray-200 text-gray-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700'
+                                }`}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0 shadow-sm">
+                          {['All', 'veg', 'non'].map(diet => (
+                            <button
+                              key={diet}
+                              onClick={() => setActiveDiet(diet)}
+                              className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
+                                ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
+                                : 'text-gray-400 hover:text-gray-600 bg-transparent'
+                                }`}
+                            >
+                              {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
+                  </div>
+                ) : (
+                  <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
+                    <div className="relative group">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={16} />
+                      <input
+                        type="search"
+                        placeholder="Search by name, category, price, or ID..."
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-[13px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
+                      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                        {categories.map(cat => (
+                          <button
+                            key={cat}
+                            onClick={() => setActiveCategory(cat)}
+                            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 ${activeCategory === cat
+                                ? 'bg-gradient-to-r from-[#E53935] to-[#FF7043] text-white border-transparent shadow-[0_8px_16px_rgba(229,57,53,0.15)] scale-[1.03]'
+                                : 'bg-white border-gray-100 text-gray-400 hover:bg-red-50/10 hover:text-gray-700'
+                              }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
 
-                    {/* Dietary Filter */}
-                    <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0">
-                      {['All', 'veg', 'non'].map(diet => (
-                        <button
-                          key={diet}
-                          onClick={() => setActiveDiet(diet)}
-                          className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
+                      {/* Dietary Filter */}
+                      <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0">
+                        {['All', 'veg', 'non'].map(diet => (
+                          <button
+                            key={diet}
+                            onClick={() => setActiveDiet(diet)}
+                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
                               ? 'bg-white text-gray-900 shadow-sm'
                               : 'text-gray-400 hover:text-gray-600'
-                            }`}
-                        >
-                          {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non-Veg'}
-                        </button>
-                      ))}
+                              }`}
+                          >
+                            {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non-Veg'}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* SCROLLABLE MENU GRID */}
                 <div className="flex-grow overflow-y-auto p-6 scroll-smooth">
@@ -1342,7 +1380,7 @@ export default function CaptainApp({ onLogout }) {
                                 alt={item.n}
                                 className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-700 ease-out"
                               />
-                              
+
                               {/* Premium Veg/Non-veg indicator square overlay */}
                               <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm p-0.5 rounded-[4px] shadow-sm border border-gray-100 flex items-center justify-center">
                                 <div className={`w-3.5 h-3.5 rounded-[3px] border-[1.5px] flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
@@ -1367,6 +1405,11 @@ export default function CaptainApp({ onLogout }) {
                                   {item.menuType === 'LIQUOR' && (
                                     <span className="text-[7px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
                                       🥃 Liquor
+                                    </span>
+                                  )}
+                                  {outlet === 'bar' && item.menuType === 'FOOD' && (
+                                    <span className="text-[7px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
+                                      🍽️ Food
                                     </span>
                                   )}
                                 </div>

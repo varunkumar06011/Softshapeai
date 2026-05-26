@@ -234,6 +234,11 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [activeTables, selectedTable?.backendId]);
 
+  useEffect(() => {
+    setSelectedCategory('All');
+    setSearchQuery('');
+  }, [outlet]);
+
   const activeTableOrders = useMemo(() => {
     return activeTables
       .filter((table) => table.status && table.status !== 'Free')
@@ -427,19 +432,17 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeCategories = useMemo(() => {
     if (outlet === 'restaurant') return categories;
-    const items = barMenuItems.filter(i => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR') && i.isAvailable !== false);
+    const items = barMenuItems.filter(i => i.isAvailable !== false);
     const cats = items.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
-  }, [outlet, categories, barMenuItems, barMenuTab]);
+  }, [outlet, categories, barMenuItems]);
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
     if (outlet === 'restaurant') {
       itemsToFilter = menuItems.filter(item => item.menuType === 'FOOD');
     } else {
-      itemsToFilter = barMenuItems.filter(
-        (i) => i.menuType === (barMenuTab === 'food' ? 'FOOD' : 'LIQUOR') && i.isAvailable !== false
-      );
+      itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
 
     return filterMenuItems(itemsToFilter, {
@@ -447,7 +450,7 @@ const CashierDashboard = ({ onLogout }) => {
       category: selectedCategory,
       diet: activeDiet,
     });
-  }, [outlet, menuItems, barMenuItems, barMenuTab, searchQuery, selectedCategory, activeDiet]);
+  }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, activeDiet]);
 
   const handleTableSelect = (table) => {
     setSelectedTable(table);
@@ -662,9 +665,9 @@ const CashierDashboard = ({ onLogout }) => {
   return (
     <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#FFF5F5] font-sans overflow-hidden text-[#1A1A1A]">
       {/* SIDEBAR / BOTTOM BAR */}
-      <aside className="w-full sm:w-16 lg:w-60 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
-        <div className="hidden sm:flex p-2 lg:p-6 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
-          <div className="bg-white p-1 lg:p-3 rounded-xl lg:rounded-[32px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-10 lg:w-36 flex items-center justify-center">
+      <aside className="w-full sm:w-20 lg:w-72 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
+        <div className="hidden sm:flex p-3 lg:p-8 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
+          <div className="bg-white p-1.5 lg:p-4 rounded-2xl lg:rounded-[32px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-14 lg:w-44 flex items-center justify-center">
             <img
               src="/logo softshape.ai.png"
               alt="Softshape.ai"
@@ -673,7 +676,7 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         </div>
 
-        <nav className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-visible p-2 sm:space-y-0.5 sm:mt-2 gap-2 sm:gap-0 scrollbar-hide">
+        <nav className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-visible p-3 sm:space-y-1.5 sm:mt-4 gap-3 sm:gap-0 scrollbar-hide px-3">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { id: 'pos', label: 'POS Billing', icon: ShoppingCart },
@@ -685,22 +688,22 @@ const CashierDashboard = ({ onLogout }) => {
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem('cashier_active_tab', item.id); }}
-              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-3 px-4 sm:px-2.5 py-1.5 sm:py-2.5 rounded-xl transition-all group relative shrink-0 min-w-[70px] sm:min-w-0 ${activeTab === item.id
-                  ? 'bg-[#E53935] text-white font-bold shadow-md shadow-red-100'
+              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-4 px-5 sm:px-4 py-2.5 sm:py-3.5 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 ${activeTab === item.id
+                  ? 'bg-[#E53935] text-white font-black shadow-lg shadow-red-500/15 scale-[1.01]'
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
             >
-              <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
-              <span className="text-[9px] sm:hidden font-bold leading-none mt-0.5">{item.label.split(' ')[0]}</span>
-              <span className="hidden lg:block text-xs uppercase tracking-tight">{item.label}</span>
+              <item.icon size={22} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
+              <span className="text-[10px] sm:hidden font-bold leading-none mt-1">{item.label.split(' ')[0]}</span>
+              <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="hidden sm:block p-2 border-t border-gray-100 mt-auto pb-8">
-          <button onClick={onLogout} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all">
-            <LogOut size={18} />
-            <span className="hidden lg:block text-xs font-bold uppercase tracking-tight">Logout</span>
+        <div className="hidden sm:block p-3.5 border-t border-gray-100 mt-auto pb-8">
+          <button onClick={onLogout} className="flex items-center gap-4 w-full p-3.5 rounded-xl text-gray-450 hover:text-red-650 hover:bg-red-50 transition-all hover:scale-[1.02] active:scale-98">
+            <LogOut size={22} className="text-gray-405 group-hover:text-red-600" />
+            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-gray-500 group-hover:text-red-600">Logout</span>
           </button>
         </div>
       </aside>
@@ -708,33 +711,33 @@ const CashierDashboard = ({ onLogout }) => {
       {/* MAIN VIEW */}
       <div className="flex-grow flex flex-col min-w-0 overflow-hidden">
         {/* COMPACT TOP BAR */}
-        <header className="h-12 bg-white border-b border-gray-200 px-4 flex items-center justify-between z-20 shrink-0">
+        <header className="h-18 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
 
-            <div className="flex items-center gap-2 text-gray-400">
-              <Clock size={14} />
-              <span className="text-[10px] font-black tabular-nums">{currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
+            <div className="flex items-center gap-2.5 text-gray-500">
+              <Clock size={18} />
+              <span className="text-xs md:text-sm font-black tabular-nums">{currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <OutletToggle className="flex" />
-            <div className="hidden sm:flex items-center gap-1.5 bg-red-50 px-2 py-0.5 rounded-md border border-red-100 text-[#E53935]">
-              <Activity size={12} />
-              <span className="text-[9px] font-black uppercase tracking-wider">Live Op-Feed</span>
+            <div className="hidden sm:flex items-center gap-2 bg-red-50 px-3.5 py-1.5 rounded-lg border border-red-100 text-[#E53935]">
+              <Activity size={16} />
+              <span className="text-xs font-black uppercase tracking-wider">Live Op-Feed</span>
             </div>
-            <button className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-lg relative">
-              <Bell size={16} />
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-[#E53935] text-white text-[7px] font-bold flex items-center justify-center rounded-full">2</span>
+            <button className="p-2 text-gray-500 hover:bg-gray-50 rounded-xl relative transition-colors duration-150">
+              <Bell size={20} />
+              <span className="absolute top-1.5 right-1.5 w-4.5 h-4.5 bg-[#E53935] text-white text-[9px] font-black flex items-center justify-center rounded-full shadow-sm">2</span>
             </button>
-            <div className="h-6 w-[1px] bg-gray-200 mx-1" />
-            <div className="flex items-center gap-2">
+            <div className="h-8 w-[1px] bg-gray-200 mx-2" />
+            <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-[10px] font-black leading-none">Kiran Kumar</p>
-                <p className="text-[8px] text-gray-400 font-bold uppercase mt-0.5">Head Cashier</p>
+                <p className="text-xs md:text-sm font-black leading-none text-gray-900">Kiran Kumar</p>
+                <p className="text-[10px] text-gray-400 font-black uppercase mt-1">Head Cashier</p>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm shadow-inner">🤵</div>
-              <button onClick={onLogout} className="sm:hidden ml-2 p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50"><LogOut size={16} /></button>
+              <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-base shadow-inner border border-gray-200">🤵</div>
+              <button onClick={onLogout} className="sm:hidden ml-2 p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50"><LogOut size={20} /></button>
             </div>
           </div>
         </header>
@@ -939,41 +942,45 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
               {/* COMPACT MENU */}
               <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
-                <div className="px-3 py-2 border-b border-gray-100 flex flex-col gap-2">
-                  {outlet === 'bar' && (
-                    <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} />
-                  )}
-                  <div className="relative w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                <div className="px-4 py-3.5 border-b border-gray-100 flex flex-col gap-3.5 bg-white">
+
+                  <div className="relative w-full group">
+                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none group-hover:scale-110 transition-transform duration-200" size={24} />
                     <input
                       type="search"
                       placeholder="Search by name, category, price, or ID..."
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-4 py-2 text-[11px] font-medium outline-none focus:border-[#E53935] focus:bg-white"
+                      className="w-full bg-white border-2 border-gray-300 rounded-2xl pl-14 pr-6 h-16 text-base md:text-lg font-black text-gray-900 outline-none hover:border-[#E53935]/50 hover:shadow-md focus:border-[#E53935] focus:ring-4 focus:ring-red-100/70 transition-all duration-200 shadow-md shadow-red-50/30 placeholder:text-gray-500 hover:scale-[1.002]"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       autoComplete="off"
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-1">
-                    <div className="flex gap-1">
+                  <div className="flex items-center justify-between gap-4 py-1">
+                    <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
                       {activeCategories.map(cat => (
                         <button
                           key={cat}
                           onClick={() => setSelectedCategory(cat)}
-                          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase transition-all border shrink-0 ${selectedCategory === cat ? 'bg-[#E53935] border-[#E53935] text-white' : 'bg-white border-gray-200 text-gray-500'
-                            }`}
+                          className={`px-7 py-3.5 rounded-xl text-sm md:text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${
+                            selectedCategory === cat 
+                              ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10' 
+                              : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
+                          }`}
                         >
                           {cat}
                         </button>
                       ))}
                     </div>
-                    <div className="flex gap-1 bg-gray-50 p-0.5 rounded-lg border border-gray-200 shrink-0">
+                    <div className="flex gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shrink-0 shadow-sm">
                       {['All', 'veg', 'non'].map(diet => (
                         <button
                           key={diet}
                           onClick={() => setActiveDiet(diet)}
-                          className={`px-2 py-1 rounded-[4px] text-[8px] font-black uppercase transition-all ${activeDiet === diet ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'
-                            }`}
+                          className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${
+                            activeDiet === diet 
+                              ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
+                              : 'text-gray-500 hover:text-gray-850 bg-transparent'
+                          }`}
                         >
                           {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
                         </button>
@@ -982,37 +989,42 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
                 </div>
 
-                <div className="flex-grow overflow-y-auto p-2 bg-gray-50/30 custom-scrollbar">
+                <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
                   {menuLoading ? (
-                    <p className="text-center text-xs text-gray-400 py-8 font-bold uppercase tracking-widest">Syncing menu…</p>
+                    <p className="text-center text-sm text-gray-400 py-12 font-bold uppercase tracking-widest">Syncing menu…</p>
                   ) : activeMenuItems.length === 0 ? (
-                    <p className="text-center text-xs text-gray-500 py-8 font-bold col-span-full">
+                    <p className="text-center text-sm text-gray-500 py-12 font-bold col-span-full uppercase tracking-wide">
                       {searchQuery.trim()
                         ? `No items found for "${searchQuery.trim()}"`
                         : "No items in this category."}
                     </p>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
                       {activeMenuItems.map((item, idx) => (
                         <div
                           key={idx}
                           onClick={() => handleAddItem(item)}
-                          className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow transition-all cursor-pointer flex flex-col group"
+                          className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-250 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md"
                         >
-                          <div className="h-20 w-full overflow-hidden relative">
-                            <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                            <div className="absolute top-1.5 right-1.5 p-0.5 rounded-sm backdrop-blur-md shadow-sm bg-white/80 border border-white/50">
-                              <div className={`w-2.5 h-2.5 rounded-[2px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
-                                <div className={`w-1 h-1 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
+                          <div className="h-40 w-full overflow-hidden relative">
+                            <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            {outlet === 'bar' && item.menuType && (
+                              <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50 text-[9px] font-black uppercase tracking-wider text-gray-700 select-none">
+                                {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
+                              </div>
+                            )}
+                            <div className="absolute top-2.5 right-2.5 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50">
+                              <div className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
                               </div>
                             </div>
                           </div>
-                          <div className="p-1.5 flex flex-col flex-grow">
-                            <h4 className="text-[9px] font-black text-gray-900 leading-tight mb-1 line-clamp-1">{item.n}</h4>
+                          <div className="p-5 flex flex-col flex-grow gap-3.5">
+                            <h4 className="text-sm md:text-base lg:text-lg font-black text-gray-900 leading-snug line-clamp-2 h-12 flex items-center">{item.n}</h4>
                             <div className="flex items-center justify-between mt-auto">
-                              <p className="text-[10px] font-black text-gray-900">₹{item.p}</p>
-                              <div className="w-5 h-5 rounded-md bg-gray-100 border border-gray-100 flex items-center justify-center text-gray-400 group-hover:bg-[#E53935] group-hover:text-white">
-                                <Plus size={12} />
+                              <p className="text-base md:text-lg lg:text-xl font-black text-[#E53935]">₹{item.p}</p>
+                              <div className="w-12 h-12 rounded-2xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
+                                <Plus size={24} />
                               </div>
                             </div>
                           </div>
@@ -1024,40 +1036,40 @@ const CashierDashboard = ({ onLogout }) => {
               </div>
 
               {/* COMPACT CART */}
-              <div className={`w-full lg:w-80 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'} bg-white flex flex-col shadow-xl z-20 shrink-0 transition-all duration-300`}>
+              <div className={`w-full lg:w-[440px] flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'}`}>
                 <div
-                  className="p-3 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
+                  className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
                   onClick={() => setIsCartMinimized(!isCartMinimized)}
                 >
-                  <div className="flex flex-col">
-                    <div className="flex justify-between items-center mb-2">
-                      <h2 className="font-black text-[10px] uppercase tracking-widest text-gray-900 flex items-center gap-2">
-                        <ShoppingCart size={14} className="text-[#E53935]" />
+                  <div className="flex flex-col w-full">
+                    <div className="flex justify-between items-center mb-3">
+                      <h2 className="font-black text-base md:text-lg uppercase tracking-widest text-gray-900 flex items-center gap-2.5">
+                        <ShoppingCart size={22} className="text-[#E53935]" />
                         Cart Log
                       </h2>
-                      <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
                     </div>
-                    <div className="bg-white rounded-lg border border-gray-200 p-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-md bg-red-50 flex items-center justify-center text-[#E53935] font-black text-sm">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center text-[#E53935] font-black text-lg shadow-sm border border-red-100">
                           {selectedTable ? (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`) : 'POS'}
                         </div>
                         <div className="flex-grow min-w-0">
-                          <p className="text-[10px] font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.id}` : 'Walk-in Order'}</p>
-                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest leading-none">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
+                          <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.id}` : 'Walk-in Order'}</p>
+                          <p className="text-xs text-gray-405 font-black uppercase tracking-widest leading-none mt-1">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
                         </div>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-[9px] font-bold hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200">
+                      <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
                         {selectedTable ? 'Change' : '+ Table'}
                       </button>
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4">
-                    <ChevronDown size={16} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-180' : ''}`} />
+                  <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">
+                    <ChevronDown size={18} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-180' : ''}`} />
                   </div>
                 </div>
 
-                <div className="flex-grow overflow-y-auto p-2 space-y-2 custom-scrollbar">
+                <div className="flex-grow overflow-y-auto p-4.5 space-y-4 custom-scrollbar bg-white">
                   {(() => {
                     const sessionItems = selectedTable 
                       ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({...i, isKotSent: true, kotId: k.id}))) 
@@ -1067,38 +1079,38 @@ const CashierDashboard = ({ onLogout }) => {
 
                     if (displayCart.length === 0) {
                       return (
-                        <div className="h-full flex flex-col items-center justify-center opacity-30">
-                          <Package size={24} className="mb-1" />
-                          <p className="text-[8px] font-black uppercase">Pending Items</p>
+                        <div className="h-full flex flex-col items-center justify-center opacity-40 py-16">
+                          <Package size={44} className="mb-2 text-gray-405" />
+                          <p className="text-sm font-black uppercase text-gray-500 tracking-wider">Pending Items</p>
                         </div>
                       );
                     }
 
                     return displayCart.map((item, idx) => (
-                      <div key={item.id || idx} className={`flex gap-2 pb-2 border-b border-gray-50 ${item.isKotSent ? 'opacity-60' : ''}`}>
+                      <div key={item.id || idx} className={`flex gap-3 pb-4 border-b border-gray-100 ${item.isKotSent ? 'opacity-60' : ''}`}>
                         <div className="flex-grow min-w-0">
-                          <div className="flex justify-between items-start mb-0.5">
-                            <p className="text-[9px] font-bold text-gray-900 truncate flex items-center gap-1">
+                          <div className="flex justify-between items-start mb-1.5">
+                            <p className="text-sm md:text-base font-black text-gray-900 truncate flex items-center gap-1.5">
                               {item.n}
-                              {item.isKotSent && <span className="text-[6px] font-black uppercase tracking-widest bg-green-50 text-green-600 px-1 py-0.5 rounded ml-1">KOT Sent</span>}
+                              {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
                             </p>
-                            <p className="text-[9px] font-black text-gray-900">₹{item.p * item.q}</p>
+                            <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
                           </div>
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2.5">
                             {item.isKotSent ? (
-                              <div className="flex items-center gap-1 text-[8px] font-black text-gray-400">
+                              <div className="flex items-center gap-1.5 text-sm font-black text-gray-500">
                                 <span>QTY: {item.q}</span>
                                 <span>•</span>
                                 <span>KOT-{item.kotId}</span>
                               </div>
                             ) : (
                               <>
-                                <div className="flex items-center bg-gray-100 rounded-md p-0.5">
-                                  <button onClick={() => updateQty(item.id, -1)} className="p-1 text-gray-500"><Minus size={8} /></button>
-                                  <span className="w-5 text-center text-[9px] font-black">{item.q}</span>
-                                  <button onClick={() => updateQty(item.id, 1)} className="p-1 text-gray-500"><Plus size={8} /></button>
+                                <div className="flex items-center bg-gray-100 rounded-lg p-1.5 gap-2">
+                                  <button onClick={() => updateQty(item.id, -1)} className="p-1.5 text-gray-600 hover:text-red-650 hover:bg-gray-200 rounded-lg transition-colors"><Minus size={14} /></button>
+                                  <span className="w-9 text-center text-sm md:text-base font-black text-gray-805">{item.q}</span>
+                                  <button onClick={() => updateQty(item.id, 1)} className="p-1.5 text-gray-600 hover:text-red-655 hover:bg-gray-200 rounded-lg transition-colors"><Plus size={14} /></button>
                                 </div>
-                                <button className="text-[7px] font-black text-[#E53935] uppercase">Edit</button>
+                                <button className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg">Edit</button>
                               </>
                             )}
                           </div>
@@ -1108,33 +1120,33 @@ const CashierDashboard = ({ onLogout }) => {
                   })()}
                 </div>
 
-                <div className="p-3 border-t border-gray-100 bg-gray-50/50 space-y-2">
-                  <div className="space-y-0.5">
-                    <div className="flex justify-between text-[8px] font-bold text-gray-400 uppercase tracking-widest">
+                <div className="p-6 border-t border-gray-100 bg-gray-50/50 space-y-4 shrink-0">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
                       <span>Subtotal</span>
-                      <span>₹{(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
+                      <span className="font-black text-gray-805 text-sm">₹{(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
                     </div>
-                    <div className="flex justify-between items-center pt-1 border-t border-gray-200">
-                      <span className="text-[9px] font-black text-gray-900">NET TOTAL</span>
-                      <span className="text-xl font-black text-[#E53935]">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                    <div className="flex justify-between items-center pt-2.5 border-t border-gray-200">
+                      <span className="text-sm md:text-base font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
+                      <span className="text-3xl md:text-4xl lg:text-5xl font-black text-[#E53935] tracking-tight">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-3.5 pt-1">
                     <button
                       onClick={handleSmartKOT}
                       disabled={isKotSending || cart.length === 0}
-                      className={`col-span-2 flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
+                      className={`col-span-2 flex flex-col items-center justify-center py-4 rounded-2xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                           isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
-                            'bg-white border-gray-200 text-gray-600 hover:border-[#E53935] hover:text-[#E53935]'
+                            'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
                         }`}
                     >
-                      {isKotSuccess ? <Check size={16} /> : isKotSending ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                      <span className="text-[8px] font-black uppercase mt-1 tracking-widest">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
+                      {isKotSuccess ? <Check size={24} /> : isKotSending ? <Loader2 size={24} className="animate-spin" /> : <Printer size={24} />}
+                      <span className="text-sm font-black uppercase mt-1.5 tracking-widest">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
                     </button>
-                    <button className="flex flex-col items-center justify-center py-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-[#E53935] hover:text-[#E53935] transition-all">
-                      <History size={14} />
-                      <span className="text-[7px] font-black uppercase mt-0.5">Draft</span>
+                    <button className="flex flex-col items-center justify-center py-4 rounded-2xl border border-gray-200 bg-white text-gray-755 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95">
+                      <History size={22} />
+                      <span className="text-xs md:text-sm font-black uppercase mt-1">Draft</span>
                     </button>
                     <button
                       onClick={() => {
@@ -1146,7 +1158,7 @@ const CashierDashboard = ({ onLogout }) => {
                         setShowMethodPicker(true);
                       }}
                       disabled={!selectedTable && cart.length === 0}
-                      className="py-2 bg-[#E53935] text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-100 disabled:opacity-50 disabled:shadow-none transition-all hover:bg-[#c62828]"
+                      className="py-4 bg-[#E53935] text-white rounded-2xl font-black text-sm md:text-base uppercase tracking-widest shadow-lg shadow-red-500/35 border-2 border-red-700 disabled:opacity-50 disabled:shadow-none transition-all duration-150 hover:scale-[1.01] hover:bg-[#c62828] active:scale-95"
                     >
                       FINAL BILL
                     </button>
@@ -1163,20 +1175,20 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
 
                 {activeTab === 'tables' && (
-                  <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2">
+                  <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                     {activeTables.map((table, i) => {
                       const isFree = table.status === 'Free' || !table.status;
                       const isWaitingBill = table.status === 'Waiting Bill';
                       const isBusy = !isFree && !isWaitingBill;
 
-                      let containerClass = 'bg-white border-gray-100 text-gray-400 hover:border-gray-300';
+                      let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
                       let statusText = 'Open';
 
                       if (isWaitingBill) {
-                        containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-sm shadow-amber-50 animate-pulse';
+                        containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
                         statusText = 'Billing Requested';
                       } else if (isBusy) {
-                        containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-sm shadow-red-50';
+                        containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
                         statusText = 'Busy';
                       }
 
@@ -1184,15 +1196,15 @@ const CashierDashboard = ({ onLogout }) => {
                         <div
                           key={i}
                           onClick={() => handleTableSelect(table)}
-                          className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-1 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                          className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                         >
                           {table.captainName && (
-                            <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1 py-0.5 rounded-[4px] text-[6px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
+                            <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
                               {table.captainName.split(' ')[0]}
                             </div>
                           )}
-                          <span className="text-xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
-                          <span className="text-[7px] font-black uppercase tracking-tighter leading-tight mt-0.5">{statusText}</span>
+                          <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
+                          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                         </div>
                       );
                     })}
@@ -1232,10 +1244,10 @@ const CashierDashboard = ({ onLogout }) => {
                       <table className="w-full text-left">
                         <thead className="bg-gray-50 border-b border-gray-100">
                           <tr>
-                            <th className="p-3 text-[9px] font-black uppercase text-gray-400">TXN ID / KOT</th>
-                            <th className="p-3 text-[9px] font-black uppercase text-gray-400">Date/Time</th>
-                            <th className="p-3 text-[9px] font-black uppercase text-gray-400">Method</th>
-                            <th className="p-3 text-[9px] font-black uppercase text-gray-400 text-right">Amount</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID / KOT</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -1245,55 +1257,55 @@ const CashierDashboard = ({ onLogout }) => {
                                 onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
                                 className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
                               >
-                                <td className="p-3">
+                                <td className="p-4">
                                   <div className="flex flex-col">
-                                    <span className="text-[10px] font-black text-gray-900">{txn.displayId || txn.id}</span>
-                                    <span className="text-[8px] font-bold text-[#E53935] uppercase">{txn.kot}</span>
+                                    <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
+                                    <span className="text-xs font-black text-[#E53935] uppercase mt-0.5">{txn.kot}</span>
                                   </div>
                                 </td>
-                                <td className="p-3">
+                                <td className="p-4">
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] font-bold text-gray-700">{txn.date}</span>
-                                    <span className="text-[8px] text-gray-400">{txn.time}</span>
+                                    <span className="text-xs md:text-sm font-black text-gray-700">{txn.date}</span>
+                                    <span className="text-xs text-gray-400 font-bold mt-0.5">{txn.time}</span>
                                   </div>
                                 </td>
-                                <td className="p-3">
-                                  <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
+                                <td className="p-4">
+                                  <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
                                       txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
                                         'bg-purple-100 text-purple-700'
                                     }`}>{txn.method}</span>
                                 </td>
-                                <td className="p-3 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <div>
-                                      <p className="text-[10px] font-black text-gray-900">₹{txn.amount}</p>
-                                      <p className="text-[8px] text-gray-400 font-bold uppercase">{txn.items} Items</p>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end gap-3">
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-sm md:text-base font-black text-gray-900">₹{txn.amount}</span>
+                                      <span className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">{txn.items} Items</span>
                                     </div>
                                     <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
-                                      <ChevronDown size={12} />
+                                      <ChevronDown size={14} />
                                     </span>
                                   </div>
                                 </td>
                               </tr>
                               {expandedTxnId === txn.id && (
                                 <tr key={`${txn.id}-detail`} className="bg-gray-50">
-                                  <td colSpan={4} className="px-4 pb-3 pt-1">
+                                  <td colSpan={4} className="px-6 pb-4 pt-2">
                                     {txn.itemsList && txn.itemsList.length > 0 ? (
-                                      <div className="flex flex-col gap-1">
-                                        <p className="text-[8px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
+                                      <div className="flex flex-col gap-2">
+                                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
                                         {txn.itemsList.map((item, idx) => (
-                                          <div key={idx} className="flex justify-between items-center bg-white rounded-lg px-3 py-1.5 border border-gray-100">
-                                            <span className="text-[9px] font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
-                                            <span className="text-[9px] font-black text-gray-900">₹{((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                          <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
+                                            <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
+                                            <span className="text-xs md:text-sm font-black text-gray-900">₹{((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
                                           </div>
                                         ))}
-                                        <div className="flex justify-between items-center px-3 pt-1 border-t border-gray-200 mt-1">
-                                          <span className="text-[9px] font-black uppercase text-gray-500">Total</span>
-                                          <span className="text-[10px] font-black text-[#E53935]">₹{txn.amount}</span>
+                                        <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
+                                          <span className="text-xs font-black uppercase text-gray-500">Total</span>
+                                          <span className="text-sm font-black text-[#E53935]">₹{txn.amount}</span>
                                         </div>
                                       </div>
                                     ) : (
-                                      <p className="text-[9px] text-gray-400 py-2">No item details available.</p>
+                                      <p className="text-xs text-gray-400 py-3">No item details available.</p>
                                     )}
                                   </td>
                                 </tr>
@@ -1306,13 +1318,13 @@ const CashierDashboard = ({ onLogout }) => {
                     {txnsLoading && pastTransactions.length === 0 && (
                       <div className="p-12 text-center flex flex-col items-center">
                         <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin mb-3" />
-                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Loading Transactions...</p>
+                        <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest">Loading Transactions...</p>
                       </div>
                     )}
                     {!txnsLoading && pastTransactions.length === 0 && (
                       <div className="p-12 text-center flex flex-col items-center">
-                        <History size={32} className="text-gray-200 mb-2" />
-                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">No Recent Transactions</p>
+                        <History size={32} className="text-gray-250 mb-2" />
+                        <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest">No Recent Transactions</p>
                       </div>
                     )}
                   </div>
@@ -1451,53 +1463,54 @@ const CashierDashboard = ({ onLogout }) => {
       {/* TABLE DETAILS MODAL */}
       {showTableModal && selectedTable && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
-            <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl">{outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}</div>
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl border border-red-750 shadow-sm">{outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}</div>
                 <div>
-                  <h2 className="text-[10px] font-black uppercase text-gray-400 leading-none">Active Session</h2>
-                  <p className="text-sm font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
+                  <h2 className="text-xs font-black uppercase text-gray-400 leading-none tracking-wider">Active Session</h2>
+                  <p className="text-base md:text-lg font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
                 </div>
               </div>
-              <button onClick={() => setShowTableModal(false)} className="p-2 text-gray-400 hover:text-gray-900 bg-white rounded-lg border border-gray-100"><X size={18} /></button>
+              <button onClick={() => setShowTableModal(false)} className="p-2.5 text-gray-400 hover:text-gray-900 bg-white rounded-xl border border-gray-150 shadow-sm transition-colors duration-150"><X size={20} /></button>
             </div>
-            <div className="p-4 bg-white">
-              <div className="space-y-3 mb-6">
-                <h3 className="text-[9px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-50 pb-1">Order Summary</h3>
-                <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
+            <div className="p-6 bg-white">
+              <div className="space-y-4 mb-6">
+                <h3 className="text-xs font-black uppercase tracking-widest text-[#E53935] border-b border-red-50 pb-1.5">Order Summary</h3>
+                <div className="space-y-3.5 max-h-[220px] overflow-y-auto pr-1.5 custom-scrollbar">
                   {((selectedTable.kotHistory && selectedTable.kotHistory.length > 0) ? selectedTable.kotHistory.flatMap(k => k.items || []) : (selectedTable.items || [])).map((item, idx) => (
                     <div key={idx} className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded bg-gray-50 flex items-center justify-center text-[9px] font-black text-gray-500">{item.q}x</span>
-                        <span className="text-[11px] font-bold text-gray-800">{item.n}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-black text-gray-600 border border-gray-150">{item.q}x</span>
+                        <span className="text-xs md:text-sm font-black text-gray-800">{item.n}</span>
                       </div>
-                      <span className="text-[11px] font-black text-gray-900">₹{item.p * item.q}</span>
+                      <span className="text-xs md:text-sm font-black text-gray-900">₹{item.p * item.q}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-6 border border-gray-100">
-                <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase"><span>Subtotal</span><span>₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal || 0)).toFixed(0)}</span></div>
-                <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-1">
-                  <span className="text-[10px] font-black text-gray-900 uppercase">Running Total</span>
-                  <span className="text-2xl font-black text-[#E53935]">
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2 mb-6 border border-gray-150 shadow-sm">
+                <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-widest"><span>Subtotal</span><span className="font-black text-gray-800">₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.18 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-widest"><span>Taxes (18%)</span><span className="font-black text-gray-800">₹{(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.18) * 0.18 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 mt-2">
+                  <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">Running Total</span>
+                  <span className="text-3xl font-black text-[#E53935] tracking-tight">
                     ₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}
                   </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <button
                   onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); }}
-                  className="py-3 rounded-xl border border-gray-200 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50"
+                  className="py-4 rounded-xl border-2 border-gray-200 text-xs md:text-sm font-black uppercase tracking-widest hover:bg-gray-50 hover:border-gray-300 transition-all duration-150 hover:scale-[1.01] active:scale-95 text-gray-700"
                 >
                   Add Items
                 </button>
                 <button
                   onClick={() => { setShowMethodPicker(true); }}
-                  className="py-3 rounded-xl bg-[#E53935] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-100"
+                  className="py-4 rounded-xl bg-[#E53935] text-white text-xs md:text-sm font-black uppercase tracking-widest shadow-lg shadow-red-100 hover:bg-[#c62828] transition-all duration-150 hover:scale-[1.01] active:scale-95 border border-red-750"
                 >
                   Settlement
                 </button>
@@ -1510,24 +1523,24 @@ const CashierDashboard = ({ onLogout }) => {
       {/* PAYMENT METHOD PICKER */}
       {showMethodPicker && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-100">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
 
-            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
-                <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
-                <p className="text-2xl font-black text-gray-900 mt-1">₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
+                <p className="text-3xl font-black text-gray-900 mt-1">₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
               </div>
               <button
                 onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
-                className="p-2 text-gray-400 hover:text-gray-900 bg-gray-50 rounded-lg"
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
               >
-                <X size={16} />
+                <X size={20} />
               </button>
             </div>
 
-            <div className="p-5">
-              <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest mb-3">Select Payment Method</p>
-              <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="p-6">
+              <p className="text-xs font-black uppercase text-gray-405 tracking-wider mb-3.5">Select Payment Method</p>
+              <div className="grid grid-cols-2 gap-4.5 mb-6">
                 {[
                   { id: 'UPI', label: 'UPI', sub: 'GPay / PhonePe / Paytm' },
                   { id: 'CARD', label: 'Card', sub: 'Debit / Credit' },
@@ -1537,13 +1550,13 @@ const CashierDashboard = ({ onLogout }) => {
                   <button
                     key={id}
                     onClick={() => setSelectedMethod(id)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${selectedMethod === id
-                        ? 'border-[#E53935] bg-red-50'
-                        : 'border-gray-100 bg-gray-50 hover:border-gray-200'
+                    className={`p-5 rounded-2xl border-2 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${selectedMethod === id
+                        ? 'border-[#E53935] bg-red-50 shadow-md shadow-red-500/10'
+                        : 'border-gray-150 bg-gray-50 hover:border-gray-300'
                       }`}
                   >
-                    <p className={`text-sm font-black ${selectedMethod === id ? 'text-[#E53935]' : 'text-gray-700'}`}>{label}</p>
-                    <p className="text-[9px] text-gray-400 font-medium mt-0.5">{sub}</p>
+                    <p className={`text-base font-black ${selectedMethod === id ? 'text-[#E53935]' : 'text-gray-700'}`}>{label}</p>
+                    <p className="text-[11px] text-gray-450 font-bold mt-1 leading-snug">{sub}</p>
                   </button>
                 ))}
               </div>
@@ -1551,9 +1564,9 @@ const CashierDashboard = ({ onLogout }) => {
               <button
                 onClick={() => selectedMethod && !isPrintingBill && handlePayment(selectedMethod)}
                 disabled={!selectedMethod || isPrintingBill}
-                className={`w-full py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${selectedMethod && !isPrintingBill
-                    ? 'bg-[#E53935] text-white shadow-lg shadow-red-100 hover:bg-[#c62828]'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                className={`w-full py-4.5 rounded-2xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedMethod && !isPrintingBill
+                    ? 'bg-[#E53935] text-white shadow-lg shadow-red-150 hover:bg-[#c62828] border border-red-750'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
                 {isPrintingBill
