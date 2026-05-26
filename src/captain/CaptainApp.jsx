@@ -1903,11 +1903,12 @@ export default function CaptainApp({ onLogout }) {
                         onClick={async () => {
                           setMoveLoading(true);
                           try {
-                            await swapTable(activeTable.id, {
-                              targetTableId: t.id,
-                              swappedBy: currentCaptain?.name || 'Captain',
-                              restaurantId: RESTAURANT_ID,
-                            });
+                            await swapTable(
+                              activeTable.id,
+                              t.id,
+                              currentCaptain?.name || 'Captain',
+                              RESTAURANT_ID,
+                            );
                             setShowMoveModal(false);
                             setView('tables');
                           } catch (err) {
