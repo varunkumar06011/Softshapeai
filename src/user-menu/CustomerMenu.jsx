@@ -239,7 +239,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
       {/* Menu Items */}
       <div
         onScroll={handleScroll}
-        className="flex-grow overflow-y-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-36 sm:pb-40 space-y-6 sm:space-y-10 scroll-smooth z-0"
+        className="flex-grow overflow-y-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-44 sm:pb-48 space-y-6 sm:space-y-10 scroll-smooth z-0"
       >
 
         {/* Today's Specials */}
@@ -251,7 +251,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
               </div>
               <h2 className="text-sm font-black uppercase tracking-[0.15em] text-gray-900">Chef's Recommendations</h2>
             </div>
-            <div className="flex gap-4 overflow-x-auto pb-6 scrollbar-hide snap-x -mx-6 px-6">
+            <div className="flex gap-4 overflow-x-auto pt-4 pb-6 scrollbar-hide snap-x -mx-6 px-6 -mt-4">
               {todaySpecials.map(item => {
                 const qty = cart.find(i => i.n === item.n)?.q || 0;
                 return (
@@ -336,7 +336,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                 <div
                   key={item.n}
                   onClick={() => setPreviewItem(item)}
-                  className="cursor-pointer bg-white border border-red-50 rounded-2xl xs:rounded-[28px] p-3 xs:p-4 flex gap-3 xs:gap-5 items-center group hover:shadow-[0_15px_30px_rgba(255,77,79,0.08)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
+                  className="relative hover:z-10 cursor-pointer bg-white border border-red-50 rounded-2xl xs:rounded-[28px] p-3 xs:p-4 flex gap-3 xs:gap-5 items-center group hover:shadow-[0_15px_30px_rgba(255,77,79,0.08)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
                 >
                   <div className="w-20 h-20 xs:w-24 xs:h-24 sm:w-28 sm:h-28 rounded-xl xs:rounded-[20px] sm:rounded-[24px] overflow-hidden shrink-0 relative shadow-inner">
                     <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -444,7 +444,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
       {/* Sticky Bottom Cart Bar */}
       {cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 w-full z-40 px-4 pb-4 pt-8 bg-gradient-to-t from-[#FFF5F5] via-[#FFF5F5]/90 to-transparent pointer-events-none">
+        <div className="fixed bottom-0 left-0 w-full z-40 px-4 pb-4 pt-8 bg-gradient-to-t from-[#FFF5F5]/60 to-transparent pointer-events-none">
           <div className="max-w-3xl mx-auto pointer-events-auto bg-white border border-red-50 p-3 sm:p-3.5 rounded-2xl sm:rounded-3xl shadow-[0_15px_40px_rgba(255,77,79,0.12)] flex items-center justify-between animate-in slide-in-from-bottom-10">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-50 flex items-center justify-center relative shadow-inner border border-red-100 shrink-0">

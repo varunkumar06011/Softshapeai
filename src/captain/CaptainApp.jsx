@@ -571,6 +571,7 @@ export default function CaptainApp({ onLogout }) {
       return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, notes, s: 'Pending' }];
     });
     addNotification(`${finalName} added`, 'success');
+    setSearchQuery('');
   };
 
   const handleItemClick = (e, item) => {
