@@ -89,6 +89,8 @@ const CashierDashboard = ({ onLogout }) => {
       const dbTxns = await fetchTransactions(activeRestaurantId, 100, todayStr);
       const mapped = dbTxns.map(txn => ({
         id: txn.id,
+        txnNumber: txn.txnNumber || null,
+        displayId: txn.txnNumber ? `Transaction ${txn.txnNumber}` : `TXN-${txn.id.slice(-6).toUpperCase()}`,
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
         amount: txn.amount,
         time: new Date(txn.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -312,9 +314,11 @@ const CashierDashboard = ({ onLogout }) => {
     setCart([]);
     setRemovedItemIds([]);
 
-    // Step 4: Optimistic local state update
+    // Step 4: Optimistic local state update (placeholder until DB responds)
     const newTransaction = {
-      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+      id: `TXN-PENDING-${Date.now()}`,
+      txnNumber: null,
+      displayId: 'Transaction —',   // will update on loadTransactions after save
       amount: txnAmount,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: new Date().toLocaleDateString('en-GB'),
@@ -368,6 +372,9 @@ const CashierDashboard = ({ onLogout }) => {
       method: method,
       itemCount: itemsList.length,
       items: itemsList,
+    }).then(() => {
+      // Refresh list so the placeholder gets replaced with the real txnNumber from DB
+      loadTransactions();
     }).catch(err => console.warn('[BG] saveTransaction failed:', err.message));
 
     // Step 6: Reset table session in DB (clear kotHistory, currentBill, status → Free)
@@ -1171,7 +1178,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <tr key={txn.id} className="hover:bg-gray-50 transition-colors">
                               <td className="p-3">
                                 <div className="flex flex-col">
-                                  <span className="text-[10px] font-black text-gray-900">{txn.id}</span>
+                                  <span className="text-[10px] font-black text-gray-900">{txn.displayId || txn.id}</span>
                                   <span className="text-[8px] font-bold text-[#E53935] uppercase">{txn.kot}</span>
                                 </div>
                               </td>
