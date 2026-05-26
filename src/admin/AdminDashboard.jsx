@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Table2, 
@@ -32,7 +32,7 @@ import { BAR_ID } from '../services/barApiConfig';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
-const CaptainPerformanceDashboard = lazy(() => import("../captain/CaptainPerformanceDashboard"));
+import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard';
 
 const navItems = [
   ["dashboard", "Dashboard", LayoutDashboard],
@@ -241,9 +241,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "orders" && <Orders />}
           {page === "reports" && <Reports />}
           {page === "captains" && (
-            <Suspense fallback={<div className="p-4 bg-white border rounded-xl">Loading captain analytics...</div>}>
-              <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
-            </Suspense>
+            <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
           )}
           {page === "payroll" && <Payroll onPayslip={() => {}} />}
           {page === "marketing" && <Marketing upload={mUpload} setUpload={setMUpload} uploadRef={mUploadRef} generated={mGenerated} setGenerated={setMGenerated} posted={mPosted} setPosted={setMPosted} />}
