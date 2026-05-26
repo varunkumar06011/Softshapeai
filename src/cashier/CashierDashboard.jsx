@@ -146,6 +146,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
+  // Set of orderIds that have already been settled this session — prevents double-settlement
+  const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -450,6 +452,15 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // Guard: block double-settlement — order was already settled this session
+    const candidateOrderId = selectedTable?.activeOrder?.id;
+    if (candidateOrderId && settledOrderIds.has(candidateOrderId)) {
+      addNotification('Already Settled', 'This order has already been settled.', 'error');
+      setShowMethodPicker(false);
+      setShowPaymentModal(false);
+      return;
+    }
+
     // Capture all needed state before any async/state-clearing
     const tableSnap = selectedTable;
     const subtotalSnap = activeSubtotal;
@@ -539,9 +550,22 @@ const CashierDashboard = ({ onLogout }) => {
       itemCount: itemsList.length,
       items: itemsList,
     }).then(() => {
+      // Mark this orderId as settled so the UI blocks any retry
+      if (tableSnap?.activeOrder?.id) {
+        setSettledOrderIds(prev => new Set([...prev, tableSnap.activeOrder.id]));
+      }
       // Refresh list so the placeholder gets replaced with the real txnNumber from DB
       loadTransactions();
-    }).catch(err => console.warn('[BG] saveTransaction failed:', err.message));
+    }).catch(err => {
+      if (err.message === 'This order has already been settled.') {
+        addNotification('Already Settled', 'This order has already been settled. A duplicate payment was blocked.', 'error');
+        if (tableSnap?.activeOrder?.id) {
+          setSettledOrderIds(prev => new Set([...prev, tableSnap.activeOrder.id]));
+        }
+      } else {
+        console.warn('[BG] saveTransaction failed:', err.message);
+      }
+    });
 
     // Step 6: Reset table session in DB (clear kotHistory, currentBill, status → Free)
     const resetSessionPayload = {
