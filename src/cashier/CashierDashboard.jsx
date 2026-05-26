@@ -66,6 +66,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   const [txnsLoading, setTxnsLoading] = useState(false);
+  const [expandedTxnId, setExpandedTxnId] = useState(null);
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
@@ -1175,30 +1176,65 @@ const CashierDashboard = ({ onLogout }) => {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                           {pastTransactions.map(txn => (
-                            <tr key={txn.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="p-3">
-                                <div className="flex flex-col">
-                                  <span className="text-[10px] font-black text-gray-900">{txn.displayId || txn.id}</span>
-                                  <span className="text-[8px] font-bold text-[#E53935] uppercase">{txn.kot}</span>
-                                </div>
-                              </td>
-                              <td className="p-3">
-                                <div className="flex flex-col">
-                                  <span className="text-[9px] font-bold text-gray-700">{txn.date}</span>
-                                  <span className="text-[8px] text-gray-400">{txn.time}</span>
-                                </div>
-                              </td>
-                              <td className="p-3">
-                                <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
-                                    txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
-                                      'bg-purple-100 text-purple-700'
-                                  }`}>{txn.method}</span>
-                              </td>
-                              <td className="p-3 text-right">
-                                <p className="text-[10px] font-black text-gray-900">₹{txn.amount}</p>
-                                <p className="text-[8px] text-gray-400 font-bold uppercase">{txn.items} Items</p>
-                              </td>
-                            </tr>
+                            <React.Fragment key={txn.id}>
+                              <tr
+                                onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
+                                className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
+                              >
+                                <td className="p-3">
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-gray-900">{txn.displayId || txn.id}</span>
+                                    <span className="text-[8px] font-bold text-[#E53935] uppercase">{txn.kot}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex flex-col">
+                                    <span className="text-[9px] font-bold text-gray-700">{txn.date}</span>
+                                    <span className="text-[8px] text-gray-400">{txn.time}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
+                                      txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
+                                        'bg-purple-100 text-purple-700'
+                                    }`}>{txn.method}</span>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <div>
+                                      <p className="text-[10px] font-black text-gray-900">₹{txn.amount}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold uppercase">{txn.items} Items</p>
+                                    </div>
+                                    <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
+                                      <ChevronDown size={12} />
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                              {expandedTxnId === txn.id && (
+                                <tr key={`${txn.id}-detail`} className="bg-gray-50">
+                                  <td colSpan={4} className="px-4 pb-3 pt-1">
+                                    {txn.itemsList && txn.itemsList.length > 0 ? (
+                                      <div className="flex flex-col gap-1">
+                                        <p className="text-[8px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
+                                        {txn.itemsList.map((item, idx) => (
+                                          <div key={idx} className="flex justify-between items-center bg-white rounded-lg px-3 py-1.5 border border-gray-100">
+                                            <span className="text-[9px] font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
+                                            <span className="text-[9px] font-black text-gray-900">₹{((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                          </div>
+                                        ))}
+                                        <div className="flex justify-between items-center px-3 pt-1 border-t border-gray-200 mt-1">
+                                          <span className="text-[9px] font-black uppercase text-gray-500">Total</span>
+                                          <span className="text-[10px] font-black text-[#E53935]">₹{txn.amount}</span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <p className="text-[9px] text-gray-400 py-2">No item details available.</p>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>
