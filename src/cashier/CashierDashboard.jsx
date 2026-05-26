@@ -209,6 +209,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const loadTransactions = useCallback(async (filter = 'today') => {
     setTxnsLoading(true);
+    setPastTransactions([]);
     try {
       const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
       const nowIST = new Date(Date.now() + IST_OFFSET_MS);
@@ -1551,7 +1552,15 @@ const CashierDashboard = ({ onLogout }) => {
                         ↻ Sync
                       </button>
                     </div>
-                    <div className="overflow-x-auto scrollbar-hide">
+                    <div className="overflow-x-auto scrollbar-hide relative">
+                      {txnsLoading && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
+                          </div>
+                        </div>
+                      )}
                       <table className="w-full text-left">
                         <thead className="bg-gray-50 border-b border-gray-100">
                           <tr>
@@ -1626,12 +1635,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </tbody>
                       </table>
                     </div>
-                    {txnsLoading && pastTransactions.length === 0 && (
-                      <div className="p-12 text-center flex flex-col items-center">
-                        <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin mb-3" />
-                        <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest">Loading Transactions...</p>
-                      </div>
-                    )}
+
                     {!txnsLoading && pastTransactions.length === 0 && (
                       <div className="p-12 text-center flex flex-col items-center">
                         <History size={32} className="text-gray-250 mb-2" />
