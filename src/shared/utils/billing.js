@@ -25,20 +25,21 @@ export const calculateOrderTotal = (items) => {
     }
   });
 
-  const cgst = 0;
-  const sgst = 0;
-  const taxes = 0;
+  // GST Calculation: 5% total on food only (2.5% CGST + 2.5% SGST), 0% on liquor
+  const cgst = Math.round(foodSubtotal * 0.025 * 100) / 100;  // 2.5% CGST on food
+  const sgst = Math.round(foodSubtotal * 0.025 * 100) / 100;  // 2.5% SGST on food
+  const taxes = cgst + sgst;  // Total 5% GST on food
   const subtotal = foodSubtotal + liquorSubtotal;
-  const total = subtotal;
+  const total = subtotal + taxes;
 
   return {
     subtotal: Number(subtotal.toFixed(2)),
-    taxes: 0,
+    taxes: Number(taxes.toFixed(2)),
     total: Number(total.toFixed(2)),
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
-    cgst: 0,
-    sgst: 0
+    cgst: Number(cgst.toFixed(2)),
+    sgst: Number(sgst.toFixed(2))
   };
 };
 
