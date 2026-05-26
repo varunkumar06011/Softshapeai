@@ -730,8 +730,6 @@ export default function CaptainApp({ onLogout }) {
   };
 
   // ── Cancel a sent KOT item ───────────────────────────────────────────────────
-  const [cancelConfirm, setCancelConfirm] = useState({}); // { [orderItemId]: true }
-  const [cancelLoading, setCancelLoading] = useState({}); // { [orderItemId]: true }
 
   const cancelKotItem = async (kotItem, kotId) => {
     if (!kotItem.orderItemId) {
