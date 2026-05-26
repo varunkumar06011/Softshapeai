@@ -1072,11 +1072,7 @@ export default function CaptainApp({ onLogout }) {
                           </span>
                         )}
                       </div>
-                      {table.time && (
-                        <div className="flex items-center gap-1 text-[9px] font-black opacity-40">
-                          <Clock size={10} /> {table.time}
-                        </div>
-                      )}
+
                     </div>
 
                     <span className="text-2xl sm:text-3xl font-black leading-none">{table.number ?? table.id}</span>
