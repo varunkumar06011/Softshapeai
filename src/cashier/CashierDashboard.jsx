@@ -865,6 +865,7 @@ const CashierDashboard = ({ onLogout }) => {
         tableId: selectedTable.backendId,
         kotId: kotsToCreate[0]?.id ?? String(Date.now()),
         orderId: selectedTable.activeOrder?.id ?? kotsToCreate[0]?.id ?? String(Date.now()),
+        kotNumber: kotsToCreate[0]?.id ?? String(Date.now()),
         items: cart,
       }).catch(err => {
         console.warn('[KOT] Print failed (non-blocking):', err.message);
@@ -1571,7 +1572,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <table className="w-full text-left">
                         <thead className="bg-gray-50 border-b border-gray-100">
                           <tr>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID / KOT</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
@@ -1585,10 +1586,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
                               >
                                 <td className="p-4">
-                                  <div className="flex flex-col">
-                                    <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
-                                    <span className="text-xs font-black text-[#E53935] uppercase mt-0.5">{txn.kot}</span>
-                                  </div>
+                                  <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
                                 </td>
                                 <td className="p-4">
                                   <div className="flex flex-col">

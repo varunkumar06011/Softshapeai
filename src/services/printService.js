@@ -153,7 +153,7 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
   return { success: true };
 }
 
-export async function printKOTQZ({ tableId, kotId, items, captainId, orderId }) {
+export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, kotNumber }) {
   const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR')
     .map(i => ({
       name: i.n || i.name, quantity: i.q || i.quantity,
@@ -172,7 +172,7 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId }) 
     const foodPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/food-kot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: foodItems })
+      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: foodItems, kotNumber })
     })
       .then(r => r.json())
       .then(res => {
@@ -191,7 +191,7 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId }) 
     const liquorPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/liquor-kot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: liquorItems })
+      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: liquorItems, kotNumber })
     })
       .then(r => r.json())
       .then(res => {
