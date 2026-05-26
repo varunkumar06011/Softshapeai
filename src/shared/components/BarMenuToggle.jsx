@@ -1,6 +1,8 @@
 import React from 'react';
+import { Utensils, GlassWater } from 'lucide-react';
 
-export default function BarMenuToggle({ active, onChange }) {
+export default function BarMenuToggle({ active, onChange, variant }) {
+  const isAdmin = variant === 'admin';
   return (
     <div className="flex items-center bg-gray-100 rounded-xl p-1.5 gap-2 w-full">
       <button
@@ -11,7 +13,12 @@ export default function BarMenuToggle({ active, onChange }) {
             : 'text-gray-500 hover:text-gray-800 bg-transparent'
         }`}
       >
-        <span className="text-sm md:text-base">🍗</span> Food
+        {isAdmin ? (
+          <Utensils size={16} />
+        ) : (
+          <span className="text-sm md:text-base">🍗</span>
+        )}
+        Food
       </button>
       <button
         onClick={() => onChange('liquor')}
@@ -21,7 +28,12 @@ export default function BarMenuToggle({ active, onChange }) {
             : 'text-gray-500 hover:text-gray-800 bg-transparent'
         }`}
       >
-        <span className="text-sm md:text-base">🥃</span> Liquor
+        {isAdmin ? (
+          <GlassWater size={16} />
+        ) : (
+          <span className="text-sm md:text-base">🥃</span>
+        )}
+        Liquor
       </button>
     </div>
   );

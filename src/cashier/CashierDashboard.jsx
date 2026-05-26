@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
@@ -23,11 +24,117 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 
+const isSubsequence = (q, text) => {
+  let i = 0;
+  for (let j = 0; j < text.length; j++) {
+    if (text[j] === q[i]) {
+      i++;
+      if (i === q.length) return true;
+    }
+  }
+  return false;
+};
+
+const getSearchRank = (item, query) => {
+  const name = (item.n || item.name || '').toLowerCase();
+  const category = (item.c || item.category || '').toLowerCase();
+  const desc = (item.desc || item.description || '').toLowerCase();
+
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+
+  // Space-stripped versions for space-insensitive and compact matching
+  const nameCompact = name.replace(/\s+/g, '');
+  const qCompact = q.replace(/\s+/g, '');
+
+  // Rank 1: Product name starts with query (with spaces)
+  if (name.startsWith(q)) return 1;
+
+  // Rank 2: Product name starts with query (space-stripped)
+  if (qCompact && nameCompact.startsWith(qCompact)) return 2;
+
+  // Rank 3: A word inside the product name starts with search query
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.some(word => word.startsWith(q))) return 3;
+
+  // Rank 4: Product name contains search query (substring, with spaces)
+  if (name.includes(q)) return 4;
+
+  // Rank 5: Product name contains search query (substring, space-stripped)
+  if (qCompact && nameCompact.includes(qCompact)) return 5;
+
+  // Rank 6: Initials/Acronym match
+  // e.g. "Veg Fried Rice" initials are "vfr". If query matches initials.
+  const initials = words.map(w => w[0]).join('');
+  if (qCompact && (initials.startsWith(qCompact) || isSubsequence(qCompact, initials))) return 6;
+
+  // Rank 7: Category match (space-insensitive)
+  if (category.includes(q) || (qCompact && category.replace(/\s+/g, '').includes(qCompact))) return 7;
+
+  // Rank 8: Subsequence match of name (space-insensitive)
+  if (qCompact && isSubsequence(qCompact, nameCompact)) return 8;
+
+  // Rank 9: Description match
+  if (desc.includes(q) || (qCompact && desc.replace(/\s+/g, '').includes(qCompact))) return 9;
+
+  return 10;
+};
+
+const itemMatchesQuery = (item, q) => {
+  if (!q) return true;
+  const rank = getSearchRank(item, q);
+  if (q.trim().length === 1) {
+    // For single-letter queries, be strict to avoid matching every card containing the letter.
+    // Allow name starts with, word starts with, or category match.
+    return rank <= 3 || rank === 7;
+  }
+  return rank < 10;
+};
+
+const HighlightedText = ({ text, highlight }) => {
+  if (!highlight || !highlight.trim()) return <span>{text}</span>;
+  
+  const q = highlight.toLowerCase().replace(/\s+/g, '');
+  if (!q) return <span>{text}</span>;
+
+  const parts = [];
+  let qIdx = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (qIdx < q.length && char.toLowerCase() === q[qIdx]) {
+      parts.push(
+        <mark key={i} className="bg-yellow-100 text-[#E53935] font-black rounded-sm px-0.5">
+          {char}
+        </mark>
+      );
+      qIdx++;
+    } else {
+      parts.push(char);
+    }
+  }
+
+  return <span>{parts}</span>;
+};
+
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeDiet, setActiveDiet] = useState('All');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
   const [cart, setCart] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(null);
@@ -463,11 +570,34 @@ const CashierDashboard = ({ onLogout }) => {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
 
-    return filterMenuItems(itemsToFilter, {
-      query: searchQuery,
-      category: selectedCategory,
-      diet: activeDiet,
+    const q = searchQuery.trim().toLowerCase();
+
+    const filtered = itemsToFilter.filter((item) => {
+      // 1. Diet filter
+      if (activeDiet !== 'All' && item.t !== activeDiet) return false;
+      
+      // 2. Search query filter
+      if (q.length > 0) {
+        if (!itemMatchesQuery(item, q)) return false;
+      } else {
+        // 3. Category filter (only active if no search query)
+        if (selectedCategory !== 'All' && (item.c || item.category) !== selectedCategory) return false;
+      }
+      
+      return true;
     });
+
+    // Sort by relevance rank if search is active
+    if (q.length > 0) {
+      return filtered.sort((a, b) => {
+        const rankA = getSearchRank(a, q);
+        const rankB = getSearchRank(b, q);
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.n || a.name || '').localeCompare(b.n || b.name || '');
+      });
+    }
+
+    return filtered;
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, activeDiet]);
 
   const handleTableSelect = (table) => {
@@ -485,12 +615,18 @@ const CashierDashboard = ({ onLogout }) => {
       setVariantPickerItem(item);
     } else {
       addToCart(item);
+      setSearchQuery('');
+      setSelectedCategory('All');
+      setActiveDiet('All');
     }
   };
 
   const handleVariantSelect = (item, variant) => {
     addToCart({ ...item, n: `${item.n} (${variant.name})`, p: variant.price });
     setVariantPickerItem(null);
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setActiveDiet('All');
   };
 
 
@@ -962,16 +1098,62 @@ const CashierDashboard = ({ onLogout }) => {
               <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
                 <div className="px-4 py-3.5 border-b border-gray-100 flex flex-col gap-3.5 bg-white">
 
-                  <div className="relative w-full group">
-                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none group-hover:scale-110 transition-transform duration-200" size={24} />
+                  <div className="relative w-full">
+                    {/* Animated Search Icon */}
+                    <motion.div
+                      animate={{ 
+                        scale: isSearchFocused ? 1.15 : 1,
+                        x: isSearchFocused ? 2 : 0 
+                      }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                      className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none z-10"
+                    >
+                      <Search size={24} />
+                    </motion.div>
+
                     <input
-                      type="search"
-                      placeholder="Search by name, category, price, or ID..."
-                      className="w-full bg-white border-2 border-gray-300 rounded-2xl pl-14 pr-6 h-16 text-base md:text-lg font-black text-gray-900 outline-none hover:border-[#E53935]/50 hover:shadow-md focus:border-[#E53935] focus:ring-4 focus:ring-red-100/70 transition-all duration-200 shadow-md shadow-red-50/30 placeholder:text-gray-500 hover:scale-[1.002]"
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
+                      className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${
+                        isSearchFocused 
+                          ? 'border-[#E53935] ring-4 ring-red-100/80 shadow-red-100/20 scale-[1.002]' 
+                          : 'border-gray-300 hover:border-[#E53935]/50 hover:shadow-md'
+                      }`}
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setIsSearchFocused(true);
+                      }}
+                      onFocus={() => setIsSearchFocused(true)}
+                      onBlur={() => setIsSearchFocused(false)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === 'Escape') {
+                          setIsSearchFocused(false);
+                          e.target.blur();
+                        }
+                      }}
                       autoComplete="off"
                     />
+
+                    {/* Clear Button (X) with slide/scale animation */}
+                    <AnimatePresence>
+                      {searchQuery && (
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.8, y: '-50%' }}
+                          animate={{ opacity: 1, scale: 1, y: '-50%' }}
+                          exit={{ opacity: 0, scale: 0.8, y: '-50%' }}
+                          transition={{ duration: 0.15 }}
+                          onClick={() => {
+                            setSearchQuery('');
+                            searchInputRef.current?.focus();
+                          }}
+                          className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-red-50 text-gray-405 hover:text-[#E53935] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
+                        >
+                          <X size={16} />
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
                   </div>
                   <div className="flex items-center justify-between gap-4 py-1">
                     <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
@@ -1009,22 +1191,38 @@ const CashierDashboard = ({ onLogout }) => {
 
                 <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
                   {menuLoading ? (
-                    <p className="text-center text-sm text-gray-400 py-12 font-bold uppercase tracking-widest">Syncing menu…</p>
+                    <p className="text-center text-sm text-gray-400 py-12 font-bold uppercase tracking-widest animate-pulse">Syncing menu…</p>
                   ) : activeMenuItems.length === 0 ? (
-                    <p className="text-center text-sm text-gray-500 py-12 font-bold col-span-full uppercase tracking-wide">
-                      {searchQuery.trim()
-                        ? `No items found for "${searchQuery.trim()}"`
-                        : "No items in this category."}
-                    </p>
+                    <div
+                      className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm mt-4 w-full"
+                    >
+                      <AlertCircle size={44} className="text-[#E53935] mb-4" />
+                      <h3 className="text-lg font-black text-gray-900 mb-1">No matching items found</h3>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest max-w-xs text-center">
+                        {searchQuery.trim()
+                          ? `We couldn't find anything matching "${searchQuery.trim()}".`
+                          : "No items found in this category."}
+                      </p>
+                      {searchQuery.trim() && (
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="mt-6 px-6 py-2.5 bg-[#E53935] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-red-100 cursor-pointer"
+                        >
+                          Clear Search
+                        </button>
+                      )}
+                    </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-                      {activeMenuItems.map((item, idx) => (
+                    <div 
+                      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6"
+                    >
+                      {activeMenuItems.map((item) => (
                         <div
-                          key={idx}
+                          key={item.id || item.n}
                           onClick={() => handleAddItem(item)}
                           className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-250 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md"
                         >
-                          <div className="h-40 w-full overflow-hidden relative">
+                          <div className="h-32 sm:h-36 lg:h-40 w-full overflow-hidden relative shrink-0">
                             <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                             {outlet === 'bar' && item.menuType && (
                               <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50 text-[9px] font-black uppercase tracking-wider text-gray-700 select-none">
@@ -1037,12 +1235,14 @@ const CashierDashboard = ({ onLogout }) => {
                               </div>
                             </div>
                           </div>
-                          <div className="p-5 flex flex-col flex-grow gap-3.5">
-                            <h4 className="text-sm md:text-base lg:text-lg font-black text-gray-900 leading-snug line-clamp-2 h-12 flex items-center">{item.n}</h4>
+                          <div className="p-4 sm:p-5 flex flex-col flex-grow gap-2 sm:gap-3">
+                            <h4 className="text-sm md:text-base lg:text-lg font-black text-gray-900 leading-snug line-clamp-3 h-[4.5rem] md:h-[5rem] flex items-center tracking-tight">
+                              <HighlightedText text={item.n} highlight={searchQuery} />
+                            </h4>
                             <div className="flex items-center justify-between mt-auto">
                               <p className="text-base md:text-lg lg:text-xl font-black text-[#E53935]">₹{item.p}</p>
-                              <div className="w-12 h-12 rounded-2xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
-                                <Plus size={24} />
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
+                                <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
                               </div>
                             </div>
                           </div>
@@ -1138,33 +1338,33 @@ const CashierDashboard = ({ onLogout }) => {
                   })()}
                 </div>
 
-                <div className="p-6 border-t border-gray-100 bg-gray-50/50 space-y-4 shrink-0">
-                  <div className="space-y-2">
+                <div className="p-4 sm:p-4.5 border-t border-gray-100 bg-gray-50/50 space-y-3 shrink-0">
+                  <div className="space-y-1.5">
                     <div className="flex justify-between text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
                       <span>Subtotal</span>
                       <span className="font-black text-gray-805 text-sm">₹{(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
                     </div>
-                    <div className="flex justify-between items-center pt-2.5 border-t border-gray-200">
-                      <span className="text-sm md:text-base font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                      <span className="text-3xl md:text-4xl lg:text-5xl font-black text-[#E53935] tracking-tight">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                    <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
+                      <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
+                      <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3.5 pt-1">
+                  <div className="grid grid-cols-2 gap-2.5 pt-0.5">
                     <button
                       onClick={handleSmartKOT}
                       disabled={isKotSending || cart.length === 0}
-                      className={`col-span-2 flex flex-col items-center justify-center py-4 rounded-2xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
+                      className={`col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                           isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
                             'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
                         }`}
                     >
-                      {isKotSuccess ? <Check size={24} /> : isKotSending ? <Loader2 size={24} className="animate-spin" /> : <Printer size={24} />}
-                      <span className="text-sm font-black uppercase mt-1.5 tracking-widest">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
+                      {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
+                      <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
                     </button>
-                    <button className="flex flex-col items-center justify-center py-4 rounded-2xl border border-gray-200 bg-white text-gray-755 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95">
-                      <History size={22} />
-                      <span className="text-xs md:text-sm font-black uppercase mt-1">Draft</span>
+                    <button className="flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 bg-white text-gray-755 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95">
+                      <History size={16} />
+                      <span className="text-xs sm:text-sm font-black uppercase tracking-wider">Draft</span>
                     </button>
                     <button
                       onClick={() => {
@@ -1176,7 +1376,7 @@ const CashierDashboard = ({ onLogout }) => {
                         setShowMethodPicker(true);
                       }}
                       disabled={!selectedTable && cart.length === 0}
-                      className="py-4 bg-[#E53935] text-white rounded-2xl font-black text-sm md:text-base uppercase tracking-widest shadow-lg shadow-red-500/35 border-2 border-red-700 disabled:opacity-50 disabled:shadow-none transition-all duration-150 hover:scale-[1.01] hover:bg-[#c62828] active:scale-95"
+                      className="py-3 bg-[#E53935] text-white rounded-xl font-black text-xs sm:text-sm md:text-base uppercase tracking-widest shadow-lg shadow-red-500/35 border-2 border-red-700 disabled:opacity-50 disabled:shadow-none transition-all duration-150 hover:scale-[1.01] hover:bg-[#c62828] active:scale-95"
                     >
                       FINAL BILL
                     </button>

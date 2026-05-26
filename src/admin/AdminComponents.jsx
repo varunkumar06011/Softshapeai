@@ -32,7 +32,9 @@ import {
   ChevronRight,
   Filter,
   Star,
-  ArrowRightLeft
+  ArrowRightLeft,
+  GlassWater,
+  Utensils
 } from 'lucide-react';
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
@@ -2132,7 +2134,7 @@ export function BarMenuPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h3 className="font-semibold">Bar Menu</h3>
         <div className="flex items-center gap-2 flex-wrap">
-          <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} />
+          <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} variant="admin" />
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -2168,7 +2170,9 @@ export function BarMenuPage() {
               ) : item.menuType === 'FOOD' ? (
                 <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${item.t === 'veg' ? 'border-green-600 bg-green-100' : 'border-red-600 bg-red-100'}`} />
               ) : (
-                <span className="text-[14px]">🥃</span>
+                <div className="w-9 h-9 rounded-lg bg-gray-50 border border-gray-150 flex items-center justify-center flex-shrink-0">
+                  <GlassWater size={16} className="text-gray-400" />
+                </div>
               )}
               <div>
                 <p className="text-[13px] font-bold text-gray-900">{item.n}</p>
@@ -2240,7 +2244,9 @@ export function BarMenuPage() {
               {editImg ? (
                 <img src={editImg} alt="" className="w-14 h-14 rounded-xl object-cover border" />
               ) : (
-                <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">{editItem.menuType === 'FOOD' ? '🍽️' : '🥃'}</div>
+                <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400">
+                  {editItem.menuType === 'FOOD' ? <Utensils size={24} /> : <GlassWater size={24} />}
+                </div>
               )}
               <label className="cursor-pointer px-3 py-1.5 border border-gray-300 rounded-xl text-[11px] font-bold text-gray-600 hover:border-[#E53935] transition">
                 Change Photo
@@ -2340,8 +2346,16 @@ export function BarMenuPage() {
               <div className="flex gap-2 mt-1">
                 {['FOOD', 'LIQUOR'].map((mt) => (
                   <button key={mt} onClick={() => setAddMenuType(mt)}
-                    className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold border transition ${addMenuType === mt ? 'border-[#E53935] bg-red-50 text-[#E53935]' : 'border-gray-200 text-gray-500'}`}>
-                    {mt === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[12px] font-bold border transition ${addMenuType === mt ? 'border-[#E53935] bg-red-50 text-[#E53935]' : 'border-gray-200 text-gray-500'}`}>
+                    {mt === 'FOOD' ? (
+                      <>
+                        <Utensils size={14} /> Food
+                      </>
+                    ) : (
+                      <>
+                        <GlassWater size={14} /> Liquor
+                      </>
+                    )}
                   </button>
                 ))}
               </div>
