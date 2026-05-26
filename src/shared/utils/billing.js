@@ -15,8 +15,10 @@ export const calculateOrderTotal = (items) => {
     const price = Number(item.p ?? item.price ?? 0);
     const qty = Number(item.q ?? item.quantity ?? 1);
     
-    // Fallback to 'food' if type is not strictly 'liquor'
-    const type = item.type === 'liquor' ? 'liquor' : (item.menuItem?.menuType === 'LIQUOR' ? 'liquor' : 'food');
+    // Detect liquor by checking all possible field shapes from captain cart,
+    // DB order items, and legacy kotHistory items.
+    const rawType = item.menuType || item.menuItem?.menuType || item.type || '';
+    const type = rawType.toString().toUpperCase() === 'LIQUOR' ? 'liquor' : 'food';
     
     if (type === 'liquor') {
       liquorSubtotal += price * qty;
@@ -61,6 +63,8 @@ export const getTableItems = (table) => {
       q: Number(item.quantity ?? item.q ?? 1),
       notes: item.notes || null,
       removedFromBill: !!item.removedFromBill,
+      // Preserve menuType so calculateOrderTotal can correctly apply 0% GST for liquor
+      menuType: item.menuType || item.menuItem?.menuType || null,
     }));
   }
 

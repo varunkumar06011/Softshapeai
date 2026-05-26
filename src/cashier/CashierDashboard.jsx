@@ -418,17 +418,19 @@ const CashierDashboard = ({ onLogout }) => {
     return pastTransactions.reduce((sum, txn) => sum + (txn.amount || 0), 0);
   }, [pastTransactions]);
 
-  const { subtotal, taxes, total } = calculateOrderTotal(cart);
+  const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
-    if (!selectedTable) return { subtotal, taxes, total };
+    if (!selectedTable) return { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst };
     const items = getTableItems(selectedTable).map(i => 
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
     return calculateOrderTotal([...items, ...cart]);
-  }, [selectedTable, cart, subtotal, taxes, total, removedItemIds]);
+  }, [selectedTable, cart, subtotal, taxes, total, cartCgst, cartSgst, removedItemIds]);
   const activeSubtotal = activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
+  const activeCgst = activeOrderCalc.cgst ?? 0;
+  const activeSgst = activeOrderCalc.sgst ?? 0;
   const fallbackTotal = selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0;
 
   const printBill = async (table, total, subtotal, taxes, method) => {
@@ -800,6 +802,8 @@ const CashierDashboard = ({ onLogout }) => {
       price: Number(i.p ?? i.price ?? 0),
       quantity: Number(i.q ?? i.quantity ?? 1),
       notes: i.notes || null,
+      // Preserve menuType so the backend can correctly classify food vs liquor for GST
+      menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
     }));
 
     if (selectedTable) {
@@ -1396,6 +1400,19 @@ const CashierDashboard = ({ onLogout }) => {
                       <span>Subtotal</span>
                       <span className="font-black text-gray-805 text-sm">₹{(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
                     </div>
+                    {/* CGST + SGST — shown only when food items are present (taxes > 0) */}
+                    {(selectedTable ? activeCgst : cartCgst) > 0 && (
+                      <>
+                        <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
+                          <span>CGST (2.5%)</span>
+                          <span>₹{(selectedTable ? activeCgst : cartCgst).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
+                          <span>SGST (2.5%)</span>
+                          <span>₹{(selectedTable ? activeSgst : cartSgst).toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
                       <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
                       <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>

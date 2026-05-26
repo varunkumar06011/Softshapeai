@@ -66,7 +66,12 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
 
   lines.push(divider());
   lines.push(padRight('Subtotal', 'Rs.' + Number(subtotal).toFixed(0)) + '\n');
-  lines.push(padRight('GST (5%)', 'Rs.' + Number(taxes).toFixed(0)) + '\n');
+  // Show CGST + SGST only when taxes > 0 (liquor-only orders are 0% GST)
+  if (Number(taxes) > 0) {
+    const halfTax = (Number(taxes) / 2).toFixed(0);
+    lines.push(padRight('CGST (2.5%)', 'Rs.' + halfTax) + '\n');
+    lines.push(padRight('SGST (2.5%)', 'Rs.' + halfTax) + '\n');
+  }
   lines.push(divider('='));
   lines.push(CMD.BOLD_ON);
   lines.push(padRight('TOTAL', 'Rs.' + Number(total).toFixed(0)) + '\n');
