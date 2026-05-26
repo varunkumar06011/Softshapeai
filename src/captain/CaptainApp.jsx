@@ -649,8 +649,17 @@ export default function CaptainApp({ onLogout }) {
     setCurrentSessionItems([]);
     addNotification(`KOT #${newKOT.id} Sent`, 'success');
 
-    // Printing is handled server-side: backend emits print_job socket event
-    // which the PrintStation tab on the cashier PC picks up via QZ Tray.
+    // Fire-and-forget — print failure must not block order save
+    printKOTQZ({
+      tableId: activeTable.backendId,
+      kotId: newKOT.id,
+      orderId: activeOrderIdRef.current ?? newKOT.id,
+      items: itemsForPrint,
+    }).catch(err => {
+      console.warn('[KOT] Print failed (non-blocking):', err.message);
+      addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
+    });
+
     // 3. Persist to DB — AWAITED so we know it succeeded.
     //    Use the ref to track the real DB order ID across KOTs.
     try {

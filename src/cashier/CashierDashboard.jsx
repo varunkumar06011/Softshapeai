@@ -9,7 +9,7 @@ import {
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder } from '../services/orderApi';
-import { printBillQZ } from '../services/printService';
+import { printBillQZ, printKOTQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -613,6 +613,19 @@ const CashierDashboard = ({ onLogout }) => {
     setIsKotSuccess(true);
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
+
+    // Fire-and-forget — print failure must not block order save
+    if (selectedTable?.backendId) {
+      printKOTQZ({
+        tableId: selectedTable.backendId,
+        kotId: kotsToCreate[0]?.id ?? String(Date.now()),
+        orderId: selectedTable.activeOrder?.id ?? kotsToCreate[0]?.id ?? String(Date.now()),
+        items: cart,
+      }).catch(err => {
+        console.warn('[KOT] Print failed (non-blocking):', err.message);
+        addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
+      });
+    }
 
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {

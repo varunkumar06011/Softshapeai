@@ -17,7 +17,7 @@
  */
 
 import qz from "qz-tray";
-import { QZ_CERT } from "../constants/certificate";
+import { QZ_CERT } from "../services/certificate.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? "";
 

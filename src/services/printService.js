@@ -92,6 +92,8 @@ async function connectQZ() {
     resolve(QZ_CERT);
   });
 
+  qz.security.setSignatureAlgorithm('SHA512');
+
   qz.security.setSignaturePromise(function(toSign) {
     return function(resolve, reject) {
       fetch(`${import.meta.env.VITE_API_URL}/api/print/qz-sign`, {
