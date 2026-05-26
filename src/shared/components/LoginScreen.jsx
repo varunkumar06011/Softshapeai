@@ -18,19 +18,24 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
       return;
     }
 
-    // 2. Validate against env vars (VITE_ prefix — Vite reads import.meta.env)
-    const validEmail    = import.meta.env.VITE_ADMIN_EMAIL || 'admin@example.com';
-    const validPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'password123';
-    
+    // 2. Credentials are loaded exclusively from environment variables.
+    //    Never put real passwords in this file — add them to .env (which is .gitignored).
+    const CASHIER_EMAIL    = import.meta.env.VITE_CASHIER_EMAIL;
+    const CASHIER_PASSWORD = import.meta.env.VITE_CASHIER_PASSWORD;
+    const MANAGER_EMAIL    = import.meta.env.VITE_MANAGER_EMAIL;
+    const MANAGER_PASSWORD = import.meta.env.VITE_MANAGER_PASSWORD;
+    const ADMIN_EMAIL      = import.meta.env.VITE_ADMIN_EMAIL;
+    const ADMIN_PASSWORD   = import.meta.env.VITE_ADMIN_PASSWORD;
+
     // Check for Cashier credentials
     if (isCashier) {
-      if (email.trim() === 'cashier@011' && password === 'Cashier123') {
+      if (email.trim() === CASHIER_EMAIL && password === CASHIER_PASSWORD) {
         setError('');
         onLogin('cashier');
         return;
       }
-      // Also fallback/allow admin credentials for cashier terminal if needed
-      if (email.trim() === validEmail && password === validPassword) {
+      // Allow admin credentials on the cashier terminal as a fallback
+      if (email.trim() === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
         setError('');
         onLogin('admin');
         return;
@@ -39,14 +44,15 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
       return;
     }
 
-    // Check for Admin / Manager credentials
-    if (email.trim() === 'Vgrandmanager01' && password === 'Vgrand@123') {
+    // Check for Manager credentials
+    if (email.trim() === MANAGER_EMAIL && password === MANAGER_PASSWORD) {
       setError('');
       onLogin('manager');
       return;
     }
 
-    if (email.trim() !== validEmail || password !== validPassword) {
+    // Check for Admin credentials
+    if (email.trim() !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
       setError('Invalid email or password.');
       return;
     }
