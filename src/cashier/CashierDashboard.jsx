@@ -67,6 +67,7 @@ const CashierDashboard = ({ onLogout }) => {
   });
   const [txnsLoading, setTxnsLoading] = useState(false);
   const [expandedTxnId, setExpandedTxnId] = useState(null);
+  const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
@@ -83,19 +84,39 @@ const CashierDashboard = ({ onLogout }) => {
 
   const socket = useSocket(activeRestaurantId);
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(async (filter = 'today') => {
     setTxnsLoading(true);
     try {
-      const todayStr = new Date().toLocaleDateString('en-CA');
-      const dbTxns = await fetchTransactions(activeRestaurantId, 100, todayStr);
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+
+      let dateParam = null;
+      let monthParam = null;
+      let limitParam = 200;
+
+      if (filter === 'today') {
+        dateParam = nowIST.toISOString().slice(0, 10);
+      } else if (filter === 'yesterday') {
+        const yest = new Date(nowIST);
+        yest.setDate(yest.getDate() - 1);
+        dateParam = yest.toISOString().slice(0, 10);
+      } else if (filter === 'month') {
+        monthParam = nowIST.toISOString().slice(0, 7); // 'YYYY-MM'
+        limitParam = 500;
+      } else {
+        // 'all' — no date filter
+        limitParam = 500;
+      }
+
+      const dbTxns = await fetchTransactions(activeRestaurantId, limitParam, dateParam, monthParam);
       const mapped = dbTxns.map(txn => ({
         id: txn.id,
         txnNumber: txn.txnNumber || null,
         displayId: txn.txnNumber ? `Transaction ${txn.txnNumber}` : `TXN-${txn.id.slice(-6).toUpperCase()}`,
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
         amount: txn.amount,
-        time: new Date(txn.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        date: new Date(txn.paidAt).toLocaleDateString('en-GB'),
+        time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
+        date: new Date(txn.paidAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
         timestamp: new Date(txn.paidAt).getTime(),
         items: txn.itemCount || 0,
         itemsList: txn.items || [],
@@ -103,8 +124,10 @@ const CashierDashboard = ({ onLogout }) => {
         method: txn.method || 'UPI',
         tableNumber: txn.tableNumber || null,
       }));
-      localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
       setPastTransactions(mapped);
+      if (filter === 'today') {
+        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
+      }
     } catch (err) {
       console.warn('[Transactions] DB fetch failed, using cache:', err.message);
     } finally {
@@ -193,11 +216,12 @@ const CashierDashboard = ({ onLogout }) => {
     };
   }, [socket, selectedTable?.backendId, loadTransactions]);
 
-  // ── Load transactions from DB ──────────────────────────────────────────
+  // ── Load transactions from DB — re-fires when filter or tab changes ───
   useEffect(() => {
-    loadTransactions();
-    return () => { };
-  }, [loadTransactions, outlet]);
+    if (activeTab === 'history') {
+      loadTransactions(txnDateFilter);
+    }
+  }, [txnDateFilter, activeTab, loadTransactions, outlet]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -1164,6 +1188,33 @@ const CashierDashboard = ({ onLogout }) => {
 
                 {activeTab === 'history' && (
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                    {/* Date filter tabs */}
+                    <div className="flex gap-1 p-2 border-b border-gray-100 bg-gray-50">
+                      {[
+                        { key: 'today', label: 'Today' },
+                        { key: 'yesterday', label: 'Yesterday' },
+                        { key: 'month', label: 'This Month' },
+                        { key: 'all', label: 'All Time' },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => setTxnDateFilter(f.key)}
+                          className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors ${
+                            txnDateFilter === f.key
+                              ? 'bg-[#E53935] text-white shadow-sm'
+                              : 'text-gray-400 hover:bg-gray-100'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => loadTransactions(txnDateFilter)}
+                        className="ml-auto px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                      >
+                        ↻ Sync
+                      </button>
+                    </div>
                     <div className="overflow-x-auto scrollbar-hide">
                       <table className="w-full text-left">
                         <thead className="bg-gray-50 border-b border-gray-100">
