@@ -207,6 +207,13 @@ const CashierDashboard = ({ onLogout }) => {
 
   const socket = useSocket(activeRestaurantId);
 
+  function formatBillNumber(txnDate, txnNumber) {
+    if (!txnDate || !txnNumber) return 'Bill #—';
+    const datePart = txnDate.replace(/-/g, '').slice(2); // "YYYY-MM-DD" → "YYMMDD"
+    const seqPart = String(txnNumber).padStart(3, '0');   // 7 → "007"
+    return `${datePart}-${seqPart}`;
+  }
+
   const loadTransactions = useCallback(async (filter = 'today') => {
     setTxnsLoading(true);
     setPastTransactions([]);
@@ -236,7 +243,7 @@ const CashierDashboard = ({ onLogout }) => {
       const mapped = dbTxns.map(txn => ({
         id: txn.id,
         txnNumber: txn.txnNumber || null,
-        displayId: txn.txnNumber ? `Transaction ${txn.txnNumber}` : `TXN-${txn.id.slice(-6).toUpperCase()}`,
+        displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
         amount: txn.amount,
         time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
@@ -496,7 +503,7 @@ const CashierDashboard = ({ onLogout }) => {
     const newTransaction = {
       id: `TXN-PENDING-${Date.now()}`,
       txnNumber: null,
-      displayId: 'Transaction —',   // will update on loadTransactions after save
+      displayId: 'Bill #—',   // will update on loadTransactions after save
       amount: txnAmount,
       time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
       date: new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
