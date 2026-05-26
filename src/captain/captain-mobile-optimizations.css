@@ -1,0 +1,90 @@
+/* Mobile Touch Target & Scroll Performance Optimizations */
+
+/* Issue #1: Touch Target Size - Minimum 48x48px */
+.mobile-touch-target {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-center: center;
+}
+
+.mobile-button-lg {
+  min-height: 56px;
+  padding: 16px 24px;
+  font-size: 16px; /* Prevents iOS zoom */
+}
+
+.mobile-icon-button {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 12px;
+}
+
+/* Issue #5: Scroll Performance - GPU Acceleration */
+.smooth-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch; /* iOS momentum scrolling */
+  will-change: scroll-position;
+  transform: translateZ(0); /* Force GPU layer */
+  backface-visibility: hidden;
+}
+
+.scroll-container {
+  contain: layout style paint; /* CSS Containment */
+  content-visibility: auto; /* Lazy render offscreen content */
+}
+
+/* Optimize list items for scrolling */
+.list-item-optimized {
+  contain: layout style paint;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Grid items optimization */
+.grid-item-optimized {
+  contain: layout style;
+  transform: translateZ(0);
+}
+
+/* Reduce animation overhead on mobile */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Faster transitions for mobile */
+@media (max-width: 768px) {
+  * {
+    transition-duration: 150ms !important; /* Reduce from 300ms */
+  }
+}
+
+/* Safe area insets for notched devices */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Tap highlight removal for custom buttons */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* Prevents double-tap zoom */
+}
+
+/* Image lazy loading optimization */
+img[loading="lazy"] {
+  content-visibility: auto;
+}
