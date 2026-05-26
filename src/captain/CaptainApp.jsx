@@ -349,19 +349,15 @@ export default function CaptainApp({ onLogout }) {
     if (tableFilter === 'all') {
       return activeTables;
     }
-    // "My Tables" - show tables assigned to me OR free tables
-    return activeTables.filter(t =>
-      t.captainId === currentCaptain?.id || t.status === TABLE_STATUS.FREE
-    );
+    // "My Tables" - show only tables assigned to this captain
+    return activeTables.filter(t => t.captainId === currentCaptain?.id);
   }, [activeTables, tableFilter, currentCaptain?.id]);
 
   const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
   const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
 
   const myTablesCount = useMemo(() => {
-    return activeTables.filter(t =>
-      t.captainId === currentCaptain?.id || t.status === TABLE_STATUS.FREE
-    ).length;
+    return activeTables.filter(t => t.captainId === currentCaptain?.id).length;
   }, [activeTables, currentCaptain?.id]);
 
   const allTablesCount = useMemo(() => activeTables.length, [activeTables]);
