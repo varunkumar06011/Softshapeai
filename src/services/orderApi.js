@@ -139,3 +139,12 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
   });
   return parseResponse(res);
 }
+
+export async function swapTable(sourceTableBackendId, targetTableBackendId, swappedBy, restaurantId) {
+  const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/swap`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetTableId: targetTableBackendId, swappedBy, restaurantId }),
+  });
+  return parseResponse(res);
+}

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder } from '../services/orderApi';
+import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder, swapTable } from '../services/orderApi';
 import { printBillQZ, printKOTQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -42,6 +42,11 @@ const CashierDashboard = ({ onLogout }) => {
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Table-swap state
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [isSwapping, setIsSwapping] = useState(false);
+  const [swapTargetId, setSwapTargetId] = useState(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -203,16 +208,29 @@ const CashierDashboard = ({ onLogout }) => {
       loadTransactions();
     };
 
+    const onTableSwapped = (payload) => {
+      const { sourceTableId, targetTableId, targetTable } = payload;
+      // If cashier had the source table selected, switch to the new location
+      if (selectedTable?.backendId === sourceTableId) {
+        setSelectedTable(prev => prev ? { ...prev, backendId: targetTableId, ...targetTable } : prev);
+        setShowTableModal(false);
+        setShowSwapModal(false);
+        addNotification('Table Moved', `Session moved to Table ${targetTable?.number ?? ''}`, 'success');
+      }
+    };
+
     socket.on('billing:requested', onBillingRequested);
     socket.on('order:created', onOrderCreated);
     socket.on('order:updated', onOrderUpdated);
     socket.on('order:paid', onOrderPaid);
+    socket.on('table:swapped', onTableSwapped);
 
     return () => {
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:created', onOrderCreated);
       socket.off('order:updated', onOrderUpdated);
       socket.off('order:paid', onOrderPaid);
+      socket.off('table:swapped', onTableSwapped);
     };
   }, [socket, selectedTable?.backendId, loadTransactions]);
 
@@ -1515,6 +1533,19 @@ const CashierDashboard = ({ onLogout }) => {
                   Settlement
                 </button>
               </div>
+
+              {/* Move Table button */}
+              {selectedTable.status && selectedTable.status !== 'Free' && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
+                    className="w-full py-3 rounded-xl border-2 border-blue-200 text-blue-700 text-xs font-black uppercase tracking-widest hover:bg-blue-50 hover:border-blue-300 transition-all duration-150 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <ArrowRightLeft size={15} />
+                    Move Table
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1623,6 +1654,81 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         </div>
       )}
+      {/* TABLE SWAP MODAL */}
+      {showSwapModal && selectedTable && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Move Table Session</p>
+                <p className="text-base font-black text-gray-900 mt-0.5">
+                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Select Destination
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowSwapModal(false); setSwapTargetId(null); }}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <p className="text-[11px] font-black uppercase text-gray-400 tracking-wider mb-3">Free Tables</p>
+              <div className="grid grid-cols-4 gap-2.5 max-h-52 overflow-y-auto pr-1">
+                {activeTables
+                  .filter(t => (!t.status || t.status === 'Free') && t.backendId !== selectedTable.backendId)
+                  .sort((a, b) => Number(a.id) - Number(b.id))
+                  .map(t => (
+                    <button
+                      key={t.backendId || t.id}
+                      onClick={() => setSwapTargetId(t.backendId)}
+                      className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center text-xs font-black transition-all hover:scale-105 active:scale-95 ${
+                        swapTargetId === t.backendId
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
+                          : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-300'
+                      }`}
+                    >
+                      <span className="text-lg font-black">{outlet === 'bar' ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
+                      <span className="text-[9px] font-bold text-green-600 mt-0.5">Free</span>
+                    </button>
+                  ))}
+                {activeTables.filter(t => (!t.status || t.status === 'Free') && t.backendId !== selectedTable.backendId).length === 0 && (
+                  <div className="col-span-4 py-8 text-center text-gray-400 text-xs font-bold">No free tables available</div>
+                )}
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (!swapTargetId || !selectedTable?.backendId || isSwapping) return;
+                  setIsSwapping(true);
+                  try {
+                    await swapTable(selectedTable.backendId, swapTargetId, 'Cashier', activeRestaurantId);
+                    setShowSwapModal(false);
+                    setShowTableModal(false);
+                    setSwapTargetId(null);
+                    setSelectedTable(null);
+                    addNotification('Table Moved', 'Session transferred successfully', 'success');
+                  } catch (err) {
+                    addNotification('Move Failed', err.message || 'Could not move table', 'error');
+                  } finally {
+                    setIsSwapping(false);
+                  }
+                }}
+                disabled={!swapTargetId || isSwapping}
+                className={`mt-4 w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${
+                  swapTargetId && !isSwapping
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                }`}
+              >
+                {isSwapping ? 'Moving...' : swapTargetId ? 'Confirm Move' : 'Select a Table'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* NOTIFICATIONS OVERLAY */}
       <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
         {notifications.map(n => (

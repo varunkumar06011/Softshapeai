@@ -4,11 +4,11 @@ import {
   Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer,
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
-  Target, TrendingUp
+  Target, TrendingUp, ArrowRightLeft
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
-import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem } from '../services/orderApi';
+import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
 import { printKOTQZ } from '../services/printService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -259,6 +259,10 @@ export default function CaptainApp({ onLogout }) {
   // Cancel-item state: { [orderItemId]: true }
   const [cancelLoading,  setCancelLoading]  = useState({});
   const [cancelConfirm,  setCancelConfirm]  = useState({});
+
+  // Move-table swap state
+  const [showMoveModal,   setShowMoveModal]   = useState(false);
+  const [moveLoading,     setMoveLoading]     = useState(false);
 
   // ── Derived / memoised values (safe now that all state is declared above) ──
   const totalActiveTablesCount = useMemo(() => {
@@ -1236,6 +1240,13 @@ export default function CaptainApp({ onLogout }) {
               </div>
               <div className="flex gap-2 w-full sm:w-auto">
                 <button
+                  onClick={() => setShowMoveModal(true)}
+                  title="Move Table"
+                  className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shrink-0 hover:bg-blue-100 transition-all"
+                >
+                  <ArrowRightLeft size={18} />
+                </button>
+                <button
                   onClick={requestFinalBill}
                   disabled={activeTable?.status === TABLE_STATUS.BILLING}
                   className="flex-grow sm:flex-grow-0 px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all text-center disabled:opacity-50 disabled:hover:scale-100"
@@ -1851,6 +1862,82 @@ export default function CaptainApp({ onLogout }) {
           </div>
         ))}
       </div>
+
+      {/* MOVE TABLE MODAL */}
+      {showMoveModal && (() => {
+        const freeTables = (outlet === 'bar' ? barTables : tables).filter(
+          t => t.status === TABLE_STATUS.FREE && t.id !== activeTable?.id
+        );
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowMoveModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-50 rounded-xl">
+                    <ArrowRightLeft size={18} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-gray-900">Move Table</h3>
+                    <p className="text-[10px] text-gray-400 font-semibold">From Table {activeTable?.number || activeTable?.id}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowMoveModal(false)} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Table grid */}
+              <div className="p-4 max-h-72 overflow-y-auto">
+                {freeTables.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-3xl mb-2">🪑</div>
+                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">No free tables available</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {freeTables.map(t => (
+                      <button
+                        key={t.id}
+                        disabled={moveLoading}
+                        onClick={async () => {
+                          setMoveLoading(true);
+                          try {
+                            await swapTable(activeTable.id, {
+                              targetTableId: t.id,
+                              swappedBy: currentCaptain?.name || 'Captain',
+                              restaurantId: RESTAURANT_ID,
+                            });
+                            setShowMoveModal(false);
+                            setView('tables');
+                          } catch (err) {
+                            console.error('Move table failed:', err);
+                            alert(err?.response?.data?.error || 'Move failed. Please try again.');
+                          } finally {
+                            setMoveLoading(false);
+                          }
+                        }}
+                        className="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 border-blue-100 bg-blue-50 hover:border-blue-400 hover:bg-blue-100 transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        <span className="text-lg font-black text-blue-700">{t.number || t.id}</span>
+                        <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Free</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              {moveLoading && (
+                <div className="px-5 pb-5 flex items-center justify-center gap-2 text-blue-600">
+                  <Loader2 size={16} className="animate-spin" />
+                  <span className="text-[11px] font-black uppercase tracking-widest">Moving session…</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* VARIANT PICKER */}
       <VariantPicker

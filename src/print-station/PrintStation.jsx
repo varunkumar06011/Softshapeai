@@ -137,6 +137,30 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
+function buildTableSwapCommands({ fromTableNumber, toTableNumber, swappedBy, timestamp }) {
+  const cmds = [
+    CMD.INIT,
+    CMD.ALIGN_CENTER,
+    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    'TABLE MOVED\n',
+    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    divider(),
+    CMD.ALIGN_LEFT,
+    `From  : Table ${fromTableNumber}\n`,
+    `To    : Table ${toTableNumber}\n`,
+    `By    : ${swappedBy || 'Staff'}\n`,
+    `Time  : ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
+    divider(),
+    CMD.ALIGN_CENTER,
+    CMD.BOLD_ON,
+    'Session transferred\n',
+    CMD.BOLD_OFF,
+    '\n\n',
+    CMD.CUT,
+  ];
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
+}
+
 // ── QZ Tray singleton ────────────────────────────────────────────────────────
 let _qz = null;
 
@@ -253,6 +277,9 @@ export default function PrintStation() {
           } else if (type === 'CANCEL_KOT') {
             cmds    = buildCancelKOTCommands(data);
             printer = data.item?.menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
+          } else if (type === 'TABLE_SWAP') {
+            cmds    = buildTableSwapCommands(data);
+            printer = KITCHEN_PRINTER;
           } else {
             pushLog(`Unknown print_job type: ${type}`, false);
             return;

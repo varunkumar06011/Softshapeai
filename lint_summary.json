@@ -1,0 +1,3081 @@
+[
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\cashier\\CashierDashboard.jsx",
+    "errors": 30,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'ClipboardList' is defined but never used.",
+        "line": 3,
+        "column": 28,
+        "messageId": "unusedVar",
+        "endLine": 3,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "ClipboardList"
+            },
+            "fix": {
+              "range": [
+                110,
+                125
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'ClipboardList'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Settings' is defined but never used.",
+        "line": 3,
+        "column": 57,
+        "messageId": "unusedVar",
+        "endLine": 3,
+        "endColumn": 65,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Settings"
+            },
+            "fix": {
+              "range": [
+                139,
+                149
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Settings'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'User' is defined but never used.",
+        "line": 4,
+        "column": 50,
+        "messageId": "unusedVar",
+        "endLine": 4,
+        "endColumn": 54,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "User"
+            },
+            "fix": {
+              "range": [
+                221,
+                227
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'User'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'MoreVertical' is defined but never used.",
+        "line": 4,
+        "column": 56,
+        "messageId": "unusedVar",
+        "endLine": 4,
+        "endColumn": 68,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "MoreVertical"
+            },
+            "fix": {
+              "range": [
+                227,
+                241
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'MoreVertical'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Banknote' is defined but never used.",
+        "line": 5,
+        "column": 23,
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Banknote"
+            },
+            "fix": {
+              "range": [
+                277,
+                287
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Banknote'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Smartphone' is defined but never used.",
+        "line": 5,
+        "column": 33,
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 43,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Smartphone"
+            },
+            "fix": {
+              "range": [
+                287,
+                299
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Smartphone'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Split' is defined but never used.",
+        "line": 5,
+        "column": 45,
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 50,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Split"
+            },
+            "fix": {
+              "range": [
+                299,
+                306
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Split'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Zap' is defined but never used.",
+        "line": 6,
+        "column": 22,
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Zap"
+            },
+            "fix": {
+              "range": [
+                355,
+                360
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Zap'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'ArrowRight' is defined but never used.",
+        "line": 6,
+        "column": 27,
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 37,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "ArrowRight"
+            },
+            "fix": {
+              "range": [
+                360,
+                372
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'ArrowRight'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Filter' is defined but never used.",
+        "line": 6,
+        "column": 39,
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 45,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Filter"
+            },
+            "fix": {
+              "range": [
+                372,
+                380
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Filter'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Layers' is defined but never used.",
+        "line": 6,
+        "column": 47,
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 53,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Layers"
+            },
+            "fix": {
+              "range": [
+                380,
+                388
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Layers'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'ArrowUpRight' is defined but never used.",
+        "line": 6,
+        "column": 55,
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 67,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "ArrowUpRight"
+            },
+            "fix": {
+              "range": [
+                388,
+                402
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'ArrowUpRight'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'TrendingUp' is defined but never used.",
+        "line": 7,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 7,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "TrendingUp"
+            },
+            "fix": {
+              "range": [
+                418,
+                433
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'TrendingUp'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Users' is defined but never used.",
+        "line": 7,
+        "column": 15,
+        "messageId": "unusedVar",
+        "endLine": 7,
+        "endColumn": 20,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Users"
+            },
+            "fix": {
+              "range": [
+                433,
+                440
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Users'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'ArrowRightLeft' is defined but never used.",
+        "line": 7,
+        "column": 39,
+        "messageId": "unusedVar",
+        "endLine": 7,
+        "endColumn": 53,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "ArrowRightLeft"
+            },
+            "fix": {
+              "range": [
+                457,
+                473
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'ArrowRightLeft'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'BarMenuToggle' is defined but never used.",
+        "line": 20,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 20,
+        "endColumn": 21,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "BarMenuToggle"
+            },
+            "fix": {
+              "range": [
+                1315,
+                1334
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'BarMenuToggle'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'selectedOrder' is assigned a value but never used.",
+        "line": 32,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 32,
+        "endColumn": 23,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "selectedOrder"
+            },
+            "fix": {
+              "range": [
+                2013,
+                2026
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'selectedOrder'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'setSelectedOrder' is assigned a value but never used.",
+        "line": 32,
+        "column": 25,
+        "messageId": "unusedVar",
+        "endLine": 32,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "setSelectedOrder"
+            },
+            "fix": {
+              "range": [
+                2026,
+                2044
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'setSelectedOrder'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  51 |   const [removedItemIds, setRemovedItemIds] = useState([]);\n  52 |   useEffect(() => {\n> 53 |     setRemovedItemIds([]);\n     |     ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  54 |   }, [selectedTable?.backendId]);\n  55 |\n  56 |   const { outlet } = useOutlet();",
+        "line": 53,
+        "column": 5,
+        "endLine": 53,
+        "endColumn": 22
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'barMenuTab' is assigned a value but never used.",
+        "line": 77,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 77,
+        "endColumn": 20,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "barMenuTab"
+            },
+            "fix": {
+              "range": [
+                4081,
+                4091
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'barMenuTab'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'setBarMenuTab' is assigned a value but never used.",
+        "line": 77,
+        "column": 22,
+        "messageId": "unusedVar",
+        "endLine": 77,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "setBarMenuTab"
+            },
+            "fix": {
+              "range": [
+                4091,
+                4106
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'setBarMenuTab'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  220 |   useEffect(() => {\n  221 |     if (activeTab === 'history') {\n> 222 |       loadTransactions(txnDateFilter);\n      |       ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  223 |     }\n  224 |   }, [txnDateFilter, activeTab, loadTransactions, outlet]);\n  225 |",
+        "line": 222,
+        "column": 7,
+        "endLine": 222,
+        "endColumn": 23
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  231 |     // NEVER wipe the selected table automatically to prevent race conditions.\n  232 |     if (liveTable) {\n> 233 |       setSelectedTable(liveTable);\n      |       ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  234 |     }\n  235 |   }, [activeTables, selectedTable?.backendId]);\n  236 |",
+        "line": 233,
+        "column": 7,
+        "endLine": 233,
+        "endColumn": 23
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  236 |\n  237 |   useEffect(() => {\n> 238 |     setSelectedCategory('All');\n      |     ^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  239 |     setSearchQuery('');\n  240 |   }, [outlet]);\n  241 |",
+        "line": 238,
+        "column": 5,
+        "endLine": 238,
+        "endColumn": 24
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'total' is defined but never used.",
+        "line": 300,
+        "column": 35,
+        "messageId": "unusedVar",
+        "endLine": 300,
+        "endColumn": 40,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "total"
+            },
+            "fix": {
+              "range": [
+                12533,
+                12540
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'total'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'subtotal' is defined but never used.",
+        "line": 300,
+        "column": 42,
+        "messageId": "unusedVar",
+        "endLine": 300,
+        "endColumn": 50,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "subtotal"
+            },
+            "fix": {
+              "range": [
+                12540,
+                12550
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'subtotal'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'taxes' is defined but never used.",
+        "line": 300,
+        "column": 52,
+        "messageId": "unusedVar",
+        "endLine": 300,
+        "endColumn": 57,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "taxes"
+            },
+            "fix": {
+              "range": [
+                12550,
+                12557
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'taxes'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'method' is defined but never used.",
+        "line": 300,
+        "column": 59,
+        "messageId": "unusedVar",
+        "endLine": 300,
+        "endColumn": 65,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "method"
+            },
+            "fix": {
+              "range": [
+                12557,
+                12565
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'method'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-useless-assignment",
+        "severity": 2,
+        "message": "The value assigned to 'itemsToFilter' is not used in subsequent statements.",
+        "line": 441,
+        "column": 9,
+        "messageId": "unnecessaryAssignment",
+        "endLine": 441,
+        "endColumn": 22
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  1350 |                         <p className=\"text-[9px] font-black uppercase text-gray-400\">Delayed</p>\n  1351 |                         <p className=\"text-lg font-black text-[#E53935]\">\n> 1352 |                           {liveKotQueue.filter(k => k.type === 'FOOD' && k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}\n       |                                                                                                  ^^^^^^^^^^ Cannot call impure function\n  1353 |                         </p>\n  1354 |                       </div>\n  1355 |                       <div className=\"text-center border-l border-gray-100 hidden md:block\">",
+        "line": 1352,
+        "column": 98,
+        "endLine": 1352,
+        "endColumn": 108
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\admin\\AdminComponents.jsx",
+    "errors": 23,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Bot' is defined but never used.",
+        "line": 5,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 6,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Bot"
+            },
+            "fix": {
+              "range": [
+                126,
+                135
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Bot'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Megaphone' is defined but never used.",
+        "line": 6,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 12,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Megaphone"
+            },
+            "fix": {
+              "range": [
+                135,
+                150
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Megaphone'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Aperture' is defined but never used.",
+        "line": 13,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 13,
+        "endColumn": 11,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Aperture"
+            },
+            "fix": {
+              "range": [
+                231,
+                244
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Aperture'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Smartphone' is defined but never used.",
+        "line": 17,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 17,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Smartphone"
+            },
+            "fix": {
+              "range": [
+                278,
+                293
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Smartphone'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'TrendingDown' is defined but never used.",
+        "line": 22,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 22,
+        "endColumn": 15,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "TrendingDown"
+            },
+            "fix": {
+              "range": [
+                345,
+                362
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'TrendingDown'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Briefcase' is defined but never used.",
+        "line": 27,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 27,
+        "endColumn": 12,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Briefcase"
+            },
+            "fix": {
+              "range": [
+                407,
+                421
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Briefcase'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'History' is defined but never used.",
+        "line": 30,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 30,
+        "endColumn": 10,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "History"
+            },
+            "fix": {
+              "range": [
+                449,
+                461
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'History'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'ChevronRight' is defined but never used.",
+        "line": 32,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 32,
+        "endColumn": 15,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "ChevronRight"
+            },
+            "fix": {
+              "range": [
+                471,
+                488
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'ChevronRight'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Filter' is defined but never used.",
+        "line": 33,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 33,
+        "endColumn": 9,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Filter"
+            },
+            "fix": {
+              "range": [
+                488,
+                499
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Filter'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'getSmartRecommendation' is defined but never used.",
+        "line": 42,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 42,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "getSmartRecommendation"
+            },
+            "fix": {
+              "range": [
+                799,
+                866
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'getSmartRecommendation'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'setTable' is assigned a value but never used.",
+        "line": 143,
+        "column": 17,
+        "messageId": "unusedVar",
+        "endLine": 143,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "setTable"
+            },
+            "fix": {
+              "range": [
+                6895,
+                6905
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'setTable'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-undef",
+        "severity": 2,
+        "message": "'onKOTSend' is not defined.",
+        "line": 156,
+        "column": 5,
+        "messageId": "undef",
+        "endLine": 156,
+        "endColumn": 14
+      },
+      {
+        "ruleId": "no-undef",
+        "severity": 2,
+        "message": "'onOrderComplete' is not defined.",
+        "line": 168,
+        "column": 5,
+        "messageId": "undef",
+        "endLine": 168,
+        "endColumn": 20
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'onOpen' is defined but never used.",
+        "line": 287,
+        "column": 26,
+        "messageId": "unusedVar",
+        "endLine": 287,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "onOpen"
+            },
+            "fix": {
+              "range": [
+                14317,
+                14327
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'onOpen'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'menuItems' is assigned a value but never used.",
+        "line": 465,
+        "column": 11,
+        "messageId": "unusedVar",
+        "endLine": 465,
+        "endColumn": 20,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "menuItems"
+            },
+            "fix": {
+              "range": [
+                25443,
+                25453
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'menuItems'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'updateMenu' is assigned a value but never used.",
+        "line": 465,
+        "column": 36,
+        "messageId": "unusedVar",
+        "endLine": 465,
+        "endColumn": 46,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "updateMenu"
+            },
+            "fix": {
+              "range": [
+                25466,
+                25478
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'updateMenu'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'loading' is assigned a value but never used.",
+        "line": 465,
+        "column": 48,
+        "messageId": "unusedVar",
+        "endLine": 465,
+        "endColumn": 55,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "loading"
+            },
+            "fix": {
+              "range": [
+                25478,
+                25487
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'loading'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  498 |   }, [allMenuItems]);\n  499 |\n> 500 |   useEffect(() => { fetchAdminItems(); }, []);\n      |                     ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  501 |\n  502 |   const items = useMemo(\n  503 |     () => adminItems.filter((x) => menuItemMatchesSearch(x, filter)),",
+        "line": 500,
+        "column": 21,
+        "endLine": 500,
+        "endColumn": 36
+      },
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useEffect has a missing dependency: 'fetchAdminItems'. Either include it or remove the dependency array.",
+        "line": 500,
+        "column": 43,
+        "endLine": 500,
+        "endColumn": 45,
+        "suggestions": [
+          {
+            "desc": "Update the dependencies array to be: [fetchAdminItems]",
+            "fix": {
+              "range": [
+                26939,
+                26941
+              ],
+              "text": "[fetchAdminItems]"
+            }
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'defaultVariant' is assigned a value but never used.",
+        "line": 639,
+        "column": 15,
+        "messageId": "unusedVar",
+        "endLine": 639,
+        "endColumn": 29,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "defaultVariant"
+            },
+            "fix": {
+              "range": [
+                32277,
+                32374
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'defaultVariant'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-useless-assignment",
+        "severity": 2,
+        "message": "The value assigned to 'filtered' is not used in subsequent statements.",
+        "line": 1112,
+        "column": 9,
+        "messageId": "unnecessaryAssignment",
+        "endLine": 1112,
+        "endColumn": 17
+      },
+      {
+        "ruleId": "no-useless-assignment",
+        "severity": 2,
+        "message": "The value assigned to 'trend' is not used in subsequent statements.",
+        "line": 1146,
+        "column": 9,
+        "messageId": "unnecessaryAssignment",
+        "endLine": 1146,
+        "endColumn": 14
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'reject' is defined but never used.",
+        "line": 2082,
+        "column": 54,
+        "messageId": "unusedVar",
+        "endLine": 2082,
+        "endColumn": 60,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "reject"
+            },
+            "fix": {
+              "range": [
+                110262,
+                110270
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'reject'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\admin\\SurveillanceDashboard.jsx",
+    "errors": 14,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'useCallback' is defined but never used.",
+        "line": 1,
+        "column": 39,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 50,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "useCallback"
+            },
+            "fix": {
+              "range": [
+                36,
+                49
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'useCallback'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'camId' is defined but never used.",
+        "line": 38,
+        "column": 23,
+        "messageId": "unusedVar",
+        "endLine": 38,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "camId"
+            },
+            "fix": {
+              "range": [
+                2633,
+                2639
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'camId'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  43 |   // Stable bounding boxes per camera\n  44 |   const boxes = useRef(\n> 45 |     Array.from({ length: Math.floor(Math.random() * 2) + 1 }, (_, i) => ({\n     |                                     ^^^^^^^^^^^^^ Cannot call impure function\n  46 |       x: 0.1 + i * 0.3 + Math.random() * 0.1,\n  47 |       y: 0.2 + Math.random() * 0.2,\n  48 |       w: 0.12 + Math.random() * 0.06,",
+        "line": 45,
+        "column": 37,
+        "endLine": 45,
+        "endColumn": 50
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  44 |   const boxes = useRef(\n  45 |     Array.from({ length: Math.floor(Math.random() * 2) + 1 }, (_, i) => ({\n> 46 |       x: 0.1 + i * 0.3 + Math.random() * 0.1,\n     |                          ^^^^^^^^^^^^^ Cannot call impure function\n  47 |       y: 0.2 + Math.random() * 0.2,\n  48 |       w: 0.12 + Math.random() * 0.06,\n  49 |       h: 0.28 + Math.random() * 0.1,",
+        "line": 46,
+        "column": 26,
+        "endLine": 46,
+        "endColumn": 39
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  45 |     Array.from({ length: Math.floor(Math.random() * 2) + 1 }, (_, i) => ({\n  46 |       x: 0.1 + i * 0.3 + Math.random() * 0.1,\n> 47 |       y: 0.2 + Math.random() * 0.2,\n     |                ^^^^^^^^^^^^^ Cannot call impure function\n  48 |       w: 0.12 + Math.random() * 0.06,\n  49 |       h: 0.28 + Math.random() * 0.1,\n  50 |       vx: (Math.random() - 0.5) * 0.001,",
+        "line": 47,
+        "column": 16,
+        "endLine": 47,
+        "endColumn": 29
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  46 |       x: 0.1 + i * 0.3 + Math.random() * 0.1,\n  47 |       y: 0.2 + Math.random() * 0.2,\n> 48 |       w: 0.12 + Math.random() * 0.06,\n     |                 ^^^^^^^^^^^^^ Cannot call impure function\n  49 |       h: 0.28 + Math.random() * 0.1,\n  50 |       vx: (Math.random() - 0.5) * 0.001,\n  51 |       vy: (Math.random() - 0.5) * 0.0005,",
+        "line": 48,
+        "column": 17,
+        "endLine": 48,
+        "endColumn": 30
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  47 |       y: 0.2 + Math.random() * 0.2,\n  48 |       w: 0.12 + Math.random() * 0.06,\n> 49 |       h: 0.28 + Math.random() * 0.1,\n     |                 ^^^^^^^^^^^^^ Cannot call impure function\n  50 |       vx: (Math.random() - 0.5) * 0.001,\n  51 |       vy: (Math.random() - 0.5) * 0.0005,\n  52 |       label: [\"Staff\", \"Chef\", \"Worker\", \"Delivery\"][i % 4],",
+        "line": 49,
+        "column": 17,
+        "endLine": 49,
+        "endColumn": 30
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  48 |       w: 0.12 + Math.random() * 0.06,\n  49 |       h: 0.28 + Math.random() * 0.1,\n> 50 |       vx: (Math.random() - 0.5) * 0.001,\n     |            ^^^^^^^^^^^^^ Cannot call impure function\n  51 |       vy: (Math.random() - 0.5) * 0.0005,\n  52 |       label: [\"Staff\", \"Chef\", \"Worker\", \"Delivery\"][i % 4],\n  53 |     }))",
+        "line": 50,
+        "column": 12,
+        "endLine": 50,
+        "endColumn": 25
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  49 |       h: 0.28 + Math.random() * 0.1,\n  50 |       vx: (Math.random() - 0.5) * 0.001,\n> 51 |       vy: (Math.random() - 0.5) * 0.0005,\n     |            ^^^^^^^^^^^^^ Cannot call impure function\n  52 |       label: [\"Staff\", \"Chef\", \"Worker\", \"Delivery\"][i % 4],\n  53 |     }))\n  54 |   );",
+        "line": 51,
+        "column": 12,
+        "endLine": 51,
+        "endColumn": 25
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  56 |   const heatRef = useRef(\n  57 |     Array.from({ length: 3 }, () => ({\n> 58 |       x: 0.2 + Math.random() * 0.6,\n     |                ^^^^^^^^^^^^^ Cannot call impure function\n  59 |       y: 0.3 + Math.random() * 0.4,\n  60 |       r: 0.08 + Math.random() * 0.06,\n  61 |     }))",
+        "line": 58,
+        "column": 16,
+        "endLine": 58,
+        "endColumn": 29
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  57 |     Array.from({ length: 3 }, () => ({\n  58 |       x: 0.2 + Math.random() * 0.6,\n> 59 |       y: 0.3 + Math.random() * 0.4,\n     |                ^^^^^^^^^^^^^ Cannot call impure function\n  60 |       r: 0.08 + Math.random() * 0.06,\n  61 |     }))\n  62 |   );",
+        "line": 59,
+        "column": 16,
+        "endLine": 59,
+        "endColumn": 29
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  58 |       x: 0.2 + Math.random() * 0.6,\n  59 |       y: 0.3 + Math.random() * 0.4,\n> 60 |       r: 0.08 + Math.random() * 0.06,\n     |                 ^^^^^^^^^^^^^ Cannot call impure function\n  61 |     }))\n  62 |   );\n  63 |",
+        "line": 60,
+        "column": 17,
+        "endLine": 60,
+        "endColumn": 30
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'dx2' is defined but never used.",
+        "line": 144,
+        "column": 37,
+        "messageId": "unusedVar",
+        "endLine": 144,
+        "endColumn": 40,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "dx2"
+            },
+            "fix": {
+              "range": [
+                6131,
+                6134
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'dx2'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'alertMsg' is assigned a value but never used.",
+        "line": 296,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 296,
+        "endColumn": 18,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "alertMsg"
+            },
+            "fix": {
+              "range": [
+                11657,
+                11665
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'alertMsg'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useEffect has a missing dependency: 'onIncident'. Either include it or remove the dependency array. If 'onIncident' changes too often, find the parent component that defines it and wrap that definition in useCallback.",
+        "line": 342,
+        "column": 6,
+        "endLine": 342,
+        "endColumn": 8,
+        "suggestions": [
+          {
+            "desc": "Update the dependencies array to be: [onIncident]",
+            "fix": {
+              "range": [
+                13568,
+                13570
+              ],
+              "text": "[onIncident]"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\waiterCallService.js",
+    "errors": 13,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'_' is defined but never used.",
+        "line": 25,
+        "column": 75,
+        "messageId": "unusedVar",
+        "endLine": 25,
+        "endColumn": 76
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 25,
+        "column": 78,
+        "messageId": "unexpected",
+        "endLine": 25,
+        "endColumn": 80,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                1042,
+                1042
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'err' is defined but never used.",
+        "line": 90,
+        "column": 12,
+        "messageId": "unusedVar",
+        "endLine": 90,
+        "endColumn": 15
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 90,
+        "column": 17,
+        "messageId": "unexpected",
+        "endLine": 90,
+        "endColumn": 19,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                3093,
+                3093
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'err' is defined but never used.",
+        "line": 140,
+        "column": 18,
+        "messageId": "unusedVar",
+        "endLine": 140,
+        "endColumn": 21
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 140,
+        "column": 23,
+        "messageId": "unexpected",
+        "endLine": 140,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                4938,
+                4938
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'err' is defined but never used.",
+        "line": 156,
+        "column": 18,
+        "messageId": "unusedVar",
+        "endLine": 156,
+        "endColumn": 21
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 156,
+        "column": 23,
+        "messageId": "unexpected",
+        "endLine": 156,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                5589,
+                5589
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  164 |       const pending = Object.values(db).filter(c => c.status === 'pending');\n  165 |       if (pending.length > 0) {\n> 166 |         setActiveCalls(prev => {\n      |         ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  167 |           const newCalls = [...prev];\n  168 |           pending.forEach(p => {\n  169 |             if (!newCalls.find(c => c.callId === p.callId)) {",
+        "line": 166,
+        "column": 9,
+        "endLine": 166,
+        "endColumn": 23
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'e' is defined but never used.",
+        "line": 177,
+        "column": 14,
+        "messageId": "unusedVar",
+        "endLine": 177,
+        "endColumn": 15
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 177,
+        "column": 17,
+        "messageId": "unexpected",
+        "endLine": 177,
+        "endColumn": 19,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                6364,
+                6364
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'e' is defined but never used.",
+        "line": 196,
+        "column": 14,
+        "messageId": "unusedVar",
+        "endLine": 196,
+        "endColumn": 15
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 196,
+        "column": 17,
+        "messageId": "unexpected",
+        "endLine": 196,
+        "endColumn": 19,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                7000,
+                7000
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\user-menu\\SliceChallenge.jsx",
+    "errors": 13,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  24 |   useEffect(() => {\n  25 |     if (round < 3 && !showResult) {\n> 26 |       setCurrentItem(FOOD_ITEMS[Math.floor(Math.random() * FOOD_ITEMS.length)]);\n     |       ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  27 |       setIsSliced(false);\n  28 |       setSlashPos(null);\n  29 |     }",
+        "line": 26,
+        "column": 7,
+        "endLine": 26,
+        "endColumn": 21
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  68 |             initial={{ x: 0, y: 0, opacity: 1 }}\n  69 |             animate={{ \n> 70 |               x: (Math.random() - 0.5) * window.innerWidth, \n     |                   ^^^^^^^^^^^^^ Cannot call impure function\n  71 |               y: -window.innerHeight + Math.random() * 500,\n  72 |               opacity: 0,\n  73 |               rotate: Math.random() * 360",
+        "line": 70,
+        "column": 19,
+        "endLine": 70,
+        "endColumn": 32
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  69 |             animate={{ \n  70 |               x: (Math.random() - 0.5) * window.innerWidth, \n> 71 |               y: -window.innerHeight + Math.random() * 500,\n     |                                        ^^^^^^^^^^^^^ Cannot call impure function\n  72 |               opacity: 0,\n  73 |               rotate: Math.random() * 360\n  74 |             }}",
+        "line": 71,
+        "column": 40,
+        "endLine": 71,
+        "endColumn": 53
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  71 |               y: -window.innerHeight + Math.random() * 500,\n  72 |               opacity: 0,\n> 73 |               rotate: Math.random() * 360\n     |                       ^^^^^^^^^^^^^ Cannot call impure function\n  74 |             }}\n  75 |             transition={{ duration: 2, ease: \"easeOut\" }}\n  76 |           />",
+        "line": 73,
+        "column": 23,
+        "endLine": 73,
+        "endColumn": 36
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  138 |             <motion.div\n  139 |               key={`item-${round}`}\n> 140 |               initial={{ y: window.innerHeight, x: (Math.random() - 0.5) * 100, rotate: 0 }}\n      |                                                     ^^^^^^^^^^^^^ Cannot call impure function\n  141 |               animate={{ \n  142 |                 y: -100, \n  143 |                 x: (Math.random() - 0.5) * 200, ",
+        "line": 140,
+        "column": 53,
+        "endLine": 140,
+        "endColumn": 66
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  141 |               animate={{ \n  142 |                 y: -100, \n> 143 |                 x: (Math.random() - 0.5) * 200, \n      |                     ^^^^^^^^^^^^^ Cannot call impure function\n  144 |                 rotate: 360 \n  145 |               }}\n  146 |               transition={{ ",
+        "line": 143,
+        "column": 21,
+        "endLine": 143,
+        "endColumn": 34
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  188 |                     initial={{ x: 0, y: 0, scale: 1 }}\n  189 |                     animate={{ \n> 190 |                       x: (Math.random() - 0.5) * 200, \n      |                           ^^^^^^^^^^^^^ Cannot call impure function\n  191 |                       y: (Math.random() - 0.5) * 200,\n  192 |                       scale: 0,\n  193 |                       opacity: 0",
+        "line": 190,
+        "column": 27,
+        "endLine": 190,
+        "endColumn": 40
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  189 |                     animate={{ \n  190 |                       x: (Math.random() - 0.5) * 200, \n> 191 |                       y: (Math.random() - 0.5) * 200,\n      |                           ^^^^^^^^^^^^^ Cannot call impure function\n  192 |                       scale: 0,\n  193 |                       opacity: 0\n  194 |                     }}",
+        "line": 191,
+        "column": 27,
+        "endLine": 191,
+        "endColumn": 40
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  219 |             className=\"absolute w-1 h-1 bg-[#FF4D4F] rounded-full blur-[1px]\"\n  220 |             initial={{ \n> 221 |               x: Math.random() * window.innerWidth, \n      |                  ^^^^^^^^^^^^^ Cannot call impure function\n  222 |               y: window.innerHeight + Math.random() * 200 \n  223 |             }}\n  224 |             animate={{ ",
+        "line": 221,
+        "column": 18,
+        "endLine": 221,
+        "endColumn": 31
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  220 |             initial={{ \n  221 |               x: Math.random() * window.innerWidth, \n> 222 |               y: window.innerHeight + Math.random() * 200 \n      |                                       ^^^^^^^^^^^^^ Cannot call impure function\n  223 |             }}\n  224 |             animate={{ \n  225 |               y: -100,",
+        "line": 222,
+        "column": 39,
+        "endLine": 222,
+        "endColumn": 52
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  224 |             animate={{ \n  225 |               y: -100,\n> 226 |               x: `calc(${Math.random() * 100}vw)`,\n      |                          ^^^^^^^^^^^^^ Cannot call impure function\n  227 |               opacity: [0, 1, 0]\n  228 |             }}\n  229 |             transition={{ ",
+        "line": 226,
+        "column": 26,
+        "endLine": 226,
+        "endColumn": 39
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  228 |             }}\n  229 |             transition={{ \n> 230 |               duration: 3 + Math.random() * 4, \n      |                             ^^^^^^^^^^^^^ Cannot call impure function\n  231 |               repeat: Infinity, \n  232 |               ease: \"linear\" \n  233 |             }}",
+        "line": 230,
+        "column": 29,
+        "endLine": 230,
+        "endColumn": 42
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\printService.js",
+    "errors": 5,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'_reject' is defined but never used.",
+        "line": 91,
+        "column": 55,
+        "messageId": "unusedVar",
+        "endLine": 91,
+        "endColumn": 62,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "_reject"
+            },
+            "fix": {
+              "range": [
+                3014,
+                3023
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable '_reject'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'err' is defined but never used.",
+        "line": 113,
+        "column": 14,
+        "messageId": "unusedVar",
+        "endLine": 113,
+        "endColumn": 17
+      },
+      {
+        "ruleId": "preserve-caught-error",
+        "severity": 2,
+        "message": "There is no `cause` attached to the symptom error being thrown.",
+        "line": 114,
+        "column": 7,
+        "messageId": "missingCause",
+        "endLine": 114,
+        "endColumn": 89,
+        "suggestions": [
+          {
+            "messageId": "includeCause",
+            "fix": {
+              "range": [
+                3712,
+                3712
+              ],
+              "text": ", { cause: err }"
+            },
+            "desc": "Include the original caught error as the `cause` of the symptom error."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'captainId' is defined but never used.",
+        "line": 151,
+        "column": 59,
+        "messageId": "unusedVar",
+        "endLine": 151,
+        "endColumn": 68,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "captainId"
+            },
+            "fix": {
+              "range": [
+                4989,
+                5000
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'captainId'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'orderId' is defined but never used.",
+        "line": 151,
+        "column": 70,
+        "messageId": "unusedVar",
+        "endLine": 151,
+        "endColumn": 77,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "orderId"
+            },
+            "fix": {
+              "range": [
+                5000,
+                5009
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'orderId'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\App.jsx",
+    "errors": 4,
+    "messages": [
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  33 |\n  34 |   useEffect(() => {\n> 35 |     loadOrders();\n     |     ^^^^^^^^^^ Avoid calling setState() directly within an effect\n  36 |\n  37 |     // Re-tick every 60 s so elapsed timers update visually\n  38 |     const tick = setInterval(() => setTick((n) => n + 1), 60_000);",
+        "line": 35,
+        "column": 5,
+        "endLine": 35,
+        "endColumn": 15
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  67 |   const elapsedMin = (createdAt) => {\n  68 |     if (!createdAt) return 0;\n> 69 |     return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60_000);\n     |                        ^^^^^^^^^^ Cannot call impure function\n  70 |   };\n  71 |\n  72 |   const formatElapsed = (min) => {",
+        "line": 69,
+        "column": 24,
+        "endLine": 69,
+        "endColumn": 34
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'CaptainLoginWrapper' is defined but never used.",
+        "line": 253,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 253,
+        "endColumn": 29,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "CaptainLoginWrapper"
+            },
+            "fix": {
+              "range": [
+                10265,
+                10675
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'CaptainLoginWrapper'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'CaptainAppWrapper' is defined but never used.",
+        "line": 262,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 262,
+        "endColumn": 27,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "CaptainAppWrapper"
+            },
+            "fix": {
+              "range": [
+                10679,
+                10982
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'CaptainAppWrapper'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\admin\\AIDishCreationModal.jsx",
+    "errors": 4,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'useMemo' is defined but never used.",
+        "line": 1,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 17,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "useMemo"
+            },
+            "fix": {
+              "range": [
+                9,
+                17
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'useMemo'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'onSave' is defined but never used.",
+        "line": 7,
+        "column": 62,
+        "messageId": "unusedVar",
+        "endLine": 7,
+        "endColumn": 68,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "onSave"
+            },
+            "fix": {
+              "range": [
+                464,
+                472
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'onSave'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'error' is assigned a value but never used.",
+        "line": 14,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 14,
+        "endColumn": 15,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "error"
+            },
+            "fix": {
+              "range": [
+                787,
+                792
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'error'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  23 |   useEffect(() => {\n  24 |     if (!open) {\n> 25 |       setStep(1);\n     |       ^^^^^^^ Avoid calling setState() directly within an effect\n  26 |       setImage(null);\n  27 |       setDishName(\"\");\n  28 |       setResult(null);",
+        "line": 25,
+        "column": 7,
+        "endLine": 25,
+        "endColumn": 14
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\captain\\CaptainPerformanceDashboard.jsx",
+    "errors": 4,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  41 |\n  42 |   const { captains, trends } = useMemo(() => {\n> 43 |     const now = Date.now();\n     |                 ^^^^^^^^^^ Cannot call impure function\n  44 |     let filterMs = 0;\n  45 |     if (range === 'Today') filterMs = 24 * 60 * 60 * 1000;\n  46 |     else if (range === 'Weekly') filterMs = 7 * 24 * 60 * 60 * 1000;",
+        "line": 43,
+        "column": 17,
+        "endLine": 43,
+        "endColumn": 27
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  90 |       });\n  91 |       filteredTxns.forEach(t => {\n> 92 |         const date = new Date(t.timestamp || Date.now());\n     |                                              ^^^^^^^^^^ Cannot call impure function\n  93 |         const h = date.getHours();\n  94 |         let mappedH = hours.find(hour => h <= hour);\n  95 |         if (!mappedH) mappedH = 22;",
+        "line": 92,
+        "column": 46,
+        "endLine": 92,
+        "endColumn": 56
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Stat' is defined but never used.",
+        "line": 216,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 216,
+        "endColumn": 14,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Stat"
+            },
+            "fix": {
+              "range": [
+                10041,
+                10257
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Stat'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\utils\\billing.js",
+    "errors": 3,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'cgst' is assigned a value but never used.",
+        "line": 28,
+        "column": 9,
+        "messageId": "unusedVar",
+        "endLine": 28,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "cgst"
+            },
+            "fix": {
+              "range": [
+                916,
+                931
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'cgst'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'sgst' is assigned a value but never used.",
+        "line": 29,
+        "column": 9,
+        "messageId": "unusedVar",
+        "endLine": 29,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "sgst"
+            },
+            "fix": {
+              "range": [
+                935,
+                950
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'sgst'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'taxes' is assigned a value but never used.",
+        "line": 30,
+        "column": 9,
+        "messageId": "unusedVar",
+        "endLine": 30,
+        "endColumn": 14,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "taxes"
+            },
+            "fix": {
+              "range": [
+                954,
+                970
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'taxes'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\admin\\AdminDashboard.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Search' is defined but never used.",
+        "line": 16,
+        "column": 3,
+        "messageId": "unusedVar",
+        "endLine": 16,
+        "endColumn": 9,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Search"
+            },
+            "fix": {
+              "range": [
+                288,
+                300
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Search'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\admin\\TodaySpecials.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  190 |       <div className=\"grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5\">\n  191 |         {specials.map(special => {\n> 192 |           const isExpired = Date.now() > (special.expiresAt || 0);\n      |                             ^^^^^^^^^^ Cannot call impure function\n  193 |           const isActive = special.active && !isExpired;\n  194 |           return (\n  195 |             <div key={special.id} className={`bg-white rounded-2xl border ${isActive ? 'border-amber-200 shadow-lg shadow-amber-50' : 'border-gray-200 opacity-70 grayscale'} overflow-hidden flex flex-col group`}>",
+        "line": 192,
+        "column": 29,
+        "endLine": 192,
+        "endColumn": 39
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\context\\OutletContext.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-refresh/only-export-components",
+        "severity": 2,
+        "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+        "line": 22,
+        "column": 17,
+        "messageId": "namedExport",
+        "endLine": 22,
+        "endColumn": 26
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\menuSyncService.js",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'_' is defined but never used.",
+        "line": 17,
+        "column": 12,
+        "messageId": "unusedVar",
+        "endLine": 17,
+        "endColumn": 13
+      },
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 17,
+        "column": 15,
+        "messageId": "unexpected",
+        "endLine": 17,
+        "endColumn": 17,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                458,
+                458
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\LiveTimer.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "severity": 2,
+        "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n  13 |\n  14 |     // Initial calculation\n> 15 |     setElapsed(Date.now() - startTime);\n     |     ^^^^^^^^^^ Avoid calling setState() directly within an effect\n  16 |\n  17 |     return () => clearInterval(interval);\n  18 |   }, [startTime, status]);",
+        "line": 15,
+        "column": 5,
+        "endLine": 15,
+        "endColumn": 15
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\PortalSelection.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                18
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'LayoutDashboard' is defined but never used.",
+        "line": 2,
+        "column": 10,
+        "messageId": "unusedVar",
+        "endLine": 2,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "LayoutDashboard"
+            },
+            "fix": {
+              "range": [
+                37,
+                53
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'LayoutDashboard'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\user-menu\\BarMenu.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'Sparkles' is defined but never used.",
+        "line": 2,
+        "column": 92,
+        "messageId": "unusedVar",
+        "endLine": 2,
+        "endColumn": 100,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "Sparkles"
+            },
+            "fix": {
+              "range": [
+                159,
+                169
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'Sparkles'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\user-menu\\CustomerMenu.jsx",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  90 |\n  91 |   const todaySpecials = useMemo(() => {\n> 92 |     let specials = menuItems.filter(i => i.isSpecial && i.active && (!i.expiresAt || Date.now() < i.expiresAt));\n     |                                                                                      ^^^^^^^^^^ Cannot call impure function\n  93 |     if (dietFilter === 'Veg') specials = specials.filter(i => i.t === 'veg');\n  94 |     if (dietFilter === 'Non-Veg') specials = specials.filter(i => i.t === 'non');\n  95 |     return specials;",
+        "line": 92,
+        "column": 86,
+        "endLine": 92,
+        "endColumn": 96
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\utils\\qzPrinter.js",
+    "errors": 2,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'_reject' is defined but never used.",
+        "line": 37,
+        "column": 48,
+        "messageId": "unusedVar",
+        "endLine": 37,
+        "endColumn": 55,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "_reject"
+            },
+            "fix": {
+              "range": [
+                1386,
+                1395
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable '_reject'."
+          }
+        ]
+      },
+      {
+        "ruleId": "preserve-caught-error",
+        "severity": 2,
+        "message": "There is no `cause` attached to the symptom error being thrown.",
+        "line": 80,
+        "column": 5,
+        "messageId": "missingCause",
+        "endLine": 80,
+        "endColumn": 26,
+        "suggestions": [
+          {
+            "messageId": "includeCause",
+            "fix": {
+              "range": [
+                2590,
+                2590
+              ],
+              "text": ", { cause: err }"
+            },
+            "desc": "Include the original caught error as the `cause` of the symptom error."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\admin\\UnifiedOrdersDashboard.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n  46 |\n  47 |   const visible = useMemo(() => {\n> 48 |     const now = Date.now();\n     |                 ^^^^^^^^^^ Cannot call impure function\n  49 |     return orders.filter((order) => {\n  50 |       if (filter.platform !== \"All\" && order.platform !== filter.platform) return false;\n  51 |       if (filter.branch !== \"All\" && order.branch !== filter.branch) return false;",
+        "line": 48,
+        "column": 17,
+        "endLine": 48,
+        "endColumn": 27
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\context\\MenuContext.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "react-refresh/only-export-components",
+        "severity": 2,
+        "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+        "line": 11,
+        "column": 17,
+        "messageId": "namedExport",
+        "endLine": 11,
+        "endColumn": 24
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\hooks\\useMenuSync.js",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "react-hooks/purity",
+        "severity": 2,
+        "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n   8 |\n   9 |   const menuItems = useMemo(() => {\n> 10 |     const now = Date.now();\n     |                 ^^^^^^^^^^ Cannot call impure function\n  11 |     // Filter out inactive or expired specials for standard menus (Cashier / Captain / Admin POS)\n  12 |     return globalMenu.filter((item) => {\n  13 |       if (!item.isSpecial) return true;",
+        "line": 10,
+        "column": 17,
+        "endLine": 10,
+        "endColumn": 27
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\print-station\\PrintStation.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "react-hooks/immutability",
+        "severity": 2,
+        "message": "Error: Cannot access variable before it is declared\n\n`initQZ` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.\n\n  202 |       pushLog(`QZ Tray error: ${err.message}`, false);\n  203 |       // Retry every 10 s\n> 204 |       retryTimer.current = setTimeout(initQZ, 10_000);\n      |                                       ^^^^^^ `initQZ` accessed before it is declared\n  205 |     }\n  206 |   }, [pushLog]);\n  207 |\n\n  192 |\n  193 |   // ΓöÇΓöÇ QZ Tray init + retry ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ\n> 194 |   const initQZ = useCallback(async () => {\n      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> 195 |     setQzStatus('connecting');\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> 196 |     try {\n      ΓÇª\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> 205 |     }\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> 206 |   }, [pushLog]);\n      | ^^^^^^^^^^^^^^^^^ `initQZ` is declared here\n  207 |\n  208 |   useEffect(() => {\n  209 |     initQZ();",
+        "line": 204,
+        "column": 39,
+        "endLine": 204,
+        "endColumn": 45
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\barMenuService.js",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 41,
+        "column": 11,
+        "messageId": "unexpected",
+        "endLine": 41,
+        "endColumn": 14,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                1294,
+                1295
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\barTableApi.js",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-empty",
+        "severity": 2,
+        "message": "Empty block statement.",
+        "line": 9,
+        "column": 80,
+        "messageId": "unexpected",
+        "endLine": 9,
+        "endColumn": 82,
+        "suggestions": [
+          {
+            "messageId": "suggestComment",
+            "data": {
+              "type": "block"
+            },
+            "fix": {
+              "range": [
+                285,
+                285
+              ],
+              "text": " /* empty */ "
+            },
+            "desc": "Add comment inside empty block statement."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\creativeEngine.js",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'index' is defined but never used.",
+        "line": 173,
+        "column": 47,
+        "messageId": "unusedVar",
+        "endLine": 173,
+        "endColumn": 52,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "index"
+            },
+            "fix": {
+              "range": [
+                5026,
+                5033
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'index'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\services\\pricingEngine.js",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'CATEGORIES' is assigned a value but never used.",
+        "line": 5,
+        "column": 7,
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 17,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "CATEGORIES"
+            },
+            "fix": {
+              "range": [
+                281,
+                383
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'CATEGORIES'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\BarMenuToggle.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                18
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\LoginScreen.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\OutletToggle.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                18
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\VariantPicker.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                18
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\user-menu\\UserMenuApp.jsx",
+    "errors": 1,
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'React' is defined but never used.",
+        "line": 1,
+        "column": 8,
+        "messageId": "unusedVar",
+        "endLine": 1,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": {
+              "varName": "React"
+            },
+            "fix": {
+              "range": [
+                7,
+                13
+              ],
+              "text": ""
+            },
+            "desc": "Remove unused variable 'React'."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "C:\\Users\\akhil\\Desktop\\softshape ai\\Softshapeai\\src\\shared\\components\\CreativeCanvas.jsx",
+    "errors": 0,
+    "messages": [
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useEffect has an unnecessary dependency: 'renderToCanvas'. Either exclude it or remove the dependency array. Outer scope values like 'renderToCanvas' aren't valid dependencies because mutating them doesn't re-render the component.",
+        "line": 35,
+        "column": 6,
+        "endLine": 35,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "desc": "Update the dependencies array to be: [config, uploadUrl]",
+            "fix": {
+              "range": [
+                1002,
+                1037
+              ],
+              "text": "[config, uploadUrl]"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
