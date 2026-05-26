@@ -268,6 +268,11 @@ export default function CaptainApp({ onLogout }) {
   const [showMoveModal,   setShowMoveModal]   = useState(false);
   const [moveLoading,     setMoveLoading]     = useState(false);
 
+  // Table filter state
+  const [tableFilter, setTableFilter] = useState(() => {
+    return localStorage.getItem('softshape_captain_table_filter') || 'my';
+  });
+
   // ── Derived / memoised values (safe now that all state is declared above) ──
   const totalActiveTablesCount = useMemo(() => {
     if (!currentCaptain?.id) return 0;
@@ -327,8 +332,39 @@ export default function CaptainApp({ onLogout }) {
 
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
+  // Helper functions for captain colors
+  const getCaptainBorderColor = (captainId) => {
+    const captain = CAPTAINS.find(c => c.id === captainId);
+    if (!captain) return '';
+    const match = captain.color.match(/text-\[([^\]]+)\]/);
+    return match ? `border-l-[${match[1]}]` : '';
+  };
+
+  const getCaptain = (captainId) => {
+    return CAPTAINS.find(c => c.id === captainId);
+  };
+
+  // Filtered tables based on filter selection
+  const filteredTables = useMemo(() => {
+    if (tableFilter === 'all') {
+      return activeTables;
+    }
+    // "My Tables" - show tables assigned to me OR free tables
+    return activeTables.filter(t =>
+      t.captainId === currentCaptain?.id || t.status === TABLE_STATUS.FREE
+    );
+  }, [activeTables, tableFilter, currentCaptain?.id]);
+
   const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
   const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
+
+  const myTablesCount = useMemo(() => {
+    return activeTables.filter(t =>
+      t.captainId === currentCaptain?.id || t.status === TABLE_STATUS.FREE
+    ).length;
+  }, [activeTables, currentCaptain?.id]);
+
+  const allTablesCount = useMemo(() => activeTables.length, [activeTables]);
 
   const filteredMenu = useMemo(
     () =>
@@ -419,6 +455,11 @@ export default function CaptainApp({ onLogout }) {
       return () => clearTimeout(timer);
     }
   }, [tablesSyncing]);
+
+  // Persist table filter preference
+  useEffect(() => {
+    localStorage.setItem('softshape_captain_table_filter', tableFilter);
+  }, [tableFilter]);
 
   // SHARED STATE PERSISTENCE
 
@@ -1153,7 +1194,7 @@ export default function CaptainApp({ onLogout }) {
         {view === 'tables' ? (
           <div className="flex-grow overflow-y-auto p-4 sm:p-6 scroll-smooth bg-gray-50/50">
             <div className="max-w-6xl mx-auto">
-              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-8">
+              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-6">
                 <div>
                   <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900">Floor Overview</h2>
                   <div className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
@@ -1173,44 +1214,82 @@ export default function CaptainApp({ onLogout }) {
                 </div>
               </div>
 
+              {/* Table Filter Toggle */}
+              <div className="flex gap-2 mb-6">
+                <button
+                  onClick={() => setTableFilter('my')}
+                  className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-[0.2em] transition-all ${
+                    tableFilter === 'my'
+                      ? 'bg-[#E53935] text-white border-[#E53935] shadow-lg'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  My Tables ({myTablesCount})
+                </button>
+                <button
+                  onClick={() => setTableFilter('all')}
+                  className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-[0.2em] transition-all ${
+                    tableFilter === 'all'
+                      ? 'bg-[#E53935] text-white border-[#E53935] shadow-lg'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  All Tables ({allTablesCount})
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {activeTables.map(table => (
-                  <button
-                    key={table.id}
-                    onClick={() => openTableSession(table)}
-                    className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
-                      table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
-                        table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
-                          'bg-red-50 border-red-100 text-red-600'
-                      }`}
-                  >
-                    <div className="w-full flex justify-between items-start">
-                      <div className="flex flex-col items-start gap-0.5">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{outlet === 'bar' ? 'B' : 'T'}{table.number ?? table.id}</span>
-                        {table.captainName && (
-                          <span className="text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none">
-                            {table.captainName.split(' ')[0]}
-                          </span>
+                {filteredTables.map(table => {
+                  const isMyTable = table.captainId === currentCaptain?.id;
+                  const assignedCaptain = table.captainId ? getCaptain(table.captainId) : null;
+                  const borderColor = isMyTable ? getCaptainBorderColor(table.captainId) : '';
+
+                  return (
+                    <button
+                      key={table.id}
+                      onClick={() => openTableSession(table)}
+                      className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
+                        isMyTable ? `border-l-4 ${borderColor}` : ''
+                      } ${table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
+                        table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
+                          table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
+                            'bg-red-50 border-red-100 text-red-600'
+                        }`}
+                    >
+                      <div className="w-full flex justify-between items-start">
+                        <div className="flex flex-col items-start gap-0.5">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{outlet === 'bar' ? 'B' : 'T'}{table.number ?? table.id}</span>
+                          {table.captainName && (
+                            <span className="text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none">
+                              {table.captainName.split(' ')[0]}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Captain Initials Badge */}
+                        {isMyTable && assignedCaptain && (
+                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg ${assignedCaptain.color} flex items-center justify-center text-[8px] font-black shadow-sm`}>
+                            {assignedCaptain.initials}
+                          </div>
                         )}
                       </div>
 
-                    </div>
+                      <span className="text-2xl sm:text-3xl font-black leading-none">{table.number ?? table.id}</span>
 
-                    <span className="text-2xl sm:text-3xl font-black leading-none">{table.number ?? table.id}</span>
-
-                    <div className="w-full flex flex-col items-center gap-1.5">
-                      <div className={`w-full py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[7px] sm:text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1 sm:gap-1.5 ${table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
-                        table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
-                          table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                        }`}>
-                        {table.status}
+                      <div className="w-full flex flex-col items-center gap-1.5">
+                        <div className={`w-full py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[7px] sm:text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1 sm:gap-1.5 ${table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
+                          table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
+                            table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                          }`}>
+                          {table.status}
+                        </div>
+                        {table.status !== TABLE_STATUS.FREE && (
+                          <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
+                        )}
                       </div>
-                      {table.status !== TABLE_STATUS.FREE && (
-                        <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
