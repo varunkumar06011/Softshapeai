@@ -271,7 +271,7 @@ export default function CaptainApp({ onLogout }) {
     return activeList.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
   }, [tables, barTables, currentCaptain?.id, outlet]);
 
-  const hasReachedActiveLimit = totalActiveTablesCount >= 4;
+  const hasReachedActiveLimit = false;
 
   const pendingCalls = useMemo(() => {
     return activeCalls.filter(c => c.status === 'pending' && (c.source || 'restaurant') === outlet);
@@ -498,14 +498,6 @@ export default function CaptainApp({ onLogout }) {
     if (table.status !== TABLE_STATUS.FREE && table.captainId && currentCaptain && table.captainId !== currentCaptain.id) {
       addNotification(`Table already in progress by ${CAPTAINS.find(c => c.id === table.captainId)?.name || 'another captain'}`, 'error');
       return;
-    }
-
-    // Max 4 tables limit check when trying to open a FREE table (combined count)
-    if ((table.status === TABLE_STATUS.FREE || !table.captainId) && currentCaptain) {
-      if (hasReachedActiveLimit) {
-        addNotification("You can only manage up to 4 tables at a time. Please close a table first.", "error");
-        return;
-      }
     }
     setActiveTableId(table.id);
     setCurrentSessionItems([]);
@@ -918,12 +910,6 @@ export default function CaptainApp({ onLogout }) {
           currentCaptain={currentCaptain}
           onAccept={(call) => {
             if (currentCaptain) {
-              // 1. Limit check: max 4 tables per captain (combined)
-              if (hasReachedActiveLimit) {
-                addNotification("You can only manage up to 4 tables at a time. Let others handle this.", "error");
-                return;
-              }
-
               // 2. Collision check: Did someone else just lock this table in the live floor map?
               const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
               const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber));
@@ -1162,10 +1148,10 @@ export default function CaptainApp({ onLogout }) {
               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-8">
                 <div>
                   <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900">Floor Overview</h2>
-                  <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
+                  <div className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full" />
                     Active Operations • Floor Rank #1
-                  </p>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <div className="px-4 py-2 bg-white rounded-xl border border-gray-200 flex items-center gap-2">

@@ -148,3 +148,12 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
   });
   return parseResponse(res);
 }
+
+export async function editBill(orderId, { removedItemIds = [], addedItems = [], editedBy = 'Cashier' }) {
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/bill-edit`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ removedItemIds, addedItems, editedBy }),
+  });
+  return parseResponse(res);
+}
