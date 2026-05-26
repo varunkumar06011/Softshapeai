@@ -425,7 +425,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeTableOrders]);
 
   const todaysSales = useMemo(() => {
-    return pastTransactions.reduce((sum, txn) => sum + (txn.amount || 0), 0);
+    return pastTransactions.reduce((sum, txn) => sum + Number(txn.amount || 0), 0);
   }, [pastTransactions]);
 
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
@@ -441,7 +441,7 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTotal = activeOrderCalc.total;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
-  const fallbackTotal = selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0;
+  const fallbackTotal = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
 
   const printBill = async (table, total, subtotal, taxes, method) => {
     const orderId = table?.activeOrder?.id || table?.orderId || null;
@@ -1011,7 +1011,7 @@ const CashierDashboard = ({ onLogout }) => {
                         Table {alert.tableNumber} — Billing Requested
                       </p>
                       <p className="text-xs text-amber-700">
-                        ₹{alert.totalAmount.toFixed(2)} • {alert.requestedAt}
+                        ₹{Number(alert.totalAmount || 0).toFixed(2)} • {alert.requestedAt}
                       </p>
                     </div>
                   </div>
