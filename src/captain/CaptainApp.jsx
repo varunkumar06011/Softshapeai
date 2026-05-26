@@ -248,6 +248,11 @@ export default function CaptainApp({ onLogout }) {
   const [cancelSelected,  setCancelSelected]  = useState({});  // { [orderItemId]: { item, kotId } }
   const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
 
+  // KOT dispatch error state — null when no error, or { message, retryItems } when DB write fails.
+  // retryItems is the pre-cleared currentSessionItems snapshot so the captain can retry
+  // without re-selecting anything.
+  const [kotError, setKotError] = useState(null);
+
   // Move-table swap state
   const [showMoveModal,   setShowMoveModal]   = useState(false);
   const [moveLoading,     setMoveLoading]     = useState(false);
@@ -660,8 +665,9 @@ export default function CaptainApp({ onLogout }) {
       menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
     }));
 
-    // Snapshot items before clearing — needed for print below
+    // Snapshot items before clearing — needed for print and retry
     const itemsForPrint = [...currentSessionItems];
+    const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
 
     // 1. Optimistic UI update — instant, no waiting
     setActiveTables(prev => prev.map(t => {
@@ -678,7 +684,8 @@ export default function CaptainApp({ onLogout }) {
       return t;
     }));
     setCurrentSessionItems([]);
-    addNotification(`KOT #${newKOT.id} Sent`, 'success');
+    // Clear any previous KOT error so the banner doesn't linger from a prior failure
+    setKotError(null);
 
     // Fire-and-forget — print failure must not block order save
     printKOTQZ({
@@ -691,8 +698,9 @@ export default function CaptainApp({ onLogout }) {
       addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
     });
 
-    // 3. Persist to DB — AWAITED so we know it succeeded.
-    //    Use the ref to track the real DB order ID across KOTs.
+    // 2. Persist to DB — AWAITED so we know it succeeded.
+    //    Only show the "KOT Sent ✓" success notification after the DB confirms.
+    //    If it fails, show the error banner (with Retry) instead.
     try {
       if (activeOrderIdRef.current) {
         // Subsequent KOT on same table — append items to existing order
@@ -750,9 +758,17 @@ export default function CaptainApp({ onLogout }) {
           };
         }));
       }
+      // ✅ DB confirmed — now show success
+      addNotification(`KOT #${newKOT.id} Sent ✓`, 'success');
     } catch (err) {
       console.error('[KOT] DB write failed:', err.message);
-      addNotification('Order save failed — retry or check connection', 'error');
+      // ❌ DB failed — show persistent error banner with Retry instead of success toast.
+      // Restore the session items so the captain can retry without re-selecting.
+      setCurrentSessionItems(retrySnapshot);
+      setKotError({
+        message: err.message || 'Network error — kitchen did not receive this order.',
+        retryItems: retrySnapshot,
+      });
     }
   };
 
@@ -1870,6 +1886,44 @@ export default function CaptainApp({ onLogout }) {
           >
             Undo
           </button>
+        </div>
+      )}
+
+      {/* KOT FAILURE BANNER — shown when DB write fails; stays visible until dismissed or retried */}
+      {kotError && (
+        <div className="fixed top-0 left-0 right-0 z-[200] flex items-center justify-between gap-4 bg-[#E53935] text-white px-5 py-4 shadow-2xl animate-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <AlertCircle size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[12px] font-black uppercase tracking-wider leading-none">KOT Failed — Kitchen Did Not Receive This Order</p>
+              <p className="text-[10px] font-bold text-white/75 mt-0.5 truncate">{kotError.message}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                // Items already restored into currentSessionItems in the catch block;
+                // just dismiss the banner and let the captain press Send KOT again.
+                setKotError(null);
+              }}
+              className="px-4 py-2 text-[11px] font-black uppercase tracking-wider border border-white/40 rounded-xl hover:bg-white/10 active:scale-95 transition-all"
+            >
+              Dismiss
+            </button>
+            <button
+              onClick={() => {
+                setKotError(null);
+                // currentSessionItems was already restored in the catch block;
+                // calling sendIncrementalKOT now re-submits the same items.
+                sendIncrementalKOT();
+              }}
+              className="px-5 py-2 text-[11px] font-black uppercase tracking-wider bg-white text-[#E53935] rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       )}
 
