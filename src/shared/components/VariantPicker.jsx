@@ -1,9 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 export default function VariantPicker({ item, onSelect, onClose }) {
   const [isCustomMode, setIsCustomMode] = useState(false);
   const [customMl, setCustomMl] = useState('');
+
+  // Reset custom mode state when item changes
+  useEffect(() => {
+    setIsCustomMode(false);
+    setCustomMl('');
+  }, [item]);
 
   // Calculate price per ml from 30ml variant
   const pricePerMl = useMemo(() => {
