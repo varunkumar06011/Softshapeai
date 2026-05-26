@@ -133,7 +133,7 @@ export async function fetchTransactions(restaurantId, limit = 100, date = null, 
 
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
-    method: 'POST',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderItemId, cancelledBy, tableNumber }),
   });
