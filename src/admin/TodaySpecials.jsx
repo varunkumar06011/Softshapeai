@@ -3,24 +3,16 @@ import {
   Plus, Edit2, Trash2, Save, X, Star, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
-
-const CAPTAINS = [
-  { id: 'C1', name: 'Ajay Kumar', initials: 'AK', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
-  { id: 'C2', name: 'Raja Behera', initials: 'RB', color: 'bg-[#EEF2FF] text-[#4338CA]' },
-  { id: 'C3', name: 'Sagar', initials: 'S', color: 'bg-[#ECFDF5] text-[#047857]' },
-  { id: 'C4', name: 'Durga Prasad', initials: 'DP', color: 'bg-[#FFF1F2] text-[#BE123C]' },
-  { id: 'C5', name: 'Subbaiah', initials: 'SU', color: 'bg-[#FEF3C7] text-[#D97706]' },
-  { id: 'C6', name: 'Happy', initials: 'H', color: 'bg-[#F3E8FF] text-[#7E22CE]' },
-];
+import { RESTAURANT_ID } from '../services/tableApi';
+import { CAPTAINS } from '../config/captains';
+import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
 
 export default function TodaySpecials() {
   const { allMenuItems, setGlobalMenu } = useMenu();
   const specials = allMenuItems ? allMenuItems.filter(i => i.isSpecial) : [];
 
-  const [targets, setTargets] = useState(() => {
-    const saved = localStorage.getItem('softshape_captain_targets');
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [targets, setTargets] = useState({});
+  const [targetsLoading, setTargetsLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
@@ -50,9 +42,10 @@ export default function TodaySpecials() {
 
 
   useEffect(() => {
-    localStorage.setItem('softshape_captain_targets', JSON.stringify(targets));
-    // Could dispatch event here if needed
-  }, [targets]);
+    fetchAllCaptainTargets()
+      .then(data => { setTargets(data); setTargetsLoading(false); })
+      .catch(() => setTargetsLoading(false));
+  }, []);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -143,20 +136,24 @@ export default function TodaySpecials() {
     }, 1500);
   };
 
-  const handleAssignTarget = () => {
+  const handleAssignTarget = async () => {
     if (!selectedCaptain) return;
-
-    setTargets(prev => ({
-      ...prev,
-      [selectedCaptain.id]: {
-        revenueTarget,
-        discountLimit,
-        timestamp: new Date().toISOString()
-      }
-    }));
-
-    setIsTargetModalOpen(false);
-    setSelectedCaptain(null);
+    try {
+      const saved = await saveCaptainTarget(selectedCaptain.id, revenueTarget, discountLimit);
+      setTargets(prev => ({
+        ...prev,
+        [selectedCaptain.id]: {
+          revenueTarget: saved.revenueTarget,
+          discountLimit: saved.discountLimit,
+          assignedAt: saved.assignedAt,
+        },
+      }));
+      setIsTargetModalOpen(false);
+      setSelectedCaptain(null);
+    } catch (err) {
+      console.error('[TodaySpecials] Failed to assign target:', err);
+      alert('Failed to save assignment. Please try again.');
+    }
   };
 
   return (

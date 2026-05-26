@@ -1,56 +1,39 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Users, Star, TrendingUp } from "lucide-react";
-
-const CAPTAINS_MASTER = [
-  { id: 'C1', name: 'Ajay Kumar', rating: 4.9, speed: "12m", shift: "Morning", stars: 5 },
-  { id: 'C2', name: 'Raja Behera', rating: 4.7, speed: "15m", shift: "Morning", stars: 4 },
-  { id: 'C3', name: 'Sagar', rating: 4.8, speed: "14m", shift: "Evening", stars: 4 },
-  { id: 'C4', name: 'Durga Prasad', rating: 4.5, speed: "18m", shift: "Evening", stars: 3 },
-  { id: 'C5', name: 'Subbaiah', rating: 4.6, speed: "16m", shift: "Morning", stars: 4 },
-  { id: 'C6', name: 'Happy', rating: 4.9, speed: "11m", shift: "Evening", stars: 5 },
-];
+import { Users, TrendingUp } from "lucide-react";
+import { CAPTAINS } from "../config/captains";
+import { fetchTransactions } from "../services/orderApi";
+import { RESTAURANT_ID } from "../services/tableApi";
+import { BAR_ID } from "../services/barApiConfig";
 
 export default function CaptainPerformanceDashboard() {
   const [range, setRange] = useState("Today");
-  const [transactions, setTransactions] = useState(() => {
-    const saved = localStorage.getItem('softshape_transactions');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [transactions, setTransactions] = useState([]);
 
   useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_transactions' && e.newValue) {
-        setTransactions(JSON.parse(e.newValue));
-      }
-    };
-
-    const handleCustomEvent = () => {
-      const saved = localStorage.getItem('softshape_transactions');
-      if (saved) setTransactions(JSON.parse(saved));
-    };
-
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener('softshape_transactions_updated', handleCustomEvent);
-
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('softshape_transactions_updated', handleCustomEvent);
-    };
-  }, []);
+    const date = range === "Today" ? new Date().toISOString().slice(0, 10) : undefined;
+    const limit = 1000;
+    Promise.allSettled([
+      fetchTransactions(RESTAURANT_ID, limit, date),
+      fetchTransactions(BAR_ID, limit, date),
+    ]).then(results => {
+      const all = results.flatMap(r => (r.status === "fulfilled" && Array.isArray(r.value) ? r.value : []));
+      setTransactions(all);
+    });
+  }, [range]);
 
   const { captains, trends } = useMemo(() => {
     const now = Date.now();
     let filterMs = 0;
-    if (range === 'Today') filterMs = 24 * 60 * 60 * 1000;
-    else if (range === 'Weekly') filterMs = 7 * 24 * 60 * 60 * 1000;
-    else if (range === 'Monthly') filterMs = 30 * 24 * 60 * 60 * 1000;
+    if (range === "Today") filterMs = 24 * 60 * 60 * 1000;
+    else if (range === "Weekly") filterMs = 7 * 24 * 60 * 60 * 1000;
+    else if (range === "Monthly") filterMs = 30 * 24 * 60 * 60 * 1000;
 
-    const filteredTxns = transactions.filter(t => (now - (t.timestamp || now)) <= filterMs);
+    const filteredTxns = transactions.filter(t => (now - (new Date(t.createdAt || t.timestamp || now).getTime())) <= filterMs);
 
     const captainMap = {};
-    CAPTAINS_MASTER.forEach(c => {
-      captainMap[c.id] = { ...c, sales: 0, orders: 0, itemsCount: {} };
+    CAPTAINS.forEach(c => {
+      captainMap[c.id] = { id: c.id, name: c.name, initials: c.initials, color: c.color, sales: 0, orders: 0, itemsCount: {} };
     });
 
     filteredTxns.forEach(t => {
@@ -82,14 +65,14 @@ export default function CaptainPerformanceDashboard() {
     }).sort((a, b) => b.sales - a.sales);
 
     let trendBuckets = {};
-    if (range === 'Today') {
+    if (range === "Today") {
       const hours = [12, 14, 16, 18, 20, 22];
       hours.forEach(h => {
         const label = h > 12 ? `${h - 12} PM` : `${h} PM`;
         trendBuckets[label] = 0;
       });
       filteredTxns.forEach(t => {
-        const date = new Date(t.timestamp || Date.now());
+        const date = new Date(t.createdAt || t.timestamp || Date.now());
         const h = date.getHours();
         let mappedH = hours.find(hour => h <= hour);
         if (!mappedH) mappedH = 22;
@@ -100,14 +83,14 @@ export default function CaptainPerformanceDashboard() {
       });
     } else {
       filteredTxns.forEach(t => {
-        const d = t.date || new Date(t.timestamp).toLocaleDateString('en-GB');
+        const d = new Date(t.createdAt || t.timestamp || Date.now()).toLocaleDateString("en-GB");
         trendBuckets[d] = (trendBuckets[d] || 0) + Number(t.amount || 0);
       });
     }
 
     const trendsArray = Object.entries(trendBuckets).map(([hourOrDay, sales]) => ({
       hour: hourOrDay,
-      sales
+      sales,
     }));
 
     return { captains: processedCaptains, trends: trendsArray };
@@ -122,15 +105,15 @@ export default function CaptainPerformanceDashboard() {
           </div>
           <div className="min-w-0">
             <h2 className="font-black text-gray-900 tracking-tight truncate">Captain Intelligence</h2>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">Performance & Service Quality</p>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">Performance &amp; Service Quality</p>
           </div>
         </div>
         <div className="flex bg-[#F4F4F5] p-1 rounded-xl w-full sm:w-auto overflow-x-auto scrollbar-hide shrink-0">
-          {['Today', 'Weekly', 'Monthly'].map(r => (
+          {["Today", "Weekly", "Monthly"].map(r => (
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? 'bg-white text-[#B71C1C] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? "bg-white text-[#B71C1C] shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
             >
               {r}
             </button>
@@ -140,20 +123,19 @@ export default function CaptainPerformanceDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {captains.slice(0, 4).map((c, i) => (
-          <div key={i} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
-            <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
-              <Star size={48} className="text-[#B71C1C]" />
-            </div>
+          <div key={c.id} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
             <div className="flex items-center gap-3 mb-4">
-              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">{c.name[0]}</div>
+              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">
+                {c.initials}
+              </div>
               <div>
                 <p className="font-black text-gray-900">{c.name}</p>
-                <p className="text-[10px] font-bold text-[#F57F17]">{"★".repeat(c.stars)} {c.rating}</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase">Captain</p>
               </div>
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-gray-400 uppercase">Sales Today</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Sales</span>
                 <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
               </div>
               <div className="flex justify-between items-center">
@@ -178,9 +160,9 @@ export default function CaptainPerformanceDashboard() {
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="99%" height="100%">
               <BarChart data={trends}>
-                <XAxis dataKey="hour" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} />
+                <XAxis dataKey="hour" tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 20px 40px rgba(0,0,0,0.1)" }} />
                 <Bar dataKey="sales" fill="#B71C1C" radius={[4, 4, 0, 0]} barSize={40} />
               </BarChart>
             </ResponsiveContainer>
@@ -191,18 +173,17 @@ export default function CaptainPerformanceDashboard() {
           <h3 className="font-black text-gray-900 mb-6">Captain Leaderboard</h3>
           <div className="space-y-4">
             {captains.map((c, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
+              <div key={c.id} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{i + 1}</span>
-                  <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">{c.name.split(' ').map(n => n[0]).join('')}</div>
-                  <div>
-                    <p className="text-xs font-black text-gray-900">{c.name}</p>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase">{c.shift} Shift</p>
+                  <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">
+                    {c.initials}
                   </div>
+                  <p className="text-xs font-black text-gray-900">{c.name}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs font-black text-[#B71C1C]">₹{c.sales.toLocaleString()}</p>
-                  <p className="text-[9px] font-bold text-green-600">{c.speed} Speed</p>
+                  <p className="text-[9px] font-bold text-gray-400">{c.orders} orders</p>
                 </div>
               </div>
             ))}
@@ -211,8 +192,4 @@ export default function CaptainPerformanceDashboard() {
       </div>
     </div>
   );
-}
-
-function Stat({ label, value }) {
-  return <div className="rounded-[10px] border border-[#FFCDD2] bg-white p-3"><p className="text-xs text-[#6B6B6B]">{label}</p><p className="text-lg font-bold">{value}</p></div>;
 }

@@ -22,6 +22,8 @@ import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
+import { CAPTAINS } from '../config/captains';
+import { fetchCaptainTarget } from '../services/captainTargetService';
 
 const TABLE_STATUS = {
   FREE: 'Free',
@@ -31,25 +33,7 @@ const TABLE_STATUS = {
   BILLING: 'Waiting Bill'
 };
 
-/** Read captain's current assignment from the shared targets store */
-function getAssignment(captainId) {
-  if (!captainId) return null;
-  try {
-    const saved = localStorage.getItem('softshape_captain_targets');
-    if (!saved) return null;
-    const all = JSON.parse(saved);
-    return all[captainId] || null;
-  } catch { return null; }
-}
 
-const CAPTAINS = [
-  { id: 'C1', name: 'Ajay Kumar', pin: '1997', initials: 'AK', color: 'bg-[#EFF6FF] text-[#1D4ED8]' },
-  { id: 'C2', name: 'Raja Behera', pin: '2002', initials: 'RB', color: 'bg-[#EEF2FF] text-[#4338CA]' },
-  { id: 'C3', name: 'Sagar', pin: '2000', initials: 'S', color: 'bg-[#ECFDF5] text-[#047857]' },
-  { id: 'C4', name: 'Durga Prasad', pin: '1998', initials: 'DP', color: 'bg-[#FFF1F2] text-[#BE123C]' },
-  { id: 'C5', name: 'Subbaiah', pin: '1977', initials: 'SU', color: 'bg-[#FEF3C7] text-[#D97706]' },
-  { id: 'C6', name: 'Happy', pin: '1996', initials: 'H', color: 'bg-[#F3E8FF] text-[#7E22CE]' },
-];
 
 function EmergencyOverlay({ call, currentCaptain, onAccept }) {
   const [timeLeft, setTimeLeft] = useState(12);
@@ -249,7 +233,7 @@ export default function CaptainApp({ onLogout }) {
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
-  const [assignment, setAssignment] = useState(() => getAssignment(currentCaptain?.id));
+  const [assignment, setAssignment] = useState(null);
   const [todayRevenue, setTodayRevenue] = useState(0);
 
   const [activeBarMenu, setActiveBarMenu] = useState('food');
@@ -298,6 +282,16 @@ export default function CaptainApp({ onLogout }) {
       const sum = filtered.reduce((acc, t) => acc + (t.amount || 0), 0);
       setTodayRevenue(sum);
     });
+  }, []);
+
+  const loadAssignment = useCallback(async (captainId) => {
+    if (!captainId) return;
+    try {
+      const data = await fetchCaptainTarget(captainId);
+      setAssignment(data);
+    } catch (err) {
+      console.error('[CaptainApp] Failed to load assignment:', err);
+    }
   }, []);
 
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
@@ -422,27 +416,18 @@ export default function CaptainApp({ onLogout }) {
 
   // Realtime assignment + revenue sync
   useEffect(() => {
-    if (!currentCaptain) return;
+    if (!currentCaptain?.id) return;
+    loadAssignment(currentCaptain.id);
     loadCaptainRevenue(currentCaptain.id);
-    const refresh = () => {
-      setAssignment(getAssignment(currentCaptain.id));
+
+    // Poll every 60 seconds so captain sees new assignments without refresh
+    const interval = setInterval(() => {
+      loadAssignment(currentCaptain.id);
       loadCaptainRevenue(currentCaptain.id);
-    };
-    const handleStorage = (e) => {
-      if (e.key === 'softshape_captain_targets') refresh();
-    };
-    const handleTxnUpdate = () => {
-      if (currentCaptain?.id) loadCaptainRevenue(currentCaptain.id);
-    };
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener('softshape_transactions_updated', handleTxnUpdate);
-    const poll = setInterval(refresh, 15000);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('softshape_transactions_updated', handleTxnUpdate);
-      clearInterval(poll);
-    };
-  }, [currentCaptain, outlet]);
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [currentCaptain, loadAssignment, loadCaptainRevenue]);
 
   useEffect(() => {
     if (tablesSyncing) {
@@ -1087,8 +1072,8 @@ export default function CaptainApp({ onLogout }) {
                 <div className="text-right shrink-0">
                   <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Assigned At</p>
                   <p className="text-[10px] font-black text-gray-700 mt-0.5">
-                    {assignment.timestamp
-                      ? new Date(assignment.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                    {assignment.assignedAt
+                      ? new Date(assignment.assignedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
                       : '—'}
                   </p>
                 </div>
