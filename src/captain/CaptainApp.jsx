@@ -1335,11 +1335,11 @@ export default function CaptainApp({ onLogout }) {
                   <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300">
                     <div className="px-4 py-3 flex flex-col gap-3">
                       <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#E53935]" size={18} />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#E53935]" size={22} />
                         <input
                           type="search"
                           placeholder="Search fine spirits, drinks & food..."
-                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-10 pr-4 py-2.5 text-sm font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
+                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-12 pr-5 py-3.5 text-base font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           autoComplete="off"
@@ -1380,11 +1380,11 @@ export default function CaptainApp({ onLogout }) {
                 ) : (
                   <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
                     <div className="relative group">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={16} />
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={20} />
                       <input
                         type="search"
                         placeholder="Search by name, category, price, or ID..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-[13px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-5 py-3.5 text-[15px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         autoComplete="off"
