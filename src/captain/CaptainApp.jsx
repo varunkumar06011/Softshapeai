@@ -256,9 +256,13 @@ export default function CaptainApp({ onLogout }) {
   const [activeVariantItem, setActiveVariantItem] = useState(null);
   const [currentSessionItems, setCurrentSessionItems] = useState([]);
 
-  // Cancel-item state: { [orderItemId]: true }
+  // Cancel-item state
   const [cancelLoading,  setCancelLoading]  = useState({});
   const [cancelConfirm,  setCancelConfirm]  = useState({});
+  // Cancel-items modal state
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelSelected,  setCancelSelected]  = useState({});  // { [orderItemId]: { item, kotId } }
+  const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
 
   // Move-table swap state
   const [showMoveModal,   setShowMoveModal]   = useState(false);
@@ -1538,57 +1542,50 @@ export default function CaptainApp({ onLogout }) {
 
                 <div className="flex-grow overflow-y-auto p-6 space-y-8 custom-scrollbar min-h-0">
                   {/* KOT LOGS */}
-                  {(activeTable?.kotHistory || []).map((kot) => (
-                    <div key={kot.id} className="space-y-4">
-                      <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">KOT #{kot.id}</span>
-                        <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time}</span>
-                      </div>
-                      <div className="space-y-3">
-                        {kot.items.map((item, iIdx) => {
-                          const isCancelled = item.s === 'Cancelled';
-                          const isLoading   = cancelLoading[item.orderItemId];
-                          const isConfirming = cancelConfirm[item.orderItemId];
-                          const canCancel   = !isCancelled && !!item.orderItemId;
-                          return (
-                            <div key={iIdx} className={`flex justify-between items-center group transition-opacity ${isCancelled ? 'opacity-50' : ''}`}>
-                              <div className="flex items-center gap-3">
-                                <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
-                                <p className={`text-[11px] font-bold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.n}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {isCancelled ? (
-                                  <span className="px-2 py-0.5 rounded-md bg-red-50 text-red-500 text-[8px] font-black uppercase tracking-widest border border-red-100">Cancelled</span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-md bg-green-50 text-green-600 text-[8px] font-black uppercase tracking-widest border border-green-100">{item.s}</span>
-                                )}
-                                {canCancel && (
-                                  isLoading ? (
+                  {(activeTable?.kotHistory || []).map((kot) => {
+                    const cancellableItems = kot.items.filter(i => i.s !== 'Cancelled' && !!i.orderItemId);
+                    return (
+                      <div key={kot.id} className="space-y-4">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">KOT #{kot.id}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time}</span>
+                            {cancellableItems.length > 0 && (
+                              <button
+                                onClick={() => setShowCancelModal(true)}
+                                className="px-2 py-0.5 rounded-md bg-red-50 text-red-500 text-[8px] font-black uppercase tracking-widest border border-red-100 hover:bg-red-100 transition-colors flex items-center gap-1"
+                              >
+                                <X size={10} /> Cancel Items
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {kot.items.map((item, iIdx) => {
+                            const isCancelled = item.s === 'Cancelled';
+                            const isLoading   = cancelLoading[item.orderItemId];
+                            return (
+                              <div key={iIdx} className={`flex justify-between items-center transition-opacity ${isCancelled ? 'opacity-40' : ''}`}>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
+                                  <p className={`text-[11px] font-bold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.n}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {isLoading ? (
                                     <Loader2 size={13} className="animate-spin text-red-400 shrink-0" />
-                                  ) : isConfirming ? (
-                                    <button
-                                      onClick={() => cancelKotItem(item, kot.id)}
-                                      className="px-2 py-0.5 rounded-md bg-red-600 text-white text-[8px] font-black uppercase tracking-widest hover:bg-red-700 transition-colors whitespace-nowrap"
-                                    >
-                                      Confirm?
-                                    </button>
+                                  ) : isCancelled ? (
+                                    <span className="px-2 py-0.5 rounded-md bg-red-50 text-red-500 text-[8px] font-black uppercase tracking-widest border border-red-100">Cancelled</span>
                                   ) : (
-                                    <button
-                                      onClick={() => setCancelConfirm(prev => ({ ...prev, [item.orderItemId]: true }))}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50"
-                                      title="Cancel item"
-                                    >
-                                      <X size={13} />
-                                    </button>
-                                  )
-                                )}
+                                    <span className="px-2 py-0.5 rounded-md bg-green-50 text-green-600 text-[8px] font-black uppercase tracking-widest border border-green-100">{item.s}</span>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
 
                   {/* ACTIVE DRAFT */}
@@ -1848,6 +1845,178 @@ export default function CaptainApp({ onLogout }) {
           </div>
         ))}
       </div>
+
+      {/* CANCEL ITEMS MODAL */}
+      {showCancelModal && (() => {
+        // Gather all cancellable items across all KOTs
+        const allCancellable = [];
+        (activeTable?.kotHistory || []).forEach(kot => {
+          kot.items.forEach(item => {
+            if (item.s !== 'Cancelled' && !!item.orderItemId) {
+              allCancellable.push({ item, kotId: kot.id, kotTime: kot.time });
+            }
+          });
+        });
+        const selectedCount = Object.keys(cancelSelected).length;
+
+        const handleCancelSelected = async () => {
+          if (selectedCount === 0) return;
+          if (!activeOrderIdRef.current) {
+            addNotification('No active order found.', 'error');
+            return;
+          }
+          setCancelBatchLoading(true);
+          const entries = Object.values(cancelSelected); // [{ item, kotId }]
+          for (const { item, kotId } of entries) {
+            // Optimistic update
+            setActiveTables(prev => prev.map(t => {
+              if (t.backendId !== activeTable?.backendId) return t;
+              return {
+                ...t,
+                kotHistory: (t.kotHistory || []).map(kot => {
+                  if (kot.id !== kotId) return kot;
+                  return {
+                    ...kot,
+                    items: kot.items.map(i =>
+                      i.orderItemId === item.orderItemId ? { ...i, s: 'Cancelled' } : i
+                    ),
+                  };
+                }),
+                currentBill: Math.max(0, (t.currentBill ?? 0) - (item.p ?? 0) * (item.q ?? 1)),
+              };
+            }));
+            setCancelLoading(prev => ({ ...prev, [item.orderItemId]: true }));
+            try {
+              await cancelOrderItem(
+                activeOrderIdRef.current,
+                item.orderItemId,
+                currentCaptain?.name || currentCaptain?.id || 'Captain',
+                activeTable?.number ?? activeTable?.id
+              );
+            } catch (err) {
+              console.error('[CancelBatch]', err.message);
+              // Revert this one item
+              setActiveTables(prev => prev.map(t => {
+                if (t.backendId !== activeTable?.backendId) return t;
+                return {
+                  ...t,
+                  kotHistory: (t.kotHistory || []).map(kot => {
+                    if (kot.id !== kotId) return kot;
+                    return {
+                      ...kot,
+                      items: kot.items.map(i =>
+                        i.orderItemId === item.orderItemId ? { ...i, s: 'KOT Sent' } : i
+                      ),
+                    };
+                  }),
+                  currentBill: (t.currentBill ?? 0) + (item.p ?? 0) * (item.q ?? 1),
+                };
+              }));
+              addNotification(`Failed to cancel ${item.n}`, 'error');
+            } finally {
+              setCancelLoading(prev => ({ ...prev, [item.orderItemId]: false }));
+            }
+          }
+          addNotification(
+            selectedCount === 1
+              ? `${entries[0].item.n} cancelled`
+              : `${selectedCount} items cancelled`,
+            'success'
+          );
+          setCancelSelected({});
+          setCancelBatchLoading(false);
+          setShowCancelModal(false);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowCancelModal(false); setCancelSelected({}); }}>
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm mx-0 sm:mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-red-50 rounded-xl">
+                    <X size={18} className="text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-gray-900">Cancel Items</h3>
+                    <p className="text-[10px] text-gray-400 font-semibold">Table {activeTable?.number || activeTable?.id} — select items to remove</p>
+                  </div>
+                </div>
+                <button onClick={() => { setShowCancelModal(false); setCancelSelected({}); }} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Item list */}
+              <div className="p-4 max-h-72 overflow-y-auto space-y-2">
+                {allCancellable.length === 0 ? (
+                  <div className="text-center py-8">
+                    <CheckCircle2 size={32} className="text-gray-200 mx-auto mb-2" />
+                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">No cancellable items</p>
+                  </div>
+                ) : (
+                  allCancellable.map(({ item, kotId, kotTime }) => {
+                    const isChecked = !!cancelSelected[item.orderItemId];
+                    return (
+                      <button
+                        key={item.orderItemId}
+                        onClick={() => setCancelSelected(prev => {
+                          if (prev[item.orderItemId]) {
+                            const next = { ...prev };
+                            delete next[item.orderItemId];
+                            return next;
+                          }
+                          return { ...prev, [item.orderItemId]: { item, kotId } };
+                        })}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left ${
+                          isChecked
+                            ? 'border-red-400 bg-red-50'
+                            : 'border-gray-100 bg-gray-50 hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
+                            isChecked ? 'border-red-500 bg-red-500' : 'border-gray-300 bg-white'
+                          }`}>
+                            {isChecked && <Check size={12} className="text-white" strokeWidth={3} />}
+                          </div>
+                          <div>
+                            <p className="text-[12px] font-black text-gray-900">{item.n}</p>
+                            <p className="text-[9px] font-bold text-gray-400 uppercase">{item.q}x · ₹{item.p * item.q} · KOT {kotTime}</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-black text-gray-500">₹{item.p * item.q}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              {allCancellable.length > 0 && (
+                <div className="px-4 pb-5 pt-3 border-t border-gray-100 space-y-2">
+                  {selectedCount > 0 && (
+                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest text-center">
+                      {selectedCount} item{selectedCount > 1 ? 's' : ''} selected — will be removed from bill
+                    </p>
+                  )}
+                  <button
+                    disabled={selectedCount === 0 || cancelBatchLoading}
+                    onClick={handleCancelSelected}
+                    className="w-full py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed bg-red-600 text-white hover:bg-red-700 active:scale-95 shadow-lg shadow-red-100"
+                  >
+                    {cancelBatchLoading ? (
+                      <><Loader2 size={15} className="animate-spin" /> Cancelling…</>
+                    ) : (
+                      <><X size={15} /> Cancel {selectedCount > 0 ? `${selectedCount} Item${selectedCount > 1 ? 's' : ''}` : 'Selected'}</>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MOVE TABLE MODAL */}
       {showMoveModal && (() => {
