@@ -136,7 +136,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           return txnDate >= todayStart;
         });
 
-        setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + (txn.amount || 0), 0)));
+        setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + Number(txn.amount || 0), 0)));
         setOrdersCount(todayTxns.length);
       } catch (err) {
         console.warn('[AdminStats] Failed to load stats:', err.message);

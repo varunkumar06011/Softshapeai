@@ -247,7 +247,7 @@ const CashierDashboard = ({ onLogout }) => {
         txnNumber: txn.txnNumber || null,
         displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
-        amount: txn.amount,
+        amount: Number(txn.amount || 0),
         time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
         date: new Date(txn.paidAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
         timestamp: new Date(txn.paidAt).getTime(),
@@ -313,7 +313,7 @@ const CashierDashboard = ({ onLogout }) => {
           tableBackendId: table.id,
           tableNumber: table.number,
           orderId: order?.id,
-          totalAmount: order?.totalAmount ?? 0,
+          totalAmount: Number(order?.totalAmount ?? 0),
           requestedAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
         }];
       });
@@ -554,7 +554,7 @@ const CashierDashboard = ({ onLogout }) => {
       ));
     }
 
-    addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
+    addNotification('Payment Success', `${method} • ₹${Number(txnAmount).toFixed(0)} collected`, 'success');
 
     // Step 5: Fire background API calls — no await, non-blocking
     if (tableSnap?.activeOrder?.id) {
@@ -921,7 +921,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Today's Sale", value: `₹${todaysSales.toFixed(0)}`, change: `${pastTransactions.length} txns`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Today's Sale", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${pastTransactions.length} txns`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Active Tables", value: `${activeTableOrders.length}/${activeTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "Pending KOTs", value: String(liveKotQueue.length).padStart(2, '0'), change: `${activeTableOrders.filter(o => o.status === 'Waiting Bill').length} billing`, icon: ChefHat, color: "text-orange-600", bg: "bg-orange-50" },
     { label: "Online Orders", value: "26", change: "12 Swiggy, 14 Zomato", icon: Monitor, color: "text-purple-600", bg: "bg-purple-50" },
@@ -1453,7 +1453,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
                       <span>Subtotal</span>
-                      <span className="font-black text-gray-805 text-sm">₹{(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
+                      <span className="font-black text-gray-855 text-sm">₹{Number(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
                     </div>
                     {/* CGST + SGST — shown only when food items are present (taxes > 0) */}
                     {(selectedTable ? activeCgst : cartCgst) > 0 && (
@@ -1470,7 +1470,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
                     <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
                       <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                      <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                      <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeTotal : total).toFixed(0)}</span>
                     </div>
                   </div>
 
@@ -1705,7 +1705,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         {txn.itemsList.map((item, idx) => (
                                           <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
                                             <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
-                                            <span className="text-xs md:text-sm font-black text-gray-900">₹{((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                            <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
                                           </div>
                                         ))}
                                         <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
@@ -1898,9 +1898,9 @@ const CashierDashboard = ({ onLogout }) => {
                       <div key={item.id || idx} className="flex justify-between items-center py-0.5">
                         <div className="flex items-center gap-3">
                           <span className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-xs font-black text-gray-600">{item.q}x</span>
-                          <span className="text-xs sm:text-sm font-bold text-gray-800">{item.n}</span>
+                          <span className="text-xs sm:text-sm font-bold text-gray-850">{item.n}</span>
                         </div>
-                        <span className="text-xs sm:text-sm font-black text-gray-900">₹{(item.p * item.q).toFixed(0)}</span>
+                        <span className="text-xs sm:text-sm font-black text-gray-900">₹{Number(item.p * item.q).toFixed(0)}</span>
                       </div>
                     ))}
                 </div>
@@ -1908,12 +1908,12 @@ const CashierDashboard = ({ onLogout }) => {
 
               {/* ── Totals ──────────────────────────────────────────── */}
               <div className="bg-gray-50/90 rounded-2xl p-5 space-y-2.5 mb-6 border border-gray-200 shadow-sm">
-                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.05 : 0)).toFixed(0)}</span></div>
-                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5%)</span><span className="font-black text-gray-800">₹{(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.05) * 0.05 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.05 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5%)</span><span className="font-black text-gray-800">₹{Number(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.05) * 0.05 : 0)).toFixed(0)}</span></div>
                 <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2.5">
                   <span className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-widest">Running Total</span>
                   <span className="text-3xl sm:text-4xl font-black text-[#E53935] tracking-tight">
-                    ₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}
+                    ₹{Number(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}
                   </span>
                 </div>
               </div>
@@ -1992,7 +1992,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">New Total</p>
-                    <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{liveTotal.toFixed(0)}</p>
+                    <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{Number(liveTotal).toFixed(0)}</p>
                   </div>
                   <button
                     onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillAdditions([]); setBillEditSearch(''); }}
@@ -2040,7 +2040,7 @@ const CashierDashboard = ({ onLogout }) => {
                             </span>
                           </div>
                           <span className={`text-sm sm:text-base font-black ${isMarked ? 'text-red-550' : 'text-gray-900'}`}>
-                            {isMarked ? '−' : ''}₹{(item.p * item.q).toFixed(0)}
+                            {isMarked ? '−' : ''}₹{Number(item.p * item.q).toFixed(0)}
                           </span>
                         </div>
                       );
@@ -2123,7 +2123,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <span className="text-sm sm:text-base font-bold text-amber-800">{item.name}</span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="text-sm sm:text-base font-black text-amber-700">+₹{(item.price * item.quantity).toFixed(0)}</span>
+                            <span className="text-sm sm:text-base font-black text-amber-700">+₹{Number(item.price * item.quantity).toFixed(0)}</span>
                             <button
                               onClick={() => setBillAdditions(prev => prev.filter((_, i) => i !== idx))}
                               className="text-amber-450 hover:text-red-500 transition-colors cursor-pointer"
@@ -2169,7 +2169,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
-                <p className="text-3xl font-black text-gray-900 mt-1">₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
+                <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
               </div>
               <button
                 onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
@@ -2229,7 +2229,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
               <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
               <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
+              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{Number(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
               <div className="space-y-3">
                 <div className="flex justify-between border-b border-gray-200 pb-1">
                   <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>

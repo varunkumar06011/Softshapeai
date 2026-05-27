@@ -284,7 +284,7 @@ export default function CaptainApp({ onLogout }) {
     Promise.allSettled([restaurantFetch, barFetch]).then(results => {
       const allTxns = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
       const filtered = allTxns.filter(t => t.captainId === captainId);
-      const sum = filtered.reduce((acc, t) => acc + (t.amount || 0), 0);
+      const sum = filtered.reduce((acc, t) => acc + Number(t.amount || 0), 0);
       setTodayRevenue(sum);
     });
   }, []);

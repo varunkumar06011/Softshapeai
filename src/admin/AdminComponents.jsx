@@ -1123,7 +1123,7 @@ export function Reports() {
       filtered = transactions.filter(t => new Date(t.paidAt || t.createdAt) >= monthStart);
     }
 
-    const totalRev = filtered.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const totalRev = filtered.reduce((sum, t) => sum + Number(t.amount || 0), 0);
     const ordersCount = filtered.length;
     const aov = ordersCount > 0 ? Math.round(totalRev / ordersCount) : 0;
 
