@@ -502,14 +502,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Step 1: Show loading on button
     setIsPrintingBill(true);
-
-    // Step 2: Print bill (mock resolves instantly)
-    try {
-      await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
-    } catch (err) {
-      console.warn('[Settlement] Print failed (non-blocking):', err.message);
-    }
-
+    // (print will happen in Step 5 after markOrderPaid succeeds)
     setIsPrintingBill(false);
 
     // Step 3: Close modals + clear UI state
@@ -556,18 +549,42 @@ const CashierDashboard = ({ onLogout }) => {
 
     addNotification('Payment Success', `${method} • ₹${Number(txnAmount).toFixed(0)} collected`, 'success');
 
-    // Step 5: Fire background API calls — no await, non-blocking
+    // Step 5: Fire background API calls — settle removed items, then mark PAID, then print
     if (tableSnap?.activeOrder?.id) {
       (async () => {
         try {
+          // 5a. Remove any cancelled items first (if any)
           if (removedItemIdsSnap.length > 0) {
             await settleOrder(tableSnap.activeOrder.id, removedItemIdsSnap, 'Cashier');
           }
-          await markOrderPaid(tableSnap.activeOrder.id);
+
+          // 5b. Mark order PAID — backend emits print_job socket event here
+          await markOrderPaid(tableSnap.activeOrder.id, method);
+
+          // 5c. Now print the final bill (order is guaranteed PAID in DB)
+          try {
+            await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
+          } catch (printErr) {
+            console.warn('[Settlement] Print failed (non-blocking):', printErr.message);
+          }
         } catch (err) {
           console.warn('[BG] order settlement/pay failed:', err.message);
+          // Still attempt to print using fallback (local data) even if API failed
+          try {
+            const { buildBillCommands } = await import('../services/printService');
+            await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
+          } catch (printErr) {
+            console.warn('[Settlement] Fallback print also failed:', printErr.message);
+          }
         }
       })();
+    } else {
+      // No activeOrder (e.g. walk-in/bar) — just print locally
+      try {
+        await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
+      } catch (printErr) {
+        console.warn('[Settlement] Print failed (non-blocking):', printErr.message);
+      }
     }
 
     saveTransaction({

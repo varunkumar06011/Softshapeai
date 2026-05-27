@@ -78,9 +78,11 @@ export async function requestBilling(orderId) {
   return parseResponse(res);
 }
 
-export async function markOrderPaid(orderId) {
+export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/pay`), {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paymentMethod }),
   });
   return parseResponse(res);
 }
