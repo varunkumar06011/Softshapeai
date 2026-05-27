@@ -620,6 +620,50 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
+  const terminateTableSession = () => {
+    if (!selectedTable) return;
+
+    const tableSnap = selectedTable;
+
+    // Step 1: Update local state - free the table immediately
+    setActiveTables(prev => prev.map(t =>
+      t.id === tableSnap.id
+        ? { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
+        : t
+    ));
+
+    // Step 2: Clear UI selections
+    setSelectedTable(null);
+    setCart([]);
+    setRemovedItemIds([]);
+
+    // Step 3: Show notification
+    addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
+
+    // Step 4: Reset table session in backend (background, non-blocking)
+    const resetSessionPayload = {
+      status: 'Free',
+      kotHistory: [],
+      currentBill: 0,
+      captainId: null,
+      guests: 0,
+    };
+
+    if (tableSnap?.backendId) {
+      if (outlet === 'bar') {
+        import('../services/barTableApi').then(({ updateBarTableSession }) => {
+          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
+        });
+      } else {
+        import('../services/tableApi').then(({ updateTableSession }) => {
+          updateTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
+        });
+      }
+    }
+  };
+
   const handleBillEditSave = async () => {
     if (!selectedTable?.activeOrder?.id) return;
     if (billRemovals.length === 0 && billAdditions.length === 0) {
@@ -1940,15 +1984,22 @@ const CashierDashboard = ({ onLogout }) => {
                 </button>
               </div>
 
-              {/* Move Table button */}
+              {/* Swap Table & Terminate Session buttons */}
               {selectedTable.status && selectedTable.status !== 'Free' && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
                   <button
                     onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
                     className="w-full py-3.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <ArrowRightLeft size={14} />
-                    Move Table
+                    Swap Table
+                  </button>
+                  <button
+                    onClick={terminateTableSession}
+                    className="w-full py-3.5 rounded-xl border border-red-200 bg-red-50 text-red-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <X size={14} />
+                    Terminate Session
                   </button>
                 </div>
               )}
@@ -2270,7 +2321,7 @@ const CashierDashboard = ({ onLogout }) => {
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
             <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
-                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Move Table Session</p>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Swap Table Session</p>
                 <p className="text-base font-black text-gray-900 mt-0.5">
                   {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Select Destination
                 </p>

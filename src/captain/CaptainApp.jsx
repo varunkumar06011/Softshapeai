@@ -1312,7 +1312,7 @@ export default function CaptainApp({ onLogout }) {
               <div className="flex gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => setShowMoveModal(true)}
-                  title="Move Table"
+                  title="Swap Table"
                   className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shrink-0 hover:bg-blue-100 transition-all"
                 >
                   <ArrowRightLeft size={18} />
@@ -2152,7 +2152,7 @@ export default function CaptainApp({ onLogout }) {
                     <ArrowRightLeft size={18} className="text-blue-600" />
                   </div>
                   <div>
-                    <h3 className="font-black text-sm text-gray-900">Move Table</h3>
+                    <h3 className="font-black text-sm text-gray-900">Swap Table</h3>
                     <p className="text-[10px] text-gray-400 font-semibold">From Table {activeTable?.number || activeTable?.id}</p>
                   </div>
                 </div>
