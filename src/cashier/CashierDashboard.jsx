@@ -1576,7 +1576,7 @@ const CashierDashboard = ({ onLogout }) => {
                       })}
                     </div>
                     {/* Date filter tabs */}
-                    <div className="flex gap-1 p-2 border-b border-gray-100 bg-gray-50">
+                    <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
                       {[
                         { key: 'today', label: 'Today' },
                         { key: 'yesterday', label: 'Yesterday' },
@@ -1586,10 +1586,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           key={f.key}
                           onClick={() => { setTxnDateFilter(f.key); setTxnMethodFilter('all'); setTxnSearch(''); }}
-                          className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors ${
+                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
                             txnDateFilter === f.key
                               ? 'bg-[#E53935] text-white shadow-sm'
-                              : 'text-gray-400 hover:bg-gray-100'
+                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                           }`}
                         >
                           {f.label}
@@ -1597,13 +1597,13 @@ const CashierDashboard = ({ onLogout }) => {
                       ))}
                       <button
                         onClick={() => { loadTransactions(txnDateFilter); setTxnMethodFilter('all'); setTxnSearch(''); }}
-                        className="ml-auto px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                        className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
                       >
                         ↻ Sync
                       </button>
                     </div>
                     {/* FIX 4: Method filter + Search row */}
-                    <div className="flex items-center gap-2 flex-wrap px-3 pb-2">
+                    <div className="flex items-center gap-2 flex-wrap px-3 py-3 border-b border-gray-50">
                       {[
                         { key: 'all', label: 'All' },
                         { key: 'CASH', label: 'Cash' },
@@ -1613,10 +1613,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           key={f.key}
                           onClick={() => setTxnMethodFilter(f.key)}
-                          className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors ${
+                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
                             txnMethodFilter === f.key
                               ? 'bg-gray-900 text-white shadow-sm'
-                              : 'text-gray-400 hover:bg-gray-100'
+                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                           }`}
                         >
                           {f.label}
@@ -1627,7 +1627,7 @@ const CashierDashboard = ({ onLogout }) => {
                         value={txnSearch}
                         onChange={e => setTxnSearch(e.target.value)}
                         placeholder="Search bill number..."
-                        className="ml-auto text-[10px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 placeholder-gray-300 outline-none focus:border-gray-400 w-36"
+                        className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-450 w-44 sm:w-52 shadow-inner transition-colors"
                       />
                     </div>
                     <div className="overflow-x-auto scrollbar-hide relative">
