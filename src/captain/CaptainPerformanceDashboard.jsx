@@ -101,9 +101,11 @@ export default function CaptainPerformanceDashboard() {
       captainMap[cid].sales += Number(t.amount || 0);
       captainMap[cid].orders += 1;
 
-      // FIX #1 & #3: Safely handle itemsList with null checks
-      if (Array.isArray(t.itemsList)) {
-        t.itemsList.forEach(item => {
+      // FIX #1 & #3: Safely handle items with null checks
+      // Backend returns 'items', Cashier maps to 'itemsList' - support both
+      const itemsArray = t.itemsList || t.items;
+      if (Array.isArray(itemsArray)) {
+        itemsArray.forEach(item => {
           // Validate item name exists and is not empty
           const name = String(item?.n || item?.name || '').trim();
           if (!name || name === 'undefined' || name === 'null') {
