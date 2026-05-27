@@ -1982,12 +1982,12 @@ const CashierDashboard = ({ onLogout }) => {
 
               {/* ── Totals ──────────────────────────────────────────── */}
               <div className="bg-gray-50/90 rounded-2xl p-5 space-y-2.5 mb-6 border border-gray-200 shadow-sm">
-                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal > 0 ? activeSubtotal : (fallbackTotal ? fallbackTotal / 1.05 : 0)).toFixed(0)}</span></div>
-                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5%)</span><span className="font-black text-gray-800">₹{Number(activeTaxes > 0 ? activeTaxes : (fallbackTotal ? (fallbackTotal / 1.05) * 0.05 : 0)).toFixed(0)}</span></div>
+                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5% on food only)</span><span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span></div>
                 <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2.5">
                   <span className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-widest">Running Total</span>
                   <span className="text-3xl sm:text-4xl font-black text-[#E53935] tracking-tight">
-                    ₹{Number(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}
+                    ₹{Number(activeTotal || fallbackTotal || 0).toFixed(0)}
                   </span>
                 </div>
               </div>
