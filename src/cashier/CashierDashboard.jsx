@@ -1589,8 +1589,19 @@ const CashierDashboard = ({ onLogout }) => {
 
                 {activeTab === 'history' && (
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                    {/* FIX 3: Cash / UPI / Card summary */}
-                    <div className="grid grid-cols-3 gap-2 m-3 mb-0">
+                    {/* Total Amount Summary */}
+                    <div className="m-3 mb-2">
+                      <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
+                        <span className="text-3xl font-black text-white">
+                          ₹{pastTransactions.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(0)}
+                        </span>
+                        <span className="text-[10px] font-bold text-red-100">{pastTransactions.length} transactions</span>
+                      </div>
+                    </div>
+
+                    {/* Cash / UPI / Card summary */}
+                    <div className="grid grid-cols-3 gap-2 m-3 mt-0 mb-0">
                       {[
                         { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
                         { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
