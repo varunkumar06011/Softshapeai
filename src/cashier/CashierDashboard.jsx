@@ -211,7 +211,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   function formatBillNumber(txnDate, txnNumber) {
     if (!txnDate || !txnNumber) return 'Bill #—';
-    const datePart = txnDate.replace(/-/g, '').slice(2); // "YYYY-MM-DD" → "YYMMDD"
+    const datePart = String(txnDate || '').replace(/-/g, '').slice(2); // "YYYY-MM-DD" → "YYMMDD"
     const seqPart = String(txnNumber).padStart(3, '0');   // 7 → "007"
     return `${datePart}-${seqPart}`;
   }

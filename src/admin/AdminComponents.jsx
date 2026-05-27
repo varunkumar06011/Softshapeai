@@ -638,7 +638,7 @@ export function MenuPage({ onAddDish }) {
         const serverItem = await res.json();
         // Build optimistic POS-shaped item from backend response
         const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
-        const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? serverItem?.variants?.[0];
+        const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? (serverItem?.variants?.length > 0 ? serverItem.variants[0] : null);
         const optimisticItem = {
           id: editingItem.id,
           n: body.name,
@@ -723,7 +723,7 @@ export function MenuPage({ onAddDish }) {
         const serverItem = await res.json();
         // Map backend item to POS shape for optimistic insert
         const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
-        const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? serverItem?.variants?.[0];
+        const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? (serverItem?.variants?.length > 0 ? serverItem.variants[0] : null);
         const optimisticItem = {
           id: serverItem.id,
           n: serverItem.name,

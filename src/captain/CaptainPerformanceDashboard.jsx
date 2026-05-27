@@ -24,7 +24,7 @@ export default function CaptainPerformanceDashboard() {
 
   const { captains, trends } = useMemo(() => {
     const now = Date.now();
-    let filterMs = 0;
+    let filterMs = Infinity; // Default to "All Time" - show all transactions
     if (range === "Today") filterMs = 24 * 60 * 60 * 1000;
     else if (range === "Weekly") filterMs = 7 * 24 * 60 * 60 * 1000;
     else if (range === "Monthly") filterMs = 30 * 24 * 60 * 60 * 1000;
