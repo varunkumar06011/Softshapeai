@@ -1919,7 +1919,9 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
                 <div>
                   <h2 className="text-[11px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
-                  <p className="text-lg sm:text-xl font-black text-gray-900 mt-1">{selectedTable.guests} Guests • {selectedTable.time}</p>
+                  <p className="text-lg sm:text-xl font-black text-gray-900 mt-1">
+                    {selectedTable.time ? new Date(selectedTable.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'Just now'}
+                  </p>
                 </div>
               </div>
               <button 

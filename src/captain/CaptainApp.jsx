@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutDashboard, ShoppingCart, LogOut, ChevronRight, Clock, Plus, Minus,
-  Send, CheckCircle2, Search, ArrowLeft, Users, ChefHat, Timer,
+  Send, CheckCircle2, Search, ArrowLeft, ChefHat, Timer,
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
   Target, TrendingUp, ArrowRightLeft
@@ -1303,7 +1303,6 @@ export default function CaptainApp({ onLogout }) {
                     <div className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[8px] font-black uppercase tracking-widest border border-blue-100 shrink-0">Live Session #10{activeTable?.id}</div>
                   </div>
                   <div className="flex items-center gap-4 mt-1">
-                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Users size={10} /> {activeTable?.guests || 0} Pax</span>
                     <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Timer size={10} /> {activeTable?.time || '1m'}</span>
                     <span className="text-[9px] font-black text-[#E53935] uppercase tracking-widest flex items-center gap-1"><History size={10} /> {(activeTable?.kotHistory || []).length} KOTs</span>
                   </div>
