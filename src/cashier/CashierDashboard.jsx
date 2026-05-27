@@ -191,6 +191,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnsLoading, setTxnsLoading] = useState(false);
   const [expandedTxnId, setExpandedTxnId] = useState(null);
   const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
+  const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
+  const [txnSearch, setTxnSearch] = useState('');
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
@@ -265,6 +267,26 @@ const CashierDashboard = ({ onLogout }) => {
       setTxnsLoading(false);
     }
   }, [TX_CACHE_KEY, activeRestaurantId]);
+
+  // FIX 2: Filtered transactions based on method and search
+  const filteredTransactions = useMemo(() => {
+    let list = pastTransactions;
+
+    // Method filter
+    if (txnMethodFilter !== 'all') {
+      list = list.filter(txn => txn.method === txnMethodFilter);
+    }
+
+    // Search by bill number — matches partial string on displayId
+    if (txnSearch.trim()) {
+      const q = txnSearch.trim().toLowerCase();
+      list = list.filter(txn =>
+        (txn.displayId || '').toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [pastTransactions, txnMethodFilter, txnSearch]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -1533,6 +1555,26 @@ const CashierDashboard = ({ onLogout }) => {
 
                 {activeTab === 'history' && (
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                    {/* FIX 3: Cash / UPI / Card summary */}
+                    <div className="grid grid-cols-3 gap-2 m-3 mb-0">
+                      {[
+                        { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
+                        { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+                        { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
+                      ].map(({ label, method, color, bg, border }) => {
+                        const total = pastTransactions
+                          .filter(t => t.method === method)
+                          .reduce((sum, t) => sum + (t.amount || 0), 0);
+                        const count = pastTransactions.filter(t => t.method === method).length;
+                        return (
+                          <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
+                            <span className="text-sm font-black text-gray-900">₹{total.toFixed(0)}</span>
+                            <span className="text-[9px] font-bold text-gray-400">{count} txns</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                     {/* Date filter tabs */}
                     <div className="flex gap-1 p-2 border-b border-gray-100 bg-gray-50">
                       {[
@@ -1543,7 +1585,7 @@ const CashierDashboard = ({ onLogout }) => {
                       ].map(f => (
                         <button
                           key={f.key}
-                          onClick={() => setTxnDateFilter(f.key)}
+                          onClick={() => { setTxnDateFilter(f.key); setTxnMethodFilter('all'); setTxnSearch(''); }}
                           className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors ${
                             txnDateFilter === f.key
                               ? 'bg-[#E53935] text-white shadow-sm'
@@ -1554,11 +1596,39 @@ const CashierDashboard = ({ onLogout }) => {
                         </button>
                       ))}
                       <button
-                        onClick={() => loadTransactions(txnDateFilter)}
+                        onClick={() => { loadTransactions(txnDateFilter); setTxnMethodFilter('all'); setTxnSearch(''); }}
                         className="ml-auto px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
                       >
                         ↻ Sync
                       </button>
+                    </div>
+                    {/* FIX 4: Method filter + Search row */}
+                    <div className="flex items-center gap-2 flex-wrap px-3 pb-2">
+                      {[
+                        { key: 'all', label: 'All' },
+                        { key: 'CASH', label: 'Cash' },
+                        { key: 'UPI', label: 'UPI' },
+                        { key: 'CARD', label: 'Card' },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => setTxnMethodFilter(f.key)}
+                          className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors ${
+                            txnMethodFilter === f.key
+                              ? 'bg-gray-900 text-white shadow-sm'
+                              : 'text-gray-400 hover:bg-gray-100'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                      <input
+                        type="text"
+                        value={txnSearch}
+                        onChange={e => setTxnSearch(e.target.value)}
+                        placeholder="Search bill number..."
+                        className="ml-auto text-[10px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 placeholder-gray-300 outline-none focus:border-gray-400 w-36"
+                      />
                     </div>
                     <div className="overflow-x-auto scrollbar-hide relative">
                       {txnsLoading && (
@@ -1573,13 +1643,15 @@ const CashierDashboard = ({ onLogout }) => {
                         <thead className="bg-gray-50 border-b border-gray-100">
                           <tr>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Table</th>
+                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Captain</th>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
                             <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                          {pastTransactions.map(txn => (
+                          {filteredTransactions.map(txn => (
                             <React.Fragment key={txn.id}>
                               <tr
                                 onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
@@ -1587,6 +1659,18 @@ const CashierDashboard = ({ onLogout }) => {
                               >
                                 <td className="p-4">
                                   <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
+                                </td>
+                                {/* FIX 6: Table Number */}
+                                <td className="p-4">
+                                  <span className="text-xs md:text-sm font-black text-gray-700">
+                                    {txn.tableNumber ? `T-${txn.tableNumber}` : '—'}
+                                  </span>
+                                </td>
+                                {/* FIX 6: Captain */}
+                                <td className="p-4">
+                                  <span className="text-xs font-bold text-gray-500 uppercase">
+                                    {txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Cashier'}
+                                  </span>
                                 </td>
                                 <td className="p-4">
                                   <div className="flex flex-col">
@@ -1614,7 +1698,7 @@ const CashierDashboard = ({ onLogout }) => {
                               </tr>
                               {expandedTxnId === txn.id && (
                                 <tr key={`${txn.id}-detail`} className="bg-gray-50">
-                                  <td colSpan={4} className="px-6 pb-4 pt-2">
+                                  <td colSpan={6} className="px-6 pb-4 pt-2">
                                     {txn.itemsList && txn.itemsList.length > 0 ? (
                                       <div className="flex flex-col gap-2">
                                         <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
@@ -1641,7 +1725,7 @@ const CashierDashboard = ({ onLogout }) => {
                       </table>
                     </div>
 
-                    {!txnsLoading && pastTransactions.length === 0 && (
+                    {!txnsLoading && filteredTransactions.length === 0 && (
                       <div className="p-12 text-center flex flex-col items-center">
                         <History size={32} className="text-gray-250 mb-2" />
                         <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest">No Recent Transactions</p>
