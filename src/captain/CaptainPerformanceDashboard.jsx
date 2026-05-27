@@ -139,40 +139,22 @@ export default function CaptainPerformanceDashboard() {
       return { ...c, topItem };
     }).sort((a, b) => b.sales - a.sales);
 
-    // FIX #2: Correct hourly bucket labels
+    // FIX #2: Dynamic hourly/daily buckets for all ranges
     let trendBuckets = {};
     if (range === "Today") {
-      // Initialize hourly buckets with correct AM/PM labels
-      const hours = [
-        { value: 10, label: '10 AM' },
-        { value: 12, label: '12 PM' },
-        { value: 14, label: '2 PM' },
-        { value: 16, label: '4 PM' },
-        { value: 18, label: '6 PM' },
-        { value: 20, label: '8 PM' },
-        { value: 22, label: '10 PM' },
-      ];
-
-      hours.forEach(h => {
-        trendBuckets[h.label] = 0;
-      });
-
+      // Dynamic hourly buckets - show ALL hours with transactions
       filteredTxns.forEach(t => {
         const txnDate = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp);
         const hour = txnDate.getHours();
 
-        // Map transaction hour to correct bucket
-        let bucketLabel = '10 PM'; // Default to last bucket
-        for (let i = 0; i < hours.length; i++) {
-          if (hour < hours[i].value) {
-            bucketLabel = hours[i].label;
-            break;
-          }
-        }
+        // Format hour as readable label (e.g., "10 AM", "2 PM", "11 PM")
+        let hourLabel;
+        if (hour === 0) hourLabel = '12 AM';
+        else if (hour < 12) hourLabel = `${hour} AM`;
+        else if (hour === 12) hourLabel = '12 PM';
+        else hourLabel = `${hour - 12} PM`;
 
-        if (trendBuckets[bucketLabel] !== undefined) {
-          trendBuckets[bucketLabel] += Number(t.amount || 0);
-        }
+        trendBuckets[hourLabel] = (trendBuckets[hourLabel] || 0) + Number(t.amount || 0);
       });
     } else {
       // Daily buckets for Weekly/Monthly
@@ -191,16 +173,37 @@ export default function CaptainPerformanceDashboard() {
       }))
       .filter(t => t.sales >= 0); // Remove any negative values
 
-    // Sort dates chronologically for Weekly/Monthly (Today already ordered by hour array)
-    if (range !== "Today" && trendsArray.length > 0) {
-      trendsArray.sort((a, b) => {
-        // Parse DD/MM/YYYY format to Date objects for comparison
-        const [dayA, monthA, yearA] = a.hour.split('/').map(Number);
-        const [dayB, monthB, yearB] = b.hour.split('/').map(Number);
-        const dateA = new Date(yearA, monthA - 1, dayA);
-        const dateB = new Date(yearB, monthB - 1, dayB);
-        return dateA - dateB; // Ascending chronological order
-      });
+    // Sort chronologically for all ranges
+    if (trendsArray.length > 0) {
+      if (range === "Today") {
+        // Sort hours chronologically (12 AM, 1 AM, ..., 11 PM)
+        const hourOrder = (label) => {
+          const match = label.match(/^(\d+) (AM|PM)$/);
+          if (!match) return 0;
+          let hour = parseInt(match[1]);
+          const period = match[2];
+
+          // Convert to 24-hour for sorting
+          if (period === 'AM') {
+            if (hour === 12) hour = 0; // 12 AM = 0 hours
+          } else {
+            if (hour !== 12) hour += 12; // PM hours (except 12 PM)
+          }
+          return hour;
+        };
+
+        trendsArray.sort((a, b) => hourOrder(a.hour) - hourOrder(b.hour));
+      } else {
+        // Sort dates chronologically for Weekly/Monthly
+        trendsArray.sort((a, b) => {
+          // Parse DD/MM/YYYY format to Date objects for comparison
+          const [dayA, monthA, yearA] = a.hour.split('/').map(Number);
+          const [dayB, monthB, yearB] = b.hour.split('/').map(Number);
+          const dateA = new Date(yearA, monthA - 1, dayA);
+          const dateB = new Date(yearB, monthB - 1, dayB);
+          return dateA - dateB; // Ascending chronological order
+        });
+      }
     }
 
     return {
