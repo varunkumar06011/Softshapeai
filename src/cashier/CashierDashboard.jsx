@@ -1676,7 +1676,7 @@ const CashierDashboard = ({ onLogout }) => {
                       />
                     </div>
                     <div className="overflow-x-auto scrollbar-hide relative">
-                      {txnsLoading && (
+                      {txnsLoading && filteredTransactions.length > 0 && (
                         <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
                           <div className="flex flex-col items-center gap-2">
                             <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
@@ -1696,7 +1696,17 @@ const CashierDashboard = ({ onLogout }) => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                          {filteredTransactions.map(txn => (
+                          {txnsLoading && filteredTransactions.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="p-12 text-center">
+                                <div className="flex flex-col items-center justify-center gap-2 py-8">
+                                  <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredTransactions.map(txn => (
                             <React.Fragment key={txn.id}>
                               <tr
                                 onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
@@ -1765,7 +1775,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 </tr>
                               )}
                             </React.Fragment>
-                          ))}
+                          )))}
                         </tbody>
                       </table>
                     </div>
