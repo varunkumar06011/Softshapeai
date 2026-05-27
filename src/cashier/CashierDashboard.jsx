@@ -1031,15 +1031,6 @@ const CashierDashboard = ({ onLogout }) => {
 
           <div className="flex items-center gap-4">
             <OutletToggle className="flex" />
-            <div className="hidden sm:flex items-center gap-2 bg-red-50 px-3.5 py-1.5 rounded-lg border border-red-100 text-[#E53935]">
-              <Activity size={16} />
-              <span className="text-xs font-black uppercase tracking-wider">Live Op-Feed</span>
-            </div>
-            <button className="p-2 text-gray-500 hover:bg-gray-50 rounded-xl relative transition-colors duration-150">
-              <Bell size={20} />
-              <span className="absolute top-1.5 right-1.5 w-4.5 h-4.5 bg-[#E53935] text-white text-[9px] font-black flex items-center justify-center rounded-full shadow-sm">2</span>
-            </button>
-            <div className="h-8 w-[1px] bg-gray-200 mx-2" />
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <p className="text-xs md:text-sm font-black leading-none text-gray-900">Kiran Kumar</p>
@@ -1557,7 +1548,6 @@ const CashierDashboard = ({ onLogout }) => {
               <div className="max-w-6xl mx-auto space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">{activeTab.replace('-', ' ')} Feed</h2>
-                  <button className="px-3 py-1.5 bg-[#E53935] text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm">Sync Now</button>
                 </div>
 
                 {activeTab === 'tables' && (
@@ -1713,7 +1703,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 {/* FIX 6: Captain */}
                                 <td className="p-4">
                                   <span className="text-xs font-bold text-gray-500 uppercase">
-                                    {txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Cashier'}
+                                    {txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'}
                                   </span>
                                 </td>
                                 <td className="p-4">
