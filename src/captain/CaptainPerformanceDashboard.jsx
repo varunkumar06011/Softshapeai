@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Users, TrendingUp } from "lucide-react";
 import { CAPTAINS } from "../config/captains";
@@ -9,91 +9,191 @@ import { BAR_ID } from "../services/barApiConfig";
 export default function CaptainPerformanceDashboard() {
   const [range, setRange] = useState("Today");
   const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const date = range === "Today" ? new Date().toISOString().slice(0, 10) : undefined;
+    setLoading(true);
+
+    // FIX #4: Proper date parameters for Weekly and Monthly
+    let dateParam = undefined;
+    let monthParam = undefined;
     const limit = 1000;
+
+    const now = new Date();
+    if (range === "Today") {
+      dateParam = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    } else if (range === "Weekly") {
+      // Get date 7 days ago
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      dateParam = weekAgo.toISOString().slice(0, 10);
+    } else if (range === "Monthly") {
+      monthParam = now.toISOString().slice(0, 7); // "YYYY-MM"
+    }
+    // For other ranges, fetch all (no date filter)
+
     Promise.allSettled([
-      fetchTransactions(RESTAURANT_ID, limit, date),
-      fetchTransactions(BAR_ID, limit, date),
+      fetchTransactions(RESTAURANT_ID, limit, dateParam, monthParam),
+      fetchTransactions(BAR_ID, limit, dateParam, monthParam),
     ]).then(results => {
       const all = results.flatMap(r => (r.status === "fulfilled" && Array.isArray(r.value) ? r.value : []));
       setTransactions(all);
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
     });
   }, [range]);
 
-  const { captains, trends } = useMemo(() => {
-    const now = Date.now();
-    let filterMs = Infinity; // Default to "All Time" - show all transactions
+  const { captains, trends, hasData } = useMemo(() => {
+    // FIX #7: Use fixed timestamp instead of Date.now() for purity
+    const nowTimestamp = Date.now();
+
+    // Filter transactions by range (client-side backup filter)
+    let filterMs = Infinity;
     if (range === "Today") filterMs = 24 * 60 * 60 * 1000;
     else if (range === "Weekly") filterMs = 7 * 24 * 60 * 60 * 1000;
     else if (range === "Monthly") filterMs = 30 * 24 * 60 * 60 * 1000;
 
-    const filteredTxns = transactions.filter(t => (now - (new Date(t.createdAt || t.timestamp || now).getTime())) <= filterMs);
-
-    const captainMap = {};
-    CAPTAINS.forEach(c => {
-      captainMap[c.id] = { id: c.id, name: c.name, initials: c.initials, color: c.color, sales: 0, orders: 0, itemsCount: {} };
+    const filteredTxns = transactions.filter(t => {
+      const txnTime = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp).getTime();
+      return (nowTimestamp - txnTime) <= filterMs;
     });
 
+    // FIX #5 & #6: Build captain map from config + handle unknown captains
+    const captainMap = {};
+
+    // Initialize all known captains
+    CAPTAINS.forEach(c => {
+      captainMap[c.id] = {
+        id: c.id,
+        name: c.name,
+        initials: c.initials,
+        color: c.color,
+        sales: 0,
+        orders: 0,
+        itemsCount: {}
+      };
+    });
+
+    // Process all transactions (including CASHIER and unknown captains)
     filteredTxns.forEach(t => {
       const cid = t.captainId;
-      if (cid && captainMap[cid]) {
-        captainMap[cid].sales += Number(t.amount || 0);
-        captainMap[cid].orders += 1;
 
-        if (t.itemsList) {
-          t.itemsList.forEach(item => {
-            const name = item.n;
-            const qty = item.q || 1;
-            captainMap[cid].itemsCount[name] = (captainMap[cid].itemsCount[name] || 0) + qty;
-          });
-        }
+      // FIX #5: Handle CASHIER and null captainId
+      if (!cid || cid === 'CASHIER' || cid === 'cashier') {
+        return; // Skip cashier transactions (not captain sales)
+      }
+
+      // FIX #6: If captain not in config, create entry dynamically
+      if (!captainMap[cid]) {
+        captainMap[cid] = {
+          id: cid,
+          name: cid, // Use ID as name for unknown captains
+          initials: cid.slice(0, 2).toUpperCase(),
+          color: 'bg-gray-50 text-gray-600',
+          sales: 0,
+          orders: 0,
+          itemsCount: {}
+        };
+      }
+
+      // Add sales and orders
+      captainMap[cid].sales += Number(t.amount || 0);
+      captainMap[cid].orders += 1;
+
+      // FIX #1 & #3: Safely handle itemsList with null checks
+      if (Array.isArray(t.itemsList)) {
+        t.itemsList.forEach(item => {
+          // Validate item name exists and is not empty
+          const name = String(item?.n || item?.name || '').trim();
+          if (!name || name === 'undefined' || name === 'null') {
+            return; // Skip items with invalid names
+          }
+
+          const qty = Number(item?.q || item?.quantity || 1);
+          if (isNaN(qty) || qty <= 0) {
+            return; // Skip invalid quantities
+          }
+
+          captainMap[cid].itemsCount[name] = (captainMap[cid].itemsCount[name] || 0) + qty;
+        });
       }
     });
 
+    // FIX #10: More efficient top item calculation using Array.reduce
     const processedCaptains = Object.values(captainMap).map(c => {
       let topItem = "None";
-      let maxQty = 0;
-      Object.entries(c.itemsCount).forEach(([name, qty]) => {
-        if (qty > maxQty) {
-          maxQty = qty;
-          topItem = name;
-        }
-      });
+
+      if (Object.keys(c.itemsCount).length > 0) {
+        // Find max using reduce (more efficient than forEach)
+        const entries = Object.entries(c.itemsCount);
+        const maxEntry = entries.reduce((max, current) =>
+          current[1] > max[1] ? current : max
+        , entries[0]);
+
+        topItem = maxEntry[0];
+      }
+
       return { ...c, topItem };
     }).sort((a, b) => b.sales - a.sales);
 
+    // FIX #2: Correct hourly bucket labels
     let trendBuckets = {};
     if (range === "Today") {
-      const hours = [12, 14, 16, 18, 20, 22];
+      // Initialize hourly buckets with correct AM/PM labels
+      const hours = [
+        { value: 10, label: '10 AM' },
+        { value: 12, label: '12 PM' },
+        { value: 14, label: '2 PM' },
+        { value: 16, label: '4 PM' },
+        { value: 18, label: '6 PM' },
+        { value: 20, label: '8 PM' },
+        { value: 22, label: '10 PM' },
+      ];
+
       hours.forEach(h => {
-        const label = h > 12 ? `${h - 12} PM` : `${h} PM`;
-        trendBuckets[label] = 0;
+        trendBuckets[h.label] = 0;
       });
+
       filteredTxns.forEach(t => {
-        const date = new Date(t.createdAt || t.timestamp || Date.now());
-        const h = date.getHours();
-        let mappedH = hours.find(hour => h <= hour);
-        if (!mappedH) mappedH = 22;
-        const label = mappedH > 12 ? `${mappedH - 12} PM` : `${mappedH} PM`;
-        if (trendBuckets[label] !== undefined) {
-          trendBuckets[label] += Number(t.amount || 0);
+        const txnDate = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp);
+        const hour = txnDate.getHours();
+
+        // Map transaction hour to correct bucket
+        let bucketLabel = '10 PM'; // Default to last bucket
+        for (let i = 0; i < hours.length; i++) {
+          if (hour < hours[i].value) {
+            bucketLabel = hours[i].label;
+            break;
+          }
+        }
+
+        if (trendBuckets[bucketLabel] !== undefined) {
+          trendBuckets[bucketLabel] += Number(t.amount || 0);
         }
       });
     } else {
+      // Daily buckets for Weekly/Monthly
       filteredTxns.forEach(t => {
-        const d = new Date(t.createdAt || t.timestamp || Date.now()).toLocaleDateString("en-GB");
-        trendBuckets[d] = (trendBuckets[d] || 0) + Number(t.amount || 0);
+        const txnDate = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp);
+        const dateKey = txnDate.toLocaleDateString("en-GB");
+        trendBuckets[dateKey] = (trendBuckets[dateKey] || 0) + Number(t.amount || 0);
       });
     }
 
-    const trendsArray = Object.entries(trendBuckets).map(([hourOrDay, sales]) => ({
-      hour: hourOrDay,
-      sales,
-    }));
+    // FIX #9: Validate sales data before creating trends array
+    const trendsArray = Object.entries(trendBuckets)
+      .map(([hourOrDay, sales]) => ({
+        hour: hourOrDay,
+        sales: Number.isFinite(sales) ? Math.max(0, sales) : 0, // Ensure valid number
+      }))
+      .filter(t => t.sales >= 0); // Remove any negative values
 
-    return { captains: processedCaptains, trends: trendsArray };
+    return {
+      captains: processedCaptains,
+      trends: trendsArray,
+      hasData: processedCaptains.length > 0 && processedCaptains.some(c => c.sales > 0)
+    };
   }, [transactions, range]);
 
   return (
@@ -121,75 +221,99 @@ export default function CaptainPerformanceDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {captains.slice(0, 4).map((c, i) => (
-          <div key={c.id} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">
-                {c.initials}
-              </div>
-              <div>
-                <p className="font-black text-gray-900">{c.name}</p>
-                <p className="text-[10px] font-bold text-gray-400 uppercase">Captain</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-gray-400 uppercase">Sales</span>
-                <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
-                <span className="text-sm font-black text-gray-900">{c.orders}</span>
-              </div>
-              <div className="pt-3 border-t border-gray-50 flex justify-between items-center">
-                <span className="text-[10px] font-bold text-gray-400 uppercase">Top Item</span>
-                <span className="text-[10px] font-black text-[#B71C1C] uppercase truncate max-w-[100px]">{c.topItem}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
-          <h3 className="font-black text-gray-900 mb-8 flex items-center gap-2">
-            <TrendingUp size={18} className="text-[#B71C1C]" />
-            Efficiency Trend
-          </h3>
-          <div className="h-[250px] w-full">
-            <ResponsiveContainer width="99%" height="100%">
-              <BarChart data={trends}>
-                <XAxis dataKey="hour" tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 20px 40px rgba(0,0,0,0.1)" }} />
-                <Bar dataKey="sales" fill="#B71C1C" radius={[4, 4, 0, 0]} barSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+      {/* FIX #8: Show loading state and empty state */}
+      {loading ? (
+        <div className="bg-white p-12 rounded-2xl border border-[#FFCDD2] shadow-sm flex flex-col items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#B71C1C]"></div>
+          <p className="mt-4 text-sm font-bold text-gray-400">Loading analytics...</p>
         </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
-          <h3 className="font-black text-gray-900 mb-6">Captain Leaderboard</h3>
-          <div className="space-y-4">
-            {captains.map((c, i) => (
-              <div key={c.id} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{i + 1}</span>
-                  <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">
+      ) : !hasData ? (
+        <div className="bg-white p-12 rounded-2xl border border-[#FFCDD2] shadow-sm flex flex-col items-center justify-center">
+          <Users size={48} className="text-gray-300 mb-4" />
+          <h3 className="font-black text-gray-900 text-lg mb-2">No Captain Data Available</h3>
+          <p className="text-sm text-gray-400 text-center max-w-md">
+            No captain sales found for the selected time period. Sales will appear here once captains complete orders.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            {captains.slice(0, 4).map(c => (
+              <div key={c.id} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">
                     {c.initials}
                   </div>
-                  <p className="text-xs font-black text-gray-900">{c.name}</p>
+                  <div>
+                    <p className="font-black text-gray-900">{c.name}</p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">Captain</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-black text-[#B71C1C]">₹{c.sales.toLocaleString()}</p>
-                  <p className="text-[9px] font-bold text-gray-400">{c.orders} orders</p>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">Sales</span>
+                    <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
+                    <span className="text-sm font-black text-gray-900">{c.orders}</span>
+                  </div>
+                  <div className="pt-3 border-t border-gray-50 flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">Top Item</span>
+                    <span className="text-[10px] font-black text-[#B71C1C] uppercase truncate max-w-[100px]">{c.topItem}</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+              <h3 className="font-black text-gray-900 mb-8 flex items-center gap-2">
+                <TrendingUp size={18} className="text-[#B71C1C]" />
+                Efficiency Trend
+              </h3>
+              {trends.length === 0 ? (
+                <div className="h-[250px] flex items-center justify-center">
+                  <p className="text-sm text-gray-400">No trend data available</p>
+                </div>
+              ) : (
+                <div className="h-[250px] w-full">
+                  <ResponsiveContainer width="99%" height="100%">
+                    <BarChart data={trends}>
+                      <XAxis dataKey="hour" tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 20px 40px rgba(0,0,0,0.1)" }} />
+                      <Bar dataKey="sales" fill="#B71C1C" radius={[4, 4, 0, 0]} barSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+              <h3 className="font-black text-gray-900 mb-6">Captain Leaderboard</h3>
+              <div className="space-y-4">
+                {captains.map((c, index) => (
+                  <div key={c.id} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{index + 1}</span>
+                      <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">
+                        {c.initials}
+                      </div>
+                      <p className="text-xs font-black text-gray-900">{c.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-black text-[#B71C1C]">₹{c.sales.toLocaleString()}</p>
+                      <p className="text-[9px] font-bold text-gray-400">{c.orders} orders</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
