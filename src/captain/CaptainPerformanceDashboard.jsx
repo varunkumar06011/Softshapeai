@@ -184,12 +184,24 @@ export default function CaptainPerformanceDashboard() {
     }
 
     // FIX #9: Validate sales data before creating trends array
-    const trendsArray = Object.entries(trendBuckets)
+    let trendsArray = Object.entries(trendBuckets)
       .map(([hourOrDay, sales]) => ({
         hour: hourOrDay,
         sales: Number.isFinite(sales) ? Math.max(0, sales) : 0, // Ensure valid number
       }))
       .filter(t => t.sales >= 0); // Remove any negative values
+
+    // Sort dates chronologically for Weekly/Monthly (Today already ordered by hour array)
+    if (range !== "Today" && trendsArray.length > 0) {
+      trendsArray.sort((a, b) => {
+        // Parse DD/MM/YYYY format to Date objects for comparison
+        const [dayA, monthA, yearA] = a.hour.split('/').map(Number);
+        const [dayB, monthB, yearB] = b.hour.split('/').map(Number);
+        const dateA = new Date(yearA, monthA - 1, dayA);
+        const dateB = new Date(yearB, monthB - 1, dayB);
+        return dateA - dateB; // Ascending chronological order
+      });
+    }
 
     return {
       captains: processedCaptains,
