@@ -14,23 +14,23 @@ export default function CaptainPerformanceDashboard() {
   useEffect(() => {
     setLoading(true);
 
-    // FIX #4: Proper date parameters for Weekly and Monthly
+    // FIX #4: Proper date parameters for each range
     let dateParam = undefined;
     let monthParam = undefined;
     const limit = 1000;
 
     const now = new Date();
     if (range === "Today") {
+      // Fetch today's transactions only (IST day)
       dateParam = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
     } else if (range === "Weekly") {
-      // Get date 7 days ago
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      dateParam = weekAgo.toISOString().slice(0, 10);
+      // For weekly, fetch ALL transactions (client-side filter handles 7-day range)
+      // Don't pass date param - let backend return all recent transactions
+      dateParam = undefined;
     } else if (range === "Monthly") {
+      // Fetch entire current month (IST month)
       monthParam = now.toISOString().slice(0, 7); // "YYYY-MM"
     }
-    // For other ranges, fetch all (no date filter)
 
     Promise.allSettled([
       fetchTransactions(RESTAURANT_ID, limit, dateParam, monthParam),
@@ -194,7 +194,8 @@ export default function CaptainPerformanceDashboard() {
     return {
       captains: processedCaptains,
       trends: trendsArray,
-      hasData: processedCaptains.length > 0 && processedCaptains.some(c => c.sales > 0)
+      // Show UI even with zero sales - only hide if no captains configured
+      hasData: processedCaptains.length > 0
     };
   }, [transactions, range]);
 
