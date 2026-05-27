@@ -48,15 +48,27 @@ export default function CaptainPerformanceDashboard() {
     // FIX #7: Use fixed timestamp instead of Date.now() for purity
     const nowTimestamp = Date.now();
 
-    // Filter transactions by range (client-side backup filter)
-    let filterMs = Infinity;
-    if (range === "Today") filterMs = 24 * 60 * 60 * 1000;
-    else if (range === "Weekly") filterMs = 7 * 24 * 60 * 60 * 1000;
-    else if (range === "Monthly") filterMs = 30 * 24 * 60 * 60 * 1000;
-
+    // Client-side filter for transaction time ranges
+    // Backend handles date filtering, but we apply additional client-side filter
     const filteredTxns = transactions.filter(t => {
-      const txnTime = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp).getTime();
-      return (nowTimestamp - txnTime) <= filterMs;
+      // Get transaction timestamp (backend returns paidAt or createdAt)
+      const txnTime = new Date(t.paidAt || t.createdAt).getTime();
+
+      // Validate timestamp is valid
+      if (!txnTime || isNaN(txnTime)) return false;
+
+      // For Today and Weekly, apply time-based filter
+      // Monthly already filtered by backend, so include all
+      if (range === "Today") {
+        // Only show today's transactions (last 24 hours)
+        return (nowTimestamp - txnTime) <= (24 * 60 * 60 * 1000);
+      } else if (range === "Weekly") {
+        // Only show last 7 days
+        return (nowTimestamp - txnTime) <= (7 * 24 * 60 * 60 * 1000);
+      } else {
+        // Monthly - include all (backend already filtered)
+        return true;
+      }
     });
 
     // FIX #5 & #6: Build captain map from config + handle unknown captains
@@ -139,13 +151,17 @@ export default function CaptainPerformanceDashboard() {
       return { ...c, topItem };
     }).sort((a, b) => b.sales - a.sales);
 
-    // FIX #2: Dynamic hourly/daily buckets for all ranges
+    // FIX #2: Dynamic hourly/daily buckets with IST timezone handling
     let trendBuckets = {};
+
     if (range === "Today") {
       // Dynamic hourly buckets - show ALL hours with transactions
       filteredTxns.forEach(t => {
-        const txnDate = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp);
-        const hour = txnDate.getHours();
+        const txnDate = new Date(t.paidAt || t.createdAt);
+
+        // Get IST hour (add 5.5 hours offset to UTC)
+        const istDate = new Date(txnDate.getTime() + (5.5 * 60 * 60 * 1000));
+        const hour = istDate.getUTCHours(); // Use UTC hours since we already converted to IST
 
         // Format hour as readable label (e.g., "10 AM", "2 PM", "11 PM")
         let hourLabel;
@@ -157,10 +173,17 @@ export default function CaptainPerformanceDashboard() {
         trendBuckets[hourLabel] = (trendBuckets[hourLabel] || 0) + Number(t.amount || 0);
       });
     } else {
-      // Daily buckets for Weekly/Monthly
+      // Daily buckets for Weekly/Monthly with consistent IST date formatting
       filteredTxns.forEach(t => {
-        const txnDate = new Date(t.createdAt || t.paidAt || t.timestamp || nowTimestamp);
-        const dateKey = txnDate.toLocaleDateString("en-GB");
+        const txnDate = new Date(t.paidAt || t.createdAt);
+
+        // Convert to IST and format as DD/MM/YYYY
+        const istDate = new Date(txnDate.getTime() + (5.5 * 60 * 60 * 1000));
+        const day = String(istDate.getUTCDate()).padStart(2, '0');
+        const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+        const year = istDate.getUTCFullYear();
+        const dateKey = `${day}/${month}/${year}`;
+
         trendBuckets[dateKey] = (trendBuckets[dateKey] || 0) + Number(t.amount || 0);
       });
     }
