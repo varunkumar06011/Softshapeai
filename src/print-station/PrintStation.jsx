@@ -189,6 +189,8 @@ async function getQZ() {
 async function connectQZ() {
   const qz = await getQZ();
   qz.security.setCertificatePromise(function (resolve) { resolve(QZ_CERT); });
+  // MUST match backend signing algorithm — SHA512 prevents Allow/Block popup
+  qz.security.setSignatureAlgorithm('SHA512');
   qz.security.setSignaturePromise(function (toSign) {
     return function (resolve, reject) {
       fetch(`${VITE_API_URL}/api/print/qz-sign`, {
