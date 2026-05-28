@@ -2068,6 +2068,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
 }
 
 function RecordPurchaseModal({ inventory, onClose, onSave }) {
+  const [menuItems, setMenuItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [formData, setFormData] = useState({
@@ -2080,30 +2081,48 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
     notes: '',
   });
 
+  useEffect(() => {
+    fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'))
+      .then(res => res.json())
+      .then(data => setMenuItems(data.filter(item => item.menuType === 'LIQUOR')))
+      .catch(console.error);
+  }, []);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave({
-      itemId: formData.itemId,
-      quantityPurchased: parseFloat(formData.quantityPurchased),
-      costPerBottle: parseFloat(formData.costPerBottle),
-      supplierName: formData.supplierName,
-      notes: formData.notes,
-    });
+
+    // Check if item already has inventory, if not we need to create it first
+    const existingInventory = inventory.find(inv => inv.menuItemId === formData.itemId);
+
+    if (existingInventory) {
+      // Item has inventory, just record purchase
+      onSave({
+        itemId: existingInventory.id,
+        quantityPurchased: parseFloat(formData.quantityPurchased),
+        costPerBottle: parseFloat(formData.costPerBottle),
+        supplierName: formData.supplierName,
+        notes: formData.notes,
+      });
+    } else {
+      // Item doesn't have inventory, need to create it first
+      // This should ideally call a combined endpoint or create inventory first
+      alert('This item does not have inventory yet. Please add it to inventory first using the "Add Item" button.');
+    }
   };
 
-  // Show all items, filter by search if there's a search term (already filtered for non-virtual)
-  const filteredInventory = inventory.filter(item =>
-    !searchTerm || item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  // Show all menu items, filter by search if there's a search term
+  const filteredMenuItems = menuItems.filter(item =>
+    !searchTerm || item.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const selectItem = (item) => {
     setFormData({
       ...formData,
       itemId: item.id,
-      itemName: item.menuItem?.name || '',
-      bottleSize: item.bottleSize
+      itemName: item.name,
+      bottleSize: 750 // Default, could be updated based on menu item
     });
-    setSearchTerm(item.menuItem?.name || '');
+    setSearchTerm(item.name);
     setShowDropdown(false);
   };
 
@@ -2133,29 +2152,37 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
               onBlur={() => {
                 setTimeout(() => setShowDropdown(false), 200);
               }}
-              placeholder="Search for inventory item..."
+              placeholder="Search for liquor item..."
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
             />
-            {showDropdown && filteredInventory.length > 0 && (
+            {showDropdown && filteredMenuItems.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto scrollbar-hide z-10">
-                {filteredInventory.map(item => (
-                  <div
-                    key={item.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      selectItem(item);
-                    }}
-                    className="px-4 py-3 hover:bg-[#FFF5F5] cursor-pointer border-b border-gray-100 last:border-0 transition-colors"
-                  >
-                    <div className="font-bold">{item.menuItem?.name}</div>
-                    <div className="text-xs text-gray-500">
-                      Current: {Math.floor(item.currentStock / item.bottleSize)} bottles ({item.currentStock.toFixed(0)} ml)
+                {filteredMenuItems.map(item => {
+                  const existingInventory = inventory.find(inv => inv.menuItemId === item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectItem(item);
+                      }}
+                      className="px-4 py-3 hover:bg-[#FFF5F5] cursor-pointer border-b border-gray-100 last:border-0 transition-colors"
+                    >
+                      <div className="font-bold">{item.name}</div>
+                      {existingInventory && (
+                        <div className="text-xs text-gray-500">
+                          Current: {Math.floor(existingInventory.currentStock / existingInventory.bottleSize)} bottles ({existingInventory.currentStock.toFixed(0)} ml)
+                        </div>
+                      )}
+                      {!existingInventory && (
+                        <div className="text-xs text-amber-600 font-medium">No inventory yet</div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-            {showDropdown && filteredInventory.length === 0 && searchTerm && (
+            {showDropdown && filteredMenuItems.length === 0 && searchTerm && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl p-4 z-10">
                 <p className="text-gray-500 text-sm text-center">No items found</p>
               </div>
