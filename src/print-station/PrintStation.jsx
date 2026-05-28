@@ -68,34 +68,45 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
 }
 
 function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
+  const TRIPLE_HEIGHT = GS + '!\x22';  // Triple height + double width for maximum visibility
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    divider('='),
+    divider('='),
+    CMD.BOLD_ON + TRIPLE_HEIGHT,
     'CANCEL ITEM\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
-    divider(),
+    divider('='),
+    divider('='),
     CMD.ALIGN_LEFT,
-    `Table : ${tableNumber}\n`,
-    `Time  : ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
-    `By    : ${cancelledBy || 'Staff'}\n`,
-    divider(),
+    `Table: ${tableNumber}  |  Time: ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
+    `By: ${cancelledBy || 'Staff'}\n`,
+    divider('='),
+    '\n',
     CMD.BOLD_ON,
-    pad('ITEM', 22) + pad('QTY', 4) + '\n',
+    'CANCELLED ITEM:\n',
     CMD.BOLD_OFF,
-    divider(),
+    '\n',
   ];
   if (item) {
-    cmds.push(pad(String(item.name || ''), 22) + pad(String(item.quantity || 1), 4) + '\n');
+    cmds.push(
+      CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+      `  ${item.quantity}x  ${String(item.name || '')}\n`,
+      CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+      '\n'
+    );
   }
   cmds.push(
-    divider(),
-    '\n',
+    divider('='),
+    divider('='),
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    CMD.BOLD_ON + TRIPLE_HEIGHT,
     'CANCELLED\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
-    '\n',
+    divider('='),
+    divider('='),
+    '\n\n',
     CMD.CUT
   );
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
