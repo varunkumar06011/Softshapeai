@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
@@ -1019,7 +1019,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
             { id: 'online', label: 'Online Orders', icon: Monitor },
-            { id: 'kitchen', label: 'Kitchen Status', icon: ChefHat },
+
           ].map((item) => (
             <button
               key={item.id}
@@ -1771,7 +1771,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <ItemAnalytics outlet={outlet} />
                 )}
 
-                {activeTab === 'kitchen' && (
+                {false && (
                   <div className="flex flex-col gap-4 h-full">
                     {/* Smart Summary Header */}
                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2 bg-white p-3 rounded-xl border border-gray-100 shadow-sm shrink-0">
