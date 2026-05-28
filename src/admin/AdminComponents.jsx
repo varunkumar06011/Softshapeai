@@ -1588,11 +1588,14 @@ export function Inventory() {
   };
 
   const getStockStatus = (item) => {
-    const bottles = Math.floor(item.currentStock / item.bottleSize);
-    const reorderBottles = Math.ceil(item.reorderLevel / item.bottleSize);
+    const currentStock = parseFloat(item.currentStock) || 0;
+    const bottleSize = parseInt(item.bottleSize) || 750;
+    const reorderLevel = parseFloat(item.reorderLevel) || 0;
+    const bottles = Math.floor(currentStock / bottleSize);
+    const reorderBottles = Math.ceil(reorderLevel / bottleSize);
 
-    if (item.currentStock <= 0) return { status: 'out', label: 'Out of Stock', color: 'text-red-600' };
-    if (item.currentStock <= item.reorderLevel) return { status: 'low', label: 'Low Stock', color: 'text-amber-600' };
+    if (currentStock <= 0) return { status: 'out', label: 'Out of Stock', color: 'text-red-600' };
+    if (currentStock <= reorderLevel) return { status: 'low', label: 'Low Stock', color: 'text-amber-600' };
     return { status: 'ok', label: 'In Stock', color: 'text-green-600' };
   };
 
@@ -1682,11 +1685,15 @@ export function Inventory() {
             </h3>
           </div>
           <div className="flex flex-wrap gap-2">
-            {lowStockItems.map(item => (
-              <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
-                {item.menuItem?.name} ({Math.floor(item.currentStock / item.bottleSize)} bottles)
-              </span>
-            ))}
+            {lowStockItems.map(item => {
+              const currentStock = parseFloat(item.currentStock) || 0;
+              const bottleSize = parseInt(item.bottleSize) || 750;
+              return (
+                <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
+                  {item.menuItem?.name} ({Math.floor(currentStock / bottleSize)} bottles)
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1993,7 +2000,9 @@ function AdjustStockModal({ item, onClose, onSave }) {
     }
   };
 
-  const newStock = parseFloat(item.currentStock) + parseFloat(adjustment.quantityChange || 0);
+  const currentStock = parseFloat(item.currentStock) || 0;
+  const bottleSize = parseInt(item.bottleSize) || 750;
+  const newStock = currentStock + parseFloat(adjustment.quantityChange || 0);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
@@ -2002,7 +2011,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-[#FFF5F5] rounded-xl p-4 mb-4 border-2 border-gray-200">
             <p className="text-sm text-gray-600 font-bold uppercase tracking-wide">Current Stock:</p>
-            <p className="text-2xl font-black text-[#E53935]">{item.currentStock.toFixed(0)} ml ({Math.floor(item.currentStock / item.bottleSize)} bottles)</p>
+            <p className="text-2xl font-black text-[#E53935]">{currentStock.toFixed(0)} ml ({Math.floor(currentStock / bottleSize)} bottles)</p>
           </div>
 
           <div>
@@ -2045,7 +2054,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
             <p className="text-sm text-gray-600 font-bold uppercase tracking-wide">New Stock After Adjustment:</p>
             <p className={`text-2xl font-black ${newStock < 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {newStock.toFixed(0)} ml ({Math.floor(newStock / item.bottleSize)} bottles)
+              {newStock.toFixed(0)} ml ({Math.floor(newStock / bottleSize)} bottles)
             </p>
           </div>
 
@@ -2174,7 +2183,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
                       <div className="font-bold">{item.name}</div>
                       {existingInventory && (
                         <div className="text-xs text-gray-500">
-                          Current: {Math.floor(existingInventory.currentStock / existingInventory.bottleSize)} bottles ({existingInventory.currentStock.toFixed(0)} ml)
+                          Current: {Math.floor((parseFloat(existingInventory.currentStock) || 0) / (parseInt(existingInventory.bottleSize) || 750))} bottles ({(parseFloat(existingInventory.currentStock) || 0).toFixed(0)} ml)
                         </div>
                       )}
                       {!existingInventory && (

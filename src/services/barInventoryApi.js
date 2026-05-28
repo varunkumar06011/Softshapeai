@@ -15,13 +15,31 @@ async function parseResponse(res) {
   return res.json();
 }
 
+// Normalize numeric fields from API response (handles string -> number conversion)
+function normalizeInventoryItem(item) {
+  if (!item) return item;
+  return {
+    ...item,
+    currentStock: parseFloat(item.currentStock) || 0,
+    bottleSize: parseInt(item.bottleSize) || 750,
+    reorderLevel: parseFloat(item.reorderLevel) || 0,
+    costPerBottle: parseFloat(item.costPerBottle) || 0,
+  };
+}
+
+function normalizeInventoryArray(items) {
+  if (!Array.isArray(items)) return items;
+  return items.map(normalizeInventoryItem);
+}
+
 // Get all inventory items
 export async function fetchBarInventory() {
   const res = await fetch(apiUrl(`/api/bar/inventory/items?restaurantId=${BAR_ID}`), {
     cache: 'no-store',
     headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
   });
-  return parseResponse(res);
+  const data = await parseResponse(res);
+  return normalizeInventoryArray(data);
 }
 
 // Create new inventory item
@@ -31,7 +49,8 @@ export async function createInventoryItem(data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...data, restaurantId: BAR_ID }),
   });
-  return parseResponse(res);
+  const item = await parseResponse(res);
+  return normalizeInventoryItem(item);
 }
 
 // Update inventory item
@@ -41,7 +60,8 @@ export async function updateInventoryItem(id, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  return parseResponse(res);
+  const item = await parseResponse(res);
+  return normalizeInventoryItem(item);
 }
 
 // Delete inventory item
@@ -59,7 +79,8 @@ export async function adjustStock(data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...data, restaurantId: BAR_ID }),
   });
-  return parseResponse(res);
+  const item = await parseResponse(res);
+  return normalizeInventoryItem(item);
 }
 
 // Record purchase
@@ -69,7 +90,8 @@ export async function recordPurchase(data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...data, restaurantId: BAR_ID }),
   });
-  return parseResponse(res);
+  const item = await parseResponse(res);
+  return normalizeInventoryItem(item);
 }
 
 // Get transaction history
@@ -95,5 +117,6 @@ export async function fetchLowStockItems() {
   const res = await fetch(apiUrl(`/api/bar/inventory/low-stock?restaurantId=${BAR_ID}`), {
     cache: 'no-store',
   });
-  return parseResponse(res);
+  const data = await parseResponse(res);
+  return normalizeInventoryArray(data);
 }
