@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
@@ -1123,144 +1123,97 @@ const CashierDashboard = ({ onLogout }) => {
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {/* LIVE ORDERS FEED */}
-                <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
-                  <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                      <History size={12} className="text-[#E53935]" />
-                      Active Order Registry
-                    </h3>
-                    <button className="text-[9px] font-bold text-[#E53935] uppercase hover:underline">Full Log</button>
-                  </div>
-                  <div className="flex-grow overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead className="bg-white border-b border-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-[8px] font-black uppercase text-gray-400">Table/Cust</th>
-                          <th className="px-3 py-2 text-[8px] font-black uppercase text-gray-400">Category</th>
-                          <th className="px-3 py-2 text-[8px] font-black uppercase text-gray-400">Status</th>
-                          <th className="px-3 py-2 text-[8px] font-black uppercase text-gray-400 text-right">Bill</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {activeTableOrders.map(o => (
-                          <tr key={o.id} onClick={() => setSelectedTable(o.table)} className="hover:bg-gray-50 transition-colors cursor-pointer">
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-[9px] font-black shrink-0">{o.id}</div>
-                                <div className="min-w-0">
-                                  <p className="text-[10px] font-bold text-gray-900 leading-none truncate">{o.customer}</p>
-                                  <p className="text-[8px] text-gray-400 font-bold uppercase mt-0.5 whitespace-nowrap">{o.time}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-[9px] font-bold text-gray-500 uppercase">{o.type}</td>
-                            <td className="px-3 py-2">
-                              <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${o.status === 'Ready' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                }`}>{o.status}</span>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <p className="text-[10px] font-black text-gray-900">₹{o.amount}</p>
-                            </td>
-                          </tr>
-                        ))}
-                        {activeTableOrders.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="px-3 py-8 text-center text-[10px] font-black uppercase tracking-widest text-gray-300">
-                              No live table orders
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+              {/* Live Floor Status — Full Width, Only Running Tables */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                  <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
+                    <Table2 size={18} className="text-[#E53935]" />
+                    Live Floor Status
+                    <span className="bg-[#E53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
+                      {activeTables.filter(t => t.status && t.status !== 'Free').length} Running
+                    </span>
+                  </h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#E53935]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preparing</span></div>
                   </div>
                 </div>
 
-                {/* KITCHEN QUEUE */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
-                  <div className="px-3 py-2 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                      <ChefHat size={12} className="text-[#E53935]" />
-                      Kitchen Workload
-                    </h3>
+                {activeTables.filter(t => t.status && t.status !== 'Free').length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <Table2 size={52} className="text-gray-200 mb-4" />
+                    <p className="text-base font-black uppercase tracking-widest text-gray-300">All Tables Free</p>
+                    <p className="text-xs text-gray-300 font-bold mt-1.5">No active sessions on the floor</p>
                   </div>
-                  <div className="p-2 space-y-2 overflow-y-auto max-h-[300px] custom-scrollbar">
-                    {liveKotQueue.filter(k => k.type === 'FOOD').map((kot) => (
-                      <div key={kot.id} className="p-2 rounded-lg border border-gray-100 bg-gray-50/50 hover:border-red-100 transition-all cursor-pointer">
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="text-[8px] font-black text-gray-400 uppercase">KOT-{kot.id}</span>
-                          <span className="text-[8px] font-black text-orange-600 flex items-center gap-1">
-                            <Timer size={10} /> {kot.time}
-                          </span>
-                        </div>
-                        <p className="text-[10px] font-black text-gray-900 leading-tight">{kot.tableLabel} • {kot.items.length} Items</p>
-                        <div className="mt-1 flex gap-1 flex-wrap">
-                          {kot.items.slice(0, 3).map((item, idx) => (
-                            <span key={`${kot.id}-${idx}`} className="text-[7px] font-bold bg-white border border-gray-100 px-1 rounded">{item.n} x{item.q}</span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    {liveKotQueue.filter(k => k.type === 'FOOD').length === 0 && (
-                      <div className="p-6 text-center text-[9px] font-black uppercase tracking-widest text-gray-300">
-                        No live FOOD KOTs
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                ) : (
+                  <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    {activeTables
+                      .filter(t => t.status && t.status !== 'Free')
+                      .sort((a, b) => {
+                        if (a.status === 'Waiting Bill' && b.status !== 'Waiting Bill') return -1;
+                        if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
+                        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+                      })
+                      .map((table, i) => {
+                        const isWaitingBill = table.status === 'Waiting Bill';
+                        const isPreparing = table.status === 'Preparing';
+                        const bill = calculateTableBill(table);
+                        const billAmt = Number(table.currentBill || bill?.subtotal || 0);
 
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-                {/* PENDING ONLINE */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                  <div className="px-3 py-2 border-b border-gray-100 bg-orange-50/50">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-orange-600 flex items-center gap-2">
-                      <Monitor size={12} />
-                      Pending Online
-                    </h3>
-                  </div>
-                  <div className="p-2 space-y-2">
-                    <div className="p-2 rounded-lg border-2 border-orange-200 bg-orange-50 animate-pulse cursor-pointer">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[7px] font-black bg-orange-500 text-white px-1 py-0.5 rounded">SWIGGY</span>
-                        <span className="text-[8px] font-black text-orange-600">04:32</span>
-                      </div>
-                      <p className="text-[10px] font-black text-gray-900">#SW-2456 • 2 Items</p>
-                    </div>
-                  </div>
-                </div>
+                        let cardBg = 'bg-red-50 border-[#E53935]';
+                        let textColor = 'text-[#E53935]';
+                        let badgeCls = 'bg-red-100 text-red-700';
+                        let statusLabel = 'Occupied';
+                        let pulseClass = '';
 
-                {/* FLOOR PLAN MINI */}
-                <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                  <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                      <Table2 size={12} className="text-[#E53935]" />
-                      Live Floor Status
-                    </h3>
-                    <div className="flex gap-2">
-                      <div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-500" /><span className="text-[8px] font-bold text-gray-400 uppercase">Busy</span></div>
-                      <div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span className="text-[8px] font-bold text-gray-400 uppercase">Bill</span></div>
-                      <div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500" /><span className="text-[8px] font-bold text-gray-400 uppercase">Free</span></div>
-                    </div>
+                        if (isWaitingBill) {
+                          cardBg = 'bg-amber-50 border-amber-400';
+                          textColor = 'text-amber-700';
+                          badgeCls = 'bg-amber-100 text-amber-800';
+                          statusLabel = 'Bill Requested';
+                          pulseClass = 'animate-pulse';
+                        } else if (isPreparing) {
+                          cardBg = 'bg-orange-50 border-orange-400';
+                          textColor = 'text-orange-700';
+                          badgeCls = 'bg-orange-100 text-orange-700';
+                          statusLabel = 'Preparing';
+                        }
+
+                        return (
+                          <div
+                            key={i}
+                            onClick={() => {
+                              setSelectedTable(table);
+                              setActiveTab('tables');
+                              localStorage.setItem('cashier_active_tab', 'tables');
+                              setShowTableModal(true);
+                            }}
+                            className={`border-2 rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition-all hover:scale-[1.04] active:scale-[0.97] shadow-sm hover:shadow-lg select-none ${cardBg} ${pulseClass}`}
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <span className={`text-4xl font-black leading-none ${textColor}`}>
+                                {outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}
+                              </span>
+                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <div className="mt-auto">
+                              {table.captainName && (
+                                <p className={`text-[10px] font-black uppercase tracking-wider truncate mb-1 opacity-60 ${textColor}`}>
+                                  {table.captainName}
+                                </p>
+                              )}
+                              <p className="text-xl font-black text-gray-900">
+                                ₹{billAmt > 0 ? billAmt.toFixed(0) : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
-                  <div className="p-2 grid grid-cols-4 xs:grid-cols-5 sm:grid-cols-8 lg:grid-cols-12 gap-1.5">
-                    {activeTables.map((table, i) => {
-                      const status = table?.status || 'Free';
-                      const colorClass =
-                        status === 'Free' ? 'bg-green-50 border-green-200 text-green-600' :
-                          status === 'Waiting Bill' ? 'bg-amber-50 border-amber-200 text-amber-600 animate-pulse' :
-                            status === 'Preparing' ? 'bg-orange-50 border-orange-200 text-orange-600' :
-                              'bg-red-50 border-red-200 text-red-600';
-                      return (
-                        <div key={i} onClick={() => handleTableSelect(table)} className={`h-8 rounded-md border flex flex-col items-center justify-center transition-all cursor-pointer ${colorClass}`}>
-                          <span className="text-[9px] font-black leading-none">{table.id}</span>
-                          {table.captainName && <span className="text-[5px] font-black uppercase tracking-tighter mt-0.5 text-blue-600 truncate px-1 max-w-full">{table.captainName.split(' ')[0]}</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           ) : activeTab === 'pos' ? (
