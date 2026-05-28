@@ -1799,7 +1799,7 @@ export function Inventory() {
 
       {showPurchaseModal && (
         <RecordPurchaseModal
-          inventory={inventory}
+          inventory={displayItems.filter(item => !item.isVirtual)}
           onClose={() => setShowPurchaseModal(false)}
           onSave={handleRecordPurchase}
         />
@@ -2091,10 +2091,10 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
     });
   };
 
-  // Show all non-virtual items, filter by search if there's a search term
-  const filteredInventory = inventory
-    .filter(item => !item.isVirtual)
-    .filter(item => !searchTerm || item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Show all items, filter by search if there's a search term (already filtered for non-virtual)
+  const filteredInventory = inventory.filter(item =>
+    !searchTerm || item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const selectItem = (item) => {
     setFormData({
