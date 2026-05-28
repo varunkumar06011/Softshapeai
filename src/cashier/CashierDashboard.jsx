@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
@@ -1185,8 +1185,6 @@ const CashierDashboard = ({ onLogout }) => {
                             key={i}
                             onClick={() => {
                               setSelectedTable(table);
-                              setActiveTab('tables');
-                              localStorage.setItem('cashier_active_tab', 'tables');
                               setShowTableModal(true);
                             }}
                             className={`border-2 rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition-all hover:scale-[1.04] active:scale-[0.97] shadow-sm hover:shadow-lg select-none ${cardBg} ${pulseClass}`}
