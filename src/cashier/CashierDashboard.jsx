@@ -191,6 +191,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnsLoading, setTxnsLoading] = useState(false);
   const [expandedTxnId, setExpandedTxnId] = useState(null);
   const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
+  const txnDateFilterRef = useRef('today'); // Keeps latest filter accessible inside closures without re-subscribing
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
   const [txnSearch, setTxnSearch] = useState('');
 
@@ -353,7 +354,8 @@ const CashierDashboard = ({ onLogout }) => {
         setCart([]);
         setShowPaymentModal(false);
       }
-      loadTransactions();
+      // Refresh using the user's current date filter (not always 'today')
+      loadTransactions(txnDateFilterRef.current);
     };
 
     const onTableSwapped = (payload) => {
@@ -381,6 +383,11 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:swapped', onTableSwapped);
     };
   }, [socket, selectedTable?.backendId, loadTransactions]);
+
+  // Keep ref in sync so socket handlers and payment callbacks can read latest filter
+  useEffect(() => {
+    txnDateFilterRef.current = txnDateFilter;
+  }, [txnDateFilter]);
 
   // ── Load transactions from DB — re-fires when filter or tab changes ───
   useEffect(() => {
@@ -602,7 +609,8 @@ const CashierDashboard = ({ onLogout }) => {
         setSettledOrderIds(prev => new Set([...prev, tableSnap.activeOrder.id]));
       }
       // Refresh list so the placeholder gets replaced with the real txnNumber from DB
-      loadTransactions();
+      // Use the user's current date filter so we don't accidentally reset to 'today'
+      loadTransactions(txnDateFilterRef.current);
     }).catch(err => {
       if (err.message === 'This order has already been settled.') {
         addNotification('Already Settled', 'This order has already been settled. A duplicate payment was blocked.', 'error');
