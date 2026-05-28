@@ -1969,20 +1969,20 @@ function AdjustStockModal({ item, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full">
-        <h3 className="text-xl font-black uppercase mb-4">Adjust Stock: {item.menuItem?.name}</h3>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.menuItem?.name}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="bg-gray-100 rounded-xl p-4 mb-4">
-            <p className="text-sm text-gray-600">Current Stock:</p>
-            <p className="text-2xl font-black">{item.currentStock.toFixed(0)} ml ({Math.floor(item.currentStock / item.bottleSize)} bottles)</p>
+          <div className="bg-[#FFF5F5] rounded-xl p-4 mb-4 border-2 border-gray-200">
+            <p className="text-sm text-gray-600 font-bold uppercase tracking-wide">Current Stock:</p>
+            <p className="text-2xl font-black text-[#E53935]">{item.currentStock.toFixed(0)} ml ({Math.floor(item.currentStock / item.bottleSize)} bottles)</p>
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Adjustment Type</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Adjustment Type</label>
             <select
               value={adjustment.type}
               onChange={(e) => setAdjustment({ ...adjustment, type: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all font-medium"
             >
               <option value="ADJUSTMENT">Manual Adjustment</option>
               <option value="WASTAGE">Wastage/Spillage</option>
@@ -1991,30 +1991,31 @@ function AdjustStockModal({ item, onClose, onSave }) {
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Quantity Change (ml) - Use negative for deduction</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Quantity Change (ml)</label>
             <input
               type="number"
               required
               value={adjustment.quantityChange}
               onChange={(e) => setAdjustment({ ...adjustment, quantityChange: e.target.value })}
-              placeholder="e.g., 750 or -1500"
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              placeholder="Use negative for deduction (e.g., -1500)"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
+            <p className="text-xs text-gray-500 mt-1">Enter positive to add, negative to deduct</p>
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Notes (Optional)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Notes (Optional)</label>
             <textarea
               value={adjustment.notes}
               onChange={(e) => setAdjustment({ ...adjustment, notes: e.target.value })}
               placeholder="Reason for adjustment..."
               rows={3}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none resize-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none resize-none transition-all"
             />
           </div>
 
-          <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-sm text-gray-600">New Stock After Adjustment:</p>
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
+            <p className="text-sm text-gray-600 font-bold uppercase tracking-wide">New Stock After Adjustment:</p>
             <p className={`text-2xl font-black ${newStock < 0 ? 'text-red-600' : 'text-green-600'}`}>
               {newStock.toFixed(0)} ml ({Math.floor(newStock / item.bottleSize)} bottles)
             </p>
@@ -2024,15 +2025,15 @@ function AdjustStockModal({ item, onClose, onSave }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
             >
-              Save Adjustment
+              {item.isVirtual ? 'Add Stock' : 'Save Adjustment'}
             </button>
           </div>
         </form>
@@ -2042,8 +2043,12 @@ function AdjustStockModal({ item, onClose, onSave }) {
 }
 
 function RecordPurchaseModal({ inventory, onClose, onSave }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
   const [formData, setFormData] = useState({
     itemId: '',
+    itemName: '',
+    bottleSize: 0,
     quantityPurchased: 0,
     costPerBottle: 0,
     supplierName: '',
@@ -2053,76 +2058,114 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave({
-      ...formData,
+      itemId: formData.itemId,
       quantityPurchased: parseFloat(formData.quantityPurchased),
       costPerBottle: parseFloat(formData.costPerBottle),
+      supplierName: formData.supplierName,
+      notes: formData.notes,
     });
+  };
+
+  const filteredInventory = inventory.filter(item =>
+    !item.isVirtual && item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectItem = (item) => {
+    setFormData({
+      ...formData,
+      itemId: item.id,
+      itemName: item.menuItem?.name || '',
+      bottleSize: item.bottleSize
+    });
+    setSearchTerm(item.menuItem?.name || '');
+    setShowDropdown(false);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full">
-        <h3 className="text-xl font-black uppercase mb-4">Record Purchase</h3>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Record Purchase</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold mb-2">Select Item</label>
-            <select
+          <div className="relative">
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Select Item</label>
+            <input
+              type="text"
               required
-              value={formData.itemId}
-              onChange={(e) => setFormData({ ...formData, itemId: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
-            >
-              <option value="">Choose item...</option>
-              {inventory.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.menuItem?.name} (Current: {Math.floor(item.currentStock / item.bottleSize)} bottles)
-                </option>
-              ))}
-            </select>
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setShowDropdown(true);
+              }}
+              onFocus={() => setShowDropdown(true)}
+              placeholder="Search for inventory item..."
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
+            />
+            {showDropdown && filteredInventory.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-10">
+                {filteredInventory.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => selectItem(item)}
+                    className="px-4 py-3 hover:bg-[#FFF5F5] cursor-pointer border-b border-gray-100 last:border-0 transition-colors"
+                  >
+                    <div className="font-bold">{item.menuItem?.name}</div>
+                    <div className="text-xs text-gray-500">
+                      Current: {Math.floor(item.currentStock / item.bottleSize)} bottles ({item.currentStock.toFixed(0)} ml)
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showDropdown && filteredInventory.length === 0 && searchTerm && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl p-4 z-10">
+                <p className="text-gray-500 text-sm text-center">No items found</p>
+              </div>
+            )}
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Quantity Purchased (ml)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Quantity Purchased (ml)</label>
             <input
               type="number"
               required
               value={formData.quantityPurchased}
               onChange={(e) => setFormData({ ...formData, quantityPurchased: e.target.value })}
               placeholder="e.g., 7500 for 10 bottles of 750ml"
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Cost Per Bottle (₹)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
             <input
               type="number"
               step="0.01"
               required
               value={formData.costPerBottle}
               onChange={(e) => setFormData({ ...formData, costPerBottle: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Supplier Name (Optional)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Supplier Name (Optional)</label>
             <input
               type="text"
               value={formData.supplierName}
               onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              placeholder="Enter supplier name"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Notes (Optional)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Notes (Optional)</label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               placeholder="Invoice number, delivery date, etc."
               rows={2}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none resize-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none resize-none transition-all"
             />
           </div>
 
@@ -2130,13 +2173,13 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
             >
               Record Purchase
             </button>
