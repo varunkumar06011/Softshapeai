@@ -5,7 +5,7 @@ import {
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
-  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity
+  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -23,6 +23,7 @@ import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
+import ItemAnalytics from './ItemAnalytics';
 
 const isSubsequence = (q, text) => {
   let i = 0;
@@ -1016,6 +1017,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'pos', label: 'POS Billing', icon: ShoppingCart },
             { id: 'tables', label: 'Tables', icon: Table2 },
             { id: 'history', label: 'Past Transactions', icon: History },
+            { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
             { id: 'online', label: 'Online Orders', icon: Monitor },
             { id: 'kitchen', label: 'Kitchen Status', icon: ChefHat },
           ].map((item) => (
@@ -1763,6 +1765,10 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
                     )}
                   </div>
+                )}
+
+                {activeTab === 'analytics' && (
+                  <ItemAnalytics outlet={outlet} />
                 )}
 
                 {activeTab === 'kitchen' && (
