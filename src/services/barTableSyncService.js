@@ -313,6 +313,25 @@ export function useBarTableSync() {
     });
 
     const pollInterval = setInterval(async () => {
+      // Automatic midnight reset
+      const now = new Date();
+      if (now.getHours() === 0 && now.getMinutes() === 0) {
+        const today = now.toLocaleDateString();
+        if (localStorage.getItem('last_bartable_reset_date') !== today) {
+          localStorage.setItem('last_bartable_reset_date', today);
+          setTablesState((prev) => {
+            const next = prev.map((t) => {
+              if (t.status === 'Free' || t.status === 'AVAILABLE') return t;
+              return { ...t, status: 'Free', captainId: null, guests: 0, time: null, currentBill: 0, kotHistory: [] };
+            });
+            persistStatusChanges(prev, next).catch((e) => console.error("Auto reset failed", e));
+            writeCache(next);
+            return next;
+          });
+          return;
+        }
+      }
+
       if (_persistingCount > 0) return;
       if (cancelled) return;
       const fetchStartTime = Date.now();

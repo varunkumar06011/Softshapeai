@@ -54,6 +54,12 @@ import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
+const formatTableTime = (timeString) => {
+  if (!timeString) return '---';
+  const d = new Date(timeString);
+  if (isNaN(d.getTime())) return timeString;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+};
 
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
@@ -338,7 +344,7 @@ export function Tables({ onOpen }) {
              <div className="flex justify-between items-start w-full">
                <p className="text-xl font-black leading-none">T{t.id}</p>
                {!isFree && !isReserved && (
-                 <span className="text-[9px] font-black uppercase bg-white/20 px-1.5 py-0.5 rounded">{t.time || '1m'}</span>
+                 <span className="text-[9px] font-black uppercase bg-white/20 px-1.5 py-0.5 rounded">{formatTableTime(t.time)}</span>
                )}
              </div>
              
@@ -422,7 +428,7 @@ export function Tables({ onOpen }) {
                       </div>
                       <div className="flex flex-col gap-0.5">
                          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Duration</span>
-                         <span className="text-sm font-bold text-gray-900 flex items-center gap-1 justify-end"><Clock size={14} className="text-gray-400"/> {pTable.time || '1m'}</span>
+                         <span className="text-sm font-bold text-gray-900 flex items-center gap-1 justify-end"><Clock size={14} className="text-gray-400"/> {formatTableTime(pTable.time)}</span>
                       </div>
                    </div>
                 </div>
@@ -1052,7 +1058,7 @@ export function Orders() {
         items: items.length,
         amount: `₹${table.currentBill || calculateOrderTotal(items).subtotal}`,
         status: table.status,
-        time: table.time || 'Live',
+        time: table.time ? formatTableTime(table.time) : 'Live',
         action: table.status === 'Waiting Bill' ? 'Bill' : 'View',
       };
     });
@@ -1873,6 +1879,7 @@ export function SettingsPage() {
 }
 
 export function BarTables() {
+  const [activePopupTableId, setActivePopupTableId] = useState(null);
   const { tables } = useBarTableSync();
 
   return (
@@ -1892,25 +1899,108 @@ export function BarTables() {
           else if (!isFree) bgClass = "bg-[#FFF8E1] text-[#F57F17] border-[#F57F17]";
 
           return (
-            <div
+            <button
               key={t.backendId || t.id}
-              className={`${bgClass} rounded-2xl border-2 min-h-[100px] p-3 flex flex-col justify-between`}
+              onClick={() => {
+                if (!isFree) {
+                  setActivePopupTableId(t.backendId || t.id);
+                }
+              }}
+              className={`${bgClass} rounded-2xl border-2 min-h-[100px] p-3 text-left transition-all active:scale-95 flex flex-col justify-between`}
             >
               <div className="flex justify-between items-start w-full">
                 <p className="text-xl font-black leading-none">B{t.number ?? t.id}</p>
                 {!isFree && (
                   <span className="text-[9px] font-black uppercase bg-white/20 px-1.5 py-0.5 rounded">
-                    {t.time || '1m'}
+                    {formatTableTime(t.time)}
                   </span>
                 )}
               </div>
               <p className="text-[11px] font-bold mt-2">
                 {isFree ? 'Available' : `${t.status} — ₹${t.currentBill || 0}`}
               </p>
-            </div>
+            </button>
           );
         })}
       </div>
+      
+      {/* LIVE SESSION DETAILS POPUP */}
+      {activePopupTableId && (() => {
+        const pTable = tables.find(t => (t.backendId || t.id) === activePopupTableId);
+        if (!pTable || !pTable.status || pTable.status === 'Free') {
+           setTimeout(() => setActivePopupTableId(null), 0);
+           return null;
+        }
+        
+        const pItems = (pTable.kotHistory && pTable.kotHistory.length > 0) ? pTable.kotHistory.flatMap(k => k.items || []) : (pTable.items || []);
+        const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
+        const pCaptainName = CAPTAINS.find(c => c.id === pTable.captainId)?.name || pTable.captainId || 'Staff';
+        
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in duration-200" onClick={() => setActivePopupTableId(null)}>
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+               <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                  <div className="flex items-center gap-3">
+                     <div className={`w-3 h-3 rounded-full ${pTable.status === 'Waiting Bill' ? 'bg-amber-500 animate-pulse' : pTable.status === 'Preparing' ? 'bg-orange-500' : 'bg-red-600'}`} />
+                     <h3 className="font-black text-lg text-gray-900 tracking-tight">Table B{pTable.number ?? pTable.id}</h3>
+                     <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest bg-gray-200 text-gray-700">{pTable.status}</span>
+                  </div>
+                  <button onClick={() => setActivePopupTableId(null)} className="p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-lg transition-colors">
+                     <X size={18} />
+                  </button>
+               </div>
+               
+               <div className="p-5">
+                  <div className="flex items-center justify-between mb-5">
+                     <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Assigned Captain</span>
+                        <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><User size={14} className="text-gray-400"/> {pCaptainName}</span>
+                     </div>
+                     <div className="flex gap-4 text-right">
+                        <div className="flex flex-col gap-0.5">
+                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Guests</span>
+                           <span className="text-sm font-bold text-gray-900 flex items-center gap-1 justify-end"><Users size={14} className="text-gray-400"/> {pTable.guests || 0}</span>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Duration</span>
+                           <span className="text-sm font-bold text-gray-900 flex items-center gap-1 justify-end"><Clock size={14} className="text-gray-400"/> {formatTableTime(pTable.time)}</span>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="mb-5">
+                     <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Active Order ({pCount} Items)</span>
+                        <span className="text-[10px] font-black uppercase text-green-600 tracking-widest">{(pTable.kotHistory || []).length} KOTs</span>
+                     </div>
+                     
+                     <div className="bg-gray-50 border border-gray-100 rounded-xl p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        {pItems.length > 0 ? pItems.map((item, idx) => (
+                           <div key={idx} className="flex items-center justify-between p-2 hover:bg-white rounded-lg transition-colors border-b border-transparent hover:border-gray-100">
+                              <div className="flex items-center gap-3">
+                                 <div className="w-6 h-6 rounded bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-700">{item.q}x</div>
+                                 <span className="text-[12px] font-bold text-gray-800">{item.n}</span>
+                              </div>
+                              <span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{item.s || 'Sent'}</span>
+                           </div>
+                        )) : (
+                           <div className="text-center py-4 text-xs font-bold text-gray-400">No items submitted yet</div>
+                        )}
+                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-100 flex items-end justify-between">
+                     <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Live Running Total</span>
+                        <span className="text-xs font-bold text-gray-500">Including Taxes (5% GST)</span>
+                     </div>
+                     <span className="text-2xl font-black text-[#E53935] tracking-tight">₹{pTable.currentBill || 0}</span>
+                  </div>
+               </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
