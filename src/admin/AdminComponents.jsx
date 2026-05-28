@@ -1841,8 +1841,9 @@ function AddInventoryModal({ onClose, onSave }) {
     });
   };
 
+  // Show all items, filter by search if there's a search term
   const filteredMenuItems = menuItems.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase())
+    !searchTerm || item.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const selectItem = (item) => {
@@ -1851,9 +1852,15 @@ function AddInventoryModal({ onClose, onSave }) {
     setShowDropdown(false);
   };
 
+  const handleClickOutside = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Add Inventory Item</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
@@ -1865,8 +1872,12 @@ function AddInventoryModal({ onClose, onSave }) {
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setShowDropdown(true);
+                setFormData({ ...formData, menuItemId: '', menuItemName: '' });
               }}
               onFocus={() => setShowDropdown(true)}
+              onBlur={() => {
+                setTimeout(() => setShowDropdown(false), 200);
+              }}
               placeholder="Search for liquor item..."
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
             />
@@ -1875,12 +1886,20 @@ function AddInventoryModal({ onClose, onSave }) {
                 {filteredMenuItems.map(item => (
                   <div
                     key={item.id}
-                    onClick={() => selectItem(item)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectItem(item);
+                    }}
                     className="px-4 py-3 hover:bg-[#FFF5F5] cursor-pointer border-b border-gray-100 last:border-0 transition-colors font-medium"
                   >
                     {item.name}
                   </div>
                 ))}
+              </div>
+            )}
+            {showDropdown && filteredMenuItems.length === 0 && searchTerm && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl p-4 z-10">
+                <p className="text-gray-500 text-sm text-center">No items found</p>
               </div>
             )}
           </div>
@@ -1965,11 +1984,17 @@ function AdjustStockModal({ item, onClose, onSave }) {
     });
   };
 
+  const handleClickOutside = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   const newStock = parseFloat(item.currentStock) + parseFloat(adjustment.quantityChange || 0);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.menuItem?.name}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-[#FFF5F5] rounded-xl p-4 mb-4 border-2 border-gray-200">
@@ -2066,9 +2091,10 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
     });
   };
 
-  const filteredInventory = inventory.filter(item =>
-    !item.isVirtual && item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Show all non-virtual items, filter by search if there's a search term
+  const filteredInventory = inventory
+    .filter(item => !item.isVirtual)
+    .filter(item => !searchTerm || item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const selectItem = (item) => {
     setFormData({
@@ -2081,9 +2107,15 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
     setShowDropdown(false);
   };
 
+  const handleClickOutside = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Record Purchase</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
@@ -2095,8 +2127,12 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setShowDropdown(true);
+                setFormData({ ...formData, itemId: '', itemName: '', bottleSize: 0 });
               }}
               onFocus={() => setShowDropdown(true)}
+              onBlur={() => {
+                setTimeout(() => setShowDropdown(false), 200);
+              }}
               placeholder="Search for inventory item..."
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
             />
@@ -2105,7 +2141,10 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
                 {filteredInventory.map(item => (
                   <div
                     key={item.id}
-                    onClick={() => selectItem(item)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectItem(item);
+                    }}
                     className="px-4 py-3 hover:bg-[#FFF5F5] cursor-pointer border-b border-gray-100 last:border-0 transition-colors"
                   >
                     <div className="font-bold">{item.menuItem?.name}</div>
