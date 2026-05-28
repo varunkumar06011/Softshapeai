@@ -1860,7 +1860,7 @@ function AddInventoryModal({ onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Add Inventory Item</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
@@ -1882,7 +1882,7 @@ function AddInventoryModal({ onClose, onSave }) {
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
             />
             {showDropdown && filteredMenuItems.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-10">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto scrollbar-hide z-10">
                 {filteredMenuItems.map(item => (
                   <div
                     key={item.id}
@@ -1994,7 +1994,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.menuItem?.name}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-[#FFF5F5] rounded-xl p-4 mb-4 border-2 border-gray-200">
@@ -2115,7 +2115,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
-      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Record Purchase</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
@@ -2137,7 +2137,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
             />
             {showDropdown && filteredInventory.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-10">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto scrollbar-hide z-10">
                 {filteredInventory.map(item => (
                   <div
                     key={item.id}
@@ -3116,7 +3116,7 @@ export function BarMenuPage() {
       {/* ── ADD MODAL ── */}
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
             <h4 className="font-bold text-[14px]">Add Bar Item</h4>
 
             {/* Image */}
