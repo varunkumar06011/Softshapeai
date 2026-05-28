@@ -1461,9 +1461,16 @@ export function Inventory() {
   }, [outlet]);
 
   useEffect(() => {
-    const handleInventoryUpdate = ({ item }) => {
+    const handleInventoryUpdate = (data) => {
+      // Validate data structure
+      if (!data || !data.item || !data.item.id) {
+        console.warn('[Inventory] Invalid inventory update data:', data);
+        return;
+      }
+
+      const { item } = data;
       setInventory(prev => {
-        const index = prev.findIndex(i => i.id === item.id);
+        const index = prev.findIndex(i => i && i.id === item.id);
         if (index >= 0) {
           const updated = [...prev];
           updated[index] = item;
@@ -1474,17 +1481,28 @@ export function Inventory() {
       loadLowStockItems();
     };
 
-    const handleLowStock = ({ item }) => {
+    const handleLowStock = (data) => {
+      // Validate data structure
+      if (!data || !data.item) {
+        console.warn('[Inventory] Invalid low stock alert data:', data);
+        return;
+      }
+
+      const { item } = data;
       alert(`Low Stock Alert: ${item.menuItem?.name || 'Unknown Item'}`);
       loadLowStockItems();
     };
 
-    socket.on('inventory:updated', handleInventoryUpdate);
-    socket.on('inventory:low_stock', handleLowStock);
+    if (socket) {
+      socket.on('inventory:updated', handleInventoryUpdate);
+      socket.on('inventory:low_stock', handleLowStock);
+    }
 
     return () => {
-      socket.off('inventory:updated', handleInventoryUpdate);
-      socket.off('inventory:low_stock', handleLowStock);
+      if (socket) {
+        socket.off('inventory:updated', handleInventoryUpdate);
+        socket.off('inventory:low_stock', handleLowStock);
+      }
     };
   }, [socket]);
 
@@ -1492,20 +1510,24 @@ export function Inventory() {
     try {
       const res = await fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'));
       const data = await res.json();
-      const liquorItems = data.filter(item => item.menuType === 'LIQUOR');
+      const liquorItems = Array.isArray(data)
+        ? data.filter(item => item && item.id && item.menuType === 'LIQUOR')
+        : [];
       setMenuItems(liquorItems);
     } catch (err) {
       console.error('[Inventory] Menu load failed:', err);
+      setMenuItems([]);
     }
   };
 
   const loadInventory = async () => {
     try {
       const data = await fetchBarInventory();
-      setInventory(data);
+      setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
     } catch (err) {
       console.error('[Inventory] Load failed:', err);
       alert('Failed to load inventory');
+      setInventory([]);
     } finally {
       setLoading(false);
     }
@@ -1514,18 +1536,23 @@ export function Inventory() {
   const loadLowStockItems = async () => {
     try {
       const data = await fetchLowStockItems();
-      setLowStockItems(data);
+      setLowStockItems(Array.isArray(data) ? data.filter(item => item && item.id) : []);
     } catch (err) {
       console.error('[Inventory] Low stock check failed:', err);
+      setLowStockItems([]);
     }
   };
 
   const handleCreateItem = async (formData) => {
     try {
       const newItem = await createInventoryItem(formData);
-      setInventory(prev => [...prev, newItem]);
-      setShowAddModal(false);
-      alert('Inventory item created');
+      if (newItem && newItem.id) {
+        setInventory(prev => [...prev, newItem]);
+        setShowAddModal(false);
+        alert('Inventory item created');
+      } else {
+        throw new Error('Invalid response from server');
+      }
     } catch (err) {
       console.error('[Inventory] Create failed:', err);
       alert(err.message);
@@ -1600,27 +1627,30 @@ export function Inventory() {
   };
 
   // Merge menu items with inventory - show all menu items with their inventory status
-  const displayItems = menuItems.map(menuItem => {
-    const existingInventory = inventory.find(inv => inv.menuItemId === menuItem.id);
-    if (existingInventory) {
-      return existingInventory;
-    }
-    // Create virtual inventory item with 0 stock
-    return {
-      id: `virtual-${menuItem.id}`,
-      menuItemId: menuItem.id,
-      menuItem: menuItem,
-      bottleSize: 750, // Default
-      currentStock: 0,
-      reorderLevel: 5000,
-      costPerBottle: 0,
-      unitOfMeasure: 'ml',
-      isVirtual: true, // Flag to indicate this needs to be created
-    };
-  });
+  const displayItems = menuItems
+    .filter(menuItem => menuItem && menuItem.id) // Filter out invalid items
+    .map(menuItem => {
+      const existingInventory = inventory.find(inv => inv && inv.menuItemId === menuItem.id);
+      if (existingInventory) {
+        return existingInventory;
+      }
+      // Create virtual inventory item with 0 stock
+      return {
+        id: `virtual-${menuItem.id}`,
+        menuItemId: menuItem.id,
+        menuItem: menuItem,
+        bottleSize: 750, // Default
+        currentStock: 0,
+        reorderLevel: 5000,
+        costPerBottle: 0,
+        unitOfMeasure: 'ml',
+        isVirtual: true, // Flag to indicate this needs to be created
+      };
+    });
 
   const filteredInventory = displayItems.filter(item => {
-    const matchesSearch = item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!item || !item.menuItem) return false;
+    const matchesSearch = item.menuItem.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const stockStatus = getStockStatus(item).status;
     const matchesFilter = filterStatus === 'all' || stockStatus === filterStatus;
     return matchesSearch && matchesFilter;
@@ -1685,12 +1715,12 @@ export function Inventory() {
             </h3>
           </div>
           <div className="flex flex-wrap gap-2">
-            {lowStockItems.map(item => {
+            {lowStockItems.filter(item => item && item.id && item.menuItem).map(item => {
               const currentStock = parseFloat(item.currentStock) || 0;
               const bottleSize = parseInt(item.bottleSize) || 750;
               return (
                 <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
-                  {item.menuItem?.name} ({Math.floor(currentStock / bottleSize)} bottles)
+                  {item.menuItem.name} ({Math.floor(currentStock / bottleSize)} bottles)
                 </span>
               );
             })}
