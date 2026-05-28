@@ -1718,7 +1718,7 @@ export function Inventory() {
         </select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="space-y-3">
         {filteredInventory.map(item => {
           const stockStatus = getStockStatus(item);
           const currentStock = parseFloat(item.currentStock) || 0;
@@ -1727,55 +1727,68 @@ export function Inventory() {
           const bottles = Math.floor(currentStock / bottleSize);
           const reorderBottles = Math.ceil(reorderLevel / bottleSize);
 
+          // Calculate percentage for progress bar (based on reorder level as baseline)
+          const maxStock = reorderLevel * 3 || 10000; // 3x reorder level or default
+          const stockPercentage = Math.min((currentStock / maxStock) * 100, 100);
+
           return (
-            <div key={item.id} className="bg-white rounded-2xl shadow-xl p-6 border-2 border-gray-100">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="font-black text-lg">{item.menuItem?.name || 'Unknown Item'}</h3>
-                  <p className="text-sm text-gray-600">{item.menuItem?.category?.name}</p>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${stockStatus.color} bg-gray-100`}>
-                  {stockStatus.label}
-                </span>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Current Stock:</span>
-                  <span className="font-bold">{bottles} bottles ({currentStock.toFixed(0)} ml)</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Reorder Level:</span>
-                  <span className="font-bold">{reorderBottles} bottles</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Bottle Size:</span>
-                  <span className="font-bold">{bottleSize} ml</span>
-                </div>
-                {item.costPerBottle && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Cost/Bottle:</span>
-                    <span className="font-bold">₹{parseFloat(item.costPerBottle).toFixed(2)}</span>
+            <div key={item.id} className="bg-white rounded-2xl shadow-lg p-5 border-2 border-gray-100 hover:border-[#E53935] transition-all">
+              <div className="flex items-center justify-between gap-4">
+                {/* Left: Item Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="font-black text-base uppercase tracking-wide truncate">{item.menuItem?.name || 'Unknown Item'}</h3>
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${stockStatus.color} bg-gray-100 whitespace-nowrap`}>
+                      {stockStatus.label}
+                    </span>
                   </div>
-                )}
-              </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedItem(item);
-                    setShowAdjustModal(true);
-                  }}
-                  className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
-                >
-                  {item.isVirtual ? 'Add Stock' : 'Adjust'}
-                </button>
-                <button
-                  onClick={() => handleDeleteItem(item.id)}
-                  className="px-3 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:scale-105 active:scale-95 transition-all"
-                >
-                  <Trash2 size={16} />
-                </button>
+                  {/* Stock Progress Bar */}
+                  <div className="mb-3">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-600">Stock Level</span>
+                      <span className="font-bold">{bottles} bottles ({currentStock.toFixed(0)} ml)</span>
+                    </div>
+                    <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          stockStatus.status === 'out' ? 'bg-red-600' :
+                          stockStatus.status === 'low' ? 'bg-amber-500' :
+                          'bg-green-500'
+                        }`}
+                        style={{ width: `${stockPercentage}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Additional Info */}
+                  <div className="flex gap-4 text-xs text-gray-600">
+                    <span>Reorder: <strong className="text-gray-800">{reorderBottles} bottles</strong></span>
+                    <span>Size: <strong className="text-gray-800">{bottleSize} ml</strong></span>
+                    {item.costPerBottle > 0 && (
+                      <span>Cost: <strong className="text-gray-800">₹{parseFloat(item.costPerBottle).toFixed(2)}</strong></span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Action Buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedItem(item);
+                      setShowAdjustModal(true);
+                    }}
+                    className="px-4 py-2 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-wide hover:scale-105 active:scale-95 transition-all whitespace-nowrap"
+                  >
+                    {item.isVirtual ? 'Add Stock' : 'Adjust'}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteItem(item.id)}
+                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             </div>
           );
