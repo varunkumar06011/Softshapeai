@@ -41,6 +41,7 @@ import {
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
 } from 'recharts';
 import { useMenu } from '../context/MenuContext';
+import { useOutlet } from '../context/OutletContext';
 import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
 import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
@@ -1436,7 +1437,9 @@ export function Payroll() {
 // ==========================================
 
 export function Inventory() {
+  const { outlet } = useOutlet();
   const [inventory, setInventory] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
@@ -1448,9 +1451,14 @@ export function Inventory() {
   const socket = useSocket('bar-001');
 
   useEffect(() => {
-    loadInventory();
-    loadLowStockItems();
-  }, []);
+    if (outlet === 'bar') {
+      loadInventory();
+      loadLowStockItems();
+      loadBarMenu();
+    } else {
+      setLoading(false);
+    }
+  }, [outlet]);
 
   useEffect(() => {
     const handleInventoryUpdate = ({ item }) => {
@@ -1479,6 +1487,17 @@ export function Inventory() {
       socket.off('inventory:low_stock', handleLowStock);
     };
   }, [socket]);
+
+  const loadBarMenu = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'));
+      const data = await res.json();
+      const liquorItems = data.filter(item => item.menuType === 'LIQUOR');
+      setMenuItems(liquorItems);
+    } catch (err) {
+      console.error('[Inventory] Menu load failed:', err);
+    }
+  };
 
   const loadInventory = async () => {
     try {
@@ -1513,14 +1532,26 @@ export function Inventory() {
     }
   };
 
-  const handleAdjustStock = async (itemId, adjustment) => {
+  const handleAdjustStock = async (item, adjustment) => {
     try {
-      await adjustStock({
-        itemId,
-        quantityChange: adjustment.quantityChange,
-        type: adjustment.type,
-        notes: adjustment.notes,
-      });
+      // If it's a virtual item, create it first
+      if (item.isVirtual) {
+        await createInventoryItem({
+          menuItemId: item.menuItemId,
+          bottleSize: item.bottleSize,
+          currentStock: adjustment.quantityChange > 0 ? adjustment.quantityChange : 0,
+          reorderLevel: item.reorderLevel,
+          costPerBottle: item.costPerBottle,
+          unitOfMeasure: item.unitOfMeasure,
+        });
+      } else {
+        await adjustStock({
+          itemId: item.id,
+          quantityChange: adjustment.quantityChange,
+          type: adjustment.type,
+          notes: adjustment.notes,
+        });
+      }
       setShowAdjustModal(false);
       setSelectedItem(null);
       alert('Stock adjusted successfully');
@@ -1565,12 +1596,48 @@ export function Inventory() {
     return { status: 'ok', label: 'In Stock', color: 'text-green-600' };
   };
 
-  const filteredInventory = inventory.filter(item => {
+  // Merge menu items with inventory - show all menu items with their inventory status
+  const displayItems = menuItems.map(menuItem => {
+    const existingInventory = inventory.find(inv => inv.menuItemId === menuItem.id);
+    if (existingInventory) {
+      return existingInventory;
+    }
+    // Create virtual inventory item with 0 stock
+    return {
+      id: `virtual-${menuItem.id}`,
+      menuItemId: menuItem.id,
+      menuItem: menuItem,
+      bottleSize: 750, // Default
+      currentStock: 0,
+      reorderLevel: 5000,
+      costPerBottle: 0,
+      unitOfMeasure: 'ml',
+      isVirtual: true, // Flag to indicate this needs to be created
+    };
+  });
+
+  const filteredInventory = displayItems.filter(item => {
     const matchesSearch = item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const stockStatus = getStockStatus(item).status;
     const matchesFilter = filterStatus === 'all' || stockStatus === filterStatus;
     return matchesSearch && matchesFilter;
   });
+
+  // Show "Coming Soon" for restaurant outlet
+  if (outlet === 'restaurant') {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center">
+          <Package size={80} className="text-gray-300 mx-auto mb-6" />
+          <h2 className="text-3xl font-black uppercase tracking-[0.2em] text-gray-800 mb-2">
+            Restaurant Inventory
+          </h2>
+          <p className="text-xl text-gray-500 font-bold">Coming Soon</p>
+          <p className="text-sm text-gray-400 mt-2">Switch to Bar outlet to manage liquor inventory</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -1691,7 +1758,7 @@ export function Inventory() {
                   }}
                   className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
                 >
-                  Adjust
+                  {item.isVirtual ? 'Add Stock' : 'Adjust'}
                 </button>
                 <button
                   onClick={() => handleDeleteItem(item.id)}
@@ -1726,7 +1793,7 @@ export function Inventory() {
             setShowAdjustModal(false);
             setSelectedItem(null);
           }}
-          onSave={(adjustment) => handleAdjustStock(selectedItem.id, adjustment)}
+          onSave={(adjustment) => handleAdjustStock(selectedItem, adjustment)}
         />
       )}
 
@@ -1743,8 +1810,11 @@ export function Inventory() {
 
 function AddInventoryModal({ onClose, onSave }) {
   const [menuItems, setMenuItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
   const [formData, setFormData] = useState({
     menuItemId: '',
+    menuItemName: '',
     bottleSize: 750,
     currentStock: 0,
     reorderLevel: 0,
@@ -1762,74 +1832,100 @@ function AddInventoryModal({ onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave({
-      ...formData,
+      menuItemId: formData.menuItemId,
+      bottleSize: formData.bottleSize,
       currentStock: parseFloat(formData.currentStock),
       reorderLevel: parseFloat(formData.reorderLevel),
       costPerBottle: parseFloat(formData.costPerBottle),
+      unitOfMeasure: formData.unitOfMeasure,
     });
+  };
+
+  const filteredMenuItems = menuItems.filter(item =>
+    item.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectItem = (item) => {
+    setFormData({ ...formData, menuItemId: item.id, menuItemName: item.name });
+    setSearchTerm(item.name);
+    setShowDropdown(false);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <h3 className="text-xl font-black uppercase mb-4">Add Inventory Item</h3>
+        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Add Inventory Item</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold mb-2">Select Menu Item</label>
-            <select
+          <div className="relative">
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Select Menu Item</label>
+            <input
+              type="text"
               required
-              value={formData.menuItemId}
-              onChange={(e) => setFormData({ ...formData, menuItemId: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
-            >
-              <option value="">Choose item...</option>
-              {menuItems.map(item => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setShowDropdown(true);
+              }}
+              onFocus={() => setShowDropdown(true)}
+              placeholder="Search for liquor item..."
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none font-medium transition-all"
+            />
+            {showDropdown && filteredMenuItems.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-10">
+                {filteredMenuItems.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => selectItem(item)}
+                    className="px-4 py-3 hover:bg-[#FFF5F5] cursor-pointer border-b border-gray-100 last:border-0 transition-colors font-medium"
+                  >
+                    {item.name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Bottle Size (ml)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Bottle Size (ml)</label>
             <input
               type="number"
               required
               value={formData.bottleSize}
               onChange={(e) => setFormData({ ...formData, bottleSize: parseInt(e.target.value) })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Current Stock (ml)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Current Stock (ml)</label>
             <input
               type="number"
               required
               value={formData.currentStock}
               onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Reorder Level (ml)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Reorder Level (ml)</label>
             <input
               type="number"
               required
               value={formData.reorderLevel}
               onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-2">Cost Per Bottle (₹)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
             <input
               type="number"
               step="0.01"
               value={formData.costPerBottle}
               onChange={(e) => setFormData({ ...formData, costPerBottle: e.target.value })}
-              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
             />
           </div>
 
@@ -1837,13 +1933,13 @@ function AddInventoryModal({ onClose, onSave }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
             >
               Create Item
             </button>
