@@ -34,7 +34,8 @@ import {
   Star,
   ArrowRightLeft,
   GlassWater,
-  Utensils
+  Utensils,
+  Trash2
 } from 'lucide-react';
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
@@ -49,11 +50,13 @@ import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSear
 import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
-import { API_BASE } from '../services/apiConfig';
+import { API_BASE, apiUrl } from '../services/apiConfig';
 import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
+import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems } from '../services/barInventoryApi';
+import { useSocket } from '../hooks/useSocket';
 const formatTableTime = (timeString) => {
   if (!timeString) return '---';
   const d = new Date(timeString);
@@ -1428,94 +1431,621 @@ export function Payroll() {
   );
 }
 
+// ==========================================
+// BAR INVENTORY MANAGEMENT
+// ==========================================
+
 export function Inventory() {
-  const stock = [
-    { name: "Chicken", opening: "50 kg", purchased: "0", used: "15.2 kg", current: "34.8 kg", status: "OK", reorder: "10 kg", color: "text-[#E53935]" },
-    { name: "Basmati Rice", opening: "100 kg", purchased: "0", used: "20 kg", current: "80 kg", status: "OK", reorder: "20 kg", color: "text-[#E53935]" },
-    { name: "Mutton", opening: "15 kg", purchased: "0", used: "3 kg", current: "12 kg", status: "LOW", reorder: "10 kg", color: "text-[#E53935]" },
-    { name: "Prawns", opening: "10 kg", purchased: "0", used: "2 kg", current: "8 kg", status: "OK", reorder: "5 kg", color: "text-[#E53935]" },
-    { name: "Refined Oil", opening: "50 L", purchased: "0", used: "10 L", current: "40 L", status: "OK", reorder: "5 kg", color: "text-[#E53935]" }
-  ];
+  const [inventory, setInventory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [lowStockItems, setLowStockItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const socket = useSocket('bar-001');
+
+  useEffect(() => {
+    loadInventory();
+    loadLowStockItems();
+  }, []);
+
+  useEffect(() => {
+    const handleInventoryUpdate = ({ item }) => {
+      setInventory(prev => {
+        const index = prev.findIndex(i => i.id === item.id);
+        if (index >= 0) {
+          const updated = [...prev];
+          updated[index] = item;
+          return updated;
+        }
+        return prev;
+      });
+      loadLowStockItems();
+    };
+
+    const handleLowStock = ({ item }) => {
+      alert(`Low Stock Alert: ${item.menuItem?.name || 'Unknown Item'}`);
+      loadLowStockItems();
+    };
+
+    socket.on('inventory:updated', handleInventoryUpdate);
+    socket.on('inventory:low_stock', handleLowStock);
+
+    return () => {
+      socket.off('inventory:updated', handleInventoryUpdate);
+      socket.off('inventory:low_stock', handleLowStock);
+    };
+  }, [socket]);
+
+  const loadInventory = async () => {
+    try {
+      const data = await fetchBarInventory();
+      setInventory(data);
+    } catch (err) {
+      console.error('[Inventory] Load failed:', err);
+      alert('Failed to load inventory');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLowStockItems = async () => {
+    try {
+      const data = await fetchLowStockItems();
+      setLowStockItems(data);
+    } catch (err) {
+      console.error('[Inventory] Low stock check failed:', err);
+    }
+  };
+
+  const handleCreateItem = async (formData) => {
+    try {
+      const newItem = await createInventoryItem(formData);
+      setInventory(prev => [...prev, newItem]);
+      setShowAddModal(false);
+      alert('Inventory item created');
+    } catch (err) {
+      console.error('[Inventory] Create failed:', err);
+      alert(err.message);
+    }
+  };
+
+  const handleAdjustStock = async (itemId, adjustment) => {
+    try {
+      await adjustStock({
+        itemId,
+        quantityChange: adjustment.quantityChange,
+        type: adjustment.type,
+        notes: adjustment.notes,
+      });
+      setShowAdjustModal(false);
+      setSelectedItem(null);
+      alert('Stock adjusted successfully');
+      loadInventory();
+    } catch (err) {
+      console.error('[Inventory] Adjust failed:', err);
+      alert(err.message);
+    }
+  };
+
+  const handleRecordPurchase = async (purchaseData) => {
+    try {
+      await recordPurchase(purchaseData);
+      setShowPurchaseModal(false);
+      alert('Purchase recorded successfully');
+      loadInventory();
+    } catch (err) {
+      console.error('[Inventory] Purchase record failed:', err);
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteItem = async (itemId) => {
+    if (!confirm('Are you sure you want to delete this inventory item?')) return;
+
+    try {
+      await deleteInventoryItem(itemId);
+      setInventory(prev => prev.filter(i => i.id !== itemId));
+      alert('Inventory item deleted');
+    } catch (err) {
+      console.error('[Inventory] Delete failed:', err);
+      alert(err.message);
+    }
+  };
+
+  const getStockStatus = (item) => {
+    const bottles = Math.floor(item.currentStock / item.bottleSize);
+    const reorderBottles = Math.ceil(item.reorderLevel / item.bottleSize);
+
+    if (item.currentStock <= 0) return { status: 'out', label: 'Out of Stock', color: 'text-red-600' };
+    if (item.currentStock <= item.reorderLevel) return { status: 'low', label: 'Low Stock', color: 'text-amber-600' };
+    return { status: 'ok', label: 'In Stock', color: 'text-green-600' };
+  };
+
+  const filteredInventory = inventory.filter(item => {
+    const matchesSearch = item.menuItem?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const stockStatus = getStockStatus(item).status;
+    const matchesFilter = filterStatus === 'all' || stockStatus === filterStatus;
+    return matchesSearch && matchesFilter;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E53935] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading inventory...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 font-sans max-w-7xl mx-auto">
-      <div className="bg-[#FFF1F2] p-5 rounded-2xl border border-[#FFE4E6] text-gray-800 text-sm font-medium">
-        Spire.ai tracks every ingredient — ask anything
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex-grow bg-white border border-[#FFCDD2] rounded-3xl px-8 py-5 text-sm text-gray-500 shadow-sm flex items-center">
-           <span className="opacity-60 italic">Where did my 50kg chicken go today?</span>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-black uppercase tracking-[0.2em]">Bar Inventory</h2>
+          <p className="text-sm text-gray-600 mt-1">Manage liquor stock levels and purchases</p>
         </div>
-        <button className="w-full sm:w-auto bg-[#E53935] text-white px-10 py-5 rounded-3xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-[#B71C1C] transition-all shadow-xl shadow-red-100 active:scale-95">
-          Ask Spire 
-          <ArrowRightLeft size={16} />
-        </button>
-      </div>
-
-      <div className="bg-white p-8 rounded-3xl border border-[#FFCDD2] shadow-sm space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <p className="text-sm font-medium text-gray-500">Analyzing your 50kg chicken stock for today...</p>
-        <div className="space-y-3 text-sm font-bold text-gray-800 leading-relaxed">
-          <p className="flex items-center gap-3">
-             <span className="text-gray-400">→</span> 
-             <span>12.5kg used in 50 Chicken Dum Biryani plates (<span className="text-gray-500 font-medium">₹15,450 revenue</span>)</span>
-          </p>
-          <p className="flex items-center gap-3">
-             <span className="text-gray-400">→</span> 
-             <span>3.2kg used in Chicken Fry Piece Biryani — 8 orders (<span className="text-gray-500 font-medium">₹2,472</span>)</span>
-          </p>
-          <p className="flex items-center gap-3">
-             <span className="text-gray-400">→</span> 
-             <span>35kg currently in cold storage (Fridge #2, Zone B)</span>
-          </p>
-          <p className="flex items-center gap-3 text-[#E53935] font-black">
-             <span>→ 2.5kg UNACCOUNTED</span> 
-             <AlertCircle size={16} /> 
-             <span className="font-medium">— checking cameras...</span>
-          </p>
-          <p className="flex items-center gap-3">
-             <span className="text-gray-400">→</span> 
-             <span>Found: CAM-04 at 14:32 — suspicious activity flagged</span>
-          </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowPurchaseModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+          >
+            + Record Purchase
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+          >
+            + Add Item
+          </button>
         </div>
-        <button className="bg-[#E53935] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#B71C1C] transition-all active:scale-95 shadow-md">
-          View Camera Incident
-        </button>
       </div>
 
-      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-[#FFF1F2] border-b border-[#FFCDD2]">
-              <tr>
-                <th className="px-8 py-5 text-xs font-black text-gray-900">Item</th>
-                <th className="px-8 py-5 text-xs font-black text-gray-900 text-center">Opening</th>
-                <th className="px-8 py-5 text-xs font-black text-gray-900 text-center">Purchased</th>
-                <th className="px-8 py-5 text-xs font-black text-gray-900 text-center">Used</th>
-                <th className="px-8 py-5 text-xs font-black text-gray-900 text-center">Current</th>
-                <th className="px-8 py-5 text-xs font-black text-gray-900 text-center">Status</th>
-                <th className="px-8 py-5 text-xs font-black text-gray-900 text-center">Reorder</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {stock.map((item, i) => (
-                <tr key={i} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-8 py-5 font-black text-gray-900">{item.name}</td>
-                  <td className="px-8 py-5 text-center font-bold text-gray-500">{item.opening}</td>
-                  <td className="px-8 py-5 text-center font-black text-green-600">{item.purchased}</td>
-                  <td className="px-8 py-5 text-center font-black text-[#E53935]">{item.used}</td>
-                  <td className="px-8 py-5 text-center font-black text-gray-900">{item.current}</td>
-                  <td className="px-8 py-5 text-center">
-                     <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${item.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {item.status} {item.status === 'LOW' && '⚠'}
-                     </span>
-                  </td>
-                  <td className="px-8 py-5 text-center font-black text-[#E53935] underline decoration-dotted underline-offset-4">{item.reorder}</td>
-                </tr>
+      {lowStockItems.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-500 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="text-amber-600" size={20} />
+            <h3 className="font-black text-amber-900 uppercase text-sm tracking-wide">
+              {lowStockItems.length} Item{lowStockItems.length !== 1 ? 's' : ''} Need Attention
+            </h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {lowStockItems.map(item => (
+              <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
+                {item.menuItem?.name} ({Math.floor(item.currentStock / item.bottleSize)} bottles)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-4">
+        <input
+          type="text"
+          placeholder="Search inventory..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-1 px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none"
+        />
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none"
+        >
+          <option value="all">All Items</option>
+          <option value="ok">In Stock</option>
+          <option value="low">Low Stock</option>
+          <option value="out">Out of Stock</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredInventory.map(item => {
+          const stockStatus = getStockStatus(item);
+          const bottles = Math.floor(item.currentStock / item.bottleSize);
+          const reorderBottles = Math.ceil(item.reorderLevel / item.bottleSize);
+
+          return (
+            <div key={item.id} className="bg-white rounded-2xl shadow-xl p-6 border-2 border-gray-100">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <h3 className="font-black text-lg">{item.menuItem?.name || 'Unknown Item'}</h3>
+                  <p className="text-sm text-gray-600">{item.menuItem?.category?.name}</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold ${stockStatus.color} bg-gray-100`}>
+                  {stockStatus.label}
+                </span>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Current Stock:</span>
+                  <span className="font-bold">{bottles} bottles ({item.currentStock.toFixed(0)} ml)</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Reorder Level:</span>
+                  <span className="font-bold">{reorderBottles} bottles</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Bottle Size:</span>
+                  <span className="font-bold">{item.bottleSize} ml</span>
+                </div>
+                {item.costPerBottle && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Cost/Bottle:</span>
+                    <span className="font-bold">₹{item.costPerBottle.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedItem(item);
+                    setShowAdjustModal(true);
+                  }}
+                  className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+                >
+                  Adjust
+                </button>
+                <button
+                  onClick={() => handleDeleteItem(item.id)}
+                  className="px-3 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:scale-105 active:scale-95 transition-all"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {filteredInventory.length === 0 && (
+        <div className="text-center py-12">
+          <Package size={48} className="text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600">No inventory items found</p>
+        </div>
+      )}
+
+      {showAddModal && (
+        <AddInventoryModal
+          onClose={() => setShowAddModal(false)}
+          onSave={handleCreateItem}
+        />
+      )}
+
+      {showAdjustModal && selectedItem && (
+        <AdjustStockModal
+          item={selectedItem}
+          onClose={() => {
+            setShowAdjustModal(false);
+            setSelectedItem(null);
+          }}
+          onSave={(adjustment) => handleAdjustStock(selectedItem.id, adjustment)}
+        />
+      )}
+
+      {showPurchaseModal && (
+        <RecordPurchaseModal
+          inventory={inventory}
+          onClose={() => setShowPurchaseModal(false)}
+          onSave={handleRecordPurchase}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddInventoryModal({ onClose, onSave }) {
+  const [menuItems, setMenuItems] = useState([]);
+  const [formData, setFormData] = useState({
+    menuItemId: '',
+    bottleSize: 750,
+    currentStock: 0,
+    reorderLevel: 0,
+    costPerBottle: 0,
+    unitOfMeasure: 'ml',
+  });
+
+  useEffect(() => {
+    fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'))
+      .then(res => res.json())
+      .then(data => setMenuItems(data.filter(item => item.menuType === 'LIQUOR')))
+      .catch(console.error);
+  }, []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      ...formData,
+      currentStock: parseFloat(formData.currentStock),
+      reorderLevel: parseFloat(formData.reorderLevel),
+      costPerBottle: parseFloat(formData.costPerBottle),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <h3 className="text-xl font-black uppercase mb-4">Add Inventory Item</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold mb-2">Select Menu Item</label>
+            <select
+              required
+              value={formData.menuItemId}
+              onChange={(e) => setFormData({ ...formData, menuItemId: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            >
+              <option value="">Choose item...</option>
+              {menuItems.map(item => (
+                <option key={item.id} value={item.id}>{item.name}</option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Bottle Size (ml)</label>
+            <input
+              type="number"
+              required
+              value={formData.bottleSize}
+              onChange={(e) => setFormData({ ...formData, bottleSize: parseInt(e.target.value) })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Current Stock (ml)</label>
+            <input
+              type="number"
+              required
+              value={formData.currentStock}
+              onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Reorder Level (ml)</label>
+            <input
+              type="number"
+              required
+              value={formData.reorderLevel}
+              onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Cost Per Bottle (₹)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={formData.costPerBottle}
+              onChange={(e) => setFormData({ ...formData, costPerBottle: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+            >
+              Create Item
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AdjustStockModal({ item, onClose, onSave }) {
+  const [adjustment, setAdjustment] = useState({
+    quantityChange: 0,
+    type: 'ADJUSTMENT',
+    notes: '',
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      ...adjustment,
+      quantityChange: parseFloat(adjustment.quantityChange),
+    });
+  };
+
+  const newStock = parseFloat(item.currentStock) + parseFloat(adjustment.quantityChange || 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full">
+        <h3 className="text-xl font-black uppercase mb-4">Adjust Stock: {item.menuItem?.name}</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="bg-gray-100 rounded-xl p-4 mb-4">
+            <p className="text-sm text-gray-600">Current Stock:</p>
+            <p className="text-2xl font-black">{item.currentStock.toFixed(0)} ml ({Math.floor(item.currentStock / item.bottleSize)} bottles)</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Adjustment Type</label>
+            <select
+              value={adjustment.type}
+              onChange={(e) => setAdjustment({ ...adjustment, type: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            >
+              <option value="ADJUSTMENT">Manual Adjustment</option>
+              <option value="WASTAGE">Wastage/Spillage</option>
+              <option value="PURCHASE">Purchase Received</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Quantity Change (ml) - Use negative for deduction</label>
+            <input
+              type="number"
+              required
+              value={adjustment.quantityChange}
+              onChange={(e) => setAdjustment({ ...adjustment, quantityChange: e.target.value })}
+              placeholder="e.g., 750 or -1500"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Notes (Optional)</label>
+            <textarea
+              value={adjustment.notes}
+              onChange={(e) => setAdjustment({ ...adjustment, notes: e.target.value })}
+              placeholder="Reason for adjustment..."
+              rows={3}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none resize-none"
+            />
+          </div>
+
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-sm text-gray-600">New Stock After Adjustment:</p>
+            <p className={`text-2xl font-black ${newStock < 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {newStock.toFixed(0)} ml ({Math.floor(newStock / item.bottleSize)} bottles)
+            </p>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+            >
+              Save Adjustment
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RecordPurchaseModal({ inventory, onClose, onSave }) {
+  const [formData, setFormData] = useState({
+    itemId: '',
+    quantityPurchased: 0,
+    costPerBottle: 0,
+    supplierName: '',
+    notes: '',
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      ...formData,
+      quantityPurchased: parseFloat(formData.quantityPurchased),
+      costPerBottle: parseFloat(formData.costPerBottle),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full">
+        <h3 className="text-xl font-black uppercase mb-4">Record Purchase</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold mb-2">Select Item</label>
+            <select
+              required
+              value={formData.itemId}
+              onChange={(e) => setFormData({ ...formData, itemId: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            >
+              <option value="">Choose item...</option>
+              {inventory.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.menuItem?.name} (Current: {Math.floor(item.currentStock / item.bottleSize)} bottles)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Quantity Purchased (ml)</label>
+            <input
+              type="number"
+              required
+              value={formData.quantityPurchased}
+              onChange={(e) => setFormData({ ...formData, quantityPurchased: e.target.value })}
+              placeholder="e.g., 7500 for 10 bottles of 750ml"
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Cost Per Bottle (₹)</label>
+            <input
+              type="number"
+              step="0.01"
+              required
+              value={formData.costPerBottle}
+              onChange={(e) => setFormData({ ...formData, costPerBottle: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Supplier Name (Optional)</label>
+            <input
+              type="text"
+              value={formData.supplierName}
+              onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2">Notes (Optional)</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              placeholder="Invoice number, delivery date, etc."
+              rows={2}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
+            >
+              Record Purchase
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
