@@ -1714,8 +1714,11 @@ export function Inventory() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredInventory.map(item => {
           const stockStatus = getStockStatus(item);
-          const bottles = Math.floor(item.currentStock / item.bottleSize);
-          const reorderBottles = Math.ceil(item.reorderLevel / item.bottleSize);
+          const currentStock = parseFloat(item.currentStock) || 0;
+          const bottleSize = parseInt(item.bottleSize) || 750;
+          const reorderLevel = parseFloat(item.reorderLevel) || 0;
+          const bottles = Math.floor(currentStock / bottleSize);
+          const reorderBottles = Math.ceil(reorderLevel / bottleSize);
 
           return (
             <div key={item.id} className="bg-white rounded-2xl shadow-xl p-6 border-2 border-gray-100">
@@ -1732,7 +1735,7 @@ export function Inventory() {
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Current Stock:</span>
-                  <span className="font-bold">{bottles} bottles ({item.currentStock.toFixed(0)} ml)</span>
+                  <span className="font-bold">{bottles} bottles ({currentStock.toFixed(0)} ml)</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Reorder Level:</span>
@@ -1740,12 +1743,12 @@ export function Inventory() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Bottle Size:</span>
-                  <span className="font-bold">{item.bottleSize} ml</span>
+                  <span className="font-bold">{bottleSize} ml</span>
                 </div>
                 {item.costPerBottle && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Cost/Bottle:</span>
-                    <span className="font-bold">₹{item.costPerBottle.toFixed(2)}</span>
+                    <span className="font-bold">₹{parseFloat(item.costPerBottle).toFixed(2)}</span>
                   </div>
                 )}
               </div>
