@@ -2133,6 +2133,12 @@ function SalesReport({ inventory }) {
   // Export to PDF
   const exportToPDF = () => {
     try {
+      // Check if jsPDF library is loaded
+      if (!window.jspdf) {
+        showNotification('PDF library not loaded. Please refresh the page and try again.', 'error');
+        return;
+      }
+
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
 
@@ -2249,7 +2255,7 @@ function SalesReport({ inventory }) {
       doc.save(filename);
     } catch (error) {
       console.error('PDF export failed:', error);
-      alert('Failed to export PDF. Please try again.');
+      showNotification(`Failed to export PDF: ${error.message || 'Please try again.'}`, 'error');
     }
   };
 
