@@ -35,7 +35,11 @@ import {
   ArrowRightLeft,
   GlassWater,
   Utensils,
-  Trash2
+  Trash2,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Printer
 } from 'lucide-react';
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
@@ -1955,6 +1959,364 @@ function SalesReportsTab({ inventory }) {
            now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
+  // Export to PDF
+  const exportToPDF = () => {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      // Header
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Bar - Softshape', 105, 15, { align: 'center' });
+
+      doc.setFontSize(14);
+      doc.text('Sales Report', 105, 25, { align: 'center' });
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const dateRange = `${new Date(filters.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} - ${new Date(filters.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+      doc.text(dateRange, 105, 32, { align: 'center' });
+
+      const generated = `Generated on ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+      doc.text(generated, 105, 38, { align: 'center' });
+
+      // Summary section
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Summary', 14, 48);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Items Sold: ${grandTotals.quantity}`, 14, 54);
+      doc.text(`Total Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')}`, 14, 59);
+      doc.text(`Total Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}`, 14, 64);
+      const margin = grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0';
+      doc.text(`Profit Margin: ${margin}%`, 14, 69);
+
+      // Prepare table data grouped by category
+      let yPosition = 75;
+
+      groupedData.forEach(group => {
+        // Check if we need a new page
+        if (yPosition > 250) {
+          doc.addPage();
+          yPosition = 20;
+        }
+
+        // Category header
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setFillColor(255, 205, 210); // Light pink
+        doc.rect(14, yPosition, 182, 7, 'F');
+        doc.text(`Category: ${group.name}`, 16, yPosition + 5);
+        yPosition += 10;
+
+        // Table for this category
+        const tableData = group.items.map(item => [
+          item.baseName,
+          item.quantity.toString(),
+          group.uom,
+          item.costPrice > 0 ? `₹${item.costPrice.toFixed(2)}` : 'N/A',
+          `₹${item.sellingPrice.toFixed(2)}`,
+          `₹${item.discount.toLocaleString('en-IN')}`,
+          `₹${item.totalRevenue.toLocaleString('en-IN')}`,
+          `₹${item.netProfit.toLocaleString('en-IN')}`
+        ]);
+
+        doc.autoTable({
+          startY: yPosition,
+          head: [['Item Name', 'Qty', 'UOM', 'Cost Price', 'Selling Price', 'Discount', 'Revenue', 'Profit']],
+          body: tableData,
+          foot: [[
+            'Category Total',
+            group.totalQuantity.toString(),
+            '',
+            '',
+            '',
+            '',
+            `₹${group.totalRevenue.toLocaleString('en-IN')}`,
+            `₹${group.totalProfit.toLocaleString('en-IN')}`
+          ]],
+          theme: 'grid',
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [229, 57, 53], textColor: 255, fontStyle: 'bold' },
+          footStyles: { fillColor: [240, 240, 240], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 40 },
+            1: { cellWidth: 15, halign: 'right' },
+            2: { cellWidth: 20 },
+            3: { cellWidth: 25, halign: 'right' },
+            4: { cellWidth: 25, halign: 'right' },
+            5: { cellWidth: 20, halign: 'right' },
+            6: { cellWidth: 25, halign: 'right' },
+            7: { cellWidth: 25, halign: 'right' }
+          },
+          margin: { left: 14, right: 14 }
+        });
+
+        yPosition = doc.lastAutoTable.finalY + 5;
+      });
+
+      // Grand total
+      if (yPosition > 265) {
+        doc.addPage();
+        yPosition = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setFillColor(229, 57, 53); // Red
+      doc.setTextColor(255, 255, 255); // White text
+      doc.rect(14, yPosition, 182, 8, 'F');
+      doc.text(`GRAND TOTAL: ${grandTotals.quantity} items`, 16, yPosition + 5.5);
+      doc.text(`Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')}`, 105, yPosition + 5.5);
+      doc.text(`Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}`, 155, yPosition + 5.5);
+
+      // Save
+      const filename = `Sales_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(filename);
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
+  // Export to Excel
+  const exportToExcel = () => {
+    try {
+      const XLSX = window.XLSX;
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+
+      // Prepare data with headers
+      const data = [];
+
+      // Add header info
+      data.push(['Bar - Softshape']);
+      data.push(['Sales Report']);
+      data.push([`${new Date(filters.startDate).toLocaleDateString('en-GB')} - ${new Date(filters.endDate).toLocaleDateString('en-GB')}`]);
+      data.push([`Generated on ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour12: false })}`]);
+      data.push([]);
+
+      // Summary
+      data.push(['Summary']);
+      data.push(['Total Items Sold', grandTotals.quantity]);
+      data.push(['Total Revenue', grandTotals.revenue]);
+      data.push(['Total Profit', grandTotals.profit]);
+      const margin = grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0';
+      data.push(['Profit Margin %', margin]);
+      data.push([]);
+
+      // Add detailed data by category
+      groupedData.forEach(group => {
+        data.push([`Category: ${group.name}`]);
+        data.push(['Item Name', 'Qty', 'UOM', 'Cost Price', 'Selling Price', 'Discount', 'Revenue', 'Profit']);
+
+        group.items.forEach(item => {
+          data.push([
+            item.baseName,
+            item.quantity,
+            group.uom,
+            item.costPrice > 0 ? item.costPrice : 'N/A',
+            item.sellingPrice,
+            item.discount,
+            item.totalRevenue,
+            item.netProfit
+          ]);
+        });
+
+        data.push([
+          'Category Total',
+          group.totalQuantity,
+          '',
+          '',
+          '',
+          '',
+          group.totalRevenue,
+          group.totalProfit
+        ]);
+        data.push([]);
+      });
+
+      // Grand total
+      data.push(['GRAND TOTAL', grandTotals.quantity, '', '', '', '', grandTotals.revenue, grandTotals.profit]);
+
+      // Create worksheet
+      const ws = XLSX.utils.aoa_to_sheet(data);
+
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 25 }, // Item Name
+        { wch: 8 },  // Qty
+        { wch: 12 }, // UOM
+        { wch: 12 }, // Cost Price
+        { wch: 14 }, // Selling Price
+        { wch: 10 }, // Discount
+        { wch: 14 }, // Revenue
+        { wch: 12 }  // Profit
+      ];
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Sales Report');
+
+      // Save file
+      const filename = `Sales_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (error) {
+      console.error('Excel export failed:', error);
+      alert('Failed to export Excel. Please try again.');
+    }
+  };
+
+  // Export to CSV
+  const exportToCSV = () => {
+    try {
+      // Prepare CSV data
+      let csv = 'Bar - Softshape\n';
+      csv += 'Sales Report\n';
+      csv += `${new Date(filters.startDate).toLocaleDateString('en-GB')} - ${new Date(filters.endDate).toLocaleDateString('en-GB')}\n`;
+      csv += `Generated on ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour12: false })}\n\n`;
+
+      // Summary
+      csv += 'Summary\n';
+      csv += `Total Items Sold,${grandTotals.quantity}\n`;
+      csv += `Total Revenue,${grandTotals.revenue}\n`;
+      csv += `Total Profit,${grandTotals.profit}\n`;
+      const margin = grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0';
+      csv += `Profit Margin %,${margin}\n\n`;
+
+      // Detailed data
+      groupedData.forEach(group => {
+        csv += `\nCategory: ${group.name}\n`;
+        csv += 'Item Name,Qty,UOM,Cost Price,Selling Price,Discount,Revenue,Profit\n';
+
+        group.items.forEach(item => {
+          csv += `${item.baseName},${item.quantity},${group.uom},${item.costPrice > 0 ? item.costPrice.toFixed(2) : 'N/A'},${item.sellingPrice.toFixed(2)},${item.discount},${item.totalRevenue},${item.netProfit}\n`;
+        });
+
+        csv += `Category Total,${group.totalQuantity},,,,,${group.totalRevenue},${group.totalProfit}\n`;
+      });
+
+      // Grand total
+      csv += `\nGRAND TOTAL,${grandTotals.quantity},,,,,${grandTotals.revenue},${grandTotals.profit}\n`;
+
+      // Create blob and download
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const filename = `Sales_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+
+      // Use FileSaver
+      const { saveAs } = window;
+      if (saveAs) {
+        saveAs(blob, filename);
+      } else {
+        // Fallback
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+      }
+    } catch (error) {
+      console.error('CSV export failed:', error);
+      alert('Failed to export CSV. Please try again.');
+    }
+  };
+
+  // Print functionality
+  const handlePrint = () => {
+    try {
+      // Create a printable version
+      const printWindow = window.open('', '', 'height=800,width=1000');
+
+      printWindow.document.write('<html><head><title>Sales Report</title>');
+      printWindow.document.write('<style>');
+      printWindow.document.write(`
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        h1 { text-align: center; color: #E53935; margin-bottom: 5px; }
+        h2 { text-align: center; font-size: 18px; margin: 5px 0; }
+        .meta { text-align: center; color: #666; font-size: 12px; margin-bottom: 20px; }
+        .summary { background: #FFF5F5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .summary div { margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #E53935; color: white; font-weight: bold; }
+        .category-header { background-color: #FFCDD2; font-weight: bold; padding: 10px; margin-top: 15px; }
+        .category-total { background-color: #f0f0f0; font-weight: bold; }
+        .grand-total { background-color: #E53935; color: white; font-weight: bold; font-size: 14px; padding: 10px; }
+        .text-right { text-align: right; }
+        @media print {
+          body { padding: 10px; }
+          .no-print { display: none; }
+        }
+      `);
+      printWindow.document.write('</style></head><body>');
+
+      // Header
+      printWindow.document.write('<h1>Bar - Softshape</h1>');
+      printWindow.document.write('<h2>Sales Report</h2>');
+      printWindow.document.write(`<div class="meta">${new Date(filters.startDate).toLocaleDateString('en-GB')} - ${new Date(filters.endDate).toLocaleDateString('en-GB')}</div>`);
+      printWindow.document.write(`<div class="meta">Generated on ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour12: false })}</div>`);
+
+      // Summary
+      printWindow.document.write('<div class="summary">');
+      printWindow.document.write('<h3>Summary</h3>');
+      printWindow.document.write(`<div>Total Items Sold: ${grandTotals.quantity}</div>`);
+      printWindow.document.write(`<div>Total Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')}</div>`);
+      printWindow.document.write(`<div>Total Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}</div>`);
+      const margin = grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0';
+      printWindow.document.write(`<div>Profit Margin: ${margin}%</div>`);
+      printWindow.document.write('</div>');
+
+      // Tables by category
+      groupedData.forEach(group => {
+        printWindow.document.write(`<div class="category-header">Category: ${group.name}</div>`);
+        printWindow.document.write('<table>');
+        printWindow.document.write('<thead><tr>');
+        printWindow.document.write('<th>Item Name</th><th>Qty</th><th>UOM</th><th>Cost Price</th><th>Selling Price</th><th>Discount</th><th>Revenue</th><th>Profit</th>');
+        printWindow.document.write('</tr></thead><tbody>');
+
+        group.items.forEach(item => {
+          printWindow.document.write('<tr>');
+          printWindow.document.write(`<td>${item.baseName}</td>`);
+          printWindow.document.write(`<td class="text-right">${item.quantity}</td>`);
+          printWindow.document.write(`<td>${group.uom}</td>`);
+          printWindow.document.write(`<td class="text-right">${item.costPrice > 0 ? '₹' + item.costPrice.toFixed(2) : 'N/A'}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.sellingPrice.toFixed(2)}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.discount.toLocaleString('en-IN')}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.totalRevenue.toLocaleString('en-IN')}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.netProfit.toLocaleString('en-IN')}</td>`);
+          printWindow.document.write('</tr>');
+        });
+
+        printWindow.document.write('<tr class="category-total">');
+        printWindow.document.write(`<td>Category Total</td>`);
+        printWindow.document.write(`<td class="text-right">${group.totalQuantity}</td>`);
+        printWindow.document.write(`<td colspan="4"></td>`);
+        printWindow.document.write(`<td class="text-right">₹${group.totalRevenue.toLocaleString('en-IN')}</td>`);
+        printWindow.document.write(`<td class="text-right">₹${group.totalProfit.toLocaleString('en-IN')}</td>`);
+        printWindow.document.write('</tr>');
+        printWindow.document.write('</tbody></table>');
+      });
+
+      // Grand total
+      printWindow.document.write('<div class="grand-total">');
+      printWindow.document.write(`GRAND TOTAL: ${grandTotals.quantity} items | Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')} | Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}`);
+      printWindow.document.write('</div>');
+
+      printWindow.document.write('</body></html>');
+      printWindow.document.close();
+
+      // Wait for content to load then print
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    } catch (error) {
+      console.error('Print failed:', error);
+      alert('Failed to print. Please try again.');
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Report Header */}
@@ -2034,6 +2396,41 @@ function SalesReportsTab({ inventory }) {
             {grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0'}%
           </p>
         </div>
+      </div>
+
+      {/* Export Buttons */}
+      <div className="flex gap-3 flex-wrap">
+        <button
+          onClick={exportToPDF}
+          className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.1em] hover:bg-[#B71C1C] transition-all flex items-center gap-2"
+        >
+          <Download className="w-4 h-4" />
+          Export PDF
+        </button>
+
+        <button
+          onClick={exportToExcel}
+          className="px-6 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.1em] hover:bg-green-700 transition-all flex items-center gap-2"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          Export Excel
+        </button>
+
+        <button
+          onClick={exportToCSV}
+          className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.1em] hover:bg-blue-700 transition-all flex items-center gap-2"
+        >
+          <FileText className="w-4 h-4" />
+          Export CSV
+        </button>
+
+        <button
+          onClick={handlePrint}
+          className="px-6 py-3 bg-gray-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.1em] hover:bg-gray-700 transition-all flex items-center gap-2"
+        >
+          <Printer className="w-4 h-4" />
+          Print
+        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
