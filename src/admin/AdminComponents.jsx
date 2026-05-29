@@ -2739,6 +2739,7 @@ function LowStockReport({ inventory }) {
               </thead>
               <tbody>
                 {lowStockItems.map((item, idx) => {
+                  if (!item) return null;
                   const current = parseFloat(item.currentStock) || 0;
                   const reorder = parseFloat(item.reorderLevel) || 0;
                   const stockPercent = reorder > 0 ? (current / reorder) * 100 : 0;
@@ -3852,8 +3853,9 @@ export function Inventory() {
     });
 
   const filteredInventory = displayItems.filter(item => {
-    if (!item || !item.menuItem) return false;
-    const matchesSearch = item.menuItem.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!item) return false;
+    const itemName = item.name || item.menuItem?.name || '';
+    const matchesSearch = itemName.toLowerCase().includes(searchTerm.toLowerCase());
     const stockStatus = getStockStatus(item).status;
     const matchesFilter = filterStatus === 'all' || stockStatus === filterStatus;
     return matchesSearch && matchesFilter;
@@ -3991,6 +3993,7 @@ export function Inventory() {
 
       <div className="space-y-3">
         {filteredInventory.map(item => {
+          if (!item) return null;
           const stockStatus = getStockStatus(item);
           const currentStock = parseFloat(item.currentStock) || 0;
           const category = item.category || item.menuItem?.category || '';
