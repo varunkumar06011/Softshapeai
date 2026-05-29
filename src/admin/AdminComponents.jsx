@@ -2700,8 +2700,8 @@ function LowStockReport({ inventory }) {
       const current = parseFloat(item.currentStock) || 0;
       const reorder = parseFloat(item.reorderLevel) || 0;
       const restockQty = Math.max(0, reorder - current);
-      const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
-      const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : 750;
+      const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+      const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : 750;
       const bottlesNeeded = Math.ceil(restockQty / bottleSize);
       return sum + (bottlesNeeded * (parseFloat(item.costPerBottle) || 0));
     }, 0);
@@ -2743,9 +2743,10 @@ function LowStockReport({ inventory }) {
                   const reorder = parseFloat(item.reorderLevel) || 0;
                   const stockPercent = reorder > 0 ? (current / reorder) * 100 : 0;
                   const restockQty = Math.max(0, reorder - current);
-                  const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-                  const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
-                  const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
+                  const category = item.category || item.menuItem?.category || '';
+                  const isBeer = category.toLowerCase() === 'beer';
+                  const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+                  const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
                   const bottlesNeeded = bottleSize > 0 ? Math.ceil(restockQty / bottleSize) : 0;
                   const restockValue = bottlesNeeded * (parseFloat(item.costPerBottle) || 0);
                   const currentBottles = bottleSize > 0 ? Math.floor(current / bottleSize) : 0;
@@ -2757,7 +2758,7 @@ function LowStockReport({ inventory }) {
                         {item.menuItem?.name || item.name || 'Unknown Item'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700">
-                        {item.menuItem?.category || 'N/A'}
+                        {item.category || item.menuItem?.category || 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
                         {currentBottles} bottles ({current.toFixed(0)} ml)
@@ -3686,7 +3687,7 @@ export function Inventory() {
       }
 
       const { item } = data;
-      showNotification(`Low Stock Alert: ${item.menuItem?.name || 'Unknown Item'}`, 'warning');
+      showNotification(`Low Stock Alert: ${item.name || item.menuItem?.name || 'Unknown Item'}`, 'warning');
       loadLowStockItems();
     };
 
@@ -3814,9 +3815,10 @@ export function Inventory() {
 
   const getStockStatus = (item) => {
     const currentStock = parseFloat(item.currentStock) || 0;
-    const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-    const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
-    const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
+    const category = item.category || item.menuItem?.category || '';
+    const isBeer = category.toLowerCase() === 'beer';
+    const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+    const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
     const reorderLevel = parseFloat(item.reorderLevel) || 0;
     const bottles = Math.floor(currentStock / bottleSize);
     const reorderBottles = Math.ceil(reorderLevel / bottleSize);
@@ -3951,14 +3953,15 @@ export function Inventory() {
             </h3>
           </div>
           <div className="flex flex-wrap gap-2">
-            {lowStockItems.filter(item => item && item.id && item.menuItem).map(item => {
+            {lowStockItems.filter(item => item && item.id).map(item => {
               const currentStock = parseFloat(item.currentStock) || 0;
-              const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-              const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
-              const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
+              const category = item.category || item.menuItem?.category || '';
+              const isBeer = category.toLowerCase() === 'beer';
+              const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+              const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
               return (
                 <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
-                  {item.menuItem.name} ({Math.floor(currentStock / bottleSize)} bottles)
+                  {item.name || item.menuItem?.name || 'Unknown Item'} ({Math.floor(currentStock / bottleSize)} bottles)
                 </span>
               );
             })}
@@ -3990,9 +3993,10 @@ export function Inventory() {
         {filteredInventory.map(item => {
           const stockStatus = getStockStatus(item);
           const currentStock = parseFloat(item.currentStock) || 0;
-          const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-          const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
-          const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
+          const category = item.category || item.menuItem?.category || '';
+          const isBeer = category.toLowerCase() === 'beer';
+          const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+          const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
           const reorderLevel = parseFloat(item.reorderLevel) || 0;
           const bottles = bottleSize > 0 ? Math.floor(currentStock / bottleSize) : 0;
           const reorderBottles = bottleSize > 0 ? Math.ceil(reorderLevel / bottleSize) : 0;
@@ -4007,7 +4011,7 @@ export function Inventory() {
                 {/* Left: Item Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-2">
-                    <h3 className="font-black text-base uppercase tracking-wide truncate">{item.menuItem?.name || 'Unknown Item'}</h3>
+                    <h3 className="font-black text-base uppercase tracking-wide truncate">{item.name || item.menuItem?.name || 'Unknown Item'}</h3>
                     <span className={`px-2 py-1 rounded-full text-xs font-bold ${stockStatus.color} bg-gray-100 whitespace-nowrap`}>
                       {stockStatus.label}
                     </span>
@@ -4323,15 +4327,16 @@ function AdjustStockModal({ item, onClose, onSave }) {
   };
 
   const currentStock = parseFloat(item.currentStock) || 0;
-  const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-  const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
-  const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
+  const category = item.category || item.menuItem?.category || '';
+  const isBeer = category.toLowerCase() === 'beer';
+  const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+  const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
   const newStock = currentStock + parseFloat(adjustment.quantityChange || 0);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.menuItem?.name}</h3>
+        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.name || item.menuItem?.name || 'Unknown Item'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-[#FFF5F5] rounded-xl p-4 mb-4 border-2 border-gray-200">
             <p className="text-sm text-gray-600 font-bold uppercase tracking-wide">Current Stock:</p>
