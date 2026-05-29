@@ -4527,7 +4527,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isS
     // Item has real inventory, record purchase
     onSave({
       itemId: existingInventory.id,
-      quantityPurchased: parseFloat(formData.quantityPurchased),
+      quantity: parseFloat(formData.quantityPurchased), // Backend expects 'quantity', not 'quantityPurchased'
       costPerBottle: parseFloat(formData.costPerBottle),
       supplierName: formData.supplierName,
       notes: formData.notes,
