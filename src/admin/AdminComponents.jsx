@@ -4108,6 +4108,7 @@ export function Inventory() {
           inventory={displayItems.filter(item => !item.isVirtual)}
           onClose={() => setShowPurchaseModal(false)}
           onSave={handleRecordPurchase}
+          showNotification={showNotification}
         />
       )}
         </>
@@ -4415,7 +4416,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
   );
 }
 
-function RecordPurchaseModal({ inventory, onClose, onSave }) {
+function RecordPurchaseModal({ inventory, onClose, onSave, showNotification }) {
   const [menuItems, setMenuItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -4439,24 +4440,31 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    // Check if item already has inventory, if not we need to create it first
-    const existingInventory = inventory.find(inv => inv.menuItemId === formData.itemId);
+    // Find inventory item - check both menuItemId and direct id match
+    const existingInventory = inventory.find(inv =>
+      inv.menuItemId === formData.itemId ||
+      inv.id === formData.itemId
+    );
 
-    if (existingInventory) {
-      // Item has inventory, just record purchase
-      onSave({
-        itemId: existingInventory.id,
-        quantityPurchased: parseFloat(formData.quantityPurchased),
-        costPerBottle: parseFloat(formData.costPerBottle),
-        supplierName: formData.supplierName,
-        notes: formData.notes,
-      });
-    } else {
-      // Item doesn't have inventory, need to create it first
-      // This should ideally call a combined endpoint or create inventory first
-      // Note: This would need showNotification to be passed as a prop
-      alert('This item does not have inventory yet. Please add it to inventory first using the "Add Item" button.');
+    if (!existingInventory) {
+      showNotification('This item does not have inventory yet. Please add it to inventory first using the "Add Item" button.', 'error');
+      return;
     }
+
+    // Check if it's a virtual item (not yet saved to backend)
+    if (existingInventory.isVirtual || (typeof existingInventory.id === 'string' && existingInventory.id.startsWith('virtual-'))) {
+      showNotification('This item is not saved yet. Please save the item to inventory first before recording purchases.', 'warning');
+      return;
+    }
+
+    // Item has real inventory, record purchase
+    onSave({
+      itemId: existingInventory.id,
+      quantityPurchased: parseFloat(formData.quantityPurchased),
+      costPerBottle: parseFloat(formData.costPerBottle),
+      supplierName: formData.supplierName,
+      notes: formData.notes,
+    });
   };
 
   // Show all menu items, filter by search if there's a search term
