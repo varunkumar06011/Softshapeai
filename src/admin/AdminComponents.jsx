@@ -73,12 +73,82 @@ const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 t
 
 export function Dashboard({ revenue, ordersCount, activityLog }) {
   const { tables } = useTableSync();
+  const [sales, setSales] = useState([]);
+  const [salesLoading, setSalesLoading] = useState(true);
 
   const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
   const totalTables = tables.length;
   const liveOrdersCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
 
-  const sales = [{ d: "Mon", v: 32 }, { d: "Tue", v: 41 }, { d: "Wed", v: 47 }, { d: "Thu", v: 38 }, { d: "Fri", v: 55 }, { d: "Sat", v: 62 }, { d: "Sun", v: 71 }];
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSalesData = async () => {
+      try {
+        // Fetch from both outlets
+        const [restaurantTxns, barTxns] = await Promise.allSettled([
+          fetchTransactions(RESTAURANT_ID, 500),
+          fetchTransactions(BAR_ID, 500),
+        ]);
+
+        const allTransactions = [
+          ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
+          ...(barTxns.status === 'fulfilled' ? barTxns.value : []),
+        ];
+
+        // Calculate last 7 days (today going back 6 days)
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+
+        // Filter transactions for last 7 days
+        const recentTxns = allTransactions.filter(txn => {
+          const txnDate = new Date(txn.paidAt || txn.createdAt);
+          return txnDate >= sevenDaysAgo && txnDate <= today;
+        });
+
+        // Aggregate by day of week
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const dailyData = days.map(d => ({ day: d, revenue: 0 }));
+
+        recentTxns.forEach(txn => {
+          const txnDate = new Date(txn.paidAt || txn.createdAt);
+          const dayIdx = txnDate.getDay(); // 0 = Sunday, 6 = Saturday
+          dailyData[dayIdx].revenue += Number(txn.amount || 0);
+        });
+
+        // Reorder to start from Monday (chart format)
+        const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        const chartData = order.map(dayName => {
+          const dayIdx = days.indexOf(dayName);
+          return {
+            d: dayName,
+            v: Math.round(dailyData[dayIdx].revenue)
+          };
+        });
+
+        if (!cancelled) {
+          setSales(chartData);
+          setSalesLoading(false);
+        }
+      } catch (err) {
+        console.warn('[Dashboard] Failed to load sales data:', err.message);
+        if (!cancelled) {
+          setSalesLoading(false);
+        }
+      }
+    };
+
+    loadSalesData();
+    const interval = setInterval(loadSalesData, 300000); // Refresh every 5 minutes
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
   return <div className="space-y-4 font-sans">
     <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base animate-fade-in flex items-center gap-3">
       <span className="text-xl">✨</span>
