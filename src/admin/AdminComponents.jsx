@@ -2745,7 +2745,7 @@ function LowStockReport({ inventory }) {
                   const stockPercent = reorder > 0 ? (current / reorder) * 100 : 0;
                   const restockQty = Math.max(0, reorder - current);
                   const category = item.category || item.menuItem?.category || '';
-                  const isBeer = category.toLowerCase() === 'beer';
+                  const isBeer = String(category || '').toLowerCase() === 'beer';
                   const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
                   const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
                   const bottlesNeeded = bottleSize > 0 ? Math.ceil(restockQty / bottleSize) : 0;
@@ -3817,7 +3817,7 @@ export function Inventory() {
   const getStockStatus = (item) => {
     const currentStock = parseFloat(item.currentStock) || 0;
     const category = item.category || item.menuItem?.category || '';
-    const isBeer = category.toLowerCase() === 'beer';
+    const isBeer = String(category || '').toLowerCase() === 'beer';
     const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
     const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
     const reorderLevel = parseFloat(item.reorderLevel) || 0;
@@ -3838,7 +3838,7 @@ export function Inventory() {
         return existingInventory;
       }
       // Create virtual inventory item with 0 stock
-      const isBeer = menuItem.category?.toLowerCase() === 'beer';
+      const isBeer = String(menuItem.category || '').toLowerCase() === 'beer';
       return {
         id: `virtual-${menuItem.id}`,
         menuItemId: menuItem.id,
@@ -3958,7 +3958,7 @@ export function Inventory() {
             {lowStockItems.filter(item => item && item.id).map(item => {
               const currentStock = parseFloat(item.currentStock) || 0;
               const category = item.category || item.menuItem?.category || '';
-              const isBeer = category.toLowerCase() === 'beer';
+              const isBeer = String(category || '').toLowerCase() === 'beer';
               const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
               const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
               return (
@@ -3997,7 +3997,7 @@ export function Inventory() {
           const stockStatus = getStockStatus(item);
           const currentStock = parseFloat(item.currentStock) || 0;
           const category = item.category || item.menuItem?.category || '';
-          const isBeer = category.toLowerCase() === 'beer';
+          const isBeer = String(category || '').toLowerCase() === 'beer';
           const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
           const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
           const reorderLevel = parseFloat(item.reorderLevel) || 0;
@@ -4169,7 +4169,7 @@ function AddInventoryModal({ onClose, onSave }) {
   );
 
   const selectItem = (item) => {
-    const isBeer = item.category?.toLowerCase() === 'beer';
+    const isBeer = String(item.category || '').toLowerCase() === 'beer';
     setFormData({
       ...formData,
       menuItemId: item.id,
@@ -4331,7 +4331,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
 
   const currentStock = parseFloat(item.currentStock) || 0;
   const category = item.category || item.menuItem?.category || '';
-  const isBeer = category.toLowerCase() === 'beer';
+  const isBeer = String(category || '').toLowerCase() === 'beer';
   const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
   const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
   const newStock = currentStock + parseFloat(adjustment.quantityChange || 0);
@@ -4461,7 +4461,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
   );
 
   const selectItem = (item) => {
-    const isBeer = item.category?.toLowerCase() === 'beer';
+    const isBeer = String(item.category || '').toLowerCase() === 'beer';
     setFormData({
       ...formData,
       itemId: item.id,
@@ -4505,7 +4505,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto scrollbar-hide z-10">
                 {filteredMenuItems.map(item => {
                   const existingInventory = inventory.find(inv => inv.menuItemId === item.id);
-                  const isBeer = item.category?.toLowerCase() === 'beer';
+                  const isBeer = String(item.category || '').toLowerCase() === 'beer';
                   const bottleSize = existingInventory
                     ? (parseInt(existingInventory.bottleSize) || (isBeer ? 650 : 750))
                     : (isBeer ? 650 : 750);
