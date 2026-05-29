@@ -69,6 +69,81 @@ const formatTableTime = (timeString) => {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 };
 
+// Popup Component - Replaces alert() calls
+function Popup({ message, type = 'info', onClose }) {
+  // type: 'success', 'error', 'warning', 'info'
+  const bgColors = {
+    success: 'bg-green-50 border-green-500',
+    error: 'bg-red-50 border-red-500',
+    warning: 'bg-yellow-50 border-yellow-500',
+    info: 'bg-blue-50 border-blue-500'
+  };
+
+  const textColors = {
+    success: 'text-green-800',
+    error: 'text-red-800',
+    warning: 'text-yellow-800',
+    info: 'text-blue-800'
+  };
+
+  const icons = {
+    success: '✓',
+    error: '✕',
+    warning: '⚠',
+    info: 'ℹ'
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
+      <style>{`
+        @keyframes scale-in {
+          from {
+            transform: scale(0.9);
+            opacity: 0;
+          }
+          to {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+        .animate-scale-in {
+          animation: scale-in 0.2s ease-out;
+        }
+      `}</style>
+      <div
+        className={`${bgColors[type]} border-l-4 rounded-lg shadow-2xl p-6 max-w-md mx-4 animate-scale-in`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-4">
+          <div className={`text-3xl ${textColors[type]}`}>
+            {icons[type]}
+          </div>
+          <div className="flex-1">
+            <p className={`${textColors[type]} font-semibold text-lg mb-2`}>
+              {type.charAt(0).toUpperCase() + type.slice(1)}
+            </p>
+            <p className="text-gray-700">{message}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-700 transition-all"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
 const cardBase = "rounded-[10px] border border-[#FFCDD2]";
@@ -1884,7 +1959,7 @@ function SalesReport({ inventory }) {
         return 0;
       }
 
-      const costPerMl = invItem.costPerBottle / invItem.bottleSize;
+      const costPerMl = invItem.bottleSize > 0 ? invItem.costPerBottle / invItem.bottleSize : 0;
       return costPerMl * pourMl;
     };
 
@@ -2612,8 +2687,10 @@ function LowStockReport({ inventory }) {
         return current <= reorder && reorder > 0;
       })
       .sort((a, b) => {
-        const aPercent = (parseFloat(a.currentStock) / parseFloat(a.reorderLevel)) * 100;
-        const bPercent = (parseFloat(b.currentStock) / parseFloat(b.reorderLevel)) * 100;
+        const aReorder = parseFloat(a.reorderLevel) || 1;
+        const bReorder = parseFloat(b.reorderLevel) || 1;
+        const aPercent = (parseFloat(a.currentStock) / aReorder) * 100;
+        const bPercent = (parseFloat(b.currentStock) / bReorder) * 100;
         return aPercent - bPercent;
       });
   }, [inventory]);
@@ -2623,7 +2700,9 @@ function LowStockReport({ inventory }) {
       const current = parseFloat(item.currentStock) || 0;
       const reorder = parseFloat(item.reorderLevel) || 0;
       const restockQty = Math.max(0, reorder - current);
-      return sum + (restockQty * (parseFloat(item.costPerBottle) || 0));
+      const bottleSize = parseInt(item.bottleSize) || 750;
+      const bottlesNeeded = Math.ceil(restockQty / bottleSize);
+      return sum + (bottlesNeeded * (parseFloat(item.costPerBottle) || 0));
     }, 0);
   }, [lowStockItems]);
 
@@ -2663,11 +2742,12 @@ function LowStockReport({ inventory }) {
                   const reorder = parseFloat(item.reorderLevel) || 0;
                   const stockPercent = reorder > 0 ? (current / reorder) * 100 : 0;
                   const restockQty = Math.max(0, reorder - current);
-                  const restockValue = restockQty * (parseFloat(item.costPerBottle) || 0);
                   const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
                   const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
-                  const currentBottles = Math.floor(current / bottleSize);
-                  const reorderBottles = Math.ceil(reorder / bottleSize);
+                  const bottlesNeeded = bottleSize > 0 ? Math.ceil(restockQty / bottleSize) : 0;
+                  const restockValue = bottlesNeeded * (parseFloat(item.costPerBottle) || 0);
+                  const currentBottles = bottleSize > 0 ? Math.floor(current / bottleSize) : 0;
+                  const reorderBottles = bottleSize > 0 ? Math.ceil(reorder / bottleSize) : 0;
 
                   return (
                     <tr key={item.id || idx} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
@@ -3555,6 +3635,15 @@ export function Inventory() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [activeTab, setActiveTab] = useState('inventory');
   const socket = useSocket('bar-001');
+  const [popup, setPopup] = useState(null);
+
+  const showNotification = (message, type = 'info') => {
+    setPopup({ message, type });
+  };
+
+  const closePopup = () => {
+    setPopup(null);
+  };
 
   useEffect(() => {
     if (outlet === 'bar') {
@@ -3595,7 +3684,7 @@ export function Inventory() {
       }
 
       const { item } = data;
-      alert(`Low Stock Alert: ${item.menuItem?.name || 'Unknown Item'}`);
+      showNotification(`Low Stock Alert: ${item.menuItem?.name || 'Unknown Item'}`, 'warning');
       loadLowStockItems();
     };
 
@@ -3632,7 +3721,7 @@ export function Inventory() {
       setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
     } catch (err) {
       console.error('[Inventory] Load failed:', err);
-      alert('Failed to load inventory');
+      showNotification('Failed to load inventory', 'error');
       setInventory([]);
     } finally {
       setLoading(false);
@@ -3655,13 +3744,13 @@ export function Inventory() {
       if (newItem && newItem.id) {
         setInventory(prev => [...prev, newItem]);
         setShowAddModal(false);
-        alert('Inventory item created');
+        showNotification('Inventory item created successfully', 'success');
       } else {
         throw new Error('Invalid response from server');
       }
     } catch (err) {
       console.error('[Inventory] Create failed:', err);
-      alert(err.message);
+      showNotification(err.message || 'Failed to create inventory item', 'error');
     }
   };
 
@@ -3688,11 +3777,11 @@ export function Inventory() {
       }
       setShowAdjustModal(false);
       setSelectedItem(null);
-      alert('Stock adjusted successfully');
+      showNotification('Stock adjusted successfully', 'success');
       loadInventory();
     } catch (err) {
       console.error('[Inventory] Adjust failed:', err);
-      alert(err.message);
+      showNotification(err.message || 'Failed to adjust stock', 'error');
     }
   };
 
@@ -3700,11 +3789,11 @@ export function Inventory() {
     try {
       await recordPurchase(purchaseData);
       setShowPurchaseModal(false);
-      alert('Purchase recorded successfully');
+      showNotification('Purchase recorded successfully', 'success');
       loadInventory();
     } catch (err) {
       console.error('[Inventory] Purchase record failed:', err);
-      alert(err.message);
+      showNotification(err.message || 'Failed to record purchase', 'error');
     }
   };
 
@@ -3714,10 +3803,10 @@ export function Inventory() {
     try {
       await deleteInventoryItem(itemId);
       setInventory(prev => prev.filter(i => i.id !== itemId));
-      alert('Inventory item deleted');
+      showNotification('Inventory item deleted successfully', 'success');
     } catch (err) {
       console.error('[Inventory] Delete failed:', err);
-      alert(err.message);
+      showNotification(err.message || 'Failed to delete inventory item', 'error');
     }
   };
 
@@ -3900,12 +3989,12 @@ export function Inventory() {
           const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
           const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
           const reorderLevel = parseFloat(item.reorderLevel) || 0;
-          const bottles = Math.floor(currentStock / bottleSize);
-          const reorderBottles = Math.ceil(reorderLevel / bottleSize);
+          const bottles = bottleSize > 0 ? Math.floor(currentStock / bottleSize) : 0;
+          const reorderBottles = bottleSize > 0 ? Math.ceil(reorderLevel / bottleSize) : 0;
 
           // Calculate percentage for progress bar using maxStock
           const maxStock = parseFloat(item.maxStock) || (reorderLevel * 3) || 10000;
-          const stockPercentage = Math.min((currentStock / maxStock) * 100, 100);
+          const stockPercentage = maxStock > 0 ? Math.min((currentStock / maxStock) * 100, 100) : 0;
 
           return (
             <div key={item.id} className="bg-white rounded-2xl shadow-lg p-5 border-2 border-gray-100 hover:border-[#E53935] transition-all">
@@ -3958,12 +4047,14 @@ export function Inventory() {
                   >
                     {item.isVirtual ? 'Add Stock' : 'Adjust'}
                   </button>
-                  <button
-                    onClick={() => handleDeleteItem(item.id)}
-                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  {!item.isVirtual && (
+                    <button
+                      onClick={() => handleDeleteItem(item.id)}
+                      className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -4012,6 +4103,14 @@ export function Inventory() {
 
       {activeTab === 'reports' && (
         <SalesReportsTab inventory={inventory} />
+      )}
+
+      {popup && (
+        <Popup
+          message={popup.message}
+          type={popup.type}
+          onClose={closePopup}
+        />
       )}
     </div>
   );
@@ -4337,6 +4436,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
     } else {
       // Item doesn't have inventory, need to create it first
       // This should ideally call a combined endpoint or create inventory first
+      // Note: This would need showNotification to be passed as a prop
       alert('This item does not have inventory yet. Please add it to inventory first using the "Add Item" button.');
     }
   };
