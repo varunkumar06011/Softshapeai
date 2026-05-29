@@ -2700,7 +2700,8 @@ function LowStockReport({ inventory }) {
       const current = parseFloat(item.currentStock) || 0;
       const reorder = parseFloat(item.reorderLevel) || 0;
       const restockQty = Math.max(0, reorder - current);
-      const bottleSize = parseInt(item.bottleSize) || 750;
+      const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
+      const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : 750;
       const bottlesNeeded = Math.ceil(restockQty / bottleSize);
       return sum + (bottlesNeeded * (parseFloat(item.costPerBottle) || 0));
     }, 0);
@@ -2743,7 +2744,8 @@ function LowStockReport({ inventory }) {
                   const stockPercent = reorder > 0 ? (current / reorder) * 100 : 0;
                   const restockQty = Math.max(0, reorder - current);
                   const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-                  const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
+                  const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
+                  const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
                   const bottlesNeeded = bottleSize > 0 ? Math.ceil(restockQty / bottleSize) : 0;
                   const restockValue = bottlesNeeded * (parseFloat(item.costPerBottle) || 0);
                   const currentBottles = bottleSize > 0 ? Math.floor(current / bottleSize) : 0;
@@ -3813,7 +3815,8 @@ export function Inventory() {
   const getStockStatus = (item) => {
     const currentStock = parseFloat(item.currentStock) || 0;
     const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-    const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
+    const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
+    const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
     const reorderLevel = parseFloat(item.reorderLevel) || 0;
     const bottles = Math.floor(currentStock / bottleSize);
     const reorderBottles = Math.ceil(reorderLevel / bottleSize);
@@ -3951,7 +3954,8 @@ export function Inventory() {
             {lowStockItems.filter(item => item && item.id && item.menuItem).map(item => {
               const currentStock = parseFloat(item.currentStock) || 0;
               const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-              const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
+              const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
+              const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
               return (
                 <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
                   {item.menuItem.name} ({Math.floor(currentStock / bottleSize)} bottles)
@@ -3987,7 +3991,8 @@ export function Inventory() {
           const stockStatus = getStockStatus(item);
           const currentStock = parseFloat(item.currentStock) || 0;
           const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-          const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
+          const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
+          const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
           const reorderLevel = parseFloat(item.reorderLevel) || 0;
           const bottles = bottleSize > 0 ? Math.floor(currentStock / bottleSize) : 0;
           const reorderBottles = bottleSize > 0 ? Math.ceil(reorderLevel / bottleSize) : 0;
@@ -4319,7 +4324,8 @@ function AdjustStockModal({ item, onClose, onSave }) {
 
   const currentStock = parseFloat(item.currentStock) || 0;
   const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
-  const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
+  const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize;
+  const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
   const newStock = currentStock + parseFloat(adjustment.quantityChange || 0);
 
   return (
