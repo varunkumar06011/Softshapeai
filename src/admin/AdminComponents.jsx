@@ -1759,8 +1759,78 @@ function TransactionsTab() {
   );
 }
 
-// SalesReportsTab Component
+// SalesReportsTab Component with Sub-tabs (Phase 4)
 function SalesReportsTab({ inventory }) {
+  const [reportType, setReportType] = useState('sales');
+
+  return (
+    <div className="space-y-4">
+      {/* Report Type Sub-tabs */}
+      <div className="flex gap-2 border-b border-gray-200 pb-0 overflow-x-auto">
+        <button
+          onClick={() => setReportType('sales')}
+          className={`px-6 py-3 rounded-t-xl font-bold text-xs uppercase tracking-[0.1em] transition-all whitespace-nowrap ${
+            reportType === 'sales'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Sales Report
+        </button>
+        <button
+          onClick={() => setReportType('lowstock')}
+          className={`px-6 py-3 rounded-t-xl font-bold text-xs uppercase tracking-[0.1em] transition-all whitespace-nowrap ${
+            reportType === 'lowstock'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Low Stock
+        </button>
+        <button
+          onClick={() => setReportType('comparison')}
+          className={`px-6 py-3 rounded-t-xl font-bold text-xs uppercase tracking-[0.1em] transition-all whitespace-nowrap ${
+            reportType === 'comparison'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Comparison
+        </button>
+        <button
+          onClick={() => setReportType('topperformers')}
+          className={`px-6 py-3 rounded-t-xl font-bold text-xs uppercase tracking-[0.1em] transition-all whitespace-nowrap ${
+            reportType === 'topperformers'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Top Performers
+        </button>
+        <button
+          onClick={() => setReportType('waste')}
+          className={`px-6 py-3 rounded-t-xl font-bold text-xs uppercase tracking-[0.1em] transition-all whitespace-nowrap ${
+            reportType === 'waste'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Waste Report
+        </button>
+      </div>
+
+      {/* Render appropriate report based on selection */}
+      {reportType === 'sales' && <SalesReport inventory={inventory} />}
+      {reportType === 'lowstock' && <LowStockReport inventory={inventory} />}
+      {reportType === 'comparison' && <ComparisonReport inventory={inventory} />}
+      {reportType === 'topperformers' && <TopPerformersReport inventory={inventory} />}
+      {reportType === 'waste' && <WasteReport inventory={inventory} />}
+    </div>
+  );
+}
+
+// Sales Report Component (extracted from original SalesReportsTab)
+function SalesReport({ inventory }) {
   const [salesData, setSalesData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(() => ({
@@ -2525,6 +2595,948 @@ function SalesReportsTab({ inventory }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Low Stock Report Component (Phase 4)
+function LowStockReport({ inventory }) {
+  const lowStockItems = useMemo(() => {
+    if (!inventory || !Array.isArray(inventory)) return [];
+
+    return inventory
+      .filter(item => {
+        if (!item) return false;
+        const current = parseFloat(item.currentStock) || 0;
+        const reorder = parseFloat(item.reorderLevel) || 0;
+        return current <= reorder && reorder > 0;
+      })
+      .sort((a, b) => {
+        const aPercent = (parseFloat(a.currentStock) / parseFloat(a.reorderLevel)) * 100;
+        const bPercent = (parseFloat(b.currentStock) / parseFloat(b.reorderLevel)) * 100;
+        return aPercent - bPercent;
+      });
+  }, [inventory]);
+
+  const totalRestockValue = useMemo(() => {
+    return lowStockItems.reduce((sum, item) => {
+      const current = parseFloat(item.currentStock) || 0;
+      const reorder = parseFloat(item.reorderLevel) || 0;
+      const restockQty = Math.max(0, reorder - current);
+      return sum + (restockQty * (parseFloat(item.costPerBottle) || 0));
+    }, 0);
+  }, [lowStockItems]);
+
+  return (
+    <div className="space-y-4">
+      {/* Alert Banner */}
+      <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl">
+        <h3 className="font-bold text-red-800 text-lg">
+          {lowStockItems.length === 0 ? '✅ All items adequately stocked' : `⚠️ ${lowStockItems.length} item${lowStockItems.length !== 1 ? 's' : ''} below reorder level`}
+        </h3>
+        {lowStockItems.length > 0 && (
+          <p className="text-sm text-red-600 mt-1">
+            Total restock investment required: ₹{totalRestockValue.toLocaleString('en-IN')}
+          </p>
+        )}
+      </div>
+
+      {lowStockItems.length > 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b-2 border-gray-300">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Category</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Current Stock</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Reorder Level</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Stock %</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Status</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Cost/Bottle</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Restock Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lowStockItems.map((item, idx) => {
+                  const current = parseFloat(item.currentStock) || 0;
+                  const reorder = parseFloat(item.reorderLevel) || 0;
+                  const stockPercent = reorder > 0 ? (current / reorder) * 100 : 0;
+                  const restockQty = Math.max(0, reorder - current);
+                  const restockValue = restockQty * (parseFloat(item.costPerBottle) || 0);
+                  const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
+                  const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
+                  const currentBottles = Math.floor(current / bottleSize);
+                  const reorderBottles = Math.ceil(reorder / bottleSize);
+
+                  return (
+                    <tr key={item.id || idx} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                        {item.menuItem?.name || item.name || 'Unknown Item'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {item.menuItem?.category || 'N/A'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {currentBottles} bottles ({current.toFixed(0)} ml)
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">
+                        {reorderBottles} bottles ({reorder.toFixed(0)} ml)
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        <span className={`font-bold ${stockPercent < 25 ? 'text-red-600' : 'text-orange-600'}`}>
+                          {stockPercent.toFixed(0)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {stockPercent === 0 ? (
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-red-600 text-white">
+                            OUT OF STOCK
+                          </span>
+                        ) : stockPercent < 25 ? (
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                            CRITICAL
+                          </span>
+                        ) : stockPercent < 50 ? (
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700">
+                            LOW
+                          </span>
+                        ) : (
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">
+                            BELOW TARGET
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">
+                        ₹{(parseFloat(item.costPerBottle) || 0).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-bold text-green-700">
+                        ₹{restockValue.toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-100 font-black">
+                  <td colSpan="7" className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
+                    Total Restock Investment Required
+                  </td>
+                  <td className="px-4 py-4 text-sm text-right text-green-800">
+                    ₹{totalRestockValue.toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="text-6xl mb-4">✅</div>
+          <p className="text-xl font-bold text-gray-700">All items are adequately stocked</p>
+          <p className="text-sm text-gray-500 mt-2">No items below reorder level</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Comparison Report Component (Phase 4)
+function ComparisonReport({ inventory }) {
+  const [comparisonType, setComparisonType] = useState('week');
+  const [period1Data, setPeriod1Data] = useState([]);
+  const [period2Data, setPeriod2Data] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const getDateRanges = useCallback(() => {
+    const today = new Date();
+
+    if (comparisonType === 'week') {
+      const thisWeekStart = new Date(today);
+      thisWeekStart.setDate(today.getDate() - today.getDay());
+      thisWeekStart.setHours(0, 0, 0, 0);
+      const thisWeekEnd = new Date(today);
+
+      const lastWeekStart = new Date(thisWeekStart);
+      lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+      const lastWeekEnd = new Date(thisWeekStart);
+      lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+
+      return {
+        period1: { start: lastWeekStart, end: lastWeekEnd, label: 'Last Week' },
+        period2: { start: thisWeekStart, end: thisWeekEnd, label: 'This Week' }
+      };
+    } else if (comparisonType === 'month') {
+      const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      const thisMonthEnd = new Date(today);
+
+      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+
+      return {
+        period1: { start: lastMonthStart, end: lastMonthEnd, label: 'Last Month' },
+        period2: { start: thisMonthStart, end: thisMonthEnd, label: 'This Month' }
+      };
+    }
+  }, [comparisonType]);
+
+  useEffect(() => {
+    const loadComparisonData = async () => {
+      setLoading(true);
+      try {
+        const ranges = getDateRanges();
+
+        const [data1Response, data2Response] = await Promise.all([
+          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${ranges.period1.start.toISOString().slice(0, 10)}&endDate=${ranges.period1.end.toISOString().slice(0, 10)}`)),
+          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${ranges.period2.start.toISOString().slice(0, 10)}&endDate=${ranges.period2.end.toISOString().slice(0, 10)}`))
+        ]);
+
+        const data1 = await data1Response.json();
+        const data2 = await data2Response.json();
+
+        setPeriod1Data(data1.items || []);
+        setPeriod2Data(data2.items || []);
+      } catch (error) {
+        console.error('[ComparisonReport] Failed to load:', error);
+        setPeriod1Data([]);
+        setPeriod2Data([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadComparisonData();
+  }, [comparisonType, getDateRanges]);
+
+  const period1Total = useMemo(() => {
+    return period1Data.reduce((sum, item) => sum + (item.revenue || 0), 0);
+  }, [period1Data]);
+
+  const period2Total = useMemo(() => {
+    return period2Data.reduce((sum, item) => sum + (item.revenue || 0), 0);
+  }, [period2Data]);
+
+  const changePercent = useMemo(() => {
+    return period1Total > 0 ? ((period2Total - period1Total) / period1Total * 100) : 0;
+  }, [period1Total, period2Total]);
+
+  const mergedData = useMemo(() => {
+    const itemMap = new Map();
+
+    period1Data.forEach(item => {
+      const name = item.itemName || item.name;
+      itemMap.set(name, {
+        name,
+        period1Qty: item.quantity || 0,
+        period1Revenue: item.revenue || 0,
+        period2Qty: 0,
+        period2Revenue: 0
+      });
+    });
+
+    period2Data.forEach(item => {
+      const name = item.itemName || item.name;
+      if (itemMap.has(name)) {
+        const existing = itemMap.get(name);
+        existing.period2Qty = item.quantity || 0;
+        existing.period2Revenue = item.revenue || 0;
+      } else {
+        itemMap.set(name, {
+          name,
+          period1Qty: 0,
+          period1Revenue: 0,
+          period2Qty: item.quantity || 0,
+          period2Revenue: item.revenue || 0
+        });
+      }
+    });
+
+    return Array.from(itemMap.values()).sort((a, b) => b.period2Revenue - a.period2Revenue);
+  }, [period1Data, period2Data]);
+
+  const ranges = getDateRanges();
+
+  return (
+    <div className="space-y-4">
+      {/* Comparison Type Selector */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => setComparisonType('week')}
+          className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-[0.1em] transition-all ${
+            comparisonType === 'week'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Week vs Week
+        </button>
+        <button
+          onClick={() => setComparisonType('month')}
+          className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-[0.1em] transition-all ${
+            comparisonType === 'month'
+              ? 'bg-[#E53935] text-white'
+              : 'bg-white text-gray-700 hover:bg-[#FFF5F5] border border-gray-200'
+          }`}
+        >
+          Month vs Month
+        </button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-xl">
+          <div className="text-xs text-blue-600 uppercase tracking-wide font-bold">
+            {ranges.period1.label}
+          </div>
+          <div className="text-3xl font-black text-blue-800 mt-2">
+            ₹{period1Total.toLocaleString('en-IN')}
+          </div>
+          <div className="text-sm text-blue-600 mt-1">
+            {period1Data.reduce((sum, item) => sum + (item.quantity || 0), 0)} items sold
+          </div>
+        </div>
+
+        <div className="bg-green-50 border-l-4 border-green-500 p-6 rounded-r-xl">
+          <div className="text-xs text-green-600 uppercase tracking-wide font-bold">
+            {ranges.period2.label}
+          </div>
+          <div className="text-3xl font-black text-green-800 mt-2">
+            ₹{period2Total.toLocaleString('en-IN')}
+          </div>
+          <div className="text-sm text-green-600 mt-1">
+            {period2Data.reduce((sum, item) => sum + (item.quantity || 0), 0)} items sold
+          </div>
+        </div>
+
+        <div className={`p-6 border-l-4 rounded-r-xl ${changePercent >= 0 ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
+          <div className={`text-xs uppercase tracking-wide font-bold ${changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            Change
+          </div>
+          <div className={`text-3xl font-black mt-2 ${changePercent >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+            {changePercent >= 0 ? '↑' : '↓'} {Math.abs(changePercent).toFixed(1)}%
+          </div>
+          <div className={`text-sm mt-1 ${changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {changePercent >= 0 ? `+₹${(period2Total - period1Total).toLocaleString('en-IN')}` : `-₹${Math.abs(period2Total - period1Total).toLocaleString('en-IN')}`}
+          </div>
+        </div>
+      </div>
+
+      {/* Comparison Table */}
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+          Loading comparison data...
+        </div>
+      ) : mergedData.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+          No data available for comparison.
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b-2 border-gray-300">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">{ranges.period1.label} Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">{ranges.period1.label} Revenue</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">{ranges.period2.label} Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">{ranges.period2.label} Revenue</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Qty Change</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Revenue Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergedData.map((item, idx) => {
+                  const qtyChange = item.period2Qty - item.period1Qty;
+                  const qtyChangePercent = item.period1Qty > 0 ? (qtyChange / item.period1Qty * 100) : 0;
+                  const revenueChange = item.period2Revenue - item.period1Revenue;
+                  const revenueChangePercent = item.period1Revenue > 0 ? (revenueChange / item.period1Revenue * 100) : 0;
+
+                  return (
+                    <tr key={idx} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.name}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">{item.period1Qty}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">₹{item.period1Revenue.toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">{item.period2Qty}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">₹{item.period2Revenue.toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        <span className={`font-bold ${qtyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {qtyChange >= 0 ? '+' : ''}{qtyChange} ({qtyChangePercent >= 0 ? '+' : ''}{qtyChangePercent.toFixed(1)}%)
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        <span className={`font-bold ${revenueChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {revenueChange >= 0 ? '+' : ''}₹{Math.abs(revenueChange).toLocaleString('en-IN')} ({revenueChangePercent >= 0 ? '+' : ''}{revenueChangePercent.toFixed(1)}%)
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Top Performers Report Component (Phase 4)
+function TopPerformersReport({ inventory }) {
+  const [salesData, setSalesData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState('revenue');
+  const [limit, setLimit] = useState(10);
+  const [dateRange, setDateRange] = useState({
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+  });
+
+  useEffect(() => {
+    const loadTopPerformers = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(
+          apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
+        );
+
+        if (!response.ok) throw new Error('Failed to fetch sales data');
+
+        const data = await response.json();
+        const itemsArray = data.items || [];
+
+        const processedData = itemsArray.map(item => {
+          const itemName = item.itemName || item.name || '';
+          const quantity = item.quantity || 0;
+          const revenue = item.revenue || 0;
+          const sellingPrice = quantity > 0 ? revenue / quantity : 0;
+
+          const invItem = inventory?.find(inv => {
+            const invName = inv?.menuItem?.name?.toLowerCase() || '';
+            const searchName = itemName?.toLowerCase() || '';
+            return invName.includes(searchName) || searchName.includes(invName);
+          });
+
+          const costPerBottle = parseFloat(invItem?.costPerBottle) || 0;
+          const bottleSize = parseInt(invItem?.bottleSize) || 750;
+
+          const match = itemName.match(/\((\d+)\s*ml\)/i);
+          const pourMl = match ? parseInt(match[1]) : 0;
+          const costPrice = pourMl > 0 && bottleSize > 0 ? (costPerBottle / bottleSize) * pourMl : 0;
+
+          const totalCost = quantity * costPrice;
+          const profit = revenue - totalCost;
+          const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+          return {
+            id: itemName,
+            name: itemName,
+            category: item.category || 'OTHER',
+            quantity,
+            revenue,
+            cost: totalCost,
+            profit,
+            profitMargin
+          };
+        });
+
+        setSalesData(processedData);
+      } catch (error) {
+        console.error('[TopPerformersReport] Failed to load:', error);
+        setSalesData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTopPerformers();
+  }, [dateRange, inventory]);
+
+  const sortedData = useMemo(() => {
+    const sorted = [...salesData].sort((a, b) => {
+      switch (sortBy) {
+        case 'revenue':
+          return b.revenue - a.revenue;
+        case 'profit':
+          return b.profit - a.profit;
+        case 'margin':
+          return b.profitMargin - a.profitMargin;
+        case 'quantity':
+          return b.quantity - a.quantity;
+        default:
+          return b.revenue - a.revenue;
+      }
+    });
+    return sorted.slice(0, limit);
+  }, [salesData, sortBy, limit]);
+
+  const topThree = sortedData.slice(0, 3);
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex flex-wrap gap-3">
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm font-semibold"
+        >
+          <option value="revenue">Sort by Revenue</option>
+          <option value="profit">Sort by Profit</option>
+          <option value="margin">Sort by Margin %</option>
+          <option value="quantity">Sort by Quantity</option>
+        </select>
+
+        <select
+          value={limit}
+          onChange={(e) => setLimit(Number(e.target.value))}
+          className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm font-semibold"
+        >
+          <option value="10">Top 10</option>
+          <option value="20">Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+
+        <input
+          type="date"
+          value={dateRange.startDate}
+          onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+          className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm"
+        />
+
+        <input
+          type="date"
+          value={dateRange.endDate}
+          onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+          className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm"
+        />
+      </div>
+
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+          Loading top performers...
+        </div>
+      ) : sortedData.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+          No sales data found for selected date range.
+        </div>
+      ) : (
+        <>
+          {/* Podium Display (Top 3) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {topThree.map((item, index) => (
+              <div
+                key={item.id}
+                className={`p-6 rounded-2xl text-center transition-all hover:scale-105 ${
+                  index === 0 ? 'bg-yellow-100 border-4 border-yellow-500 shadow-xl' :
+                  index === 1 ? 'bg-gray-100 border-4 border-gray-400 shadow-lg' :
+                  'bg-orange-100 border-4 border-orange-400 shadow-lg'
+                }`}
+              >
+                <div className="text-5xl mb-3">
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                </div>
+                <div className="font-black text-lg text-gray-900 mb-1 truncate" title={item.name}>
+                  {item.name}
+                </div>
+                <div className="text-3xl font-black text-green-700 my-2">
+                  ₹{item.revenue.toLocaleString('en-IN')}
+                </div>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <div>{item.quantity} sold</div>
+                  <div className="font-bold text-blue-700">
+                    {item.profitMargin.toFixed(1)}% margin
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Full Table */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b-2 border-gray-300">
+                  <tr>
+                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Rank</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Category</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Quantity Sold</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Revenue</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Cost</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Profit</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Margin %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedData.map((item, index) => (
+                    <tr key={item.id} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-black text-sm ${
+                          index === 0 ? 'bg-yellow-200 text-yellow-800' :
+                          index === 1 ? 'bg-gray-200 text-gray-800' :
+                          index === 2 ? 'bg-orange-200 text-orange-800' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {index + 1}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{item.category}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">{item.quantity}</td>
+                      <td className="px-4 py-3 text-sm text-right text-green-700 font-bold">
+                        ₹{item.revenue.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">
+                        ₹{item.cost.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-blue-700 font-bold">
+                        ₹{item.profit.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        <span className={`font-bold ${
+                          item.profitMargin >= 50 ? 'text-green-600' :
+                          item.profitMargin >= 30 ? 'text-blue-600' :
+                          'text-orange-600'
+                        }`}>
+                          {item.profitMargin.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Waste Report Component (Phase 4)
+function WasteReport({ inventory }) {
+  const [wasteData, setWasteData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState({
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+  });
+  const [groupBy, setGroupBy] = useState('item');
+
+  useEffect(() => {
+    const loadWasteData = async () => {
+      setLoading(true);
+      try {
+        const params = {
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'WASTAGE',
+          limit: 500
+        };
+
+        const data = await fetchBarTransactions(params);
+
+        const wasteTransactions = (data || []).filter(txn => {
+          return txn.type === 'WASTAGE' || (txn.type === 'ADJUSTMENT' && parseFloat(txn.quantityChange) < 0);
+        });
+
+        setWasteData(wasteTransactions);
+      } catch (error) {
+        console.error('[WasteReport] Failed to load:', error);
+        setWasteData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadWasteData();
+  }, [dateRange]);
+
+  const totalWasteCost = useMemo(() => {
+    return wasteData.reduce((sum, txn) => {
+      const qty = Math.abs(parseFloat(txn.quantityChange) || 0);
+
+      const invItem = inventory?.find(inv => inv.id === txn.itemId);
+      const costPerBottle = parseFloat(invItem?.costPerBottle) || 0;
+      const bottleSize = parseInt(invItem?.bottleSize) || 750;
+      const costPerMl = bottleSize > 0 ? costPerBottle / bottleSize : 0;
+
+      return sum + (qty * costPerMl);
+    }, 0);
+  }, [wasteData, inventory]);
+
+  const groupedData = useMemo(() => {
+    if (groupBy === 'item') {
+      const itemMap = new Map();
+
+      wasteData.forEach(txn => {
+        const itemName = txn.item?.menuItem?.name || 'Unknown Item';
+        const qty = Math.abs(parseFloat(txn.quantityChange) || 0);
+
+        const invItem = inventory?.find(inv => inv.id === txn.itemId);
+        const costPerBottle = parseFloat(invItem?.costPerBottle) || 0;
+        const bottleSize = parseInt(invItem?.bottleSize) || 750;
+        const costPerMl = bottleSize > 0 ? costPerBottle / bottleSize : 0;
+        const cost = qty * costPerMl;
+
+        if (itemMap.has(itemName)) {
+          const existing = itemMap.get(itemName);
+          existing.quantity += qty;
+          existing.cost += cost;
+          existing.count += 1;
+        } else {
+          itemMap.set(itemName, {
+            name: itemName,
+            quantity: qty,
+            cost,
+            count: 1,
+            category: txn.item?.menuItem?.category || 'N/A'
+          });
+        }
+      });
+
+      return Array.from(itemMap.values()).sort((a, b) => b.cost - a.cost);
+    } else if (groupBy === 'category') {
+      const categoryMap = new Map();
+
+      wasteData.forEach(txn => {
+        const category = txn.item?.menuItem?.category || 'N/A';
+        const qty = Math.abs(parseFloat(txn.quantityChange) || 0);
+
+        const invItem = inventory?.find(inv => inv.id === txn.itemId);
+        const costPerBottle = parseFloat(invItem?.costPerBottle) || 0;
+        const bottleSize = parseInt(invItem?.bottleSize) || 750;
+        const costPerMl = bottleSize > 0 ? costPerBottle / bottleSize : 0;
+        const cost = qty * costPerMl;
+
+        if (categoryMap.has(category)) {
+          const existing = categoryMap.get(category);
+          existing.quantity += qty;
+          existing.cost += cost;
+          existing.count += 1;
+        } else {
+          categoryMap.set(category, {
+            name: category,
+            quantity: qty,
+            cost,
+            count: 1
+          });
+        }
+      });
+
+      return Array.from(categoryMap.values()).sort((a, b) => b.cost - a.cost);
+    }
+
+    return wasteData;
+  }, [wasteData, groupBy, inventory]);
+
+  const setPresetDateRange = (preset) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const presets = {
+      last7: {
+        start: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
+        end: today,
+      },
+      last30: {
+        start: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+        end: today,
+      },
+      thisMonth: {
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+        end: today,
+      },
+    };
+    setDateRange({ startDate: presets[preset].start, endDate: presets[preset].end });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Alert Banner */}
+      <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl">
+        <h3 className="font-bold text-red-800 text-lg">
+          💸 Total Waste Cost: ₹{totalWasteCost.toLocaleString('en-IN')}
+        </h3>
+        <p className="text-sm text-red-600 mt-1">
+          {wasteData.length} waste transaction{wasteData.length !== 1 ? 's' : ''} recorded
+        </p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h3 className="font-bold text-sm mb-3">Filters</h3>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {[
+            { id: 'last7', label: 'Last 7 Days' },
+            { id: 'last30', label: 'Last 30 Days' },
+            { id: 'thisMonth', label: 'This Month' },
+          ].map(preset => (
+            <button
+              key={preset.id}
+              onClick={() => setPresetDateRange(preset.id)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-[#E53935] hover:text-white transition-all"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={dateRange.startDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">End Date</label>
+            <input
+              type="date"
+              value={dateRange.endDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Group By</label>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            >
+              <option value="item">By Item</option>
+              <option value="category">By Category</option>
+              <option value="date">By Date (Individual)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+          Loading waste data...
+        </div>
+      ) : wasteData.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="text-6xl mb-4">✅</div>
+          <p className="text-xl font-bold text-gray-700">No waste recorded</p>
+          <p className="text-sm text-gray-500 mt-2">No wastage transactions found for selected date range</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            {groupBy === 'date' ? (
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b-2 border-gray-300">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Category</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Quantity Wasted</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Est. Cost</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {wasteData.map((txn, idx) => {
+                    const qty = Math.abs(parseFloat(txn.quantityChange) || 0);
+                    const invItem = inventory?.find(inv => inv.id === txn.itemId);
+                    const costPerBottle = parseFloat(invItem?.costPerBottle) || 0;
+                    const bottleSize = parseInt(invItem?.bottleSize) || 750;
+                    const costPerMl = bottleSize > 0 ? costPerBottle / bottleSize : 0;
+                    const cost = qty * costPerMl;
+
+                    return (
+                      <tr key={txn.id || idx} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          {new Date(txn.transactionDate).toLocaleDateString('en-GB')}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                          {txn.item?.menuItem?.name || 'Unknown Item'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          {txn.item?.menuItem?.category || 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-red-600 font-bold">
+                          {qty.toFixed(0)} ml
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
+                          ₹{cost.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
+                          {txn.notes || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-red-50 font-black">
+                    <td colSpan="4" className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
+                      Total Waste Cost
+                    </td>
+                    <td className="px-4 py-4 text-sm text-right text-red-700">
+                      ₹{totalWasteCost.toLocaleString('en-IN')}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b-2 border-gray-300">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">
+                      {groupBy === 'item' ? 'Item Name' : 'Category'}
+                    </th>
+                    {groupBy === 'item' && (
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Category</th>
+                    )}
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Total Quantity Wasted</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Total Cost</th>
+                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase"># Incidents</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedData.map((item, idx) => (
+                    <tr key={idx} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.name}</td>
+                      {groupBy === 'item' && (
+                        <td className="px-4 py-3 text-sm text-gray-700">{item.category}</td>
+                      )}
+                      <td className="px-4 py-3 text-sm text-right text-red-600 font-bold">
+                        {item.quantity.toFixed(0)} ml
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
+                        ₹{item.cost.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-700">{item.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-red-50 font-black">
+                    <td colSpan={groupBy === 'item' ? '3' : '2'} className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
+                      Total Waste Cost
+                    </td>
+                    <td className="px-4 py-4 text-sm text-right text-red-700">
+                      ₹{totalWasteCost.toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-center text-gray-700">
+                      {wasteData.length}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
