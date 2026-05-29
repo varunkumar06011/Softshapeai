@@ -1755,6 +1755,383 @@ function TransactionsTab() {
   );
 }
 
+// SalesReportsTab Component
+function SalesReportsTab({ inventory }) {
+  const [salesData, setSalesData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(() => ({
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+  }));
+
+  // Helper: Parse pour size from item name
+  const parsePourSize = (name) => {
+    if (!name) return { baseName: name, pourSize: 'Unknown', pourMl: 0 };
+
+    // Match patterns like "Whisky (30ml)", "Beer (Bottle)", "Brandy (60ml)", "Beer (Pint)"
+    const match = name.match(/^(.+?)\s*\((.+?)\)$/);
+    if (match) {
+      const baseName = match[1].trim();
+      const variant = match[2].trim();
+
+      // Extract ml value or use special names
+      if (variant.toLowerCase().includes('bottle')) {
+        return { baseName, pourSize: 'Bottle', pourMl: 750 };
+      }
+
+      if (variant.toLowerCase().includes('pint')) {
+        return { baseName, pourSize: 'Pint', pourMl: 568 };
+      }
+
+      const mlMatch = variant.match(/(\d+)\s*ml/i);
+      if (mlMatch) {
+        return { baseName, pourSize: variant, pourMl: parseInt(mlMatch[1]) };
+      }
+
+      return { baseName, pourSize: variant, pourMl: 0 };
+    }
+
+    return { baseName: name, pourSize: 'Standard', pourMl: 0 };
+  };
+
+  useEffect(() => {
+    // Helper: Calculate cost price from inventory (moved inside useEffect to avoid dependency issues)
+    const calculateCostPrice = (baseName, pourMl) => {
+      if (!inventory || !Array.isArray(inventory)) return 0;
+
+      // Find matching inventory item (fuzzy match on base name)
+      const invItem = inventory.find(inv => {
+        const invName = inv?.menuItem?.name?.toLowerCase() || '';
+        const searchName = baseName?.toLowerCase() || '';
+        return invName.includes(searchName) || searchName.includes(invName);
+      });
+
+      if (!invItem || !invItem.costPerBottle || !invItem.bottleSize) {
+        return 0;
+      }
+
+      const costPerMl = invItem.costPerBottle / invItem.bottleSize;
+      return costPerMl * pourMl;
+    };
+
+    const loadSalesData = async () => {
+      setLoading(true);
+      try {
+        // Fetch sales data from analytics API
+        const response = await fetch(
+          apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${filters.startDate}&endDate=${filters.endDate}`)
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch sales data');
+        }
+
+        const data = await response.json();
+
+        // Extract items array from API response
+        const itemsArray = data.items || [];
+
+        // Process and group data
+        const processed = itemsArray.map(item => {
+          const itemName = item.itemName || item.name || '';
+          const { baseName, pourSize, pourMl } = parsePourSize(itemName);
+          const costPrice = calculateCostPrice(baseName, pourMl);
+          const quantity = item.quantity || 0;
+          const revenue = item.revenue || 0;
+          const sellingPrice = quantity > 0 ? revenue / quantity : 0;
+
+          return {
+            id: `${baseName}-${pourSize}`,
+            itemName,
+            baseName,
+            pourSize,
+            pourMl,
+            quantity,
+            costPrice,
+            sellingPrice,
+            discount: 0,
+            totalRevenue: revenue,
+            netProfit: revenue - (quantity * costPrice),
+            category: item.category || 'OTHER',
+          };
+        });
+
+        setSalesData(processed);
+      } catch (error) {
+        console.warn('[SalesReportsTab] Failed to load:', error.message);
+        setSalesData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSalesData();
+  }, [filters, inventory]);
+
+  // Group data by category + pour size
+  const groupedData = useMemo(() => {
+    const groups = {};
+
+    salesData.forEach(item => {
+      // For bottles, use category only (e.g., "BEERS")
+      // For pours (ml), include pour size (e.g., "WHISKY 30ML")
+      let groupKey;
+      if (item.pourSize.toLowerCase().includes('bottle') || item.pourSize.toLowerCase().includes('pint')) {
+        groupKey = item.category.toUpperCase();
+      } else {
+        groupKey = `${item.category} ${item.pourSize}`.toUpperCase();
+      }
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          name: groupKey,
+          items: [],
+          totalQuantity: 0,
+          totalRevenue: 0,
+          totalProfit: 0,
+          totalCost: 0,
+          uom: item.pourSize.toLowerCase().includes('bottle') ? 'Bottles' :
+               item.pourSize.toLowerCase().includes('pint') ? 'Pints' :
+               item.pourSize,
+        };
+      }
+
+      groups[groupKey].items.push(item);
+      groups[groupKey].totalQuantity += item.quantity;
+      groups[groupKey].totalRevenue += item.totalRevenue;
+      groups[groupKey].totalProfit += item.netProfit;
+      groups[groupKey].totalCost += (item.quantity * item.costPrice);
+    });
+
+    return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+  }, [salesData]);
+
+  // Calculate grand totals
+  const grandTotals = useMemo(() => {
+    return groupedData.reduce((acc, group) => ({
+      quantity: acc.quantity + group.totalQuantity,
+      revenue: acc.revenue + group.totalRevenue,
+      profit: acc.profit + group.totalProfit,
+      cost: acc.cost + group.totalCost,
+    }), { quantity: 0, revenue: 0, profit: 0, cost: 0 });
+  }, [groupedData]);
+
+  const setDateRange = (preset) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const presets = {
+      last7: {
+        start: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
+        end: today,
+      },
+      last30: {
+        start: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+        end: today,
+      },
+      thisMonth: {
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+        end: today,
+      },
+      lastMonth: {
+        start: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().slice(0, 10),
+        end: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10),
+      },
+    };
+    setFilters({ startDate: presets[preset].start, endDate: presets[preset].end });
+  };
+
+  // Format dates for display
+  const formatDateRange = () => {
+    const start = new Date(filters.startDate);
+    const end = new Date(filters.endDate);
+    const startStr = start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const endStr = end.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return `${startStr} - ${endStr}`;
+  };
+
+  const getCurrentTimestamp = () => {
+    const now = new Date();
+    return now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+           ' at ' +
+           now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Report Header */}
+      <div className="bg-white rounded-xl border-2 border-[#E53935] p-6">
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-black text-[#E53935] uppercase tracking-[0.15em]">Bar - Softshape</h2>
+          <p className="text-base font-bold text-gray-700">Sales Report</p>
+          <p className="text-sm font-semibold text-gray-600">{formatDateRange()}</p>
+          <p className="text-xs text-gray-500">Generated on {getCurrentTimestamp()}</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h3 className="font-bold text-sm mb-3">Filters</h3>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {[
+            { id: 'last7', label: 'Last 7 Days' },
+            { id: 'last30', label: 'Last 30 Days' },
+            { id: 'thisMonth', label: 'This Month' },
+            { id: 'lastMonth', label: 'Last Month' },
+          ].map(preset => (
+            <button
+              key={preset.id}
+              onClick={() => setDateRange(preset.id)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-[#E53935] hover:text-white transition-all"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">End Date</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-red-50 to-white rounded-xl border-2 border-red-200 p-4 shadow-sm">
+          <p className="text-xs font-black text-gray-500 uppercase tracking-wide">Total Items Sold</p>
+          <p className="text-3xl font-black text-[#E53935] mt-2">{grandTotals.quantity}</p>
+        </div>
+        <div className="bg-gradient-to-br from-green-50 to-white rounded-xl border-2 border-green-200 p-4 shadow-sm">
+          <p className="text-xs font-black text-gray-500 uppercase tracking-wide">Total Revenue</p>
+          <p className="text-3xl font-black text-green-700 mt-2">
+            ₹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-blue-50 to-white rounded-xl border-2 border-blue-200 p-4 shadow-sm">
+          <p className="text-xs font-black text-gray-500 uppercase tracking-wide">Total Profit</p>
+          <p className="text-3xl font-black text-blue-700 mt-2">
+            ₹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl border-2 border-purple-200 p-4 shadow-sm">
+          <p className="text-xs font-black text-gray-500 uppercase tracking-wide">Profit Margin</p>
+          <p className="text-3xl font-black text-purple-700 mt-2">
+            {grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0'}%
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Loading sales data...</div>
+        ) : salesData.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No sales data found for selected date range.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b-2 border-gray-300">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item Name</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Qty</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">UOM</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Cost<br/>Price</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Selling<br/>Price</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Discount</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Revenue</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Profit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupedData.map((group, groupIdx) => (
+                  <React.Fragment key={groupIdx}>
+                    {/* Category Header */}
+                    <tr className="bg-[#FFCDD2] border-t-2 border-[#E53935]">
+                      <td colSpan="8" className="px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-sm text-gray-900 uppercase tracking-[0.1em]">
+                            Category: {group.name}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Group Items */}
+                    {group.items.map((item, itemIdx) => (
+                      <tr key={itemIdx} className="border-b border-gray-200 hover:bg-[#FFF5F5] transition-colors">
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.baseName}</td>
+                        <td className="px-4 py-3 text-sm text-center text-gray-900 font-semibold">{item.quantity}</td>
+                        <td className="px-4 py-3 text-sm text-center text-gray-600">{group.uom}</td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-700">
+                          {item.costPrice > 0 ? `₹${item.costPrice.toFixed(2)}` : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-700">
+                          ₹{item.sellingPrice.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-600">₹0</td>
+                        <td className="px-4 py-3 text-sm text-right text-green-700 font-semibold">
+                          ₹{item.totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-blue-700 font-semibold">
+                          ₹{item.netProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* Category Total */}
+                    <tr className="bg-gray-100 border-b-2 border-gray-400">
+                      <td className="px-4 py-3 text-sm font-black text-gray-800" colSpan="1">
+                        Category Total
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center font-black text-gray-900">{group.totalQuantity}</td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-700" colSpan="4"></td>
+                      <td className="px-4 py-3 text-sm text-right font-black text-green-800">
+                        ₹{group.totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-black text-blue-800">
+                        ₹{group.totalProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                ))}
+
+                {/* Grand Total */}
+                <tr className="bg-[#E53935] text-white font-black">
+                  <td className="px-4 py-4 text-sm uppercase tracking-[0.1em]" colSpan="1">
+                    GRAND TOTAL
+                  </td>
+                  <td className="px-4 py-4 text-sm text-center">{grandTotals.quantity}</td>
+                  <td className="px-4 py-4 text-sm text-center" colSpan="4"></td>
+                  <td className="px-4 py-4 text-sm text-right">
+                    ₹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-4 text-sm text-right">
+                    ₹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Inventory() {
   const { outlet } = useOutlet();
   const [inventory, setInventory] = useState([]);
@@ -2051,10 +2428,14 @@ export function Inventory() {
           Transactions
         </button>
         <button
-          disabled
-          className="px-4 py-3 font-bold text-sm text-gray-300 cursor-not-allowed"
+          onClick={() => setActiveTab('reports')}
+          className={`px-4 py-3 font-bold text-sm transition-all ${
+            activeTab === 'reports'
+              ? 'border-b-2 border-[#E53935] text-[#E53935]'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
         >
-          Reports (Coming Soon)
+          Sales Reports
         </button>
       </div>
 
@@ -2218,6 +2599,10 @@ export function Inventory() {
 
       {activeTab === 'transactions' && (
         <TransactionsTab />
+      )}
+
+      {activeTab === 'reports' && (
+        <SalesReportsTab inventory={inventory} />
       )}
     </div>
   );
