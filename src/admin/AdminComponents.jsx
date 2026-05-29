@@ -56,7 +56,7 @@ import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
-import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems } from '../services/barInventoryApi';
+import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
 const formatTableTime = (timeString) => {
   if (!timeString) return '---';
@@ -1506,6 +1506,255 @@ export function Payroll() {
 // BAR INVENTORY MANAGEMENT
 // ==========================================
 
+// TransactionsTab Component
+function TransactionsTab() {
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+    type: 'all',
+    itemId: 'all',
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+
+  useEffect(() => {
+    const loadTransactions = async () => {
+      try {
+        setLoading(true);
+        const params = {
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          limit: 500,
+        };
+        if (filters.type !== 'all') params.type = filters.type;
+        if (filters.itemId !== 'all') params.itemId = filters.itemId;
+
+        const data = await fetchBarTransactions(params);
+        setTransactions(data || []);
+      } catch (err) {
+        console.warn('[TransactionsTab] Failed to load:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTransactions();
+  }, [filters]);
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentTransactions = transactions.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(transactions.length / itemsPerPage);
+
+  const getTypeBadge = (type) => {
+    const badges = {
+      PURCHASE: 'bg-green-100 text-green-800',
+      SALE: 'bg-red-100 text-red-800',
+      WASTAGE: 'bg-orange-100 text-orange-800',
+      ADJUSTMENT: 'bg-blue-100 text-blue-800',
+    };
+    return badges[type] || 'bg-gray-100 text-gray-800';
+  };
+
+  const setDateRange = (preset) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const presets = {
+      today: { start: today, end: today },
+      yesterday: {
+        start: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+        end: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+      },
+      last7: {
+        start: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
+        end: today,
+      },
+      last30: {
+        start: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+        end: today,
+      },
+      thisMonth: {
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+        end: today,
+      },
+    };
+    setFilters(prev => ({ ...prev, startDate: presets[preset].start, endDate: presets[preset].end }));
+    setCurrentPage(1);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h3 className="font-bold text-sm mb-3">Filters</h3>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {[
+            { id: 'today', label: 'Today' },
+            { id: 'yesterday', label: 'Yesterday' },
+            { id: 'last7', label: 'Last 7 Days' },
+            { id: 'last30', label: 'Last 30 Days' },
+            { id: 'thisMonth', label: 'This Month' },
+          ].map(preset => (
+            <button
+              key={preset.id}
+              onClick={() => setDateRange(preset.id)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-[#E53935] hover:text-white transition-all"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">End Date</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Transaction Type</label>
+            <select
+              value={filters.type}
+              onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:border-[#E53935] outline-none"
+            >
+              <option value="all">All Types</option>
+              <option value="PURCHASE">Stock Added (Purchase)</option>
+              <option value="ADJUSTMENT">Adjusted</option>
+              <option value="WASTAGE">Wastage</option>
+              <option value="SALE">Stock Sold</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">Total Transactions</p>
+          <p className="text-2xl font-black text-[#E53935] mt-1">{transactions.length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">Purchases</p>
+          <p className="text-2xl font-black text-green-600 mt-1">
+            {transactions.filter(t => t.type === 'PURCHASE').length}
+          </p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">Sales</p>
+          <p className="text-2xl font-black text-red-600 mt-1">
+            {transactions.filter(t => t.type === 'SALE').length}
+          </p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">Adjustments</p>
+          <p className="text-2xl font-black text-blue-600 mt-1">
+            {transactions.filter(t => t.type === 'ADJUSTMENT' || t.type === 'WASTAGE').length}
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Loading transactions...</div>
+        ) : transactions.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No transactions found for selected filters.</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date & Time</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Type</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Qty Change</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Stock Before</th>
+                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Stock After</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentTransactions.map((txn) => (
+                    <tr key={txn.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {new Date(txn.transactionDate).toLocaleDateString()} <br />
+                        <span className="text-xs text-gray-500">
+                          {new Date(txn.transactionDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        {txn.item?.menuItem?.name || 'Unknown Item'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${getTypeBadge(txn.type)}`}>
+                          {txn.type}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 text-sm text-right font-semibold ${txn.quantityChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {txn.quantityChange >= 0 ? '+' : ''}{Number(txn.quantityChange).toFixed(0)} ml
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">
+                        {Number(txn.stockBefore).toFixed(0)} ml
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">
+                        {Number(txn.stockAfter).toFixed(0)} ml
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
+                        {txn.notes || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, transactions.length)} of {transactions.length} transactions
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded-md border border-gray-300 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-3 py-1.5 text-sm font-semibold text-gray-700">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 rounded-md border border-gray-300 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Inventory() {
   const { outlet } = useOutlet();
   const [inventory, setInventory] = useState([]);
@@ -1518,6 +1767,7 @@ export function Inventory() {
   const [lowStockItems, setLowStockItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [activeTab, setActiveTab] = useState('inventory');
   const socket = useSocket('bar-001');
 
   useEffect(() => {
@@ -1779,7 +2029,38 @@ export function Inventory() {
         </div>
       </div>
 
-      {lowStockItems.length > 0 && (
+      <div className="flex gap-2 border-b border-gray-200 mb-6">
+        <button
+          onClick={() => setActiveTab('inventory')}
+          className={`px-4 py-3 font-bold text-sm transition-all ${
+            activeTab === 'inventory'
+              ? 'border-b-2 border-[#E53935] text-[#E53935]'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Inventory
+        </button>
+        <button
+          onClick={() => setActiveTab('transactions')}
+          className={`px-4 py-3 font-bold text-sm transition-all ${
+            activeTab === 'transactions'
+              ? 'border-b-2 border-[#E53935] text-[#E53935]'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Transactions
+        </button>
+        <button
+          disabled
+          className="px-4 py-3 font-bold text-sm text-gray-300 cursor-not-allowed"
+        >
+          Reports (Coming Soon)
+        </button>
+      </div>
+
+      {activeTab === 'inventory' && (
+        <>
+          {lowStockItems.length > 0 && (
         <div className="bg-amber-50 border-2 border-amber-500 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="text-amber-600" size={20} />
@@ -1931,6 +2212,12 @@ export function Inventory() {
           onClose={() => setShowPurchaseModal(false)}
           onSave={handleRecordPurchase}
         />
+      )}
+        </>
+      )}
+
+      {activeTab === 'transactions' && (
+        <TransactionsTab />
       )}
     </div>
   );
