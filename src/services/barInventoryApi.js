@@ -23,6 +23,7 @@ function normalizeInventoryItem(item) {
     currentStock: parseFloat(item.currentStock) || 0,
     bottleSize: parseInt(item.bottleSize) || 750,
     reorderLevel: parseFloat(item.reorderLevel) || 0,
+    maxStock: parseFloat(item.maxStock) || 0,
     costPerBottle: parseFloat(item.costPerBottle) || 0,
   };
 }

@@ -1638,6 +1638,7 @@ export function Inventory() {
           bottleSize: item.bottleSize,
           currentStock: adjustment.quantityChange > 0 ? adjustment.quantityChange : 0,
           reorderLevel: item.reorderLevel,
+          maxStock: item.maxStock || (item.reorderLevel * 3) || 10000,
           costPerBottle: item.costPerBottle,
           unitOfMeasure: item.unitOfMeasure,
         });
@@ -1686,7 +1687,8 @@ export function Inventory() {
 
   const getStockStatus = (item) => {
     const currentStock = parseFloat(item.currentStock) || 0;
-    const bottleSize = parseInt(item.bottleSize) || 750;
+    const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
+    const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
     const reorderLevel = parseFloat(item.reorderLevel) || 0;
     const bottles = Math.floor(currentStock / bottleSize);
     const reorderBottles = Math.ceil(reorderLevel / bottleSize);
@@ -1705,11 +1707,12 @@ export function Inventory() {
         return existingInventory;
       }
       // Create virtual inventory item with 0 stock
+      const isBeer = menuItem.category?.toLowerCase() === 'beer';
       return {
         id: `virtual-${menuItem.id}`,
         menuItemId: menuItem.id,
         menuItem: menuItem,
-        bottleSize: 750, // Default
+        bottleSize: isBeer ? 650 : 750,
         currentStock: 0,
         reorderLevel: 5000,
         costPerBottle: 0,
@@ -1787,7 +1790,8 @@ export function Inventory() {
           <div className="flex flex-wrap gap-2">
             {lowStockItems.filter(item => item && item.id && item.menuItem).map(item => {
               const currentStock = parseFloat(item.currentStock) || 0;
-              const bottleSize = parseInt(item.bottleSize) || 750;
+              const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
+              const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
               return (
                 <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
                   {item.menuItem.name} ({Math.floor(currentStock / bottleSize)} bottles)
@@ -1822,13 +1826,14 @@ export function Inventory() {
         {filteredInventory.map(item => {
           const stockStatus = getStockStatus(item);
           const currentStock = parseFloat(item.currentStock) || 0;
-          const bottleSize = parseInt(item.bottleSize) || 750;
+          const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
+          const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
           const reorderLevel = parseFloat(item.reorderLevel) || 0;
           const bottles = Math.floor(currentStock / bottleSize);
           const reorderBottles = Math.ceil(reorderLevel / bottleSize);
 
-          // Calculate percentage for progress bar (based on reorder level as baseline)
-          const maxStock = reorderLevel * 3 || 10000; // 3x reorder level or default
+          // Calculate percentage for progress bar using maxStock
+          const maxStock = parseFloat(item.maxStock) || (reorderLevel * 3) || 10000;
           const stockPercentage = Math.min((currentStock / maxStock) * 100, 100);
 
           return (
@@ -1851,7 +1856,7 @@ export function Inventory() {
                     </div>
                     <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-300 ${
+                        className={`h-full rounded-full transition-all duration-500 ${
                           stockStatus.status === 'out' ? 'bg-red-600' :
                           stockStatus.status === 'low' ? 'bg-amber-500' :
                           'bg-green-500'
@@ -1941,6 +1946,7 @@ function AddInventoryModal({ onClose, onSave }) {
     bottleSize: 750,
     currentStock: 0,
     reorderLevel: 0,
+    maxStock: 0,
     costPerBottle: 0,
     unitOfMeasure: 'ml',
   });
@@ -1959,6 +1965,7 @@ function AddInventoryModal({ onClose, onSave }) {
       bottleSize: formData.bottleSize,
       currentStock: parseFloat(formData.currentStock),
       reorderLevel: parseFloat(formData.reorderLevel),
+      maxStock: parseFloat(formData.maxStock),
       costPerBottle: parseFloat(formData.costPerBottle),
       unitOfMeasure: formData.unitOfMeasure,
     });
@@ -1970,7 +1977,13 @@ function AddInventoryModal({ onClose, onSave }) {
   );
 
   const selectItem = (item) => {
-    setFormData({ ...formData, menuItemId: item.id, menuItemName: item.name });
+    const isBeer = item.category?.toLowerCase() === 'beer';
+    setFormData({
+      ...formData,
+      menuItemId: item.id,
+      menuItemName: item.name,
+      bottleSize: isBeer ? 650 : 750
+    });
     setSearchTerm(item.name);
     setShowDropdown(false);
   };
@@ -2061,6 +2074,17 @@ function AddInventoryModal({ onClose, onSave }) {
           </div>
 
           <div>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Max Stock (ml)</label>
+            <input
+              type="number"
+              required
+              value={formData.maxStock}
+              onChange={(e) => setFormData({ ...formData, maxStock: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
+            />
+          </div>
+
+          <div>
             <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
             <input
               type="number"
@@ -2114,7 +2138,8 @@ function AdjustStockModal({ item, onClose, onSave }) {
   };
 
   const currentStock = parseFloat(item.currentStock) || 0;
-  const bottleSize = parseInt(item.bottleSize) || 750;
+  const isBeer = item.menuItem?.category?.toLowerCase() === 'beer';
+  const bottleSize = parseInt(item.bottleSize) || (isBeer ? 650 : 750);
   const newStock = currentStock + parseFloat(adjustment.quantityChange || 0);
 
   return (
@@ -2241,11 +2266,12 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
   );
 
   const selectItem = (item) => {
+    const isBeer = item.category?.toLowerCase() === 'beer';
     setFormData({
       ...formData,
       itemId: item.id,
       itemName: item.name,
-      bottleSize: 750 // Default, could be updated based on menu item
+      bottleSize: isBeer ? 650 : 750
     });
     setSearchTerm(item.name);
     setShowDropdown(false);
@@ -2284,6 +2310,10 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto scrollbar-hide z-10">
                 {filteredMenuItems.map(item => {
                   const existingInventory = inventory.find(inv => inv.menuItemId === item.id);
+                  const isBeer = item.category?.toLowerCase() === 'beer';
+                  const bottleSize = existingInventory
+                    ? (parseInt(existingInventory.bottleSize) || (isBeer ? 650 : 750))
+                    : (isBeer ? 650 : 750);
                   return (
                     <div
                       key={item.id}
@@ -2296,7 +2326,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave }) {
                       <div className="font-bold">{item.name}</div>
                       {existingInventory && (
                         <div className="text-xs text-gray-500">
-                          Current: {Math.floor((parseFloat(existingInventory.currentStock) || 0) / (parseInt(existingInventory.bottleSize) || 750))} bottles ({(parseFloat(existingInventory.currentStock) || 0).toFixed(0)} ml)
+                          Current: {Math.floor((parseFloat(existingInventory.currentStock) || 0) / bottleSize)} bottles ({(parseFloat(existingInventory.currentStock) || 0).toFixed(0)} ml)
                         </div>
                       )}
                       {!existingInventory && (
