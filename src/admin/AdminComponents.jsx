@@ -148,6 +148,28 @@ function Popup({ message, type = 'info', onClose }) {
   );
 }
 
+// ButtonSpinner Component - Small inline spinner for loading states
+function ButtonSpinner() {
+  return (
+    <svg className="animate-spin h-4 w-4 inline-block" viewBox="0 0 24 24">
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+        fill="none"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
 // Shared Styles
 const btn = "rounded-md bg-[#E53935] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#c62828]";
 const cardBase = "rounded-[10px] border border-[#FFCDD2]";
@@ -3645,6 +3667,12 @@ export function Inventory() {
   const socket = useSocket('bar-001');
   const [popup, setPopup] = useState(null);
 
+  // Loading states for action buttons
+  const [isCreating, setIsCreating] = useState(false);
+  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [isRecordingPurchase, setIsRecordingPurchase] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState(null);
+
   const showNotification = (message, type = 'info') => {
     setPopup({ message, type });
   };
@@ -3747,6 +3775,9 @@ export function Inventory() {
   };
 
   const handleCreateItem = async (formData) => {
+    if (isCreating) return;
+
+    setIsCreating(true);
     try {
       const newItem = await createInventoryItem(formData);
       if (newItem && newItem.id) {
@@ -3759,10 +3790,15 @@ export function Inventory() {
     } catch (err) {
       console.error('[Inventory] Create failed:', err);
       showNotification(err.message || 'Failed to create inventory item', 'error');
+    } finally {
+      setIsCreating(false);
     }
   };
 
   const handleAdjustStock = async (item, adjustment) => {
+    if (isAdjusting) return;
+
+    setIsAdjusting(true);
     try {
       // If it's a virtual item, create it first
       if (item.isVirtual) {
@@ -3790,10 +3826,15 @@ export function Inventory() {
     } catch (err) {
       console.error('[Inventory] Adjust failed:', err);
       showNotification(err.message || 'Failed to adjust stock', 'error');
+    } finally {
+      setIsAdjusting(false);
     }
   };
 
   const handleRecordPurchase = async (purchaseData) => {
+    if (isRecordingPurchase) return;
+
+    setIsRecordingPurchase(true);
     try {
       await recordPurchase(purchaseData);
       setShowPurchaseModal(false);
@@ -3802,12 +3843,16 @@ export function Inventory() {
     } catch (err) {
       console.error('[Inventory] Purchase record failed:', err);
       showNotification(err.message || 'Failed to record purchase', 'error');
+    } finally {
+      setIsRecordingPurchase(false);
     }
   };
 
   const handleDeleteItem = async (itemId) => {
     if (!confirm('Are you sure you want to delete this inventory item?')) return;
+    if (deletingItemId) return;
 
+    setDeletingItemId(itemId);
     try {
       await deleteInventoryItem(itemId);
       setInventory(prev => prev.filter(i => i.id !== itemId));
@@ -3815,6 +3860,8 @@ export function Inventory() {
     } catch (err) {
       console.error('[Inventory] Delete failed:', err);
       showNotification(err.message || 'Failed to delete inventory item', 'error');
+    } finally {
+      setDeletingItemId(null);
     }
   };
 
@@ -4066,9 +4113,10 @@ export function Inventory() {
                   {!item.isVirtual && (
                     <button
                       onClick={() => handleDeleteItem(item.id)}
-                      className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all"
+                      disabled={deletingItemId === item.id}
+                      className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                     >
-                      <Trash2 size={16} />
+                      {deletingItemId === item.id ? <ButtonSpinner /> : <Trash2 size={16} />}
                     </button>
                   )}
                 </div>
@@ -4089,6 +4137,7 @@ export function Inventory() {
         <AddInventoryModal
           onClose={() => setShowAddModal(false)}
           onSave={handleCreateItem}
+          isSubmitting={isCreating}
         />
       )}
 
@@ -4100,6 +4149,7 @@ export function Inventory() {
             setSelectedItem(null);
           }}
           onSave={(adjustment) => handleAdjustStock(selectedItem, adjustment)}
+          isSubmitting={isAdjusting}
         />
       )}
 
@@ -4109,6 +4159,7 @@ export function Inventory() {
           onClose={() => setShowPurchaseModal(false)}
           onSave={handleRecordPurchase}
           showNotification={showNotification}
+          isSubmitting={isRecordingPurchase}
         />
       )}
         </>
@@ -4133,7 +4184,7 @@ export function Inventory() {
   );
 }
 
-function AddInventoryModal({ onClose, onSave }) {
+function AddInventoryModal({ onClose, onSave, isSubmitting }) {
   const [menuItems, setMenuItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -4296,15 +4347,23 @@ function AddInventoryModal({ onClose, onSave }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              Create Item
+              {isSubmitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <ButtonSpinner /> Creating...
+                </span>
+              ) : (
+                'Create Item'
+              )}
             </button>
           </div>
         </form>
@@ -4313,7 +4372,7 @@ function AddInventoryModal({ onClose, onSave }) {
   );
 }
 
-function AdjustStockModal({ item, onClose, onSave }) {
+function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
   const [adjustment, setAdjustment] = useState({
     quantityChange: 0,
     type: 'ADJUSTMENT',
@@ -4399,15 +4458,23 @@ function AdjustStockModal({ item, onClose, onSave }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              {item.isVirtual ? 'Add Stock' : 'Save Adjustment'}
+              {isSubmitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <ButtonSpinner /> Adjusting...
+                </span>
+              ) : (
+                item.isVirtual ? 'Add Stock' : 'Save Adjustment'
+              )}
             </button>
           </div>
         </form>
@@ -4416,7 +4483,7 @@ function AdjustStockModal({ item, onClose, onSave }) {
   );
 }
 
-function RecordPurchaseModal({ inventory, onClose, onSave, showNotification }) {
+function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isSubmitting }) {
   const [menuItems, setMenuItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -4601,15 +4668,23 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              Record Purchase
+              {isSubmitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <ButtonSpinner /> Recording...
+                </span>
+              ) : (
+                'Record Purchase'
+              )}
             </button>
           </div>
         </form>
