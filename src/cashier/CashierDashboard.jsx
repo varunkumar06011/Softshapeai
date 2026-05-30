@@ -95,7 +95,7 @@ const itemMatchesQuery = (item, q) => {
 
 const HighlightedText = ({ text, highlight }) => {
   if (!highlight || !highlight.trim()) return <span>{text}</span>;
-  
+
   const q = highlight.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!q) return <span>{text}</span>;
 
@@ -176,10 +176,10 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
 
   const [removedItemIds, setRemovedItemIds] = useState([]);
-  const [showBillEditor, setShowBillEditor]     = useState(false);
-  const [billRemovals, setBillRemovals]         = useState([]); // orderItemIds to remove
-  const [billAdditions, setBillAdditions]       = useState([]); // { menuItemId, name, price, quantity, menuType }
-  const [billEditSearch, setBillEditSearch]     = useState('');
+  const [showBillEditor, setShowBillEditor] = useState(false);
+  const [billRemovals, setBillRemovals] = useState([]); // orderItemIds to remove
+  const [billAdditions, setBillAdditions] = useState([]); // { menuItemId, name, price, quantity, menuType }
+  const [billEditSearch, setBillEditSearch] = useState('');
   const [isSavingBillEdit, setIsSavingBillEdit] = useState(false);
 
   useEffect(() => {
@@ -488,7 +488,7 @@ const CashierDashboard = ({ onLogout }) => {
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst };
-    const items = getTableItems(selectedTable).map(i => 
+    const items = getTableItems(selectedTable).map(i =>
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
     return calculateOrderTotal([...items, ...cart]);
@@ -556,7 +556,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Print bill directly using printService (bypasses backend foreign key error)
       // Calculate bill details locally
       const { subtotal, taxes, total, cgst, sgst } = activeOrderCalc;
-      
+
       // Prepare items for printing (all food and liquor combined)
       const printItems = orderItems.map(item => ({
         name: item.n || item.name,
@@ -622,8 +622,8 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Guard: prevent double-settlement — use same broad resolution as handleFinalBill
     const orderId = selectedTable?.activeOrder?.id ||
-                    selectedTable?.orders?.[0]?.id ||
-                    selectedTable?.orderId;
+      selectedTable?.orders?.[0]?.id ||
+      selectedTable?.orderId;
     if (orderId && settledOrderIds.has(orderId)) {
       addNotification('Already Settled', 'This order has already been settled.', 'error');
       setShowMethodPicker(false);
@@ -660,17 +660,17 @@ const CashierDashboard = ({ onLogout }) => {
         prev.map((t) =>
           t.backendId === selectedTable.backendId
             ? {
-                ...t,
-                status: 'Free',
-                workflowStatus: 'Free',
-                activeOrder: null,
-                items: [],
-                captainId: null,
-                kotHistory: [],
-                currentBill: 0,
-                guests: 0,
-                time: null
-              }
+              ...t,
+              status: 'Free',
+              workflowStatus: 'Free',
+              activeOrder: null,
+              items: [],
+              captainId: null,
+              kotHistory: [],
+              currentBill: 0,
+              guests: 0,
+              time: null
+            }
             : t
         )
       );
@@ -798,7 +798,7 @@ const CashierDashboard = ({ onLogout }) => {
     const filtered = itemsToFilter.filter((item) => {
       // 1. Diet filter
       if (activeDiet !== 'All' && item.t !== activeDiet) return false;
-      
+
       // 2. Search query filter
       if (q.length > 0) {
         if (!itemMatchesQuery(item, q)) return false;
@@ -806,7 +806,7 @@ const CashierDashboard = ({ onLogout }) => {
         // 3. Category filter (only active if no search query)
         if (selectedCategory !== 'All' && (item.c || item.category) !== selectedCategory) return false;
       }
-      
+
       return true;
     });
 
@@ -1041,10 +1041,10 @@ const CashierDashboard = ({ onLogout }) => {
           quantity: Number(i.quantity || i.q || 1),
           notes: i.notes || null,
         }));
-        
+
         // Merge previous KOT items with new cart items to prevent backend overwrite
         const mergedApiItems = [...existingItems, ...apiItems];
-        
+
         updateOrderItems(selectedTable.activeOrder.id, mergedApiItems)
           .catch(err => console.warn('[BG] updateOrderItems failed:', err.message));
       } else {
@@ -1092,8 +1092,8 @@ const CashierDashboard = ({ onLogout }) => {
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem('cashier_active_tab', item.id); }}
               className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-4 px-5 sm:px-4 py-2.5 sm:py-3.5 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 ${activeTab === item.id
-                  ? 'bg-[#E53935] text-white font-black shadow-lg shadow-red-500/15 scale-[1.01]'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-[#E53935] text-white font-black shadow-lg shadow-red-500/15 scale-[1.01]'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
             >
               <item.icon size={22} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
@@ -1292,9 +1292,9 @@ const CashierDashboard = ({ onLogout }) => {
                   <div className="relative w-full">
                     {/* Animated Search Icon */}
                     <motion.div
-                      animate={{ 
+                      animate={{
                         scale: isSearchFocused ? 1.15 : 1,
-                        x: isSearchFocused ? 2 : 0 
+                        x: isSearchFocused ? 2 : 0
                       }}
                       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                       className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none z-10"
@@ -1306,11 +1306,10 @@ const CashierDashboard = ({ onLogout }) => {
                       ref={searchInputRef}
                       type="text"
                       placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
-                      className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${
-                        isSearchFocused 
-                          ? 'border-[#E53935] ring-4 ring-red-100/80 shadow-red-100/20 scale-[1.002]' 
+                      className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${isSearchFocused
+                          ? 'border-[#E53935] ring-4 ring-red-100/80 shadow-red-100/20 scale-[1.002]'
                           : 'border-gray-300 hover:border-[#E53935]/50 hover:shadow-md'
-                      }`}
+                        }`}
                       value={searchQuery}
                       onChange={(e) => {
                         setSearchQuery(e.target.value);
@@ -1352,11 +1351,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           key={cat}
                           onClick={() => setSelectedCategory(cat)}
-                          className={`px-7 py-3.5 rounded-xl text-sm md:text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${
-                            selectedCategory === cat 
-                              ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10' 
+                          className={`px-7 py-3.5 rounded-xl text-sm md:text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
+                              ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
                               : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
-                          }`}
+                            }`}
                         >
                           {cat}
                         </button>
@@ -1367,11 +1365,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           key={diet}
                           onClick={() => setActiveDiet(diet)}
-                          className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${
-                            activeDiet === diet 
+                          className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${activeDiet === diet
                               ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
                               : 'text-gray-500 hover:text-gray-850 bg-transparent'
-                          }`}
+                            }`}
                         >
                           {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
                         </button>
@@ -1404,7 +1401,7 @@ const CashierDashboard = ({ onLogout }) => {
                       )}
                     </div>
                   ) : (
-                    <div 
+                    <div
                       className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6"
                     >
                       {activeMenuItems.map((item) => (
@@ -1480,10 +1477,10 @@ const CashierDashboard = ({ onLogout }) => {
 
                 <div className="flex-grow overflow-y-auto p-4.5 space-y-4 custom-scrollbar bg-white">
                   {(() => {
-                    const sessionItems = selectedTable 
-                      ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({...i, isKotSent: true, kotId: k.id}))) 
+                    const sessionItems = selectedTable
+                      ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })))
                       : [];
-                    const pendingItems = cart.map(i => ({...i, isKotSent: false}));
+                    const pendingItems = cart.map(i => ({ ...i, isKotSent: false }));
                     const displayCart = [...sessionItems, ...pendingItems];
 
                     if (displayCart.length === 0) {
@@ -1559,8 +1556,8 @@ const CashierDashboard = ({ onLogout }) => {
                       onClick={handleSmartKOT}
                       disabled={isKotSending || cart.length === 0}
                       className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
-                          isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
-                            'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
+                        isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
+                          'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
                         }`}
                     >
                       {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
@@ -1658,11 +1655,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           key={f.key}
                           onClick={() => { setTxnDateFilter(f.key); setTxnMethodFilter('all'); setTxnSearch(''); }}
-                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
-                            txnDateFilter === f.key
+                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key
                               ? 'bg-[#E53935] text-white shadow-sm'
                               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                          }`}
+                            }`}
                         >
                           {f.label}
                         </button>
@@ -1685,11 +1681,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           key={f.key}
                           onClick={() => setTxnMethodFilter(f.key)}
-                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
-                            txnMethodFilter === f.key
+                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnMethodFilter === f.key
                               ? 'bg-gray-900 text-white shadow-sm'
                               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                          }`}
+                            }`}
                         >
                           {f.label}
                         </button>
@@ -1734,75 +1729,75 @@ const CashierDashboard = ({ onLogout }) => {
                             </tr>
                           ) : (
                             filteredTransactions.map(txn => (
-                            <React.Fragment key={txn.id}>
-                              <tr
-                                onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
-                                className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
-                              >
-                                <td className="p-4">
-                                  <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
-                                </td>
-                                {/* FIX 6: Table Number */}
-                                <td className="p-4">
-                                  <span className="text-xs md:text-sm font-black text-gray-700">
-                                    {txn.tableNumber ? `T-${txn.tableNumber}` : '—'}
-                                  </span>
-                                </td>
-                                {/* FIX 6: Captain */}
-                                <td className="p-4">
-                                  <span className="text-xs font-bold text-gray-500 uppercase">
-                                    {txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'}
-                                  </span>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex flex-col">
-                                    <span className="text-xs md:text-sm font-black text-gray-700">{txn.date}</span>
-                                    <span className="text-xs text-gray-400 font-bold mt-0.5">{txn.time}</span>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
+                              <React.Fragment key={txn.id}>
+                                <tr
+                                  onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
+                                  className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
+                                >
+                                  <td className="p-4">
+                                    <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
+                                  </td>
+                                  {/* FIX 6: Table Number */}
+                                  <td className="p-4">
+                                    <span className="text-xs md:text-sm font-black text-gray-700">
+                                      {txn.tableNumber ? `T-${txn.tableNumber}` : '—'}
+                                    </span>
+                                  </td>
+                                  {/* FIX 6: Captain */}
+                                  <td className="p-4">
+                                    <span className="text-xs font-bold text-gray-500 uppercase">
+                                      {txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'}
+                                    </span>
+                                  </td>
+                                  <td className="p-4">
+                                    <div className="flex flex-col">
+                                      <span className="text-xs md:text-sm font-black text-gray-700">{txn.date}</span>
+                                      <span className="text-xs text-gray-400 font-bold mt-0.5">{txn.time}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-4">
+                                    <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
                                       txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
                                         'bg-purple-100 text-purple-700'
-                                    }`}>{txn.method}</span>
-                                </td>
-                                <td className="p-4 text-right">
-                                  <div className="flex items-center justify-end gap-3">
-                                    <div className="flex flex-col items-end">
-                                      <span className="text-sm md:text-base font-black text-gray-900">₹{txn.amount}</span>
-                                      <span className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">{txn.items} Items</span>
-                                    </div>
-                                    <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
-                                      <ChevronDown size={14} />
-                                    </span>
-                                  </div>
-                                </td>
-                              </tr>
-                              {expandedTxnId === txn.id && (
-                                <tr key={`${txn.id}-detail`} className="bg-gray-50">
-                                  <td colSpan={6} className="px-6 pb-4 pt-2">
-                                    {txn.itemsList && txn.itemsList.length > 0 ? (
-                                      <div className="flex flex-col gap-2">
-                                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
-                                        {txn.itemsList.map((item, idx) => (
-                                          <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
-                                            <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
-                                            <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
-                                          </div>
-                                        ))}
-                                        <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
-                                          <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                          <span className="text-sm font-black text-[#E53935]">₹{txn.amount}</span>
-                                        </div>
+                                      }`}>{txn.method}</span>
+                                  </td>
+                                  <td className="p-4 text-right">
+                                    <div className="flex items-center justify-end gap-3">
+                                      <div className="flex flex-col items-end">
+                                        <span className="text-sm md:text-base font-black text-gray-900">₹{txn.amount}</span>
+                                        <span className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">{txn.items} Items</span>
                                       </div>
-                                    ) : (
-                                      <p className="text-xs text-gray-400 py-3">No item details available.</p>
-                                    )}
+                                      <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
+                                        <ChevronDown size={14} />
+                                      </span>
+                                    </div>
                                   </td>
                                 </tr>
-                              )}
-                            </React.Fragment>
-                          )))}
+                                {expandedTxnId === txn.id && (
+                                  <tr key={`${txn.id}-detail`} className="bg-gray-50">
+                                    <td colSpan={6} className="px-6 pb-4 pt-2">
+                                      {txn.itemsList && txn.itemsList.length > 0 ? (
+                                        <div className="flex flex-col gap-2">
+                                          <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
+                                          {txn.itemsList.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
+                                              <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
+                                              <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                            </div>
+                                          ))}
+                                          <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
+                                            <span className="text-xs font-black uppercase text-gray-500">Total</span>
+                                            <span className="text-sm font-black text-[#E53935]">₹{txn.amount}</span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-gray-400 py-3">No item details available.</p>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            )))}
                         </tbody>
                       </table>
                     </div>
@@ -1949,7 +1944,7 @@ const CashierDashboard = ({ onLogout }) => {
         </main>
       </div>
 
-         {/* TABLE DETAILS MODAL */}
+      {/* TABLE DETAILS MODAL */}
       {showTableModal && selectedTable && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
@@ -2073,11 +2068,10 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       onClick={handleFinalBill}
                       disabled={isPrintingBill || printCooldown}
-                      className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${
-                        isPrintingBill || printCooldown
+                      className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${isPrintingBill || printCooldown
                           ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                           : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
-                      }`}
+                        }`}
                     >
                       {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
                       {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
@@ -2120,9 +2114,9 @@ const CashierDashboard = ({ onLogout }) => {
         const allMenuItems = outlet === 'bar' ? barMenuItems : menuItems;
         const searchResults = billEditSearch.trim().length > 1
           ? allMenuItems.filter(m =>
-              m.isAvailable !== false &&
-              (m.name || m.n || '').toLowerCase().includes(billEditSearch.toLowerCase())
-            ).slice(0, 12)
+            m.isAvailable !== false &&
+            (m.name || m.n || '').toLowerCase().includes(billEditSearch.toLowerCase())
+          ).slice(0, 12)
           : [];
 
         // Live total: committed items minus removals + additions
@@ -2232,7 +2226,7 @@ const CashierDashboard = ({ onLogout }) => {
                             setBillAdditions(prev => {
                               const exists = prev.findIndex(x => x.menuItemId === String(m.id));
                               if (exists !== -1) {
-                                  return prev.map((x, i) => i === exists ? { ...x, quantity: x.quantity + 1 } : x);
+                                return prev.map((x, i) => i === exists ? { ...x, quantity: x.quantity + 1 } : x);
                               }
                               return [...prev, {
                                 menuItemId: String(m.id),
@@ -2299,7 +2293,7 @@ const CashierDashboard = ({ onLogout }) => {
                   <div className="flex gap-2 text-xs sm:text-sm font-black uppercase text-gray-500">
                     {billRemovals.length > 0 && <span className="text-red-550">{billRemovals.length} item(s) removed</span>}
                     {billRemovals.length > 0 && billAdditions.length > 0 && <span>·</span>}
-                    {billAdditions.length > 0 && <span className="text-amber-500">{billAdditions.reduce((s,i) => s + i.quantity, 0)} item(s) added</span>}
+                    {billAdditions.length > 0 && <span className="text-amber-500">{billAdditions.reduce((s, i) => s + i.quantity, 0)} item(s) added</span>}
                   </div>
                 )}
                 <button
@@ -2349,8 +2343,8 @@ const CashierDashboard = ({ onLogout }) => {
                     key={id}
                     onClick={() => setSelectedMethod(id)}
                     className={`p-5 rounded-2xl border-2 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${selectedMethod === id
-                        ? 'border-[#E53935] bg-red-50 shadow-md shadow-red-500/10'
-                        : 'border-gray-150 bg-gray-50 hover:border-gray-300'
+                      ? 'border-[#E53935] bg-red-50 shadow-md shadow-red-500/10'
+                      : 'border-gray-150 bg-gray-50 hover:border-gray-300'
                       }`}
                   >
                     <p className={`text-base font-black ${selectedMethod === id ? 'text-[#E53935]' : 'text-gray-700'}`}>{label}</p>
@@ -2363,8 +2357,8 @@ const CashierDashboard = ({ onLogout }) => {
                 onClick={() => selectedMethod && !isPrintingBill && handlePayment(selectedMethod)}
                 disabled={!selectedMethod || isPrintingBill}
                 className={`w-full py-4.5 rounded-2xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedMethod && !isPrintingBill
-                    ? 'bg-[#E53935] text-white shadow-lg shadow-red-150 hover:bg-[#c62828] border border-red-750'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
+                  ? 'bg-[#E53935] text-white shadow-lg shadow-red-150 hover:bg-[#c62828] border border-red-750'
+                  : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
                 {isPrintingBill
@@ -2402,8 +2396,8 @@ const CashierDashboard = ({ onLogout }) => {
                     key={method}
                     onClick={() => setSelectedPaymentMethod(method)}
                     className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 cursor-pointer transition-all ${selectedPaymentMethod === method
-                        ? 'border-[#E53935] bg-red-50 text-[#E53935]'
-                        : 'border-gray-50 bg-gray-50 text-gray-400'
+                      ? 'border-[#E53935] bg-red-50 text-[#E53935]'
+                      : 'border-gray-50 bg-gray-50 text-gray-400'
                       }`}
                   >
                     <CreditCard size={20} />
@@ -2450,11 +2444,10 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       key={t.backendId || t.id}
                       onClick={() => setSwapTargetId(t.backendId)}
-                      className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center text-xs font-black transition-all hover:scale-105 active:scale-95 ${
-                        swapTargetId === t.backendId
+                      className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center text-xs font-black transition-all hover:scale-105 active:scale-95 ${swapTargetId === t.backendId
                           ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
                           : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-300'
-                      }`}
+                        }`}
                     >
                       <span className="text-lg font-black">{outlet === 'bar' ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
                       <span className="text-[9px] font-bold text-green-600 mt-0.5">Free</span>
@@ -2483,9 +2476,43 @@ const CashierDashboard = ({ onLogout }) => {
                   }
                 }}
                 disabled={!swapTargetId || isSwapping}
-                className={`mt-4 w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${
-                  swapTargetId && !isSwapping
+                className={`mt-4 w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${swapTargetId && !isSwapping
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                  }`}
+              >
+                {isSwapping ? 'Moving...' : swapTargetId ? 'Confirm Move' : 'Select a Table'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOTIFICATIONS OVERLAY */}
+      <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
+        {notifications.map(n => (
+          <div key={n.id} className="pointer-events-auto flex items-center gap-3 bg-white border-l-4 border-l-[#E53935] p-3 rounded-lg shadow-2xl animate-slide-in min-w-[240px]">
+            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-[#E53935]">
+              {n.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-gray-900 uppercase tracking-tight">{n.title}</p>
+              <p className="text-[9px] text-gray-500 font-medium leading-none mt-0.5">{n.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <VariantPicker
+        item={variantPickerItem}
+        onSelect={handleVariantSelect}
+        onClose={() => setVariantPickerItem(null)}
+      />
+    </div>
+  );
+};
+
+export default CashierDashboard;
+                    ?'bg-blue-600 text-white shadow-lg shadow-blue-100 hover:bg-blue-700'
                     : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                 }`}
               >
