@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder, editBill, swapTable } from '../services/orderApi';
+import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder, editBill, swapTable, requestBilling } from '../services/orderApi';
 import { printBillQZ, printKOTQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -476,6 +476,56 @@ const CashierDashboard = ({ onLogout }) => {
   const printBill = async (table, total, subtotal, taxes, method) => {
     const orderId = table?.activeOrder?.id || table?.orderId || null;
     await printBillQZ({ orderId });
+  };
+
+  const handleFinalBill = async () => {
+    if (!selectedTable || !selectedTable.backendId) {
+      addNotification('Error', 'Invalid table selected.', 'error');
+      return;
+    }
+    
+    // Fallback if bill is 0
+    const txnAmount = activeTotal > 0 ? activeTotal : fallbackTotal;
+    if (txnAmount === 0) {
+      addNotification('Cannot Print', 'Bill amount is ₹0. Ensure KOT was sent.', 'error');
+      return;
+    }
+
+    try {
+      setIsPrintingBill(true);
+      const orderId = selectedTable?.activeOrder?.id || selectedTable?.orderId;
+      
+      // Update backend status to BILLING_REQUESTED
+      if (orderId) {
+        await requestBilling(orderId);
+      } else {
+        addNotification('Warning', 'No active order found. Proceeding with local print.', 'warning');
+      }
+
+      // Print the bill
+      try {
+        await printBill(selectedTable, txnAmount, activeSubtotal, activeTaxes, null);
+      } catch (printErr) {
+        console.warn('[FinalBill] Print failed:', printErr.message);
+      }
+
+      // Optimistically update local table status so the UI shows "Waiting Bill" and "Settlement" button
+      setActiveTables((prev) =>
+        prev.map((t) =>
+          t.backendId === selectedTable.backendId ? { ...t, status: 'Waiting Bill' } : t
+        )
+      );
+
+      if (orderId) {
+        window.dispatchEvent(new Event('softshape_order_updated'));
+      }
+
+      addNotification('Success', 'Final bill printed. Ready for settlement.', 'success');
+    } catch (err) {
+      addNotification('Error', 'Failed to request final bill: ' + err.message, 'error');
+    } finally {
+      setIsPrintingBill(false);
+    }
   };
 
   const handlePayment = async (method) => {
@@ -1953,12 +2003,22 @@ const CashierDashboard = ({ onLogout }) => {
                 >
                   Edit Bill
                 </button>
-                <button
-                  onClick={() => setShowMethodPicker(true)}
-                  className="py-3.5 rounded-xl bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] hover:scale-[1.02] active:scale-95 shadow-lg shadow-red-500/20 cursor-pointer"
-                >
-                  Settlement
-                </button>
+                {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
+                  <button
+                    onClick={() => setShowMethodPicker(true)}
+                    className="py-3.5 rounded-xl bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] hover:scale-[1.02] active:scale-95 shadow-lg shadow-red-500/20 cursor-pointer"
+                  >
+                    Settlement
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleFinalBill}
+                    className="py-3.5 rounded-xl bg-blue-600 border border-blue-700 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-lg shadow-blue-500/20 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
+                    Final Bill
+                  </button>
+                )}
               </div>
 
               {/* Swap Table & Terminate Session buttons */}

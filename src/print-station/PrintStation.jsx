@@ -30,14 +30,18 @@ const CMD = {
   ALIGN_LEFT:     ESC + 'a\x00',
   BOLD_ON:        ESC + 'E\x01',
   BOLD_OFF:       ESC + 'E\x00',
-  DOUBLE_HEIGHT:  GS  + '!\x01',
   NORMAL_SIZE:    GS  + '!\x00',
+  DOUBLE_WIDTH:   GS  + '!\x01',
+  DOUBLE_HEIGHT:  GS  + '!\x10',
+  SCALE_2X2:      GS  + '!\x11',
+  SCALE_3X3:      GS  + '!\x22',
+  SCALE_4X4:      GS  + '!\x33',
   CUT:            GS  + 'V\x41\x03',
 };
-function divider(ch = '-', w = 32) { return ch.repeat(w) + '\n'; }
+function divider(ch = '-', w = 42) { return ch.repeat(w) + '\n'; }
 function pad(s, w) { return String(s).slice(0, w).padEnd(w); }
-function padRight(l, r, w = 32) {
-  return l + ' '.repeat(Math.max(1, w - l.length - r.length)) + r;
+function padRight(l, r, w = 42) {
+  return l + ' '.repeat(Math.max(0, w - l.length - r.length)) + r;
 }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
@@ -45,7 +49,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    CMD.BOLD_ON + CMD.SCALE_2X2,
     label + '\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
     divider(),
@@ -55,12 +59,16 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
     `Time  : ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
     divider(),
     CMD.BOLD_ON,
-    pad('ITEM', 22) + pad('QTY', 4) + '\n',
+    padRight('ITEM', 'QTY', 42) + '\n',
     CMD.BOLD_OFF,
     divider(),
   ];
   (items || []).forEach(item => {
-    cmds.push(pad(String(item.name || ''), 22) + pad(String(item.quantity || 1), 4) + '\n');
+    cmds.push(CMD.BOLD_ON + CMD.SCALE_2X2);
+    const name = String(item.name || '').slice(0, 16);
+    const qty  = String(item.quantity || 1).slice(0, 4);
+    cmds.push(pad(name, 16) + padRight('', qty, 5) + '\n');
+    cmds.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF);
     if (item.notes) cmds.push(`  ** ${item.notes} **\n`);
   });
   cmds.push(divider(), '\n\n', CMD.CUT);
@@ -68,13 +76,12 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
 }
 
 function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
-  const TRIPLE_HEIGHT = GS + '!\x22';  // Triple height + double width for maximum visibility
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
     divider('='),
     divider('='),
-    CMD.BOLD_ON + TRIPLE_HEIGHT,
+    CMD.BOLD_ON + CMD.SCALE_3X3,
     'CANCEL ITEM\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
     divider('='),
@@ -90,18 +97,16 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
     '\n',
   ];
   if (item) {
-    cmds.push(
-      CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
-      `  ${item.quantity}x  ${String(item.name || '')}\n`,
-      CMD.NORMAL_SIZE + CMD.BOLD_OFF,
-      '\n'
-    );
+    cmds.push(CMD.BOLD_ON + CMD.SCALE_2X2);
+    const lineStr = `${item.quantity}x ${item.name || ''}`;
+    cmds.push(pad(lineStr, 21) + '\n');
+    cmds.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF, '\n');
   }
   cmds.push(
     divider('='),
     divider('='),
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + TRIPLE_HEIGHT,
+    CMD.BOLD_ON + CMD.SCALE_3X3,
     'CANCELLED\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
     divider('='),
@@ -117,24 +122,24 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON,
+    CMD.BOLD_ON + CMD.DOUBLE_WIDTH,
     'BILL RECEIPT\n',
-    CMD.BOLD_OFF,
+    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_LEFT,
     `Table : ${tableNumber}\n`,
     `Date  : ${new Date().toLocaleString('en-IN')}\n`,
     divider(),
     CMD.BOLD_ON,
-    pad('ITEM', 20) + pad('QTY', 4) + pad('AMT', 8) + '\n',
+    pad('ITEM', 24) + pad('QTY', 6) + padRight('', 'AMT', 12) + '\n',
     CMD.BOLD_OFF,
     divider(),
   ];
   (items || []).forEach(item => {
-    const name = String(item.name || item.n || '').slice(0, 20);
+    const name = String(item.name || item.n || '').slice(0, 24);
     const qty  = String(item.quantity || item.q || 1);
     const amt  = 'Rs.' + ((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0);
-    cmds.push(pad(name, 20) + pad(qty, 4) + pad(amt, 8) + '\n');
+    cmds.push(pad(name, 24) + pad(qty, 6) + padRight('', amt, 12) + '\n');
   });
   const subtotal = Number(totalAmount) || 0;
   const tax = subtotal * 0.05;
@@ -144,9 +149,9 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
     padRight('Subtotal', 'Rs.' + subtotal.toFixed(0)) + '\n',
     padRight('GST (5%)', 'Rs.' + tax.toFixed(0)) + '\n',
     divider('='),
-    CMD.BOLD_ON,
+    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
     padRight('TOTAL', 'Rs.' + total.toFixed(0)) + '\n',
-    CMD.BOLD_OFF,
+    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_CENTER,
     'Thank you! Visit again.\n',
@@ -162,7 +167,7 @@ function buildTableSwapCommands({ fromTableNumber, toTableNumber, swappedBy, tim
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    CMD.BOLD_ON + CMD.SCALE_2X2,
     'TABLE MOVED\n',
     CMD.NORMAL_SIZE + CMD.BOLD_OFF,
     divider(),
