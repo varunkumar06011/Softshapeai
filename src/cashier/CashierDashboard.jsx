@@ -45,24 +45,24 @@ const getSearchRank = (item, query) => {
   const q = query.trim().toLowerCase();
   if (!q) return 0;
 
-  // Space-stripped versions for space-insensitive and compact matching
-  const nameCompact = name.replace(/\s+/g, '');
-  const qCompact = q.replace(/\s+/g, '');
+  // Space and punctuation-stripped versions for space-insensitive and compact matching
+  const nameCompact = name.replace(/[^a-z0-9]/g, '');
+  const qCompact = q.replace(/[^a-z0-9]/g, '');
 
   // Rank 1: Product name starts with query (with spaces)
   if (name.startsWith(q)) return 1;
 
-  // Rank 2: Product name starts with query (space-stripped)
+  // Rank 2: Product name starts with query (space/punctuation-stripped)
   if (qCompact && nameCompact.startsWith(qCompact)) return 2;
 
   // Rank 3: A word inside the product name starts with search query
-  const words = name.split(/\s+/).filter(Boolean);
+  const words = name.split(/[\s()&,\-\/\d]+/).filter(Boolean);
   if (words.some(word => word.startsWith(q))) return 3;
 
   // Rank 4: Product name contains search query (substring, with spaces)
   if (name.includes(q)) return 4;
 
-  // Rank 5: Product name contains search query (substring, space-stripped)
+  // Rank 5: Product name contains search query (substring, space/punctuation-stripped)
   if (qCompact && nameCompact.includes(qCompact)) return 5;
 
   // Rank 6: Initials/Acronym match
@@ -70,14 +70,14 @@ const getSearchRank = (item, query) => {
   const initials = words.map(w => w[0]).join('');
   if (qCompact && (initials.startsWith(qCompact) || isSubsequence(qCompact, initials))) return 6;
 
-  // Rank 7: Category match (space-insensitive)
-  if (category.includes(q) || (qCompact && category.replace(/\s+/g, '').includes(qCompact))) return 7;
+  // Rank 7: Category match (space/punctuation-insensitive)
+  if (category.includes(q) || (qCompact && category.replace(/[^a-z0-9]/g, '').includes(qCompact))) return 7;
 
-  // Rank 8: Subsequence match of name (space-insensitive)
+  // Rank 8: Subsequence match of name (space/punctuation-insensitive)
   if (qCompact && isSubsequence(qCompact, nameCompact)) return 8;
 
   // Rank 9: Description match
-  if (desc.includes(q) || (qCompact && desc.replace(/\s+/g, '').includes(qCompact))) return 9;
+  if (desc.includes(q) || (qCompact && desc.replace(/[^a-z0-9]/g, '').includes(qCompact))) return 9;
 
   return 10;
 };
@@ -96,7 +96,7 @@ const itemMatchesQuery = (item, q) => {
 const HighlightedText = ({ text, highlight }) => {
   if (!highlight || !highlight.trim()) return <span>{text}</span>;
   
-  const q = highlight.toLowerCase().replace(/\s+/g, '');
+  const q = highlight.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!q) return <span>{text}</span>;
 
   const parts = [];
@@ -542,6 +542,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     try {
       setIsPrintingBill(true);
+
 
       // Step 1: Update table discount if entered
       if (discountPercent > 0) {
@@ -1123,7 +1124,7 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
 
           <div className="flex items-center gap-4">
-            <OutletToggle className="flex" />
+            <OutletToggle className="flex" requireAuth={true} />
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <p className="text-xs md:text-sm font-black leading-none text-gray-900">Kiran Kumar</p>
@@ -1426,7 +1427,7 @@ const CashierDashboard = ({ onLogout }) => {
                             </div>
                           </div>
                           <div className="p-4 sm:p-5 flex flex-col flex-grow gap-2 sm:gap-3">
-                            <h4 className="text-sm md:text-base lg:text-lg font-black text-gray-900 leading-snug line-clamp-3 h-[4.5rem] md:h-[5rem] flex items-center tracking-tight">
+                            <h4 className="cashier-item-title text-gray-900 line-clamp-2 h-[2.5rem] sm:h-[2.75rem] md:h-[3.25rem] flex items-center tracking-tight">
                               <HighlightedText text={item.n} highlight={searchQuery} />
                             </h4>
                             <div className="flex items-center justify-between mt-auto">

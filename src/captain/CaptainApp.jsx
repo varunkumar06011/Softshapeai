@@ -4,7 +4,7 @@ import {
   Send, CheckCircle2, Search, ArrowLeft, ChefHat, Timer,
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
-  Target, TrendingUp, ArrowRightLeft
+  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater
 } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
@@ -13,6 +13,39 @@ import { printKOTQZ } from '../services/printService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
+
+const getLiquorDescription = (name, category) => {
+  const n = (name || '').toLowerCase();
+  const c = (category || '').toLowerCase();
+  
+  if (n.includes('vodka') || c.includes('vodka')) {
+    return "Smooth and clean vodka with a crisp finish, ideal for classic cocktails and premium serves.";
+  }
+  if (n.includes('whisky') || n.includes('whiskey') || c.includes('whisky') || c.includes('single malt')) {
+    return "Well-balanced whisky known for its smooth character and rich oak-inspired notes.";
+  }
+  if (n.includes('brandy') || c.includes('brandy')) {
+    return "Classic brandy offering a warm profile with subtle fruit and spice undertones.";
+  }
+  if (n.includes('beer') || n.includes('lager') || n.includes('ale') || c.includes('beer') || c.includes('draught')) {
+    return "Refreshing lager with a light body and easy-drinking character.";
+  }
+  if (n.includes('rum') || c.includes('rum')) {
+    return "Rich and flavorful rum with deep molasses notes and a smooth finish.";
+  }
+  if (n.includes('gin') || c.includes('gin')) {
+    return "Botanical-forward gin with bright juniper notes and a crisp, refreshing profile.";
+  }
+  if (n.includes('wine') || c.includes('wine') || c.includes('champagne')) {
+    return "Elegant wine with a beautifully balanced profile and lingering aromatic finish.";
+  }
+  if (n.includes('tequila') || c.includes('tequila')) {
+    return "Premium tequila offering a vibrant agave character with smooth, earthy undertones.";
+  }
+  
+  return "Premium select offering a refined and smooth profile, crafted for an exceptional tasting experience.";
+};
+
 import { useWaiterCalls, broadcastWaiterEvent } from '../services/waiterCallService';
 import { markWaiterCallAccepted } from '../services/customerSessionService';
 import { useOutlet } from '../context/OutletContext';
@@ -1484,7 +1517,7 @@ export default function CaptainApp({ onLogout }) {
                                 </div>
 
                                 {/* Item Name (Swiggy/Zomato style bold typography) */}
-                                <h3 className="font-extrabold text-xs sm:text-[13px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
+                                <h3 className="captain-item-title font-extrabold text-[11px] sm:text-[12px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
                                   {item.n}
                                 </h3>
 
@@ -1802,9 +1835,11 @@ export default function CaptainApp({ onLogout }) {
               <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
               <button onClick={() => setPreviewItem(null)} className="absolute top-4 left-4 sm:top-6 sm:left-6 w-10 h-10 sm:w-12 sm:h-12 bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-2xl flex items-center justify-center text-white transition-all"><X size={24} /></button>
               <div className="absolute bottom-8 left-8 flex gap-3">
-                <div className={`px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest ${previewItem.t === 'veg' ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
-                  {previewItem.t === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
-                </div>
+                {previewItem.menuType !== 'LIQUOR' && (
+                  <div className={`px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest ${previewItem.t === 'veg' ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
+                    {previewItem.t === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
+                  </div>
+                )}
                 {previewItem.spice > 0 && (
                   <div className="px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest bg-orange-500/80 flex items-center gap-2">
                     <Flame size={14} /> Spicy Lvl {previewItem.spice}
@@ -1815,17 +1850,34 @@ export default function CaptainApp({ onLogout }) {
             <div className="w-full md:w-1/2 p-6 sm:p-12 flex flex-col justify-between">
               <div>
                 <h3 className="text-2xl sm:text-4xl font-black tracking-tight text-gray-900 mb-2 sm:mb-4 leading-tight">{previewItem.n}</h3>
-                <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed mb-6 sm:mb-8">{previewItem.desc}</p>
+                <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed mb-6 sm:mb-8">
+                  {previewItem.menuType === 'LIQUOR' ? getLiquorDescription(previewItem.n, previewItem.c) : previewItem.desc}
+                </p>
 
                 <div className="space-y-4 sm:space-y-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><CheckCircle2 size={20} /></div>
-                    <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Chef Special Recommendation</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><ChefHat size={20} /></div>
-                    <p className="text-sm font-black uppercase tracking-tight text-gray-700">Freshly prepared in our high-speed kitchen</p>
-                  </div>
+                  {previewItem.menuType === 'LIQUOR' ? (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center text-amber-500"><Wine size={20} /></div>
+                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Bar Selection</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500"><GlassWater size={20} /></div>
+                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Served perfectly chilled</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><CheckCircle2 size={20} /></div>
+                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Chef Special Recommendation</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><ChefHat size={20} /></div>
+                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Freshly prepared in our high-speed kitchen</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
