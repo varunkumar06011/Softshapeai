@@ -147,6 +147,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
+  const [lastPrintTime, setLastPrintTime] = useState(null);
+  const [printCooldown, setPrintCooldown] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
   const [isCartMinimized, setIsCartMinimized] = useState(true);
@@ -161,6 +163,14 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Cleanup cooldown timer on unmount
+  useEffect(() => {
+    let cooldownTimer = null;
+    return () => {
+      if (cooldownTimer) clearTimeout(cooldownTimer);
+    };
   }, []);
 
   const [removedItemIds, setRemovedItemIds] = useState([]);
@@ -483,7 +493,7 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Error', 'Invalid table selected.', 'error');
       return;
     }
-    
+
     // Fallback if bill is 0
     const txnAmount = activeTotal > 0 ? activeTotal : fallbackTotal;
     if (txnAmount === 0) {
@@ -494,7 +504,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       setIsPrintingBill(true);
       const orderId = selectedTable?.activeOrder?.id || selectedTable?.orderId;
-      
+
       // Update backend status to BILLING_REQUESTED
       if (orderId) {
         await requestBilling(orderId);
@@ -502,13 +512,10 @@ const CashierDashboard = ({ onLogout }) => {
         addNotification('Warning', 'No active order found. Proceeding with local print.', 'warning');
       }
 
-      // Print the bill
-      try {
-        await printBill(selectedTable, txnAmount, activeSubtotal, activeTaxes, null);
-      } catch (printErr) {
-        console.warn('[FinalBill] Print failed:', printErr.message);
-      }
+      // Print the bill - let errors propagate to outer catch
+      await printBill(selectedTable, txnAmount, activeSubtotal, activeTaxes, null);
 
+      // ✅ Only reach here if print succeeds
       // Optimistically update local table status so the UI shows "Waiting Bill" and "Settlement" button
       setActiveTables((prev) =>
         prev.map((t) =>
@@ -520,9 +527,17 @@ const CashierDashboard = ({ onLogout }) => {
         window.dispatchEvent(new Event('softshape_order_updated'));
       }
 
+      // Set cooldown timer
+      setLastPrintTime(Date.now());
+      setPrintCooldown(true);
+      setTimeout(() => {
+        setPrintCooldown(false);
+      }, 10000);
+
       addNotification('Success', 'Final bill printed. Ready for settlement.', 'success');
     } catch (err) {
-      addNotification('Error', 'Failed to request final bill: ' + err.message, 'error');
+      // ✅ Catches both billing and print errors
+      addNotification('Error', 'Failed to print final bill: ' + err.message, 'error');
     } finally {
       setIsPrintingBill(false);
     }
@@ -2013,10 +2028,15 @@ const CashierDashboard = ({ onLogout }) => {
                 ) : (
                   <button
                     onClick={handleFinalBill}
-                    className="py-3.5 rounded-xl bg-blue-600 border border-blue-700 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-lg shadow-blue-500/20 cursor-pointer flex items-center justify-center gap-2"
+                    disabled={isPrintingBill || printCooldown}
+                    className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${
+                      isPrintingBill || printCooldown
+                        ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
+                        : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
+                    }`}
                   >
                     {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
-                    Final Bill
+                    {printCooldown ? 'Reprint Available in...' : 'Final Bill'}
                   </button>
                 )}
               </div>
