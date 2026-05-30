@@ -33,6 +33,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
 import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard';
+import { motion } from 'framer-motion';
 
 const navItems = [
   ["dashboard", "Dashboard", LayoutDashboard],
@@ -254,9 +255,16 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
       {role !== 'manager' && (
         <>
-          <button onClick={() => setSpireOpen(true)} className="fixed bottom-6 right-6 z-30 flex items-center gap-3 rounded-full bg-[#E53935] px-6 py-4 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 group">
-            <Sparkles size={18} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
-          </button>
+          <motion.button 
+            drag 
+            dragMomentum={false}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setSpireOpen(true)} 
+            className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-[#E53935] px-4 py-2.5 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[10px] transition-colors group cursor-grab active:cursor-grabbing"
+          >
+            <Sparkles size={14} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
+          </motion.button>
           <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
         </>
       )}
