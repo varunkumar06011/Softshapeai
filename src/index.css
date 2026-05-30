@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @theme {
-  --font-sans: "Plus Jakarta Sans", "Inter", "Segoe UI", sans-serif;
+  --font-sans: "Times New Roman", Times, serif;
 }
 
 * {
@@ -9,10 +9,28 @@
 
 body {
   margin: 0;
-  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 16px;
   background: #fff5f5;
   color: #1a1a1a;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Heading styles with 24pt size */
+h1, h2, h3, h4, h5, h6 {
+  font-size: 24pt;
+  font-weight: normal;
+}
+
+/* Item name styling - bold */
+.item-name,
+[class*="item"] h3,
+[class*="item"] h4,
+[class*="menu-item"],
+.menu-item-name,
+.dish-name,
+.product-name {
+  font-weight: bold;
 }
 
 #root {
