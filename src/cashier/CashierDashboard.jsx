@@ -554,14 +554,7 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Check if order has items
-    const orderItems = selectedTable?.activeOrder?.items || selectedTable?.orders?.[0]?.items || [];
-    if (!orderItems || orderItems.length === 0) {
-      addNotification('Error', 'Order has no items. Cannot generate bill.', 'error');
-      return;
-    }
-
-    // Validate that the order has items
+    // Validate that the order has items (use proper getTableItems function)
     const orderItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
     if (orderItems.length === 0) {
       addNotification('Error', 'Cannot print bill with no items. Please add items to the order first.', 'error');
