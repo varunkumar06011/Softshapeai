@@ -403,13 +403,13 @@ const CashierDashboard = ({ onLogout }) => {
   }, [txnDateFilter]);
 
   // ── Fetch fresh order data from backend ───
+  // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
-      const response = await fetch(`${API_BASE}/api/tables/${tableBackendId}?include=orders`);
+      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`);
       if (response.ok) {
-        const freshTable = await response.json();
-        // Return the most recent order (backend may filter PAID orders, but we want all orders)
-        return freshTable.orders?.[0] || null;
+        const freshOrder = await response.json();
+        return freshOrder || null;
       }
     } catch (error) {
       console.warn('Failed to fetch fresh order data:', error);
