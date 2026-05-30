@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { markOrderPaid, saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, settleOrder, editBill, swapTable, requestBilling } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, requestBilling } from '../services/orderApi';
 import { printBillQZ, printKOTQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -544,8 +544,11 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handlePayment = async (method) => {
-    const txnAmount = activeTotal > 0 ? activeTotal : fallbackTotal;
-    if (txnAmount === 0) {
+    if (!selectedTable || !method) return;
+
+    // Validate transaction amount
+    const txnAmount = Number(activeTotal > 0 ? activeTotal : fallbackTotal);
+    if (txnAmount <= 0) {
       addNotification(
         'Cannot Settle',
         'Bill amount is ₹0. Ensure KOT was sent before settling.',
@@ -555,159 +558,81 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Guard: block double-settlement — order was already settled this session
-    const candidateOrderId = selectedTable?.activeOrder?.id;
-    if (candidateOrderId && settledOrderIds.has(candidateOrderId)) {
+    // Guard: prevent double-settlement
+    const orderId = selectedTable?.activeOrder?.id;
+    if (orderId && settledOrderIds.has(orderId)) {
       addNotification('Already Settled', 'This order has already been settled.', 'error');
       setShowMethodPicker(false);
       setShowPaymentModal(false);
       return;
     }
 
-    // Capture all needed state before any async/state-clearing
-    const tableSnap = selectedTable;
-    const subtotalSnap = activeSubtotal;
-    const taxesSnap = activeTaxes;
-    const removedItemIdsSnap = removedItemIds;
+    try {
+      setIsPrintingBill(true);
 
-    const tableItems = getTableItems(tableSnap);
-    const itemsList = tableItems.length > 0 ? tableItems : cart;
-
-    // Step 1: Show loading on button
-    setIsPrintingBill(true);
-    // (print will happen in Step 5 after markOrderPaid succeeds)
-    setIsPrintingBill(false);
-
-    // Step 3: Close modals + clear UI state
-    setShowMethodPicker(false);
-    setSelectedMethod(null);
-    setSelectedTable(null);
-    setShowPaymentModal(false);
-    setSelectedPaymentMethod('UPI');
-    setCart([]);
-    setRemovedItemIds([]);
-
-    // Step 4: Optimistic local state update (placeholder until DB responds)
-    const newTransaction = {
-      id: `TXN-PENDING-${Date.now()}`,
-      txnNumber: null,
-      displayId: 'Bill #—',   // will update on loadTransactions after save
-      amount: txnAmount,
-      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
-      date: new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
-      timestamp: Date.now(),
-      items: itemsList.length,
-      itemsList: itemsList,
-      captainId: tableSnap?.captainId || 'CASHIER',
-      method: method,
-      tableNumber: tableSnap?.id || null,
-    };
-
-    setPastTransactions(prev => {
-      const updated = [newTransaction, ...prev];
-      localStorage.setItem(TX_CACHE_KEY, JSON.stringify(updated));
-      window.dispatchEvent(new Event('softshape_transactions_updated'));
-      return updated;
-    });
-
-    if (tableSnap?.id) {
-      // Fix billing alert cleanup — use tableBackendId, not tableId
-      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableSnap.backendId));
-      setActiveTables(prev => prev.map(t =>
-        t.id === tableSnap.id
-          ? { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
-          : t
-      ));
-    }
-
-    addNotification('Payment Success', `${method} • ₹${Number(txnAmount).toFixed(0)} collected`, 'success');
-
-    // Step 5: Fire background API calls — settle removed items, then mark PAID, then print
-    if (tableSnap?.activeOrder?.id) {
-      (async () => {
-        try {
-          // 5a. Remove any cancelled items first (if any)
-          if (removedItemIdsSnap.length > 0) {
-            await settleOrder(tableSnap.activeOrder.id, removedItemIdsSnap, 'Cashier');
+      // Call backend settle endpoint (creates transaction, marks paid, resets table)
+      // NO PRINTING - that already happened in handleFinalBill
+      if (orderId) {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${activeRestaurantId}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentMethod: method })
           }
+        );
 
-          // 5b. Mark order PAID — backend emits print_job socket event here
-          await markOrderPaid(tableSnap.activeOrder.id, method);
-
-          // 5c. Now print the final bill (order is guaranteed PAID in DB)
-          try {
-            await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
-          } catch (printErr) {
-            console.warn('[Settlement] Print failed (non-blocking):', printErr.message);
-          }
-        } catch (err) {
-          console.warn('[BG] order settlement/pay failed:', err.message);
-          // Still attempt to print using fallback (local data) even if API failed
-          try {
-            const { buildBillCommands } = await import('../services/printService');
-            await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
-          } catch (printErr) {
-            console.warn('[Settlement] Fallback print also failed:', printErr.message);
-          }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Settlement failed on server');
         }
-      })();
-    } else {
-      // No activeOrder (e.g. walk-in/bar) — just print locally
-      try {
-        await printBill(tableSnap, txnAmount, subtotalSnap, taxesSnap, method);
-      } catch (printErr) {
-        console.warn('[Settlement] Print failed (non-blocking):', printErr.message);
-      }
-    }
 
-    saveTransaction({
-      restaurantId: activeRestaurantId,
-      orderId: tableSnap?.activeOrder?.id || null,
-      tableNumber: tableSnap?.id || null,
-      captainId: tableSnap?.captainId || null,
-      amount: txnAmount,
-      method: method,
-      itemCount: itemsList.length,
-      items: itemsList,
-    }).then(() => {
-      // Mark this orderId as settled so the UI blocks any retry
-      if (tableSnap?.activeOrder?.id) {
-        setSettledOrderIds(prev => new Set([...prev, tableSnap.activeOrder.id]));
+        // Mark as settled locally to prevent retries
+        setSettledOrderIds(prev => new Set([...prev, orderId]));
       }
-      // Refresh list so the placeholder gets replaced with the real txnNumber from DB
-      // Use the user's current date filter so we don't accidentally reset to 'today'
+
+      // Update local state - table becomes free
+      setActiveTables((prev) =>
+        prev.map((t) =>
+          t.backendId === selectedTable.backendId
+            ? {
+                ...t,
+                status: 'Free',
+                workflowStatus: 'Free',
+                activeOrder: null,
+                items: [],
+                captainId: null,
+                kotHistory: [],
+                currentBill: 0,
+                guests: 0,
+                time: null
+              }
+            : t
+        )
+      );
+
+      // Clear billing alerts for this table
+      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
+
+      // Close modals and clear state
+      setShowMethodPicker(false);
+      setShowTableModal(false);
+      setShowPaymentModal(false);
+      setSelectedTable(null);
+      setCart([]);
+      setRemovedItemIds([]);
+
+      // Show success notification
+      addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
+
+      // Refresh transactions list to show the new transaction
       loadTransactions(txnDateFilterRef.current);
-    }).catch(err => {
-      if (err.message === 'This order has already been settled.') {
-        addNotification('Already Settled', 'This order has already been settled. A duplicate payment was blocked.', 'error');
-        if (tableSnap?.activeOrder?.id) {
-          setSettledOrderIds(prev => new Set([...prev, tableSnap.activeOrder.id]));
-        }
-      } else {
-        console.warn('[BG] saveTransaction failed:', err.message);
-      }
-    });
 
-    // Step 6: Reset table session in DB (clear kotHistory, currentBill, status → Free)
-    const resetSessionPayload = {
-      status: 'Free',
-      kotHistory: [],
-      currentBill: 0,
-      captainId: null,
-      guests: 0,
-    };
-    if (tableSnap?.backendId) {
-      if (outlet === 'bar') {
-        import('../services/barTableApi').then(({ updateBarTableSession }) => {
-          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
-            .catch(err => console.warn('[BG] resetBarSession failed:', err.message));
-        });
-      } else {
-        import('../services/tableApi').then(({ updateTableSession }) => {
-          updateTableSession(tableSnap.backendId, resetSessionPayload)
-            .catch(err => console.warn('[BG] resetTableSession failed:', err.message));
-        });
-      }
+    } catch (err) {
+      console.error('[Settlement] Failed:', err.message);
+      addNotification('Error', 'Settlement failed: ' + err.message, 'error');
+    } finally {
+      setIsPrintingBill(false);
     }
   };
 
