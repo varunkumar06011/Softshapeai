@@ -4304,7 +4304,15 @@ function AddInventoryModal({ onClose, onSave, isSubmitting }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Add Inventory Item</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-black uppercase tracking-[0.2em]">Add Inventory Item</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[#FFEBEE] rounded-full transition-colors"
+          >
+            <X size={20} className="text-[#6B6B6B]" />
+          </button>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
             <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Select Menu Item</label>
@@ -4455,7 +4463,15 @@ function EditInventoryModal({ item, onClose, onSave, isSubmitting }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Edit Inventory Item</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-black uppercase tracking-[0.2em]">Edit Inventory Item</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[#FFEBEE] rounded-full transition-colors"
+          >
+            <X size={20} className="text-[#6B6B6B]" />
+          </button>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-bold mb-2 uppercase tracking-wide text-gray-600">Item Name</label>
@@ -4576,7 +4592,15 @@ function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.name || item.menuItem?.name || 'Unknown Item'}</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-black uppercase tracking-[0.2em]">{item.isVirtual ? 'Add Stock' : 'Adjust Stock'}: {item.name || item.menuItem?.name || 'Unknown Item'}</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[#FFEBEE] rounded-full transition-colors"
+          >
+            <X size={20} className="text-[#6B6B6B]" />
+          </button>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-[#FFF5F5] rounded-xl p-4 mb-4 border-2 border-gray-200">
             <p className="text-sm text-gray-600 font-bold uppercase tracking-wide">Current Stock:</p>
@@ -4733,7 +4757,15 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isS
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Record Purchase</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-black uppercase tracking-[0.2em]">Record Purchase</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[#FFEBEE] rounded-full transition-colors"
+          >
+            <X size={20} className="text-[#6B6B6B]" />
+          </button>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
             <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Select Item</label>
