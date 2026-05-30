@@ -2024,10 +2024,20 @@ const CashierDashboard = ({ onLogout }) => {
                   min="0"
                   max="100"
                   step="0.01"
-                  value={discountPercent}
-                  onChange={(e) => setDiscountPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                  value={discountPercent === 0 ? '' : discountPercent}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '' || raw === null) {
+                      setDiscountPercent(0);
+                    } else {
+                      const parsed = parseFloat(raw);
+                      if (!isNaN(parsed)) {
+                        setDiscountPercent(Math.max(0, Math.min(100, parsed)));
+                      }
+                    }
+                  }}
                   className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none text-sm font-bold"
-                  placeholder="Enter discount percentage"
+                  placeholder="0"
                 />
               </div>
 
