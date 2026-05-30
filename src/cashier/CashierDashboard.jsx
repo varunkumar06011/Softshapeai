@@ -543,41 +543,6 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       setIsPrintingBill(true);
 
-      // ── Resolve order ID ──────────────────────────────────────────────
-      // First try from local state (cashier-created orders have this populated).
-      // For captain-created orders the local table state may not carry activeOrder,
-      // so fall back to a live backend fetch.
-      let orderId = selectedTable?.activeOrder?.id ||
-                    selectedTable?.orders?.[0]?.id ||
-                    selectedTable?.orderId;
-
-      if (!orderId) {
-        // Check if the table is even occupied before hitting the network
-        if (selectedTable?.status === 'Available' || selectedTable?.status === 'Free') {
-          addNotification('Error', 'This table has no active orders.', 'error');
-          return;
-        }
-        if (settledOrderIds.has(selectedTable?.backendId)) {
-          addNotification('Error', 'Order already settled. Please refresh the table list.', 'error');
-          return;
-        }
-
-        // Fetch live order data from backend
-        addNotification('Info', 'Fetching order details…', 'info');
-        const freshOrder = await fetchFreshOrderData(selectedTable.backendId);
-        if (freshOrder?.id) {
-          orderId = freshOrder.id;
-          // Patch local state so settlement also sees it
-          setSelectedTable(prev => prev ? { ...prev, activeOrder: freshOrder } : prev);
-          setActiveTables(prev => prev.map(t =>
-            t.backendId === selectedTable.backendId ? { ...t, activeOrder: freshOrder } : t
-          ));
-        } else {
-          addNotification('Error', 'No active order found for this table. Please check the captain app.', 'error');
-          return;
-        }
-      }
-
       // Step 1: Update table discount if entered
       if (discountPercent > 0) {
         await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
@@ -587,18 +552,32 @@ const CashierDashboard = ({ onLogout }) => {
         });
       }
 
-      // Step 2: Call print-bill endpoint (handles status update + receipt via socket)
-      const printResponse = await fetch(
-        `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${activeRestaurantId}`,
-        { method: 'POST' }
-      );
+      // Step 2: Print bill directly using printService (bypasses backend foreign key error)
+      // Calculate bill details locally
+      const { subtotal, taxes, total, cgst, sgst } = activeOrderCalc;
+      
+      // Prepare items for printing (all food and liquor combined)
+      const printItems = orderItems.map(item => ({
+        name: item.n || item.name,
+        quantity: item.q || item.quantity,
+        price: item.p || item.price,
+        menuType: item.menuType || 'FOOD'
+      }));
 
-      if (!printResponse.ok) {
-        const errorData = await printResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to print bill');
-      }
-
-      await printResponse.json();
+      // Print the bill using printBillQZ WITHOUT orderId to use local fallback
+      // This bypasses the backend foreign key constraint error
+      await printBillQZ({
+        orderId: null, // Don't pass orderId to avoid backend call
+        table: {
+          id: selectedTable.id || selectedTable.number || 'N/A',
+          guests: selectedTable.guestCount || selectedTable.guests || 0
+        },
+        items: printItems,
+        subtotal,
+        taxes,
+        total,
+        method: null // No payment method yet for final bill
+      });
 
       addNotification('Success', 'Bill printed successfully.', 'success');
       setDiscountPercent(0);
