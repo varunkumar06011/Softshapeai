@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { 
-  ChartNoAxesCombined, 
-  ClipboardList, 
-  Bot, 
-  Megaphone, 
-  Sparkles, 
-  Search, 
+import {
+  ChartNoAxesCombined,
+  ClipboardList,
+  Bot,
+  Megaphone,
+  Sparkles,
+  Search,
   UtensilsCrossed,
   Camera,
   Check,
@@ -39,7 +39,8 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
-  Printer
+  Printer,
+  Edit2
 } from 'lucide-react';
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
@@ -3679,6 +3680,11 @@ export function Inventory() {
   const [isRecordingPurchase, setIsRecordingPurchase] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState(null);
 
+  // Edit modal states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
   const showNotification = (message, type = 'info') => {
     setPopup({ message, type });
   };
@@ -3868,6 +3874,30 @@ export function Inventory() {
       showNotification(err.message || 'Failed to delete inventory item', 'error');
     } finally {
       setDeletingItemId(null);
+    }
+  };
+
+  const handleUpdateItem = async (itemId, updateData) => {
+    if (isUpdating) return;
+
+    setIsUpdating(true);
+    try {
+      await updateInventoryItem(itemId, {
+        costPerBottle: parseFloat(updateData.costPerBottle),
+        bottleSize: parseInt(updateData.bottleSize),
+        reorderLevel: parseFloat(updateData.reorderLevel),
+        maxStock: parseFloat(updateData.maxStock),
+      });
+
+      setShowEditModal(false);
+      setEditingItem(null);
+      showNotification('Inventory item updated successfully. Menu prices recalculated.', 'success');
+      loadInventory();
+    } catch (err) {
+      console.error('[Inventory] Update failed:', err);
+      showNotification(err.message || 'Failed to update item', 'error');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -4117,13 +4147,24 @@ export function Inventory() {
                     {item.isVirtual ? 'Add Stock' : 'Adjust'}
                   </button>
                   {!item.isVirtual && (
-                    <button
-                      onClick={() => handleDeleteItem(item.id)}
-                      disabled={deletingItemId === item.id}
-                      className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                    >
-                      {deletingItemId === item.id ? <ButtonSpinner /> : <Trash2 size={16} />}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          setEditingItem(item);
+                          setShowEditModal(true);
+                        }}
+                        className="px-3 py-2 bg-blue-100 text-blue-700 rounded-xl font-bold text-xs hover:bg-blue-600 hover:text-white hover:scale-105 active:scale-95 transition-all"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteItem(item.id)}
+                        disabled={deletingItemId === item.id}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                      >
+                        {deletingItemId === item.id ? <ButtonSpinner /> : <Trash2 size={16} />}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -4166,6 +4207,18 @@ export function Inventory() {
           onSave={handleRecordPurchase}
           showNotification={showNotification}
           isSubmitting={isRecordingPurchase}
+        />
+      )}
+
+      {showEditModal && editingItem && (
+        <EditInventoryModal
+          item={editingItem}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingItem(null);
+          }}
+          onSave={(updateData) => handleUpdateItem(editingItem.id, updateData)}
+          isSubmitting={isUpdating}
         />
       )}
         </>
@@ -4369,6 +4422,120 @@ function AddInventoryModal({ onClose, onSave, isSubmitting }) {
                 </span>
               ) : (
                 'Create Item'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditInventoryModal({ item, onClose, onSave, isSubmitting }) {
+  const [formData, setFormData] = useState({
+    costPerBottle: item.costPerBottle || 0,
+    bottleSize: item.bottleSize || 750,
+    reorderLevel: item.reorderLevel || 0,
+    maxStock: item.maxStock || 0,
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  const handleClickOutside = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const itemName = item.name || item.menuItem?.name || 'Unknown Item';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleClickOutside}>
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto scrollbar-hide" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-4">Edit Inventory Item</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide text-gray-600">Item Name</label>
+            <input
+              type="text"
+              value={itemName}
+              disabled
+              className="w-full px-4 py-3 bg-gray-100 border-2 border-gray-300 rounded-xl outline-none font-medium text-gray-600 cursor-not-allowed"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              value={formData.costPerBottle}
+              onChange={(e) => setFormData({ ...formData, costPerBottle: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Bottle Size (ml)</label>
+            <input
+              type="number"
+              min="1"
+              required
+              value={formData.bottleSize}
+              onChange={(e) => setFormData({ ...formData, bottleSize: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Reorder Level (ml)</label>
+            <input
+              type="number"
+              min="0"
+              required
+              value={formData.reorderLevel}
+              onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Max Stock (ml)</label>
+            <input
+              type="number"
+              min="0"
+              required
+              value={formData.maxStock}
+              onChange={(e) => setFormData({ ...formData, maxStock: e.target.value })}
+              className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              {isSubmitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <ButtonSpinner /> Saving...
+                </span>
+              ) : (
+                'Save Changes'
               )}
             </button>
           </div>
