@@ -2512,38 +2512,3 @@ const CashierDashboard = ({ onLogout }) => {
 };
 
 export default CashierDashboard;
-                    ?'bg-blue-600 text-white shadow-lg shadow-blue-100 hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                }`}
-              >
-                {isSwapping ? 'Moving...' : swapTargetId ? 'Confirm Move' : 'Select a Table'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* NOTIFICATIONS OVERLAY */}
-      <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
-        {notifications.map(n => (
-          <div key={n.id} className="pointer-events-auto flex items-center gap-3 bg-white border-l-4 border-l-[#E53935] p-3 rounded-lg shadow-2xl animate-slide-in min-w-[240px]">
-            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-[#E53935]">
-              {n.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-gray-900 uppercase tracking-tight">{n.title}</p>
-              <p className="text-[9px] text-gray-500 font-medium leading-none mt-0.5">{n.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-      <VariantPicker
-        item={variantPickerItem}
-        onSelect={handleVariantSelect}
-        onClose={() => setVariantPickerItem(null)}
-      />
-    </div>
-  );
-};
-
-export default CashierDashboard;

@@ -754,7 +754,7 @@ export function MenuPage({ onAddDish }) {
   const handleDeleteClick = (item) => setDeletingItem(item);
 
   // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
-  const uploadImageToCloudinary = async (base64DataUri) => {
+  const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
     // Convert base64 data URI → Blob for multipart/form-data upload
     const [, b64] = base64DataUri.split(',');
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -763,6 +763,9 @@ export function MenuPage({ onAddDish }) {
     const formData = new FormData();
     formData.append('file', blob, 'image.jpg');
     formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+    if (itemName?.trim()) {
+      formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
+    }
 
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
     const res = await fetch(
@@ -804,7 +807,7 @@ export function MenuPage({ onAddDish }) {
     try {
       let imageUrl = undefined;
       if (editingItem.img && editingItem.img.startsWith('data:')) {
-        imageUrl = await uploadImageToCloudinary(editingItem.img);
+        imageUrl = await uploadImageToCloudinary(editingItem.img, editingItem.n);
       }
 
       const body = {
@@ -889,7 +892,7 @@ export function MenuPage({ onAddDish }) {
     try {
       let imageUrl = null;
       if (addingItem.img && addingItem.img.startsWith('data:')) {
-        imageUrl = await uploadImageToCloudinary(addingItem.img);
+        imageUrl = await uploadImageToCloudinary(addingItem.img, addingItem.n);
       }
 
       const res = await fetch(`${API_BASE}/api/menu/items`, {
@@ -5456,7 +5459,7 @@ export function BarMenuPage() {
   };
 
   // Cloudinary direct upload — bypasses backend proxy for 2-4s vs 10-15s latency
-  const uploadImageToCloudinary = async (base64DataUri) => {
+  const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
     // Convert base64 data URI → Blob for multipart/form-data upload
     const [, b64] = base64DataUri.split(',');
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -5465,6 +5468,9 @@ export function BarMenuPage() {
     const formData = new FormData();
     formData.append('file', blob, 'image.jpg');
     formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+    if (itemName?.trim()) {
+      formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
+    }
 
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
     const res = await fetch(
@@ -5484,7 +5490,7 @@ export function BarMenuPage() {
     if (editImg && editImg.startsWith('data:')) {
       // New local file picked — upload to Cloudinary first
       try {
-        imageUrl = await uploadImageToCloudinary(editImg);
+        imageUrl = await uploadImageToCloudinary(editImg, editName);
       } catch {
         showToast('Image upload failed', 'error');
         setEditSaving(false);
@@ -5552,7 +5558,7 @@ export function BarMenuPage() {
             compressImage(addImg, (b64) => resolve(b64));
           });
           // Upload via backend proxy (same as Edit modal)
-          imageUrl = await uploadImageToCloudinary(base64);
+          imageUrl = await uploadImageToCloudinary(base64, addName);
         } catch {
           showToast('Image upload failed', 'error');
           setAddUploading(false);

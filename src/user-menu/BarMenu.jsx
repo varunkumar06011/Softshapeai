@@ -7,9 +7,12 @@ import { createOrder, updateOrderItems } from '../services/orderApi';
 import { apiUrl } from '../services/apiConfig';
 import VariantPicker from '../shared/components/VariantPicker';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const DEFAULT_FOOD_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
-const DEFAULT_LIQUOR_IMG = "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=600&h=450&fit=crop";
+import {
+  DEFAULT_FOOD_IMG,
+  DEFAULT_LIQUOR_IMG,
+  buildRestaurantImageIndex,
+  resolveBarItemImage,
+} from '../services/barMenuService';
 
 const getLiquorDescription = (name, category) => {
   const n = (name || '').toLowerCase();
@@ -70,30 +73,11 @@ export default function BarMenu({ tableId }) {
     };
   };
 
-  const getLiquorImage = (name = "") => {
-    const lower = name.toLowerCase();
-    if (lower.includes("beer") || lower.includes("corona") || lower.includes("budweiser") || lower.includes("heineken") || lower.includes("draught")) {
-      return "https://images.unsplash.com/photo-1567696911980-2eed69a4604e?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("whiskey") || lower.includes("whisky") || lower.includes("scotch") || lower.includes("bourbon") || lower.includes("glenfiddich") || lower.includes("black label") || lower.includes("jack daniel")) {
-      return "https://images.unsplash.com/photo-1527061011665-3652c757a4d4?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("vodka") || lower.includes("grey goose") || lower.includes("absolut") || lower.includes("smirnoff")) {
-      return "https://images.unsplash.com/photo-1550985543-f47f38aeee65?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("wine") || lower.includes("champagne") || lower.includes("prosecco") || lower.includes("cabernet") || lower.includes("chardonnay") || lower.includes("merlot")) {
-      return "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("cocktail") || lower.includes("mojito") || lower.includes("margarita") || lower.includes("gin") || lower.includes("rum") || lower.includes("tequila") || lower.includes("martini") || lower.includes("tonic")) {
-      return "https://images.unsplash.com/photo-1536935338788-846bb9981813?w=600&h=450&fit=crop";
-    }
-    return "https://images.unsplash.com/photo-1597290282695-edc43d0e7129?w=600&h=450&fit=crop";
-  };
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [categoriesData, setCategoriesData] = useState([]);
   const [flatItems, setFlatItems] = useState([]);
+  const [restaurantItems, setRestaurantItems] = useState([]);
   const [tableBackendId, setTableBackendId] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,10 +138,11 @@ export default function BarMenu({ tableId }) {
     async function loadData() {
       try {
         setLoading(true);
-        const [posViewRes, itemsRes, tablesRes] = await Promise.all([
+        const [posViewRes, itemsRes, tablesRes, restaurantRes] = await Promise.all([
           fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store" }),
           fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
-          fetchBarTables()
+          fetchBarTables(),
+          fetch(apiUrl("/api/menu/items"), { cache: "no-store" }),
         ]);
 
         if (!posViewRes.ok) throw new Error(`POS-view failed: ${posViewRes.status}`);
@@ -166,8 +151,10 @@ export default function BarMenu({ tableId }) {
         const posViewData = await posViewRes.json();
         const itemsData = await itemsRes.json();
         const flatTables = flattenSections(tablesRes);
+        const restaurantData = restaurantRes.ok ? await restaurantRes.json() : [];
 
         if (active) {
+          setRestaurantItems(Array.isArray(restaurantData) ? restaurantData : []);
           // Filter out unavailable items from both data sources
           const filteredPosView = (posViewData || []).map(cat => ({
             ...cat,
@@ -230,6 +217,11 @@ export default function BarMenu({ tableId }) {
     return ['All', ...filteredCategories.map(c => c.name)];
   }, [filteredCategories]);
 
+  const restaurantImageIndex = useMemo(
+    () => buildRestaurantImageIndex(restaurantItems),
+    [restaurantItems]
+  );
+
   // Filter items to render
   const itemsToDisplay = useMemo(() => {
     let items = [];
@@ -263,26 +255,24 @@ export default function BarMenu({ tableId }) {
       items = items.filter(item => item.isVeg === false || item.t === 'non');
     }
 
-    return items.map(item => {
-      const isLiquor = (item.menuType || '').toUpperCase() === 'LIQUOR';
-      let finalImg = item.imageUrl || item.img;
-      const foodPlaceholder = "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
-
-      if (isLiquor && (!finalImg || finalImg === foodPlaceholder)) {
-        finalImg = getLiquorImage(item.name || item.n);
-      } else if (!finalImg) {
-        finalImg = DEFAULT_FOOD_IMG;
-      }
-
-      return {
-        ...item,
-        n: item.name || item.n,
-        p: getItemPrice(item),
-        t: item.isVeg ? 'veg' : 'non',
-        img: finalImg
-      };
-    });
-  }, [filteredCategories, flatItems, activeCategory, dietFilter, searchQuery, activeMenuType]);
+    return items.map(item => ({
+      ...item,
+      n: item.name || item.n,
+      p: getItemPrice(item),
+      t: item.isVeg ? 'veg' : 'non',
+      img: resolveBarItemImage(
+        {
+          name: item.name,
+          n: item.n,
+          menuType: item.menuType,
+          imageUrl: item.imageUrl,
+          img: item.img,
+        },
+        restaurantImageIndex,
+        restaurantItems
+      ),
+    }));
+  }, [filteredCategories, flatItems, activeCategory, dietFilter, searchQuery, activeMenuType, restaurantImageIndex, restaurantItems]);
 
   // Cart actions
   const addToCart = (item, variant = null, e = null) => {

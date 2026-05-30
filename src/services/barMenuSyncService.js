@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
-import { fetchBarMenuFromBackend, readBarMenuCache, writeBarMenuCache } from "./barMenuService";
+import { API_BASE } from "./apiConfig";
+import {
+  fetchBarMenuFromBackend,
+  readBarMenuCache,
+  writeBarMenuCache,
+  repairBarMenuCloudinaryUrls,
+} from "./barMenuService";
 
 let barGlobalMenu = null;
 let _isLoading = true;
@@ -21,6 +27,21 @@ async function loadBarMenu() {
       barGlobalMenu = await fetchBarMenuFromBackend();
       writeBarMenuCache(barGlobalMenu);
       console.log(`[BarMenuSync] Loaded ${barGlobalMenu.length} items`);
+
+      // Restore Cloudinary URLs on bar DB records (lost imageUrl on backend)
+      repairBarMenuCloudinaryUrls(API_BASE, { force: false })
+        .then(({ repaired, skipped, source, stillMissing }) => {
+          if (!skipped && repaired > 0) {
+            loadPromise = null;
+            return fetchBarMenuFromBackend().then((fresh) => {
+              barGlobalMenu = fresh;
+              writeBarMenuCache(barGlobalMenu);
+              notifySubscribers();
+              console.log(`[BarMenuSync] Reloaded after ${source} restore (${repaired} updated, ${stillMissing ?? 0} still missing)`);
+            });
+          }
+        })
+        .catch((err) => console.warn("[BarMenuSync] Image repair skipped:", err));
     } catch (err) {
       console.error("[BarMenuSync] Failed:", err);
       _loadError = err?.message || "Could not reach backend.";
