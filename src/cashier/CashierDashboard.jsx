@@ -527,27 +527,6 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Improved order ID resolution with better fallbacks
-    const orderId = selectedTable?.activeOrder?.id ||
-                    selectedTable?.orders?.[0]?.id ||
-                    selectedTable?.orderId;
-
-    if (!orderId) {
-      // Determine specific error reason
-      let errorMsg = 'No active order found.';
-
-      if (selectedTable?.status === 'Available' || selectedTable?.status === 'Free') {
-        errorMsg = 'This table has no active orders.';
-      } else if (settledOrderIds.has(selectedTable?.backendId)) {
-        errorMsg = 'Order already settled. Please refresh the table list.';
-      } else if (selectedTable?.activeOrder?.status === 'PAID') {
-        errorMsg = 'Order already paid. Cannot generate bill again.';
-      }
-
-      addNotification('Error', errorMsg, 'error');
-      return;
-    }
-
     // Check if order is already paid
     if (selectedTable?.activeOrder?.status === 'PAID') {
       addNotification('Error', 'This order has already been settled.', 'error');
@@ -564,6 +543,41 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       setIsPrintingBill(true);
 
+      // ── Resolve order ID ──────────────────────────────────────────────
+      // First try from local state (cashier-created orders have this populated).
+      // For captain-created orders the local table state may not carry activeOrder,
+      // so fall back to a live backend fetch.
+      let orderId = selectedTable?.activeOrder?.id ||
+                    selectedTable?.orders?.[0]?.id ||
+                    selectedTable?.orderId;
+
+      if (!orderId) {
+        // Check if the table is even occupied before hitting the network
+        if (selectedTable?.status === 'Available' || selectedTable?.status === 'Free') {
+          addNotification('Error', 'This table has no active orders.', 'error');
+          return;
+        }
+        if (settledOrderIds.has(selectedTable?.backendId)) {
+          addNotification('Error', 'Order already settled. Please refresh the table list.', 'error');
+          return;
+        }
+
+        // Fetch live order data from backend
+        addNotification('Info', 'Fetching order details…', 'info');
+        const freshOrder = await fetchFreshOrderData(selectedTable.backendId);
+        if (freshOrder?.id) {
+          orderId = freshOrder.id;
+          // Patch local state so settlement also sees it
+          setSelectedTable(prev => prev ? { ...prev, activeOrder: freshOrder } : prev);
+          setActiveTables(prev => prev.map(t =>
+            t.backendId === selectedTable.backendId ? { ...t, activeOrder: freshOrder } : t
+          ));
+        } else {
+          addNotification('Error', 'No active order found for this table. Please check the captain app.', 'error');
+          return;
+        }
+      }
+
       // Step 1: Update table discount if entered
       if (discountPercent > 0) {
         await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
@@ -573,7 +587,7 @@ const CashierDashboard = ({ onLogout }) => {
         });
       }
 
-      // Step 2: Call print-bill endpoint (handles both status update AND printing via socket)
+      // Step 2: Call print-bill endpoint (handles status update + receipt via socket)
       const printResponse = await fetch(
         `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${activeRestaurantId}`,
         { method: 'POST' }
@@ -584,12 +598,12 @@ const CashierDashboard = ({ onLogout }) => {
         throw new Error(errorData.error || 'Failed to print bill');
       }
 
-      const result = await printResponse.json();
+      await printResponse.json();
 
       addNotification('Success', 'Bill printed successfully.', 'success');
-      setDiscountPercent(0); // Reset discount input
+      setDiscountPercent(0);
 
-      // Optimistically update local table status so the UI shows "Waiting Bill" and "Settlement" button
+      // Optimistically update local table status → shows "Settlement" button
       setActiveTables((prev) =>
         prev.map((t) =>
           t.backendId === selectedTable.backendId ? { ...t, status: 'Waiting Bill' } : t
@@ -598,12 +612,10 @@ const CashierDashboard = ({ onLogout }) => {
 
       window.dispatchEvent(new Event('softshape_order_updated'));
 
-      // Set cooldown timer
+      // Cooldown so cashier can't double-print immediately
       setLastPrintTime(Date.now());
       setPrintCooldown(true);
-      setTimeout(() => {
-        setPrintCooldown(false);
-      }, 10000);
+      setTimeout(() => setPrintCooldown(false), 10000);
 
     } catch (error) {
       console.error('Final bill error:', error);
@@ -628,8 +640,10 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Guard: prevent double-settlement
-    const orderId = selectedTable?.activeOrder?.id;
+    // Guard: prevent double-settlement — use same broad resolution as handleFinalBill
+    const orderId = selectedTable?.activeOrder?.id ||
+                    selectedTable?.orders?.[0]?.id ||
+                    selectedTable?.orderId;
     if (orderId && settledOrderIds.has(orderId)) {
       addNotification('Already Settled', 'This order has already been settled.', 'error');
       setShowMethodPicker(false);
@@ -2062,23 +2076,25 @@ const CashierDashboard = ({ onLogout }) => {
                     Settlement
                   </button>
                 ) : (
-                  // Only show Final Bill button if there's a valid active order
-                  (selectedTable.activeOrder?.id || selectedTable.orders?.[0]?.id || selectedTable.orderId) ? (
+                  // Show Final Bill button whenever the table has items — works for both
+                  // cashier-created orders (orderId in state) and captain-created orders
+                  // (orderId fetched lazily in handleFinalBill when clicked).
+                  getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 ? (
                     <button
                       onClick={handleFinalBill}
-                      disabled={isPrintingBill || printCooldown || getTableItems(selectedTable).filter(i => !i.removedFromBill).length === 0}
+                      disabled={isPrintingBill || printCooldown}
                       className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${
-                        isPrintingBill || printCooldown || getTableItems(selectedTable).filter(i => !i.removedFromBill).length === 0
+                        isPrintingBill || printCooldown
                           ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                           : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
                       }`}
                     >
                       {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
-                      {printCooldown ? 'Reprint Available in...' : getTableItems(selectedTable).filter(i => !i.removedFromBill).length === 0 ? 'No Items' : 'Final Bill'}
+                      {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
                     </button>
                   ) : (
                     <div className="py-3.5 rounded-xl border border-gray-300 bg-gray-200 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
-                      No Active Order
+                      No Items
                     </div>
                   )
                 )}
