@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
@@ -1487,35 +1487,17 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2.5 pt-0.5">
+                  <div className="pt-0.5">
                     <button
                       onClick={handleSmartKOT}
                       disabled={isKotSending || cart.length === 0}
-                      className={`col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
+                      className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                           isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
                             'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
                         }`}
                     >
                       {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
                       <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
-                    </button>
-                    <button className="flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 bg-white text-gray-755 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95">
-                      <History size={16} />
-                      <span className="text-xs sm:text-sm font-black uppercase tracking-wider">Draft</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (cart.length > 0) {
-                          addNotification('Pending Items', 'Push pending items to KOT before generating final bill.', 'warning');
-                          return;
-                        }
-                        if (!selectedTable) return;
-                        setShowMethodPicker(true);
-                      }}
-                      disabled={!selectedTable && cart.length === 0}
-                      className="py-3 bg-[#E53935] text-white rounded-xl font-black text-xs sm:text-sm md:text-base uppercase tracking-widest shadow-lg shadow-red-500/35 border-2 border-red-700 disabled:opacity-50 disabled:shadow-none transition-all duration-150 hover:scale-[1.01] hover:bg-[#c62828] active:scale-95"
-                    >
-                      FINAL BILL
                     </button>
                   </div>
                 </div>
