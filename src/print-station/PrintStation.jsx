@@ -50,9 +50,9 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.SCALE_2X2,
+    CMD.BOLD_ON,
     label + '\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_LEFT,
     `Table : ${tableNumber}\n`,
@@ -65,11 +65,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }
     divider(),
   ];
   (items || []).forEach(item => {
-    cmds.push(CMD.BOLD_ON + CMD.SCALE_2X2);
-    const name = String(item.name || '').slice(0, 16);
+    cmds.push(CMD.BOLD_ON);
+    const name = String(item.name || '').slice(0, 30);
     const qty  = String(item.quantity || 1).slice(0, 4);
-    cmds.push(pad(name, 16) + padRight('', qty, 5) + '\n');
-    cmds.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF);
+    cmds.push(pad(name, 30) + padRight('', qty, 12) + '\n');
+    cmds.push(CMD.BOLD_OFF);
     if (item.notes) cmds.push(`  ** ${item.notes} **\n`);
   });
   cmds.push(divider(), '\n\n', CMD.CUT);
@@ -81,16 +81,14 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
     CMD.INIT,
     CMD.ALIGN_CENTER,
     divider('='),
-    divider('='),
-    CMD.BOLD_ON + CMD.SCALE_3X3,
+    CMD.BOLD_ON,
     'CANCEL ITEM\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
-    divider('='),
+    CMD.BOLD_OFF,
     divider('='),
     CMD.ALIGN_LEFT,
     `Table: ${tableNumber}  |  Time: ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
     `By: ${cancelledBy || 'Staff'}\n`,
-    divider('='),
+    divider('-'),
     '\n',
     CMD.BOLD_ON,
     'CANCELLED ITEM:\n',
@@ -98,19 +96,17 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
     '\n',
   ];
   if (item) {
-    cmds.push(CMD.BOLD_ON + CMD.SCALE_2X2);
+    cmds.push(CMD.BOLD_ON);
     const lineStr = `${item.quantity}x ${item.name || ''}`;
-    cmds.push(pad(lineStr, 21) + '\n');
-    cmds.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF, '\n');
+    cmds.push(lineStr + '\n');
+    cmds.push(CMD.BOLD_OFF, '\n');
   }
   cmds.push(
     divider('='),
-    divider('='),
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.SCALE_3X3,
+    CMD.BOLD_ON,
     'CANCELLED\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
-    divider('='),
+    CMD.BOLD_OFF,
     divider('='),
     '\n\n',
     CMD.CUT
@@ -123,9 +119,9 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.DOUBLE_WIDTH,
+    CMD.BOLD_ON,
     'BILL RECEIPT\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_LEFT,
     `Table : ${tableNumber}\n`,
@@ -150,9 +146,9 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
     padRight('Subtotal', 'Rs.' + subtotal.toFixed(0)) + '\n',
     padRight('GST (5%)', 'Rs.' + tax.toFixed(0)) + '\n',
     divider('='),
-    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
+    CMD.BOLD_ON,
     padRight('TOTAL', 'Rs.' + total.toFixed(0)) + '\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_CENTER,
     'Thank you! Visit again.\n',
@@ -168,9 +164,9 @@ function buildTableSwapCommands({ fromTableNumber, toTableNumber, swappedBy, tim
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.SCALE_2X2,
+    CMD.BOLD_ON,
     'TABLE MOVED\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
+    CMD.BOLD_OFF,
     divider(),
     CMD.ALIGN_LEFT,
     `From  : Table ${fromTableNumber}\n`,
