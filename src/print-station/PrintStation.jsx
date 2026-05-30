@@ -117,10 +117,6 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
   const cmds = [
     CMD.INIT,
     CMD.ALIGN_CENTER,
-    CMD.BOLD_ON + CMD.DOUBLE_HEIGHT,
-    'Vgrand Lounge\n',
-    CMD.NORMAL_SIZE + CMD.BOLD_OFF,
-    '\n',
     CMD.BOLD_ON,
     'BILL RECEIPT\n',
     CMD.BOLD_OFF,
@@ -293,7 +289,7 @@ export default function PrintStation() {
         try {
           let cmds, printer;
           if (type === 'KOT') {
-            cmds    = buildKOTCommands({ ...data, label: 'KITCHEN ORDER' });
+            cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER' });
             printer = KITCHEN_PRINTER;
           } else if (type === 'BAR_KOT') {
             cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER' });
