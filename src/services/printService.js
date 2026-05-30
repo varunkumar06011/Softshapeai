@@ -14,7 +14,7 @@ const CMD = {
   ALIGN_LEFT: ESC + 'a\x00',
   BOLD_ON: ESC + 'E\x01',
   BOLD_OFF: ESC + 'E\x00',
-  DOUBLE_HEIGHT: GS + '!\x01',
+  SIZE_2X: GS + '!\x11',      // Double width AND double height (2x size)
   NORMAL_SIZE: GS + '!\x00',
   CUT: GS + 'V\x41\x03',
   LINE: '\n',
@@ -24,12 +24,12 @@ function pad(str, width) {
   return String(str).slice(0, width).padEnd(width);
 }
 
-function padRight(left, right, width = 32) {
+function padRight(left, right, width = 21) {
   const gap = width - left.length - right.length;
   return left + ' '.repeat(Math.max(1, gap)) + right;
 }
 
-function divider(char = '-', width = 32) {
+function divider(char = '-', width = 21) {
   return char.repeat(width) + '\n';
 }
 
@@ -38,10 +38,12 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   const lines = [];
 
   lines.push(CMD.INIT);
+  lines.push(CMD.SIZE_2X);           // 2x size
   lines.push(CMD.ALIGN_CENTER);
-  lines.push(CMD.BOLD_ON + CMD.DOUBLE_HEIGHT);
+  lines.push(CMD.BOLD_ON);
   lines.push(restaurantName + '\n');
-  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF);
+  lines.push(CMD.BOLD_OFF);
+  lines.push(CMD.NORMAL_SIZE);       // Back to normal size
   lines.push('Jubilee Hills, Hyderabad\n');
   lines.push('Tel: +91 99999 99999\n');
   lines.push(divider());
@@ -53,24 +55,35 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(divider());
 
   lines.push(CMD.BOLD_ON);
-  lines.push(pad('ITEM', 20) + pad('QTY', 4) + pad('AMT', 8) + '\n');
+  lines.push(pad('ITEM', 10) + pad('QTY', 3) + pad('AMT', 3) + '\n');
   lines.push(CMD.BOLD_OFF);
   lines.push(divider());
 
   items.forEach(item => {
-    const name = String(item.n || item.name || '').slice(0, 20);
+    const name = String(item.n || item.name || '').slice(0, 11);
     const qty = String(item.q || item.quantity || 1);
     const amt = 'Rs.' + ((item.p || item.price || 0) * (item.q || item.quantity || 1)).toFixed(0);
-    lines.push(pad(name, 20) + pad(qty, 4) + pad(amt, 8) + '\n');
+    // Item name in 2x size + bold on its own line
+    lines.push(CMD.SIZE_2X);
+    lines.push(CMD.BOLD_ON);
+    lines.push(name + '\n');
+    lines.push(CMD.BOLD_OFF);
+    lines.push(CMD.NORMAL_SIZE);
+    // Qty and amount on next line in normal size
+    lines.push('  ' + qty.padStart(3) + '  ' + amt + '\n');
   });
 
   lines.push(divider());
+  lines.push(CMD.BOLD_ON);
   lines.push(padRight('Subtotal', 'Rs.' + Number(subtotal).toFixed(0)) + '\n');
+  lines.push(CMD.BOLD_OFF);
   // Show CGST + SGST only when taxes > 0 (liquor-only orders are 0% GST)
   if (Number(taxes) > 0) {
     const halfTax = (Number(taxes) / 2).toFixed(0);
+    lines.push(CMD.BOLD_ON);
     lines.push(padRight('CGST (2.5%)', 'Rs.' + halfTax) + '\n');
     lines.push(padRight('SGST (2.5%)', 'Rs.' + halfTax) + '\n');
+    lines.push(CMD.BOLD_OFF);
   }
   lines.push(divider('='));
   lines.push(CMD.BOLD_ON);
