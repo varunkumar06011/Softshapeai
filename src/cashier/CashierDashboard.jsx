@@ -561,6 +561,13 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // Validate that the order has items
+    const orderItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+    if (orderItems.length === 0) {
+      addNotification('Error', 'Cannot print bill with no items. Please add items to the order first.', 'error');
+      return;
+    }
+
     try {
       setIsPrintingBill(true);
 
@@ -2066,15 +2073,15 @@ const CashierDashboard = ({ onLogout }) => {
                   (selectedTable.activeOrder?.id || selectedTable.orders?.[0]?.id || selectedTable.orderId) ? (
                     <button
                       onClick={handleFinalBill}
-                      disabled={isPrintingBill || printCooldown}
+                      disabled={isPrintingBill || printCooldown || getTableItems(selectedTable).filter(i => !i.removedFromBill).length === 0}
                       className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${
-                        isPrintingBill || printCooldown
+                        isPrintingBill || printCooldown || getTableItems(selectedTable).filter(i => !i.removedFromBill).length === 0
                           ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                           : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
                       }`}
                     >
                       {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
-                      {printCooldown ? 'Reprint Available in...' : 'Final Bill'}
+                      {printCooldown ? 'Reprint Available in...' : getTableItems(selectedTable).filter(i => !i.removedFromBill).length === 0 ? 'No Items' : 'Final Bill'}
                     </button>
                   ) : (
                     <div className="py-3.5 rounded-xl border border-gray-300 bg-gray-200 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
