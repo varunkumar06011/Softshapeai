@@ -185,7 +185,7 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, ko
     const foodPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/food-kot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: foodItems, kotNumber })
+      body: JSON.stringify({ tableId: tableId, orderId: orderId, kotId: kotId, items: foodItems })
     })
       .then(r => r.json())
       .then(res => {
@@ -204,7 +204,7 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, ko
     const liquorPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/liquor-kot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableNumber: tableId, orderId: kotId, items: liquorItems, kotNumber })
+      body: JSON.stringify({ tableId: tableId, orderId: orderId, kotId: kotId, items: liquorItems })
     })
       .then(r => r.json())
       .then(res => {

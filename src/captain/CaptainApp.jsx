@@ -252,6 +252,7 @@ export default function CaptainApp({ onLogout }) {
   // retryItems is the pre-cleared currentSessionItems snapshot so the captain can retry
   // without re-selecting anything.
   const [kotError, setKotError] = useState(null);
+  const [sendingKOT, setSendingKOT] = useState(false);
 
   // Move-table swap state
   const [showMoveModal,   setShowMoveModal]   = useState(false);
@@ -632,6 +633,7 @@ export default function CaptainApp({ onLogout }) {
   }, [activeTableId]);
 
   const sendIncrementalKOT = async () => {
+    if (sendingKOT) return; // Prevent duplicate clicks
     if (currentSessionItems.length === 0) return;
     if (!currentCaptain) { setIsLoginView(true); return; }
     if (!activeTable?.backendId) {
@@ -639,35 +641,79 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
-    // Build local KOT entry for immediate UI feedback
-    const newKOT = {
-      id: Math.floor(1000 + Math.random() * 9000).toString(),
-      time: new Date().toISOString(),
-      items: currentSessionItems.map(i => ({ ...i, s: 'KOT Sent' })),
-      status: 'Incoming',
-      createdAt: Date.now(),
-      itemsReady: 0
-    };
-    const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
+    setSendingKOT(true);
 
-    // Format items for the API — menuType MUST be included so the backend
-    // can split food → KOT (kitchen) and liquor → BAR_KOT (bar printer).
-    const apiItems = currentSessionItems.map(i => ({
-      menuItemId: String(i.id || i.menuItemId || i.n || i.name),
-      name: i.n || i.name,
-      price: Number(i.p ?? i.price ?? 0),
-      quantity: Number(i.q ?? i.quantity ?? 1),
-      notes: i.notes || null,
-      menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
-    }));
+    try {
+      // Format items for the API — menuType MUST be included so the backend
+      // can split food → KOT (kitchen) and liquor → BAR_KOT (bar printer).
+      const apiItems = currentSessionItems.map(i => ({
+        menuItemId: String(i.id || i.menuItemId || i.n || i.name),
+        name: i.n || i.name,
+        price: Number(i.p ?? i.price ?? 0),
+        quantity: Number(i.q ?? i.quantity ?? 1),
+        notes: i.notes || null,
+        menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+      }));
 
-    // Snapshot items before clearing — needed for print and retry
-    const itemsForPrint = [...currentSessionItems];
-    const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
+      // Snapshot items before clearing — needed for print and retry
+      const itemsForPrint = [...currentSessionItems];
+      const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
+      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
 
-    // 1. Optimistic UI update — instant, no waiting
-    setActiveTables(prev => prev.map(t => {
-      if (t.backendId === activeTable.backendId) {
+      // Clear session items early for optimistic UI
+      setCurrentSessionItems([]);
+      setKotError(null);
+
+      // 1. Create/update order in DB FIRST (CRITICAL: Wait for real KOT ID)
+      let savedOrder;
+      let realKotId;
+
+      if (activeOrderIdRef.current) {
+        // Subsequent KOT on same table — append items to existing order
+        const response = await updateOrderItems(activeOrderIdRef.current, apiItems);
+        savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
+        // Extract real KOT ID from kotHistory in response
+        realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
+          (response?.order?.kotHistory || response?.kotHistory)?.length - 1
+        ]?.id;
+      } else {
+        // First KOT — create a brand-new order row
+        savedOrder = await createOrder({
+          tableId: activeTable.backendId,
+          restaurantId: activeRestaurantId,
+          items: apiItems,
+        });
+        // Store the real DB id so next KOT uses updateOrderItems, not createOrder
+        if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
+        // Extract real KOT ID from kotHistory in response
+        realKotId = savedOrder?.kotHistory?.[savedOrder.kotHistory.length - 1]?.id;
+      }
+
+      // 2. NOW print with real sequential KOT number (not random ID)
+      if (realKotId && itemsForPrint.length > 0) {
+        printKOTQZ({
+          tableId: activeTable.backendId,
+          kotId: realKotId, // Use real "KOT-03" instead of random "5432"
+          orderId: savedOrder.id,
+          items: itemsForPrint,
+        }).catch(err => {
+          console.warn('[KOT] Print failed (non-blocking):', err.message);
+          addNotification('Warning: Order saved but print failed', 'warning');
+        });
+      }
+
+      // 3. Update UI with real KOT data from backend
+      const newKOT = {
+        id: realKotId || Math.floor(1000 + Math.random() * 9000).toString(),
+        time: new Date().toISOString(),
+        items: itemsForPrint.map(i => ({ ...i, s: 'KOT Sent' })),
+        status: 'Incoming',
+        createdAt: Date.now(),
+        itemsReady: 0
+      };
+
+      setActiveTables(prev => prev.map(t => {
+        if (t.backendId !== activeTable.backendId) return t;
         return {
           ...t,
           status: TABLE_STATUS.PREPARING,
@@ -676,86 +722,35 @@ export default function CaptainApp({ onLogout }) {
           kotHistory: [...(t.kotHistory || []), newKOT],
           currentBill: newTotalBill,
         };
-      }
-      return t;
-    }));
-    setCurrentSessionItems([]);
-    // Clear any previous KOT error so the banner doesn't linger from a prior failure
-    setKotError(null);
+      }));
 
-    // Fire-and-forget — print failure must not block order save
-    printKOTQZ({
-      tableId: activeTable.backendId,
-      kotId: newKOT.id,
-      orderId: activeOrderIdRef.current ?? newKOT.id,
-      items: itemsForPrint,
-    }).catch(err => {
-      console.warn('[KOT] Print failed (non-blocking):', err.message);
-      addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
-    });
+      // 4. Stitch real DB orderItemId onto this KOT's items for cancel support
+      const savedItems = savedOrder?.items ?? [];
+      const allPrevIds = new Set(
+        (activeTable.kotHistory || []).flatMap(k => k.items.map(i => i.orderItemId).filter(Boolean))
+      );
 
-    // 2. Persist to DB — AWAITED so we know it succeeded.
-    //    Only show the "KOT Sent ✓" success notification after the DB confirms.
-    //    If it fails, show the error banner (with Retry) instead.
-    try {
-      if (activeOrderIdRef.current) {
-        // Subsequent KOT on same table — append items to existing order
-        const updatedOrder = await updateOrderItems(activeOrderIdRef.current, apiItems);
-        // Stitch real DB orderItemId onto this KOT's items for cancel support
-        const savedItems = updatedOrder?.items ?? [];
-        setActiveTables(prev => prev.map(t => {
-          if (t.backendId !== activeTable.backendId) return t;
-          const allPrevIds = new Set(
-            (t.kotHistory || []).flatMap(k => k.items.map(i => i.orderItemId).filter(Boolean))
-          );
-          return {
-            ...t,
-            kotHistory: (t.kotHistory || []).map(kot => {
-              if (kot.id !== newKOT.id) return kot;
-              return {
-                ...kot,
-                items: kot.items.map(kotI => {
-                  const matched = savedItems.find(si =>
-                    si.name === (kotI.n || kotI.name) && !allPrevIds.has(si.id)
-                  );
-                  return matched ? { ...kotI, orderItemId: matched.id } : kotI;
-                }),
-              };
-            }),
-          };
-        }));
-      } else {
-        // First KOT — create a brand-new order row
-        const savedOrder = await createOrder({
-          tableId: activeTable.backendId,
-          restaurantId: activeRestaurantId,
-          items: apiItems,
-        });
-        // Store the real DB id so next KOT uses updateOrderItems, not createOrder
-        if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
-        // Stitch real DB orderItemId onto this KOT's items for cancel support
-        const savedItems = savedOrder?.items ?? [];
-        setActiveTables(prev => prev.map(t => {
-          if (t.backendId !== activeTable.backendId) return t;
-          return {
-            ...t,
-            kotHistory: (t.kotHistory || []).map(kot => {
-              if (kot.id !== newKOT.id) return kot;
-              return {
-                ...kot,
-                items: kot.items.map(kotI => {
-                  const matched = savedItems.find(si =>
-                    si.name === (kotI.n || kotI.name)
-                  );
-                  return matched ? { ...kotI, orderItemId: matched.id } : kotI;
-                }),
-              };
-            }),
-          };
-        }));
-      }
+      setActiveTables(prev => prev.map(t => {
+        if (t.backendId !== activeTable.backendId) return t;
+        return {
+          ...t,
+          kotHistory: (t.kotHistory || []).map(kot => {
+            if (kot.id !== newKOT.id) return kot;
+            return {
+              ...kot,
+              items: kot.items.map(kotI => {
+                const matched = savedItems.find(si =>
+                  si.name === (kotI.n || kotI.name) && !allPrevIds.has(si.id)
+                );
+                return matched ? { ...kotI, orderItemId: matched.id } : kotI;
+              }),
+            };
+          }),
+        };
+      }));
+
       // ✅ DB confirmed — now show success
-      addNotification(`KOT #${newKOT.id} Sent ✓`, 'success');
+      addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
     } catch (err) {
       console.error('[KOT] DB write failed:', err.message);
       // ❌ DB failed — show persistent error banner with Retry instead of success toast.
@@ -765,6 +760,8 @@ export default function CaptainApp({ onLogout }) {
         message: err.message || 'Network error — kitchen did not receive this order.',
         retryItems: retrySnapshot,
       });
+    } finally {
+      setSendingKOT(false);
     }
   };
 
@@ -1739,11 +1736,20 @@ export default function CaptainApp({ onLogout }) {
                   </div>
                   <button
                     onClick={sendIncrementalKOT}
-                    disabled={currentSessionItems.length === 0}
+                    disabled={currentSessionItems.length === 0 || sendingKOT}
                     className="w-full py-5 bg-[#E53935] text-white rounded-2xl font-black text-xs uppercase tracking-[0.25em] shadow-xl shadow-red-100 active:scale-98 transition-all flex items-center justify-center gap-3 disabled:opacity-20 disabled:shadow-none relative group overflow-hidden"
                   >
-                    <Send size={18} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                    Send KOT to Kitchen
+                    {sendingKOT ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={18} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                        Send KOT to Kitchen
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
