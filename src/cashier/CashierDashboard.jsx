@@ -402,6 +402,21 @@ const CashierDashboard = ({ onLogout }) => {
     txnDateFilterRef.current = txnDateFilter;
   }, [txnDateFilter]);
 
+  // ── Fetch fresh order data from backend ───
+  const fetchFreshOrderData = async (tableBackendId) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/tables/${tableBackendId}?include=orders`);
+      if (response.ok) {
+        const freshTable = await response.json();
+        // Return the most recent order (backend may filter PAID orders, but we want all orders)
+        return freshTable.orders?.[0] || null;
+      }
+    } catch (error) {
+      console.warn('Failed to fetch fresh order data:', error);
+    }
+    return null;
+  };
+
   // ── Load transactions from DB — re-fires when filter or tab changes ───
   useEffect(() => {
     if (activeTab === 'history') {
@@ -412,7 +427,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!selectedTable?.backendId) return;
     const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
-    
+
     // Only update if we found a fresher version of the table.
     // NEVER wipe the selected table automatically to prevent race conditions.
     if (liveTable) {
@@ -512,10 +527,37 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Validate order exists
-    const orderId = selectedTable?.activeOrder?.id || selectedTable?.orderId;
+    // Improved order ID resolution with better fallbacks
+    const orderId = selectedTable?.activeOrder?.id ||
+                    selectedTable?.orders?.[0]?.id ||
+                    selectedTable?.orderId;
+
     if (!orderId) {
-      addNotification('Error', 'No active order found.', 'error');
+      // Determine specific error reason
+      let errorMsg = 'No active order found.';
+
+      if (selectedTable?.status === 'Available' || selectedTable?.status === 'Free') {
+        errorMsg = 'This table has no active orders.';
+      } else if (settledOrderIds.has(selectedTable?.backendId)) {
+        errorMsg = 'Order already settled. Please refresh the table list.';
+      } else if (selectedTable?.activeOrder?.status === 'PAID') {
+        errorMsg = 'Order already paid. Cannot generate bill again.';
+      }
+
+      addNotification('Error', errorMsg, 'error');
+      return;
+    }
+
+    // Check if order is already paid
+    if (selectedTable?.activeOrder?.status === 'PAID') {
+      addNotification('Error', 'This order has already been settled.', 'error');
+      return;
+    }
+
+    // Check if order has items
+    const orderItems = selectedTable?.activeOrder?.items || selectedTable?.orders?.[0]?.items || [];
+    if (!orderItems || orderItems.length === 0) {
+      addNotification('Error', 'Order has no items. Cannot generate bill.', 'error');
       return;
     }
 
@@ -787,8 +829,21 @@ const CashierDashboard = ({ onLogout }) => {
     return filtered;
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, activeDiet]);
 
-  const handleTableSelect = (table) => {
+  const handleTableSelect = async (table) => {
     setSelectedTable(table);
+
+    // Fetch fresh order data if table is in billing/settlement state
+    if (table.status === 'Waiting Bill' || table.workflowStatus === 'billing_requested') {
+      const freshOrder = await fetchFreshOrderData(table.backendId);
+      if (freshOrder) {
+        setSelectedTable(prev => ({
+          ...prev,
+          activeOrder: freshOrder,
+          orders: [freshOrder]
+        }));
+      }
+    }
+
     if (!table.status || table.status === 'Free') {
       setActiveTab('pos');
       localStorage.setItem('cashier_active_tab', 'pos');
@@ -2007,18 +2062,25 @@ const CashierDashboard = ({ onLogout }) => {
                     Settlement
                   </button>
                 ) : (
-                  <button
-                    onClick={handleFinalBill}
-                    disabled={isPrintingBill || printCooldown}
-                    className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${
-                      isPrintingBill || printCooldown
-                        ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
-                        : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
-                    }`}
-                  >
-                    {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
-                    {printCooldown ? 'Reprint Available in...' : 'Final Bill'}
-                  </button>
+                  // Only show Final Bill button if there's a valid active order
+                  (selectedTable.activeOrder?.id || selectedTable.orders?.[0]?.id || selectedTable.orderId) ? (
+                    <button
+                      onClick={handleFinalBill}
+                      disabled={isPrintingBill || printCooldown}
+                      className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${
+                        isPrintingBill || printCooldown
+                          ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
+                          : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
+                      }`}
+                    >
+                      {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {printCooldown ? 'Reprint Available in...' : 'Final Bill'}
+                    </button>
+                  ) : (
+                    <div className="py-3.5 rounded-xl border border-gray-300 bg-gray-200 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
+                      No Active Order
+                    </div>
+                  )
                 )}
               </div>
 
