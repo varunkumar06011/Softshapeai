@@ -34,7 +34,7 @@ function divider(char = '-', width = 21) {
 }
 
 // ── Bill receipt builder (Fallback) ──────────
-export function buildBillCommands({ table, items, subtotal, taxes, total, method, restaurantName = 'SOFTSHAPE RESTAURANT' }) {
+export function buildBillCommands({ table, items, subtotal, taxes, total, method, restaurantName = 'V GRAND LOUNGE' }) {
   const lines = [];
 
   lines.push(CMD.INIT);
