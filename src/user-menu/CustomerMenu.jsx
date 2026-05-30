@@ -276,7 +276,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                       </div>
 
                       <div className="p-5 flex flex-col flex-grow">
-                        <h3 className="font-bold text-base mb-1 text-gray-800 tracking-tight leading-snug">{item.n}</h3>
+                        <h3 className="user-special-title text-gray-800 tracking-tight leading-snug mb-1 line-clamp-2">{item.n}</h3>
 
                         {/* Compact Stats */}
                         <div className="flex items-center gap-2 mb-2 text-[9px] font-bold text-gray-400">
@@ -346,7 +346,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                   </div>
                   <div className="flex-grow min-w-0 py-1">
                     <p className="text-[9px] font-bold text-red-500/80 uppercase tracking-wider mb-1 truncate">{item.c}</p>
-                    <h3 className="font-bold text-sm sm:text-base text-gray-800 tracking-tight leading-snug mb-1 pr-2">{item.n}</h3>
+                    <h3 className="user-item-title text-gray-800 tracking-tight leading-snug mb-1 pr-2 line-clamp-2">{item.n}</h3>
 
                     {/* Compact Stats */}
                     <div className="flex items-center gap-1.5 mb-1.5 xs:mb-2 text-[8px] xs:text-[9px] font-bold text-gray-400">

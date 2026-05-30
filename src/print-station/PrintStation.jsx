@@ -364,7 +364,7 @@ export default function PrintStation() {
       minHeight: '100vh',
       background: '#0c0c0c',
       color: '#e5e5e5',
-      fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
+      fontFamily: "'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif",
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',

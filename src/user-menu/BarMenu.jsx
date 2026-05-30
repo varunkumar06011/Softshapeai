@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater } from 'lucide-react';
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
 import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
 import { fetchBarTables } from '../services/barTableApi';
@@ -7,9 +7,44 @@ import { createOrder, updateOrderItems } from '../services/orderApi';
 import { apiUrl } from '../services/apiConfig';
 import VariantPicker from '../shared/components/VariantPicker';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  DEFAULT_FOOD_IMG,
+  DEFAULT_LIQUOR_IMG,
+  buildRestaurantImageIndex,
+  resolveBarItemImage,
+} from '../services/barMenuService';
 
-const DEFAULT_FOOD_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
-const DEFAULT_LIQUOR_IMG = "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=600&h=450&fit=crop";
+const getLiquorDescription = (name, category) => {
+  const n = (name || '').toLowerCase();
+  const c = (category || '').toLowerCase();
+  
+  if (n.includes('vodka') || c.includes('vodka')) {
+    return "Smooth and clean vodka with a crisp finish, ideal for classic cocktails and premium serves.";
+  }
+  if (n.includes('whisky') || n.includes('whiskey') || c.includes('whisky') || c.includes('single malt')) {
+    return "Well-balanced whisky known for its smooth character and rich oak-inspired notes.";
+  }
+  if (n.includes('brandy') || c.includes('brandy')) {
+    return "Classic brandy offering a warm profile with subtle fruit and spice undertones.";
+  }
+  if (n.includes('beer') || n.includes('lager') || n.includes('ale') || c.includes('beer') || c.includes('draught')) {
+    return "Refreshing lager with a light body and easy-drinking character.";
+  }
+  if (n.includes('rum') || c.includes('rum')) {
+    return "Rich and flavorful rum with deep molasses notes and a smooth finish.";
+  }
+  if (n.includes('gin') || c.includes('gin')) {
+    return "Botanical-forward gin with bright juniper notes and a crisp, refreshing profile.";
+  }
+  if (n.includes('wine') || c.includes('wine') || c.includes('champagne')) {
+    return "Elegant wine with a beautifully balanced profile and lingering aromatic finish.";
+  }
+  if (n.includes('tequila') || c.includes('tequila')) {
+    return "Premium tequila offering a vibrant agave character with smooth, earthy undertones.";
+  }
+  
+  return "Premium select offering a refined and smooth profile, crafted for an exceptional tasting experience.";
+};
 
 const flattenSections = (payload) => {
   if (!Array.isArray(payload)) return [];
@@ -38,30 +73,11 @@ export default function BarMenu({ tableId }) {
     };
   };
 
-  const getLiquorImage = (name = "") => {
-    const lower = name.toLowerCase();
-    if (lower.includes("beer") || lower.includes("corona") || lower.includes("budweiser") || lower.includes("heineken") || lower.includes("draught")) {
-      return "https://images.unsplash.com/photo-1567696911980-2eed69a4604e?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("whiskey") || lower.includes("whisky") || lower.includes("scotch") || lower.includes("bourbon") || lower.includes("glenfiddich") || lower.includes("black label") || lower.includes("jack daniel")) {
-      return "https://images.unsplash.com/photo-1527061011665-3652c757a4d4?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("vodka") || lower.includes("grey goose") || lower.includes("absolut") || lower.includes("smirnoff")) {
-      return "https://images.unsplash.com/photo-1550985543-f47f38aeee65?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("wine") || lower.includes("champagne") || lower.includes("prosecco") || lower.includes("cabernet") || lower.includes("chardonnay") || lower.includes("merlot")) {
-      return "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&h=450&fit=crop";
-    }
-    if (lower.includes("cocktail") || lower.includes("mojito") || lower.includes("margarita") || lower.includes("gin") || lower.includes("rum") || lower.includes("tequila") || lower.includes("martini") || lower.includes("tonic")) {
-      return "https://images.unsplash.com/photo-1536935338788-846bb9981813?w=600&h=450&fit=crop";
-    }
-    return "https://images.unsplash.com/photo-1597290282695-edc43d0e7129?w=600&h=450&fit=crop";
-  };
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [categoriesData, setCategoriesData] = useState([]);
   const [flatItems, setFlatItems] = useState([]);
+  const [restaurantItems, setRestaurantItems] = useState([]);
   const [tableBackendId, setTableBackendId] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,10 +138,11 @@ export default function BarMenu({ tableId }) {
     async function loadData() {
       try {
         setLoading(true);
-        const [posViewRes, itemsRes, tablesRes] = await Promise.all([
+        const [posViewRes, itemsRes, tablesRes, restaurantRes] = await Promise.all([
           fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store" }),
           fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
-          fetchBarTables()
+          fetchBarTables(),
+          fetch(apiUrl("/api/menu/items"), { cache: "no-store" }),
         ]);
 
         if (!posViewRes.ok) throw new Error(`POS-view failed: ${posViewRes.status}`);
@@ -134,8 +151,10 @@ export default function BarMenu({ tableId }) {
         const posViewData = await posViewRes.json();
         const itemsData = await itemsRes.json();
         const flatTables = flattenSections(tablesRes);
+        const restaurantData = restaurantRes.ok ? await restaurantRes.json() : [];
 
         if (active) {
+          setRestaurantItems(Array.isArray(restaurantData) ? restaurantData : []);
           // Filter out unavailable items from both data sources
           const filteredPosView = (posViewData || []).map(cat => ({
             ...cat,
@@ -198,6 +217,11 @@ export default function BarMenu({ tableId }) {
     return ['All', ...filteredCategories.map(c => c.name)];
   }, [filteredCategories]);
 
+  const restaurantImageIndex = useMemo(
+    () => buildRestaurantImageIndex(restaurantItems),
+    [restaurantItems]
+  );
+
   // Filter items to render
   const itemsToDisplay = useMemo(() => {
     let items = [];
@@ -231,26 +255,24 @@ export default function BarMenu({ tableId }) {
       items = items.filter(item => item.isVeg === false || item.t === 'non');
     }
 
-    return items.map(item => {
-      const isLiquor = (item.menuType || '').toUpperCase() === 'LIQUOR';
-      let finalImg = item.imageUrl || item.img;
-      const foodPlaceholder = "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
-
-      if (isLiquor && (!finalImg || finalImg === foodPlaceholder)) {
-        finalImg = getLiquorImage(item.name || item.n);
-      } else if (!finalImg) {
-        finalImg = DEFAULT_FOOD_IMG;
-      }
-
-      return {
-        ...item,
-        n: item.name || item.n,
-        p: getItemPrice(item),
-        t: item.isVeg ? 'veg' : 'non',
-        img: finalImg
-      };
-    });
-  }, [filteredCategories, flatItems, activeCategory, dietFilter, searchQuery, activeMenuType]);
+    return items.map(item => ({
+      ...item,
+      n: item.name || item.n,
+      p: getItemPrice(item),
+      t: item.isVeg ? 'veg' : 'non',
+      img: resolveBarItemImage(
+        {
+          name: item.name,
+          n: item.n,
+          menuType: item.menuType,
+          imageUrl: item.imageUrl,
+          img: item.img,
+        },
+        restaurantImageIndex,
+        restaurantItems
+      ),
+    }));
+  }, [filteredCategories, flatItems, activeCategory, dietFilter, searchQuery, activeMenuType, restaurantImageIndex, restaurantItems]);
 
   // Cart actions
   const addToCart = (item, variant = null, e = null) => {
@@ -532,7 +554,7 @@ export default function BarMenu({ tableId }) {
                     )}
                   </div>
 
-                  <h3 className="font-bold text-sm sm:text-base text-gray-800 tracking-tight leading-snug mb-1 pr-2">{item.n}</h3>
+                  <h3 className="user-item-title text-[13px] sm:text-sm text-gray-800 tracking-tight leading-snug mb-1 pr-2 line-clamp-2">{item.n}</h3>
 
                   {/* Stats */}
                   <div className="flex items-center gap-1.5 mb-1.5 xs:mb-2 text-[8px] xs:text-[9px] font-bold text-gray-400">
@@ -668,24 +690,39 @@ export default function BarMenu({ tableId }) {
                 <X size={20} />
               </button>
 
-              <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${previewItem.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">{previewItem.t}</span>
-              </div>
+              {previewItem.menuType !== 'LIQUOR' && (
+                <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${previewItem.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">{previewItem.t}</span>
+                </div>
+              )}
             </div>
 
             <div className="p-8">
               <h2 className="text-2xl font-black text-gray-900 mb-2 leading-tight">{previewItem.n}</h2>
               <p className="text-sm font-bold text-gray-500 mb-4">{previewItem.c}</p>
 
-              <div className="bg-red-50/50 rounded-2xl p-4 mb-6">
-                <p className="text-xs font-semibold text-gray-600 leading-relaxed">
-                  Enjoy our premium lounge curation. Crafted with absolute precision for your tasting pleasure.
-                </p>
-                <div className="mt-3 flex items-center gap-2 text-[10px] font-black text-[#B71C1C] uppercase tracking-widest">
-                  <Flame size={12} /> Fine Select
+              {previewItem.menuType === 'LIQUOR' ? (
+                <div className="bg-gray-900 rounded-2xl p-4 mb-6 shadow-inner">
+                  <p className="text-xs font-semibold text-gray-300 leading-relaxed">
+                    {getLiquorDescription(previewItem.n, previewItem.c)}
+                  </p>
+                  <div className="mt-3 flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-[10px] font-black text-amber-500 uppercase tracking-widest">
+                      <Wine size={12} /> Premium Bar Selection
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-red-50/50 rounded-2xl p-4 mb-6">
+                  <p className="text-xs font-semibold text-gray-600 leading-relaxed">
+                    Enjoy our premium lounge curation. Crafted with absolute precision for your tasting pleasure.
+                  </p>
+                  <div className="mt-3 flex items-center gap-2 text-[10px] font-black text-[#B71C1C] uppercase tracking-widest">
+                    <Flame size={12} /> Fine Select
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <div>

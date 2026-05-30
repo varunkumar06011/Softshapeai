@@ -88,6 +88,17 @@ export function menuItemMatchesSearch(item, query) {
   const catWords = catLower.split(/[\s()&,\-\/\d]+/).filter(Boolean);
   const catCollapsed = catWords.join("");
 
+  // Global collapsed checks for spacing and punctuation tolerance (e.g. "veg-burger" or "veg burger" matching "vegburger")
+  const qCollapsed = q.replace(/[^a-z0-9]/g, "");
+  const nameCollapsedAll = nameLower.replace(/[^a-z0-9]/g, "");
+  const catCollapsedAll = catLower.replace(/[^a-z0-9]/g, "");
+
+  if (qCollapsed.length > 1) {
+    if (nameCollapsedAll.includes(qCollapsed)) return true;
+    if (catCollapsedAll.includes(qCollapsed)) return true;
+    if (isSubsequence(qCollapsed, nameCollapsedAll)) return true;
+  }
+
   return tokens.every((token) => {
     // 1. Direct contains check (supports partial words like "chick")
     const haystack = getMenuSearchText(item);

@@ -28,10 +28,15 @@ export function toOrderItems(items) {
 }
 
 export async function createOrder({ tableId, items, restaurantId = RESTAURANT_ID }) {
+  const orderData = { tableId, restaurantId, items: toOrderItems(items) };
+  
+  console.log("=== ORDER PAYLOAD ===");
+  console.log(JSON.stringify(orderData, null, 2));
+
   const res = await fetch(apiUrl("/api/orders"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tableId, restaurantId, items: toOrderItems(items) }),
+    body: JSON.stringify(orderData),
   });
   return parseResponse(res);
 }
