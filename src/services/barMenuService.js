@@ -15,6 +15,10 @@ export function mapBarMenuItems(items) {
     img: item.imageUrl || DEFAULT_IMG,
     isAvailable: item.isAvailable !== false,
     variants: item.variants || [],
+    unitMl: item.unitMl,
+    fullBottleQty: item.fullBottleQty,
+    fullBottlePrice: item.fullBottlePrice,
+    isBottleItem: item.isBottleItem,
   }));
 }
 

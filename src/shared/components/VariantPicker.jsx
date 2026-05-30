@@ -1,58 +1,15 @@
-import { useState, useMemo, useEffect } from 'react';
 import { X } from 'lucide-react';
 
+const BAR_UNIT_ML = 30;
+const FULL_BOTTLE_ML = 750;
+
 export default function VariantPicker({ item, onSelect, onClose }) {
-  const [isCustomMode, setIsCustomMode] = useState(false);
-  const [customMl, setCustomMl] = useState('');
-
-  // Reset custom mode state when item changes
-  useEffect(() => {
-    setIsCustomMode(false);
-    setCustomMl('');
-  }, [item]);
-
-  // Calculate price per ml from 30ml variant
-  const pricePerMl = useMemo(() => {
-    if (item?.menuType !== 'LIQUOR') return 0;
-    const variant30ml = item.variants?.find(v => v.name === '30ml');
-    if (!variant30ml) return 0;
-    return variant30ml.price / 30;
-  }, [item]);
-
-  // Calculate custom price
-  const customPrice = useMemo(() => {
-    const parsedMl = parseFloat(customMl);
-    if (!parsedMl || parsedMl <= 0) return 0;
-    return Math.ceil(parsedMl * pricePerMl);
-  }, [customMl, pricePerMl]);
-
-  const handleCustomConfirm = () => {
-    const parsedMl = parseFloat(customMl);
-    if (!parsedMl || parsedMl <= 0) return;
-
-    const customVariant = {
-      id: 'custom',
-      name: `Custom ${parsedMl}ml`,
-      price: customPrice
-    };
-
-    onSelect(item, customVariant);
-  };
-
-  const handleInputChange = (e) => {
-    const value = e.target.value;
-    // Allow only numbers and decimal point
-    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-      setCustomMl(value);
-    }
-  };
-
-  const isValidCustomMl = useMemo(() => {
-    const parsedMl = parseFloat(customMl);
-    return parsedMl > 0 && customPrice > 0;
-  }, [customMl, customPrice]);
-
   if (!item) return null;
+
+  // TYPE B bottle items should not use this picker - added directly to cart
+  if (item.menuType === 'LIQUOR' && item.isBottleItem) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -61,7 +18,7 @@ export default function VariantPicker({ item, onSelect, onClose }) {
           <div>
             <h3 className="text-lg sm:text-xl font-black text-gray-900">{item.n}</h3>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
-              {isCustomMode ? 'Enter custom ml' : 'Select variant'}
+              Select variant
             </p>
           </div>
           <button
@@ -72,9 +29,34 @@ export default function VariantPicker({ item, onSelect, onClose }) {
           </button>
         </div>
 
-        {!isCustomMode ? (
-          <div className="space-y-3">
-            {item.variants.map((v) => (
+        <div className="space-y-3">
+          {item.menuType === 'LIQUOR' ? (
+            <>
+              <button
+                onClick={() => onSelect(item, { id: item.variants[0].id, name: '30ml', price: Number(item.variants[0].price) })}
+                className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
+              >
+                <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
+                  30ml
+                </span>
+                <span className="text-sm sm:text-base font-black text-[#E53935]">
+                  ₹{item.variants[0].price}
+                </span>
+              </button>
+              <button
+                onClick={() => onSelect(item, { id: 'full_bottle', name: 'Full Bottle', price: Number(item.fullBottlePrice) })}
+                className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
+              >
+                <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
+                  Full Bottle ({FULL_BOTTLE_ML}ml)
+                </span>
+                <span className="text-sm sm:text-base font-black text-[#E53935]">
+                  ₹{item.fullBottlePrice}
+                </span>
+              </button>
+            </>
+          ) : (
+            item.variants.map((v) => (
               <button
                 key={v.id}
                 onClick={() => onSelect(item, v)}
@@ -87,67 +69,9 @@ export default function VariantPicker({ item, onSelect, onClose }) {
                   ₹{v.price}
                 </span>
               </button>
-            ))}
-
-            {item.menuType === 'LIQUOR' && pricePerMl > 0 && (
-              <button
-                onClick={() => setIsCustomMode(true)}
-                className="w-full flex items-center justify-center px-5 py-4 rounded-2xl border-2 border-[#E53935] bg-[#FFF5F5] hover:bg-[#FFCDD2] transition-all group"
-              >
-                <span className="text-sm sm:text-base font-black text-[#E53935] uppercase tracking-[0.1em]">
-                  Custom ML
-                </span>
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-xs font-black text-gray-655 uppercase tracking-[0.1em]">
-                Enter ML Amount
-              </label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={customMl}
-                onChange={handleInputChange}
-                placeholder="e.g., 45"
-                autoFocus
-                className="w-full px-5 py-4 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-base sm:text-lg font-bold text-gray-900"
-              />
-            </div>
-
-            {customMl && isValidCustomMl && (
-              <div className="flex items-center justify-between px-5 py-4 rounded-2xl bg-[#FFF5F5] border-2 border-[#E53935]">
-                <span className="text-sm sm:text-base font-black text-gray-800">
-                  Price for {parseFloat(customMl)}ml
-                </span>
-                <span className="text-base sm:text-lg font-black text-[#E53935]">
-                  ₹{customPrice}
-                </span>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setIsCustomMode(false);
-                  setCustomMl('');
-                }}
-                className="flex-1 px-4 py-3.5 sm:py-4 bg-gray-100 text-gray-700 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-[0.15em] hover:bg-gray-200 active:scale-95 transition-all"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleCustomConfirm}
-                disabled={!isValidCustomMl}
-                className="flex-1 px-4 py-3.5 sm:py-4 bg-[#E53935] text-white rounded-2xl font-black text-xs sm:text-sm uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

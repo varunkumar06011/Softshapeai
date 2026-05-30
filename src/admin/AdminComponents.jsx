@@ -63,6 +63,19 @@ import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
+
+const BAR_UNIT_ML = 30;
+const FULL_BOTTLE_ML = 750;
+const BAR_FULL_BOTTLE_MULTIPLIER = 25;
+
+// Helper function to determine ml per unit for liquor items based on item name
+function getLiquorMlPerUnit(itemName, bottleSize) {
+  if (itemName.endsWith('Full Bottle')) return FULL_BOTTLE_ML;
+  if (itemName.endsWith('30ml')) return BAR_UNIT_ML;
+  // Bottle items (Beer, Soft drinks) — use stored bottleSize
+  return bottleSize || FULL_BOTTLE_ML;
+}
+
 const formatTableTime = (timeString) => {
   if (!timeString) return '---';
   const d = new Date(timeString);
@@ -1940,45 +1953,15 @@ function SalesReport({ inventory }) {
     endDate: new Date().toISOString().slice(0, 10),
   }));
 
-  // Helper: Parse pour size from item name
-  const parsePourSize = (name) => {
-    if (!name) return { baseName: name, pourSize: 'Unknown', pourMl: 0 };
-
-    // Match patterns like "Whisky (30ml)", "Beer (Bottle)", "Brandy (60ml)", "Beer (Pint)"
-    const match = name.match(/^(.+?)\s*\((.+?)\)$/);
-    if (match) {
-      const baseName = match[1].trim();
-      const variant = match[2].trim();
-
-      // Extract ml value or use special names
-      if (variant.toLowerCase().includes('bottle')) {
-        return { baseName, pourSize: 'Bottle', pourMl: 750 };
-      }
-
-      if (variant.toLowerCase().includes('pint')) {
-        return { baseName, pourSize: 'Pint', pourMl: 568 };
-      }
-
-      const mlMatch = variant.match(/(\d+)\s*ml/i);
-      if (mlMatch) {
-        return { baseName, pourSize: variant, pourMl: parseInt(mlMatch[1]) };
-      }
-
-      return { baseName, pourSize: variant, pourMl: 0 };
-    }
-
-    return { baseName: name, pourSize: 'Standard', pourMl: 0 };
-  };
-
   useEffect(() => {
     // Helper: Calculate cost price from inventory (moved inside useEffect to avoid dependency issues)
-    const calculateCostPrice = (baseName, pourMl) => {
+    const calculateCostPrice = (itemName, mlPerUnit) => {
       if (!inventory || !Array.isArray(inventory)) return 0;
 
-      // Find matching inventory item (fuzzy match on base name)
+      // Find matching inventory item (fuzzy match on item name)
       const invItem = inventory.find(inv => {
         const invName = inv?.menuItem?.name?.toLowerCase() || '';
-        const searchName = baseName?.toLowerCase() || '';
+        const searchName = itemName?.toLowerCase() || '';
         return invName.includes(searchName) || searchName.includes(invName);
       });
 
@@ -1987,7 +1970,7 @@ function SalesReport({ inventory }) {
       }
 
       const costPerMl = invItem.bottleSize > 0 ? invItem.costPerBottle / invItem.bottleSize : 0;
-      return costPerMl * pourMl;
+      return costPerMl * mlPerUnit;
     };
 
     const loadSalesData = async () => {
@@ -2009,26 +1992,29 @@ function SalesReport({ inventory }) {
 
         // Process and group data
         const processed = itemsArray.map(item => {
-          const itemName = item.itemName || item.name || '';
-          const { baseName, pourSize, pourMl } = parsePourSize(itemName);
-          const costPrice = calculateCostPrice(baseName, pourMl);
-          const quantity = item.quantity || 0;
-          const revenue = item.revenue || 0;
-          const sellingPrice = quantity > 0 ? revenue / quantity : 0;
+          const itemName = item.name || '';
+          const mlPerUnit = getLiquorMlPerUnit(itemName, null);
+
+          // Find matching inventory item for cost data
+          const invItem = inventory?.find(inv =>
+            inv.menuItem?.name && itemName.startsWith(inv.menuItem.name)
+          );
+          const costPerBottle = Number(invItem?.costPerBottle || 0);
+          const bottleSize = Number(invItem?.bottleSize || FULL_BOTTLE_ML);
+          const costPerMl = bottleSize > 0 ? costPerBottle / bottleSize : 0;
+          const costPrice = costPerMl * mlPerUnit;
+          const revenue = Number(item.revenue || 0);
+          const quantity = Number(item.quantity || 0);
+          const totalCost = costPrice * quantity;
 
           return {
-            id: `${baseName}-${pourSize}`,
             itemName,
-            baseName,
-            pourSize,
-            pourMl,
             quantity,
-            costPrice,
-            sellingPrice,
-            discount: 0,
-            totalRevenue: revenue,
-            netProfit: revenue - (quantity * costPrice),
-            category: item.category || 'OTHER',
+            revenue,
+            totalCost,
+            sellingPrice: quantity > 0 ? revenue / quantity : 0,
+            mlPerUnit,
+            type: item.type || 'food',
           };
         });
 
@@ -2049,13 +2035,19 @@ function SalesReport({ inventory }) {
     const groups = {};
 
     salesData.forEach(item => {
-      // For bottles, use category only (e.g., "BEERS")
-      // For pours (ml), include pour size (e.g., "WHISKY 30ML")
+      // Group by item type and ml size
+      // Spirits: "BRANDY 30ML" or "WHISKY FULL BOTTLE"
+      // Bottle items (beer): "BEER"
+      // Food: "FOOD"
       let groupKey;
-      if (item.pourSize.toLowerCase().includes('bottle') || item.pourSize.toLowerCase().includes('pint')) {
-        groupKey = item.category.toUpperCase();
+      if (item.type === 'food') {
+        groupKey = 'FOOD';
+      } else if (item.itemName.endsWith('Full Bottle')) {
+        groupKey = 'FULL BOTTLE (750ML)';
+      } else if (item.itemName.endsWith('30ml')) {
+        groupKey = 'SPIRITS 30ML';
       } else {
-        groupKey = `${item.category} ${item.pourSize}`.toUpperCase();
+        groupKey = 'BEER / BOTTLE ITEMS';
       }
 
       if (!groups[groupKey]) {
@@ -2066,20 +2058,19 @@ function SalesReport({ inventory }) {
           totalRevenue: 0,
           totalProfit: 0,
           totalCost: 0,
-          uom: item.pourSize.toLowerCase().includes('bottle') ? 'Bottles' :
-               item.pourSize.toLowerCase().includes('pint') ? 'Pints' :
-               item.pourSize,
+          uom: item.itemName.endsWith('Full Bottle') ? '750ml bottle' :
+               item.itemName.endsWith('30ml') ? '30ml' : 'bottle',
         };
       }
 
       groups[groupKey].items.push(item);
       groups[groupKey].totalQuantity += item.quantity;
-      groups[groupKey].totalRevenue += item.totalRevenue;
-      groups[groupKey].totalProfit += item.netProfit;
-      groups[groupKey].totalCost += (item.quantity * item.costPrice);
+      groups[groupKey].totalRevenue += item.revenue;
+      groups[groupKey].totalCost += item.totalCost;
+      groups[groupKey].totalProfit += (item.revenue - item.totalCost);
     });
 
-    return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+    return Object.values(groups);
   }, [salesData]);
 
   // Calculate grand totals
@@ -2192,14 +2183,14 @@ function SalesReport({ inventory }) {
 
         // Table for this category
         const tableData = group.items.map(item => [
-          item.baseName,
+          item.itemName,
           item.quantity.toString(),
           group.uom,
-          item.costPrice > 0 ? `₹${item.costPrice.toFixed(2)}` : 'N/A',
+          item.totalCost > 0 ? `₹${(item.totalCost / item.quantity).toFixed(2)}` : 'N/A',
           `₹${item.sellingPrice.toFixed(2)}`,
-          `₹${item.discount.toLocaleString('en-IN')}`,
-          `₹${item.totalRevenue.toLocaleString('en-IN')}`,
-          `₹${item.netProfit.toLocaleString('en-IN')}`
+          '₹0',
+          `₹${item.revenue.toLocaleString('en-IN')}`,
+          `₹${(item.revenue - item.totalCost).toLocaleString('en-IN')}`
         ]);
 
         doc.autoTable({
@@ -2294,14 +2285,14 @@ function SalesReport({ inventory }) {
 
         group.items.forEach(item => {
           data.push([
-            item.baseName,
+            item.itemName,
             item.quantity,
             group.uom,
-            item.costPrice > 0 ? item.costPrice : 'N/A',
+            item.totalCost > 0 ? item.totalCost / item.quantity : 'N/A',
             item.sellingPrice,
-            item.discount,
-            item.totalRevenue,
-            item.netProfit
+            0,
+            item.revenue,
+            item.revenue - item.totalCost
           ]);
         });
 
@@ -2371,7 +2362,7 @@ function SalesReport({ inventory }) {
         csv += 'Item Name,Qty,UOM,Cost Price,Selling Price,Discount,Revenue,Profit\n';
 
         group.items.forEach(item => {
-          csv += `${item.baseName},${item.quantity},${group.uom},${item.costPrice > 0 ? item.costPrice.toFixed(2) : 'N/A'},${item.sellingPrice.toFixed(2)},${item.discount},${item.totalRevenue},${item.netProfit}\n`;
+          csv += `${item.itemName},${item.quantity},${group.uom},${item.totalCost > 0 ? (item.totalCost / item.quantity).toFixed(2) : 'N/A'},${item.sellingPrice.toFixed(2)},0,${item.revenue},${item.revenue - item.totalCost}\n`;
         });
 
         csv += `Category Total,${group.totalQuantity},,,,,${group.totalRevenue},${group.totalProfit}\n`;
@@ -2456,14 +2447,14 @@ function SalesReport({ inventory }) {
 
         group.items.forEach(item => {
           printWindow.document.write('<tr>');
-          printWindow.document.write(`<td>${item.baseName}</td>`);
+          printWindow.document.write(`<td>${item.itemName}</td>`);
           printWindow.document.write(`<td class="text-right">${item.quantity}</td>`);
           printWindow.document.write(`<td>${group.uom}</td>`);
-          printWindow.document.write(`<td class="text-right">${item.costPrice > 0 ? '₹' + item.costPrice.toFixed(2) : 'N/A'}</td>`);
+          printWindow.document.write(`<td class="text-right">${item.totalCost > 0 ? '₹' + (item.totalCost / item.quantity).toFixed(2) : 'N/A'}</td>`);
           printWindow.document.write(`<td class="text-right">₹${item.sellingPrice.toFixed(2)}</td>`);
-          printWindow.document.write(`<td class="text-right">₹${item.discount.toLocaleString('en-IN')}</td>`);
-          printWindow.document.write(`<td class="text-right">₹${item.totalRevenue.toLocaleString('en-IN')}</td>`);
-          printWindow.document.write(`<td class="text-right">₹${item.netProfit.toLocaleString('en-IN')}</td>`);
+          printWindow.document.write(`<td class="text-right">₹0</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.revenue.toLocaleString('en-IN')}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${(item.revenue - item.totalCost).toLocaleString('en-IN')}</td>`);
           printWindow.document.write('</tr>');
         });
 
@@ -2648,21 +2639,21 @@ function SalesReport({ inventory }) {
                     {/* Group Items */}
                     {group.items.map((item, itemIdx) => (
                       <tr key={itemIdx} className="border-b border-gray-200 hover:bg-[#FFF5F5] transition-colors">
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.baseName}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.itemName}</td>
                         <td className="px-4 py-3 text-sm text-center text-gray-900 font-semibold">{item.quantity}</td>
                         <td className="px-4 py-3 text-sm text-center text-gray-600">{group.uom}</td>
                         <td className="px-4 py-3 text-sm text-right text-gray-700">
-                          {item.costPrice > 0 ? `₹${item.costPrice.toFixed(2)}` : 'N/A'}
+                          {item.totalCost > 0 ? `₹${(item.totalCost / item.quantity).toFixed(2)}` : 'N/A'}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-gray-700">
                           ₹{item.sellingPrice.toFixed(2)}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-gray-600">₹0</td>
                         <td className="px-4 py-3 text-sm text-right text-green-700 font-semibold">
-                          ₹{item.totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          ₹{item.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-blue-700 font-semibold">
-                          ₹{item.netProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          ₹{(item.revenue - item.totalCost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </td>
                       </tr>
                     ))}
@@ -2785,6 +2776,10 @@ function LowStockReport({ inventory }) {
                   const restockValue = bottlesNeeded * (parseFloat(item.costPerBottle) || 0);
                   const currentBottles = bottleSize > 0 ? Math.floor(current / bottleSize) : 0;
                   const reorderBottles = bottleSize > 0 ? Math.ceil(reorder / bottleSize) : 0;
+                  const currentBottlesDisplay = Math.floor(current / FULL_BOTTLE_ML);
+                  const currentMlRemainder = current % FULL_BOTTLE_ML;
+                  const reorderBottlesDisplay = Math.floor(reorder / FULL_BOTTLE_ML);
+                  const reorderMlRemainder = reorder % FULL_BOTTLE_ML;
 
                   return (
                     <tr key={item.id || idx} className="border-b border-gray-100 hover:bg-[#FFF5F5] transition-colors">
@@ -2795,10 +2790,10 @@ function LowStockReport({ inventory }) {
                         {item.category || item.menuItem?.category || 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {currentBottles} bottles ({current.toFixed(0)} ml)
+                        {currentBottlesDisplay} bottles + {currentMlRemainder.toFixed(0)} ml
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-700">
-                        {reorderBottles} bottles ({reorder.toFixed(0)} ml)
+                        {reorderBottlesDisplay} bottles + {reorderMlRemainder.toFixed(0)} ml
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
                         <span className={`font-bold ${stockPercent < 25 ? 'text-red-600' : 'text-orange-600'}`}>
@@ -3137,9 +3132,9 @@ function TopPerformersReport({ inventory }) {
           const costPerBottle = parseFloat(invItem?.costPerBottle) || 0;
           const bottleSize = parseInt(invItem?.bottleSize) || 750;
 
-          const match = itemName.match(/\((\d+)\s*ml\)/i);
-          const pourMl = match ? parseInt(match[1]) : 0;
-          const costPrice = pourMl > 0 && bottleSize > 0 ? (costPerBottle / bottleSize) * pourMl : 0;
+          // Determine ml per unit using the helper function
+          const mlPerUnit = getLiquorMlPerUnit(itemName, bottleSize);
+          const costPrice = mlPerUnit > 0 && bottleSize > 0 ? (costPerBottle / bottleSize) * mlPerUnit : 0;
 
           const totalCost = quantity * costPrice;
           const profit = revenue - totalCost;

@@ -26,6 +26,9 @@ import { BAR_ID } from '../services/barApiConfig';
 import ItemAnalytics from './ItemAnalytics';
 import { API_BASE } from '../services/apiConfig';
 
+const BAR_UNIT_ML = 30;
+const FULL_BOTTLE_ML = 750;
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -846,7 +849,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (item) => {
-    if (outlet === 'bar' && item.variants && item.variants.length > 1) {
+    if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setVariantPickerItem(item);
     } else {
       addToCart(item);
@@ -857,15 +860,15 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleVariantSelect = (item, variant) => {
-    // Detect custom ML variant and set notes field
-    const isCustomMl = variant?.id === 'custom';
-    const notes = isCustomMl ? variant.name : (item.notes ?? null);
+    const itemName = variant.id === 'full_bottle'
+      ? `${item.n} Full Bottle`
+      : `${item.n} 30ml`;
 
     addToCart({
       ...item,
-      n: `${item.n} (${variant.name})`,
-      p: variant.price,
-      notes
+      n: itemName,
+      p: Number(variant.price),
+      notes: null
     });
     setVariantPickerItem(null);
     setSearchQuery('');
@@ -1498,10 +1501,17 @@ const CashierDashboard = ({ onLogout }) => {
                       <div key={item.id || idx} className={`flex gap-3 pb-4 border-b border-gray-100 ${item.isKotSent ? 'opacity-60' : ''}`}>
                         <div className="flex-grow min-w-0">
                           <div className="flex justify-between items-start mb-1.5">
-                            <p className="text-sm md:text-base font-black text-gray-900 truncate flex items-center gap-1.5">
-                              {item.n}
-                              {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
-                            </p>
+                            <div>
+                              <p className="text-sm md:text-base font-black text-gray-900 truncate flex items-center gap-1.5">
+                                {item.n}
+                                {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
+                              </p>
+                              {item.menuType === 'LIQUOR' && !item.isBottleItem && (
+                                <p className="text-xs font-black text-gray-500 mt-1">
+                                  {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${item.q} × ${BAR_UNIT_ML}ml = ${item.q * BAR_UNIT_ML}ml`}
+                                </p>
+                              )}
+                            </div>
                             <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
                           </div>
                           <div className="flex items-center justify-between gap-2.5">

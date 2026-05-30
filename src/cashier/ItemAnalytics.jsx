@@ -4,6 +4,15 @@ import { API_BASE } from '../services/apiConfig';
 
 const RESTAURANT_ID = 'restaurant-001';
 const BAR_ID = 'bar-001';
+const BAR_UNIT_ML = 30;
+const FULL_BOTTLE_ML = 750;
+
+// Helper function to determine ml poured for liquor items
+function getLiquorMlPoured(itemName, quantity) {
+  if (itemName.endsWith('Full Bottle')) return FULL_BOTTLE_ML * quantity;
+  if (itemName.endsWith('30ml')) return BAR_UNIT_ML * quantity;
+  return null; // bottle items or food — no ml display
+}
 
 export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const [timeFilter, setTimeFilter] = useState('today'); // today, yesterday, month, custom
@@ -101,11 +110,12 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
 
   const handleExport = () => {
     const csv = [
-      ['Item Name', 'Type', 'Quantity Sold', 'Revenue (₹)'],
+      ['Item Name', 'Type', 'Quantity Sold', 'ML Poured', 'Revenue (₹)'],
       ...filteredAndSortedData.map(item => [
         item.name,
         item.type === 'liquor' ? 'Liquor' : 'Food',
         item.quantity,
+        getLiquorMlPoured(item.name, item.quantity) ?? '',
         item.revenue.toFixed(2)
       ])
     ].map(row => row.join(',')).join('\n');
@@ -314,7 +324,15 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                         {item.type === 'liquor' ? 'Liquor' : 'Food'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-sm font-black text-gray-900">{item.quantity}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="text-sm font-black text-gray-900">{item.quantity}</div>
+                      {item.type === 'liquor' && (() => {
+                        const mlPoured = getLiquorMlPoured(item.name, item.quantity);
+                        return mlPoured !== null && (
+                          <div className="text-[10px] font-bold text-gray-500">{mlPoured}ml poured</div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{item.revenue.toFixed(2)}</td>
                   </tr>
                 ))

@@ -25,6 +25,9 @@ import VariantPicker from '../shared/components/VariantPicker';
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
+const BAR_UNIT_ML = 30;
+const FULL_BOTTLE_ML = 750;
+
 const TABLE_STATUS = {
   FREE: 'Free',
   OCCUPIED: 'Occupied',
@@ -542,20 +545,16 @@ export default function CaptainApp({ onLogout }) {
       }));
     }
 
-    const variantSuffix = variant ? ` (${variant.name})` : '';
+    const variantSuffix = variant ? ` ${variant.name}` : '';
     const finalName = `${item.n}${variantSuffix}`;
-    const finalPrice = variant ? variant.price : item.p;
-
-    // Detect custom ML variant and set notes field
-    const isCustomMl = variant?.id === 'custom';
-    const notes = isCustomMl ? variant.name : (item.notes ?? null);
+    const finalPrice = variant ? Number(variant.price) : item.p;
 
     setCurrentSessionItems(prev => {
       const existing = prev.find(i => i.n === finalName);
       if (existing) {
         return prev.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
       }
-      return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, notes, s: 'Pending' }];
+      return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending' }];
     });
     addNotification(`${finalName} added`, 'success');
     setSearchQuery('');
@@ -563,7 +562,7 @@ export default function CaptainApp({ onLogout }) {
 
   const handleItemClick = (e, item) => {
     e.stopPropagation();
-    if (outlet === 'bar' && item.menuType === 'LIQUOR' && item.variants?.length > 0) {
+    if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setActiveVariantItem(item);
     } else {
       addItemToSession(item);
@@ -1487,6 +1486,13 @@ export default function CaptainApp({ onLogout }) {
                                 <h3 className="font-extrabold text-xs sm:text-[13px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
                                   {item.n}
                                 </h3>
+
+                                {/* ML sub-label for LIQUOR items */}
+                                {item.menuType === 'LIQUOR' && !item.isBottleItem && (
+                                  <p className="text-[10px] font-bold text-gray-500 mb-0.5">
+                                    {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${totalQty} × ${BAR_UNIT_ML}ml = ${totalQty * BAR_UNIT_ML}ml`}
+                                  </p>
+                                )}
 
                                 {/* Item Short Description */}
                                 {item.desc && (
