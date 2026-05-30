@@ -526,10 +526,6 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const openTableSession = (table) => {
-    if (table.status !== TABLE_STATUS.FREE && table.captainId && currentCaptain && table.captainId !== currentCaptain.id) {
-      addNotification(`Table already in progress by ${CAPTAINS.find(c => c.id === table.captainId)?.name || 'another captain'}`, 'error');
-      return;
-    }
     setActiveTableId(table.id);
     setCurrentSessionItems([]);
     setView('session');
@@ -960,11 +956,6 @@ export default function CaptainApp({ onLogout }) {
               // 2. Collision check: Did someone else just lock this table in the live floor map?
               const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
               const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber));
-              if (targetTable && targetTable.captainId && targetTable.captainId !== currentCaptain.id && targetTable.status !== TABLE_STATUS.FREE) {
-                addNotification("Table was already locked by another captain!", "error");
-                clearCall(call.callId);
-                return;
-              }
 
               const locked = markWaiterCallAccepted(call.tableId, currentCaptain.id);
               if (locked) {
@@ -1672,7 +1663,7 @@ export default function CaptainApp({ onLogout }) {
                   <div className="space-y-5 pt-6 border-t-2 border-dashed border-gray-100">
                     <div className="flex items-center justify-between">
                       <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935] flex items-center gap-2"><ShoppingCart size={16} /> New KOT Draft</h4>
-                      {(currentSessionItems.length > 0 || (activeTable?.captainId === currentCaptain?.id && (!activeTable?.kotHistory || activeTable.kotHistory.length === 0))) && (
+                      {(currentSessionItems.length > 0 || (!activeTable?.kotHistory || activeTable.kotHistory.length === 0)) && (
                         <button onClick={cancelSession} className="text-[9px] font-black text-[#E53935] uppercase hover:text-red-700 transition-colors bg-red-50 px-2 py-1 rounded-md border border-red-100">Cancel Session</button>
                       )}
                     </div>
