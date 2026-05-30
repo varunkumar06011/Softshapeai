@@ -5,9 +5,10 @@
  * QZ Tray must be running on the same machine.
  *
  * Listens for `print_job` socket events and routes to the correct printer:
- *   KOT     → VITE_KITCHEN_PRINTER_NAME
- *   BAR_KOT → VITE_BAR_PRINTER_NAME
- *   BILL    → VITE_BILLING_PRINTER_NAME
+ *   KOT        → VITE_KITCHEN_PRINTER_NAME
+ *   BAR_KOT    → VITE_BAR_PRINTER_NAME
+ *   BILL       → VITE_BILLING_PRINTER_NAME
+ *   FINAL_BILL → VITE_BAR_PRINTER_NAME (bar) or VITE_BILLING_PRINTER_NAME (restaurant)
  *
  * Captain's mobile never touches QZ Tray — only this page does.
  */
@@ -302,6 +303,20 @@ export default function PrintStation() {
           } else if (type === 'BILL') {
             cmds    = buildBillCommands(data);
             printer = BILLING_PRINTER;
+          } else if (type === 'FINAL_BILL') {
+            // Fetch pre-built ESC/POS data from backend
+            const response = await fetch(`${VITE_API_URL}/api/print/final-bill`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ billData: data })
+            });
+            const res = await response.json();
+            if (!res || !res.data) {
+              throw new Error('No ESC/POS data received from backend');
+            }
+            cmds = Array.isArray(res.data) ? res.data : [res.data];
+            // Route to BAR_PRINTER for bar orders, BILLING_PRINTER otherwise
+            printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
           } else if (type === 'CANCEL_KOT') {
             cmds    = buildCancelKOTCommands(data);
             printer = data.item?.menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
