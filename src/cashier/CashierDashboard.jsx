@@ -24,6 +24,7 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import ItemAnalytics from './ItemAnalytics';
+import { API_BASE } from '../services/apiConfig';
 
 const isSubsequence = (q, text) => {
   let i = 0;
@@ -151,6 +152,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [printCooldown, setPrintCooldown] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
+  const [discountPercent, setDiscountPercent] = useState(0);
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -510,28 +512,41 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Fallback if bill is 0
-    const txnAmount = activeTotal > 0 ? activeTotal : fallbackTotal;
-    if (txnAmount === 0) {
-      addNotification('Cannot Print', 'Bill amount is ₹0. Ensure KOT was sent.', 'error');
+    // Validate order exists
+    const orderId = selectedTable?.activeOrder?.id || selectedTable?.orderId;
+    if (!orderId) {
+      addNotification('Error', 'No active order found.', 'error');
       return;
     }
 
     try {
       setIsPrintingBill(true);
-      const orderId = selectedTable?.activeOrder?.id || selectedTable?.orderId;
 
-      // Update backend status to BILLING_REQUESTED
-      if (orderId) {
-        await requestBilling(orderId);
-      } else {
-        console.log('[FinalBill] No orderId found, using local bill generation');
+      // Step 1: Update table discount if entered
+      if (discountPercent > 0) {
+        await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ discount: discountPercent })
+        });
       }
 
-      // Print the bill - let errors propagate to outer catch
-      await printBill(selectedTable, txnAmount, activeSubtotal, activeTaxes, null);
+      // Step 2: Call print-bill endpoint (handles both status update AND printing via socket)
+      const printResponse = await fetch(
+        `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${activeRestaurantId}`,
+        { method: 'POST' }
+      );
 
-      // ✅ Only reach here if print succeeds
+      if (!printResponse.ok) {
+        const errorData = await printResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to print bill');
+      }
+
+      const result = await printResponse.json();
+
+      addNotification('Success', 'Bill printed successfully.', 'success');
+      setDiscountPercent(0); // Reset discount input
+
       // Optimistically update local table status so the UI shows "Waiting Bill" and "Settlement" button
       setActiveTables((prev) =>
         prev.map((t) =>
@@ -539,9 +554,7 @@ const CashierDashboard = ({ onLogout }) => {
         )
       );
 
-      if (orderId) {
-        window.dispatchEvent(new Event('softshape_order_updated'));
-      }
+      window.dispatchEvent(new Event('softshape_order_updated'));
 
       // Set cooldown timer
       setLastPrintTime(Date.now());
@@ -550,10 +563,9 @@ const CashierDashboard = ({ onLogout }) => {
         setPrintCooldown(false);
       }, 10000);
 
-      addNotification('Success', 'Final bill printed. Ready for settlement.', 'success');
-    } catch (err) {
-      // ✅ Catches both billing and print errors
-      addNotification('Error', 'Failed to print final bill: ' + err.message, 'error');
+    } catch (error) {
+      console.error('Final bill error:', error);
+      addNotification('Error', error.message || 'Failed to print bill.', 'error');
     } finally {
       setIsPrintingBill(false);
     }
@@ -1904,8 +1916,8 @@ const CashierDashboard = ({ onLogout }) => {
                   </p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowTableModal(false)} 
+              <button
+                onClick={() => { setShowTableModal(false); setDiscountPercent(0); }}
                 className="p-3 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
               >
                 <X size={22} />
@@ -1933,14 +1945,42 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               </div>
 
+              {/* ── Discount Input ──────────────────────────────────── */}
+              <div className="mb-4">
+                <label className="block text-xs sm:text-sm font-black uppercase text-gray-400 tracking-wider mb-2">
+                  Discount %
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                  className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none text-sm font-bold"
+                  placeholder="Enter discount percentage"
+                />
+              </div>
+
               {/* ── Totals ──────────────────────────────────────────── */}
               <div className="bg-gray-50/90 rounded-2xl p-5 space-y-2.5 mb-6 border border-gray-200 shadow-sm">
                 <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span></div>
                 <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5% on food only)</span><span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span></div>
+                {discountPercent > 0 && (
+                  <div className="flex justify-between text-xs sm:text-sm font-black text-[#E53935] uppercase tracking-wider">
+                    <span>Discount ({discountPercent}%)</span>
+                    <span>-₹{((activeSubtotal || 0) * discountPercent / 100).toFixed(0)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2.5">
-                  <span className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-widest">Running Total</span>
+                  <span className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-widest">
+                    {discountPercent > 0 ? 'Final Total' : 'Running Total'}
+                  </span>
                   <span className="text-3xl sm:text-4xl font-black text-[#E53935] tracking-tight">
-                    ₹{Number(activeTotal || fallbackTotal || 0).toFixed(0)}
+                    ₹{discountPercent > 0
+                      ? ((activeTotal || fallbackTotal || 0) - ((activeSubtotal || 0) * discountPercent / 100)).toFixed(0)
+                      : Number(activeTotal || fallbackTotal || 0).toFixed(0)
+                    }
                   </span>
                 </div>
               </div>
@@ -1948,7 +1988,7 @@ const CashierDashboard = ({ onLogout }) => {
               {/* ── Action buttons ──────────────────────────────────── */}
               <div className="grid grid-cols-3 gap-3">
                 <button
-                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); }}
+                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); }}
                   className="py-3.5 rounded-xl border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-gray-50 hover:border-gray-450 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm hover:shadow cursor-pointer"
                 >
                   Add Items
