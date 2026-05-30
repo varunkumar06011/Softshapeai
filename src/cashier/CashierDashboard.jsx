@@ -485,7 +485,23 @@ const CashierDashboard = ({ onLogout }) => {
 
   const printBill = async (table, total, subtotal, taxes, method) => {
     const orderId = table?.activeOrder?.id || table?.orderId || null;
-    await printBillQZ({ orderId });
+
+    // Extract items from active order for fallback printing
+    const items = table?.activeOrder?.items || table?.items || [];
+
+    // Pass all parameters for fallback printing when backend fails or orderId is missing
+    await printBillQZ({
+      orderId,           // For backend fetch
+      table: {           // For fallback local print
+        id: table?.id || table?.number || 'N/A',
+        guests: table?.guestCount || table?.guests || 0
+      },
+      items,             // Items array from order
+      subtotal,          // Subtotal amount
+      taxes,             // Tax amount
+      total,             // Total amount
+      method             // Payment method (can be null for final bill)
+    });
   };
 
   const handleFinalBill = async () => {
@@ -509,7 +525,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (orderId) {
         await requestBilling(orderId);
       } else {
-        addNotification('Warning', 'No active order found. Proceeding with local print.', 'warning');
+        console.log('[FinalBill] No orderId found, using local bill generation');
       }
 
       // Print the bill - let errors propagate to outer catch
