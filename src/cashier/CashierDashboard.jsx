@@ -27,6 +27,8 @@ import ItemAnalytics from './ItemAnalytics';
 import VenueDashboard from './VenueDashboard';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
+import { useVenuePrices } from '../hooks/useVenuePrices';
+import { useVenueTableSync } from '../services/venueTableSyncService';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -132,8 +134,11 @@ const HighlightedText = ({ text, highlight }) => {
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
-  const [tableSubCategory, setTableSubCategory] = useState('restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
-  const [selectedPDRRoom, setSelectedPDRRoom] = useState(null); // 1-4
+  const [tableSubCategory, setTableSubCategory] = useState(() => localStorage.getItem('cashier_table_subcategory') || 'restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
+    const saved = localStorage.getItem('cashier_selected_pdr_room');
+    return saved ? Number(saved) : null;
+  }); // 1-4
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeDiet, setActiveDiet] = useState('All');
@@ -150,9 +155,23 @@ const CashierDashboard = ({ onLogout }) => {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cashier_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedTable, setSelectedTable] = useState(null);
+  const [selectedTable, setSelectedTable] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cashier_selected_table');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [showTableModal, setShowTableModal] = useState(false);
   const [isKotSending, setIsKotSending] = useState(false);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
@@ -169,6 +188,34 @@ const CashierDashboard = ({ onLogout }) => {
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  const venuePrices = useVenuePrices();
+  const { tables: venueTables } = useVenueTableSync();
+
+  // Persist selections to localStorage
+  useEffect(() => {
+    if (selectedTable) {
+      localStorage.setItem('cashier_selected_table', JSON.stringify(selectedTable));
+    } else {
+      localStorage.removeItem('cashier_selected_table');
+    }
+  }, [selectedTable]);
+
+  useEffect(() => {
+    localStorage.setItem('cashier_table_subcategory', tableSubCategory);
+  }, [tableSubCategory]);
+
+  useEffect(() => {
+    if (selectedPDRRoom) {
+      localStorage.setItem('cashier_selected_pdr_room', String(selectedPDRRoom));
+    } else {
+      localStorage.removeItem('cashier_selected_pdr_room');
+    }
+  }, [selectedPDRRoom]);
+
+  useEffect(() => {
+    localStorage.setItem('cashier_cart', JSON.stringify(cart));
+  }, [cart]);
 
   // Table-swap state
   const [showSwapModal, setShowSwapModal] = useState(false);
@@ -439,14 +486,15 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
-    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
+    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId) ||
+                      venueTables.find((table) => table.backendId === selectedTable.backendId);
 
     // Only update if we found a fresher version of the table.
     // NEVER wipe the selected table automatically to prevent race conditions.
     if (liveTable) {
       setSelectedTable(liveTable);
     }
-  }, [activeTables, selectedTable?.backendId]);
+  }, [activeTables, venueTables, selectedTable?.backendId]);
 
   useEffect(() => {
     setSelectedCategory('All');
@@ -655,7 +703,7 @@ const CashierDashboard = ({ onLogout }) => {
       // NO PRINTING - that already happened in handleFinalBill
       if (orderId) {
         const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${activeRestaurantId}`,
+          `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -810,9 +858,44 @@ const CashierDashboard = ({ onLogout }) => {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
 
+    // Determine current venue ID from selected table
+    let currentVenueId = null;
+    if (selectedTable) {
+      const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
+      if (sectionName.includes('conference hall 1') || sectionName.includes('conf1')) {
+        currentVenueId = 'venue-conference1';
+      } else if (sectionName.includes('conference hall 2') || sectionName.includes('conf2')) {
+        currentVenueId = 'venue-conference2';
+      } else if (sectionName.includes('pdr')) {
+        currentVenueId = 'venue-pdr';
+      } else if (sectionName.includes('parcel')) {
+        currentVenueId = 'venue-parcel';
+      } else if (outlet === 'bar') {
+        currentVenueId = 'venue-bar';
+      }
+    } else {
+      if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
+      else if (tableSubCategory === 'conference2') currentVenueId = 'venue-conference2';
+      else if (tableSubCategory === 'pdr') currentVenueId = 'venue-pdr';
+      else if (tableSubCategory === 'parcel') currentVenueId = 'venue-parcel';
+      else if (outlet === 'bar') currentVenueId = 'venue-bar';
+    }
+
+    const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
+
+    const mapped = itemsToFilter.map(item => {
+      // Map price using the venue override if it exists
+      const overridePrice = venueSpecificPrices[item.id];
+      const finalPrice = overridePrice !== undefined ? Number(overridePrice) : Number(item.p || item.price || 0);
+      return {
+        ...item,
+        p: finalPrice, // override the display price
+      };
+    });
+
     const q = searchQuery.trim().toLowerCase();
 
-    const filtered = itemsToFilter.filter((item) => {
+    const filtered = mapped.filter((item) => {
       // 1. Diet filter
       if (activeDiet !== 'All' && item.t !== activeDiet) return false;
 
@@ -838,7 +921,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return filtered;
-  }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, activeDiet]);
+  }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = async (table) => {
     setSelectedTable(table);
@@ -850,10 +933,11 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(prev => ({
           ...prev,
           activeOrder: freshOrder,
-          orders: [freshOrder]
         }));
       }
     }
+
+    setCart([]);
 
     if (!table.status || table.status === 'Free') {
       setActiveTab('pos');
@@ -1037,18 +1121,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
-        const existingItems = (selectedTable.activeOrder.items || []).map(i => ({
-          menuItemId: String(i.menuItemId || i.id || i.name),
-          name: i.name || i.n,
-          price: Number(i.price || i.p || 0),
-          quantity: Number(i.quantity || i.q || 1),
-          notes: i.notes || null,
-        }));
-
-        // Merge previous KOT items with new cart items to prevent backend overwrite
-        const mergedApiItems = [...existingItems, ...apiItems];
-
-        updateOrderItems(selectedTable.activeOrder.id, mergedApiItems)
+        updateOrderItems(selectedTable.activeOrder.id, apiItems, selectedTable.section?.restaurantId || activeRestaurantId)
           .then(response => {
             // Extract real KOT ID from API response
             const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
@@ -1071,7 +1144,7 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         createOrder({
           tableId: selectedTable.backendId,
-          restaurantId: activeRestaurantId,
+          restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
           items: apiItems,
         })
           .then(response => {
@@ -2668,7 +2741,7 @@ const CashierDashboard = ({ onLogout }) => {
                   if (!swapTargetId || !selectedTable?.backendId || isSwapping) return;
                   setIsSwapping(true);
                   try {
-                    await swapTable(selectedTable.backendId, swapTargetId, 'Cashier', activeRestaurantId);
+                    await swapTable(selectedTable.backendId, swapTargetId, 'Cashier', selectedTable.section?.restaurantId || activeRestaurantId);
                     setShowSwapModal(false);
                     setShowTableModal(false);
                     setSwapTargetId(null);

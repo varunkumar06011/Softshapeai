@@ -62,26 +62,29 @@ export function getVenueTableLabel(sectionName, tableNumber) {
 function mapBackendTable(row, existing = null) {
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
+  const sectionName = row.section?.name ?? existing?.sectionName ?? "";
+  const section = row.section ?? existing?.section;
+  const sectionId = row.sectionId ?? existing?.sectionId;
 
   return {
     backendId: row.id,
     id: row.id,          // use full UUID as ID for venue (no numeric collision between sections)
     number: row.number,
-    displayName: getVenueTableLabel(row.section?.name, row.number),
-    name: getVenueTableLabel(row.section?.name, row.number), // Fallback alias
+    displayName: getVenueTableLabel(sectionName, row.number),
+    name: getVenueTableLabel(sectionName, row.number), // Fallback alias
     dbStatus,
     status: existing?.status ?? persistedStatus,
     capacity: row.capacity,
-    sectionId: row.sectionId,
-    sectionName: row.section?.name ?? "",
-    section: row.section,
-    guests: row.guests ?? 0,
-    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
-    captainId: row.captainId ?? null,
-    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
-    items: row.orders?.[0]?.items || row.activeOrder?.items || [],
-    currentBill: row.currentBill ?? 0,
-    activeOrder: row.orders?.[0] || row.activeOrder || null,
+    sectionId: sectionId,
+    sectionName: sectionName,
+    section: section,
+    guests: row.guests ?? existing?.guests ?? 0,
+    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : (existing?.time ?? null),
+    captainId: row.captainId ?? existing?.captainId ?? null,
+    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? []),
+    items: row.orders?.[0]?.items || row.activeOrder?.items || existing?.items || [],
+    currentBill: row.currentBill ?? existing?.currentBill ?? 0,
+    activeOrder: row.orders?.[0] || row.activeOrder || existing?.activeOrder || null,
   };
 }
 
