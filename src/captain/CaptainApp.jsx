@@ -56,6 +56,7 @@ import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
+import VenueSectionView from '../shared/components/VenueSectionView';
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -302,6 +303,8 @@ export default function CaptainApp({ onLogout }) {
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
+  const [tableSubCategory, setTableSubCategory] = useState('restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [selectedPDRRoom, setSelectedPDRRoom] = useState(null); // 1-4
   const [assignment, setAssignment] = useState(null);
   const [todayRevenue, setTodayRevenue] = useState(0);
 
@@ -1266,31 +1269,56 @@ export default function CaptainApp({ onLogout }) {
                 </div>
               </div>
 
-              {/* Table Filter Toggle */}
-              <div className="flex gap-2 mb-6">
-                <button
-                  onClick={() => setTableFilter('my')}
-                  className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-[0.2em] transition-all ${
-                    tableFilter === 'my'
-                      ? 'bg-[#E53935] text-white border-[#E53935] shadow-lg'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  My Tables ({myTablesCount})
-                </button>
-                <button
-                  onClick={() => setTableFilter('all')}
-                  className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-[0.2em] transition-all ${
-                    tableFilter === 'all'
-                      ? 'bg-[#E53935] text-white border-[#E53935] shadow-lg'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  All Tables ({allTablesCount})
-                </button>
+              {/* VENUE SUBCATEGORY PILLS — inside floor overview, not a separate screen */}
+              <div className="flex gap-2 flex-wrap mb-4">
+                {[
+                  { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant' },
+                  { id: 'conference1', label: '🏛 Conf. 1' },
+                  { id: 'conference2', label: '🏛 Conf. 2' },
+                  { id: 'pdr', label: '🚪 PDR' },
+                  { id: 'parcel', label: '📦 Parcel' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
+                    className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 uppercase tracking-widest transition-all shadow-sm ${
+                      tableSubCategory === tab.id
+                        ? 'bg-[#E53935] text-white border-[#E53935]'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {tableSubCategory === 'restaurant' ? (
+                <>
+                  {/* Table Filter Toggle */}
+                  <div className="flex gap-2 mb-6">
+                    <button
+                      onClick={() => setTableFilter('my')}
+                      className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-[0.2em] transition-all ${
+                        tableFilter === 'my'
+                          ? 'bg-[#E53935] text-white border-[#E53935] shadow-lg'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      My Tables ({myTablesCount})
+                    </button>
+                    <button
+                      onClick={() => setTableFilter('all')}
+                      className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-[0.2em] transition-all ${
+                        tableFilter === 'all'
+                          ? 'bg-[#E53935] text-white border-[#E53935] shadow-lg'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      All Tables ({allTablesCount})
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                 {filteredTables.map(table => {
                   const isMyTable = table.captainId === currentCaptain?.id;
                   const assignedCaptain = table.captainId ? getCaptain(table.captainId) : null;
@@ -1340,9 +1368,31 @@ export default function CaptainApp({ onLogout }) {
                         )}
                       </div>
                     </button>
-                  );
-                })}
-              </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <VenueSectionView
+            venueId={
+              tableSubCategory === 'conference1' ? 'venue-conference1' :
+              tableSubCategory === 'conference2' ? 'venue-conference2' :
+              tableSubCategory === 'pdr' ? 'venue-pdr' : 'venue-parcel'
+            }
+            sectionName={
+              tableSubCategory === 'conference1' ? 'Conference Hall 1' :
+              tableSubCategory === 'conference2' ? 'Conference Hall 2' :
+              tableSubCategory === 'pdr' ? 'PDR' : 'Parcel'
+            }
+            restaurantId="venue-001"
+            roomMode={tableSubCategory === 'pdr' ? 'pdr4' : 'single'}
+            selectedRoom={selectedPDRRoom}
+            onSelectRoom={setSelectedPDRRoom}
+            captainId={currentCaptain?.id}
+            onTableSelect={openTableSession}
+            onOrderPlaced={() => {}}
+          />
+        )}
             </div>
           </div>
         ) : (
@@ -1353,7 +1403,7 @@ export default function CaptainApp({ onLogout }) {
                 <button onClick={() => setView('tables')} className="p-2.5 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-xl border border-gray-100 transition-all"><ChevronLeft size={20} /></button>
                 <div className="flex flex-col">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-black tracking-tight uppercase leading-none">Table {activeTable?.id}</h2>
+                    <h2 className="text-lg font-black tracking-tight uppercase leading-none">Table {activeTable?.displayName || activeTable?.name || activeTable?.id}</h2>
                     <div className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[8px] font-black uppercase tracking-widest border border-blue-100 shrink-0">Live Session #10{activeTable?.id}</div>
                   </div>
                   <div className="flex items-center gap-4 mt-1">

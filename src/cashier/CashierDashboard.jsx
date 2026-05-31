@@ -25,6 +25,7 @@ import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import ItemAnalytics from './ItemAnalytics';
 import VenueDashboard from './VenueDashboard';
+import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
 
 const BAR_UNIT_ML = 30;
@@ -131,6 +132,8 @@ const HighlightedText = ({ text, highlight }) => {
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
+  const [tableSubCategory, setTableSubCategory] = useState('restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [selectedPDRRoom, setSelectedPDRRoom] = useState(null); // 1-4
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeDiet, setActiveDiet] = useState('All');
@@ -1569,10 +1572,10 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center text-[#E53935] font-black text-lg shadow-sm border border-red-100">
-                          {selectedTable ? (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`) : 'POS'}
+                          {selectedTable ? (selectedTable.displayName || selectedTable.name || (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`)) : 'POS'}
                         </div>
                         <div className="flex-grow min-w-0">
-                          <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.id}` : 'Walk-in Order'}</p>
+                          <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.displayName || selectedTable.name || selectedTable.id}` : 'Walk-in Order'}</p>
                           <p className="text-xs text-gray-405 font-black uppercase tracking-widest leading-none mt-1">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
                         </div>
                       </div>
@@ -1689,43 +1692,125 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="flex-grow p-3 overflow-y-auto custom-scrollbar bg-gray-50/50">
               <div className="max-w-6xl mx-auto space-y-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">{activeTab.replace('-', ' ')} Feed</h2>
+                  <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
+                    {activeTab === 'tables'
+                      ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'Conference Hall 1' : tableSubCategory === 'conference2' ? 'Conference Hall 2' : tableSubCategory === 'pdr' ? 'PDR Rooms' : 'Parcel')
+                      : activeTab.replace('-', ' ') + ' Feed'}
+                  </h2>
                 </div>
 
                 {activeTab === 'tables' && (
-                  <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                    {activeTables.map((table, i) => {
-                      const isFree = table.status === 'Free' || !table.status;
-                      const isWaitingBill = table.status === 'Waiting Bill';
-                      const isBusy = !isFree && !isWaitingBill;
-
-                      let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
-                      let statusText = 'Open';
-
-                      if (isWaitingBill) {
-                        containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
-                        statusText = 'Billing Requested';
-                      } else if (isBusy) {
-                        containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
-                        statusText = 'Busy';
-                      }
-
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => handleTableSelect(table)}
-                          className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                  <div className="space-y-4">
+                    {/* ── SUBCATEGORY PILLS — sit inside Tables screen, not a separate toggle ── */}
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant', emoji: '' },
+                        { id: 'conference1', label: '🏛 Conference 1', emoji: '' },
+                        { id: 'conference2', label: '🏛 Conference 2', emoji: '' },
+                        { id: 'pdr', label: '🚪 PDR', emoji: '' },
+                        { id: 'parcel', label: '📦 Parcel', emoji: '' },
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
+                          className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${
+                            tableSubCategory === tab.id
+                              ? 'bg-[#E53935] text-white border-[#E53935]'
+                              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                          }`}
                         >
-                          {table.captainName && (
-                            <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
-                              {table.captainName.split(' ')[0]}
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ── RESTAURANT / BAR TABLES (existing grid — completely unchanged) ── */}
+                    {tableSubCategory === 'restaurant' && (
+                      <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
+                        {activeTables.map((table, i) => {
+                          const isFree = table.status === 'Free' || !table.status;
+                          const isWaitingBill = table.status === 'Waiting Bill';
+                          const isBusy = !isFree && !isWaitingBill;
+
+                          let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
+                          let statusText = 'Open';
+
+                          if (isWaitingBill) {
+                            containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
+                            statusText = 'Billing Requested';
+                          } else if (isBusy) {
+                            containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
+                            statusText = 'Busy';
+                          }
+
+                          return (
+                            <div
+                              key={i}
+                              onClick={() => handleTableSelect(table)}
+                              className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                            >
+                              {table.captainName && (
+                                <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
+                                  {table.captainName.split(' ')[0]}
+                                </div>
+                              )}
+                              <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
+                              <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                             </div>
-                          )}
-                          <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
-                          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* ── CONFERENCE HALL 1 ── */}
+                    {tableSubCategory === 'conference1' && (
+                      <VenueSectionView
+                        venueId="venue-conference1"
+                        sectionName="Conference Hall 1"
+                        restaurantId="venue-001"
+                        roomMode="single"
+                        onTableSelect={handleTableSelect}
+                        onOrderPlaced={() => {}}
+                      />
+                    )}
+
+                    {/* ── CONFERENCE HALL 2 ── */}
+                    {tableSubCategory === 'conference2' && (
+                      <VenueSectionView
+                        venueId="venue-conference2"
+                        sectionName="Conference Hall 2"
+                        restaurantId="venue-001"
+                        roomMode="single"
+                        onTableSelect={handleTableSelect}
+                        onOrderPlaced={() => {}}
+                      />
+                    )}
+
+                    {/* ── PDR — show 4 room buttons first ── */}
+                    {tableSubCategory === 'pdr' && (
+                      <VenueSectionView
+                        venueId="venue-pdr"
+                        sectionName="PDR"
+                        restaurantId="venue-001"
+                        roomMode="pdr4"
+                        selectedRoom={selectedPDRRoom}
+                        onSelectRoom={setSelectedPDRRoom}
+                        onTableSelect={handleTableSelect}
+                        onOrderPlaced={() => {}}
+                      />
+                    )}
+
+                    {/* ── PARCEL ── */}
+                    {tableSubCategory === 'parcel' && (
+                      <VenueSectionView
+                        venueId="venue-parcel"
+                        sectionName="Parcel"
+                        restaurantId="venue-001"
+                        roomMode="single"
+                        onTableSelect={handleTableSelect}
+                        onOrderPlaced={() => {}}
+                      />
+                    )}
                   </div>
                 )}
 

@@ -43,6 +43,22 @@ function writeCache(tables) {
  * Map a backend venue table row → frontend table object.
  * Keeps the full section name as `sectionName` for labeling.
  */
+export function getVenueTableLabel(sectionName, tableNumber) {
+  const name = (sectionName || '').toLowerCase();
+  if (name.includes('conference hall 1') || name.includes('conf1')) {
+    return `C${tableNumber}`;
+  }
+  if (name.includes('conference hall 2') || name.includes('conf2')) {
+    return tableNumber > 1 ? `C2-${tableNumber}` : 'C2';
+  }
+  if (name.includes('pdr')) {
+    return `R${tableNumber}`;
+  }
+  if (name.includes('parcel')) {
+    return 'VIJAY';
+  }
+  return `V${tableNumber}`;
+}
 function mapBackendTable(row, existing = null) {
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
@@ -51,6 +67,8 @@ function mapBackendTable(row, existing = null) {
     backendId: row.id,
     id: row.id,          // use full UUID as ID for venue (no numeric collision between sections)
     number: row.number,
+    displayName: getVenueTableLabel(row.section?.name, row.number),
+    name: getVenueTableLabel(row.section?.name, row.number), // Fallback alias
     dbStatus,
     status: existing?.status ?? persistedStatus,
     capacity: row.capacity,
