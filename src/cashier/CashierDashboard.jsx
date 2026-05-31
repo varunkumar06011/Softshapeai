@@ -1260,7 +1260,7 @@ const CashierDashboard = ({ onLogout }) => {
                 ) : (
                   <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                     {activeTables
-                      .filter(t => t.status && t.status !== 'Free')
+                      .filter(t => t.status && t.status !== 'Free' && Number(t.number) !== 999 && String(t.number) !== '999')
                       .sort((a, b) => {
                         if (a.status === 'Waiting Bill' && b.status !== 'Waiting Bill') return -1;
                         if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
@@ -1324,6 +1324,75 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
                 )}
               </div>
+
+              {/* VIJAY KUMAR COUNTER SECTION (ONLY FOR BAR) */}
+              {outlet === 'bar' && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden mt-4 shrink-0">
+                  <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                    <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
+                      <Users size={18} className="text-[#B71C1C]" />
+                      Counter Section / Parcel
+                    </h3>
+                  </div>
+                  <div className="p-4 flex gap-4">
+                    {(() => {
+                      const counterTable = activeTables.find(t => Number(t.number) === 999 || String(t.number) === '999');
+                      if (!counterTable) return null;
+                      
+                      const isWaitingBill = counterTable.status === 'Waiting Bill';
+                      const bill = calculateTableBill(counterTable);
+                      const billAmt = Number(counterTable.currentBill || bill?.subtotal || 0);
+
+                      let cardBg = 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100';
+                      let textColor = 'text-gray-700';
+                      let badgeCls = 'bg-gray-200 text-gray-700';
+                      let statusLabel = 'Available';
+                      let pulseClass = '';
+
+                      if (isWaitingBill) {
+                        cardBg = 'bg-amber-50 border-amber-400 hover:bg-amber-100';
+                        textColor = 'text-amber-700';
+                        badgeCls = 'bg-amber-100 text-amber-800';
+                        statusLabel = 'Bill Requested';
+                        pulseClass = 'animate-pulse';
+                      } else if (counterTable.status && counterTable.status !== 'Free') {
+                        cardBg = 'bg-red-50 border-[#E53935] hover:bg-red-100';
+                        textColor = 'text-[#E53935]';
+                        badgeCls = 'bg-red-100 text-red-700';
+                        statusLabel = 'Occupied';
+                      }
+
+                      return (
+                        <div
+                          onClick={() => {
+                            setSelectedTable(counterTable);
+                            setShowTableModal(true);
+                          }}
+                          className={`w-full sm:w-64 border-2 rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm ${cardBg} ${pulseClass}`}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <span className={`text-2xl font-black leading-none ${textColor}`}>
+                              Vijay Kumar
+                            </span>
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                          <div className="mt-auto flex justify-between items-end">
+                            <p className={`text-[10px] font-black uppercase tracking-wider mb-1 opacity-60 ${textColor}`}>
+                              Walking / Parcel
+                            </p>
+                            <p className="text-xl font-black text-gray-900">
+                              ₹{billAmt > 0 ? billAmt.toFixed(0) : '—'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+              {/* END VIJAY KUMAR SECTION */}
             </div>
           ) : activeTab === 'pos' ? (
             <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">

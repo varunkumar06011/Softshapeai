@@ -6,6 +6,7 @@ import {
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
   Target, TrendingUp, ArrowRightLeft, Wine, GlassWater
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
@@ -191,14 +192,24 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
   // Full Screen Emergency Mode
   return (
-    <div className="fixed inset-0 z-[9999] animate-police-flash text-white flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+    <motion.div 
+      className="fixed inset-0 z-[9999] animate-police-flash text-white flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300"
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.8}
+      onDragEnd={(e, info) => {
+        if (Math.abs(info.offset.x) > 100) {
+          onDismiss && onDismiss(call);
+        }
+      }}
+    >
       <button 
         onClick={() => onDismiss && onDismiss(call)}
         className="absolute top-6 right-6 w-12 h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center backdrop-blur-sm transition-all z-50 text-white/80 hover:text-white"
       >
         <X size={24} />
       </button>
-      <div className="relative z-10 flex flex-col items-center text-center animate-emergency-shake w-full max-w-2xl">
+      <div className="relative z-10 flex flex-col items-center text-center animate-emergency-shake w-full max-w-2xl pointer-events-none">
         <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-white text-[#E53935] flex items-center justify-center mb-4 sm:mb-6 shadow-[0_0_100px_rgba(255,255,255,0.5)] relative">
           <div className="absolute inset-0 rounded-full border-4 border-white animate-ping opacity-50" />
           <Bell className="w-8 h-8 sm:w-12 sm:h-12" />
@@ -225,18 +236,28 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
           />
         </div>
 
-        <button
-          onClick={handleAccept}
-          className="px-8 py-4 sm:px-12 sm:py-6 bg-white text-[#E53935] rounded-full text-lg sm:text-2xl font-black uppercase tracking-widest shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:scale-105 active:scale-95 transition-all relative overflow-hidden group"
-        >
-          <div className="absolute inset-0 bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <span className="relative z-10">ACCEPT REQUEST</span>
-        </button>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pointer-events-auto">
+          <button
+            onClick={() => onDismiss && onDismiss(call)}
+            className="px-8 py-4 sm:px-8 sm:py-6 bg-black/40 backdrop-blur-md text-white rounded-full text-lg sm:text-2xl font-black uppercase tracking-widest shadow-lg hover:bg-black/60 active:scale-95 transition-all relative overflow-hidden group border border-white/20"
+          >
+            <span className="relative z-10 flex items-center gap-2"><X size={28} /> DISMISS</span>
+          </button>
+          
+          <button
+            onClick={handleAccept}
+            className="px-8 py-4 sm:px-12 sm:py-6 bg-white text-[#E53935] rounded-full text-lg sm:text-2xl font-black uppercase tracking-widest shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:scale-105 active:scale-95 transition-all relative overflow-hidden group"
+          >
+            <div className="absolute inset-0 bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="relative z-10 flex items-center gap-2"><Check size={28} /> ACCEPT</span>
+          </button>
+        </div>
+        
         <p className="text-sm font-bold opacity-90 mt-6 uppercase tracking-widest drop-shadow-md">
-          Arrive before timeout
+          Swipe left/right or click dismiss to remove
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
