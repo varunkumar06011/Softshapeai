@@ -24,6 +24,7 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import ItemAnalytics from './ItemAnalytics';
+import VenueDashboard from './VenueDashboard';
 import { API_BASE } from '../services/apiConfig';
 
 const BAR_UNIT_ML = 30;
@@ -1172,6 +1173,13 @@ const CashierDashboard = ({ onLogout }) => {
 
         {/* CONTENT AREA */}
         <main className="flex-grow overflow-hidden flex flex-col">
+          {/* ── VENUE OUTLET — full self-contained dashboard ── */}
+          {outlet === 'venue' ? (
+            <div className="flex-grow overflow-hidden flex flex-col">
+              <VenueDashboard addNotification={addNotification} />
+            </div>
+          ) : (
+          <>
           {/* Billing Alert Banner */}
           {billingAlerts.length > 0 && (
             <div className="mx-4 mt-3 flex flex-col gap-2">
@@ -1981,6 +1989,8 @@ const CashierDashboard = ({ onLogout }) => {
                 )}
               </div>
             </div>
+          )}
+          </>
           )}
         </main>
       </div>

@@ -71,7 +71,7 @@ const TABLE_STATUS = {
 
 
 
-function EmergencyOverlay({ call, currentCaptain, onAccept }) {
+function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
   const [timeLeft, setTimeLeft] = useState(12);
 
   useEffect(() => {
@@ -166,6 +166,12 @@ function EmergencyOverlay({ call, currentCaptain, onAccept }) {
     // Reduced Warning Mode
     return (
       <div className="fixed bottom-6 right-6 z-[9999] bg-[#B71C1C] text-white p-4 rounded-2xl shadow-[0_10px_30px_rgba(183,28,28,0.4)] flex items-center gap-4 animate-in slide-in-from-bottom-5 border border-red-500/30">
+        <button 
+          onClick={() => onDismiss && onDismiss(call)} 
+          className="absolute -top-2 -right-2 w-6 h-6 bg-white text-[#B71C1C] rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-all z-10"
+        >
+          <X size={14} strokeWidth={3} />
+        </button>
         <div className="w-10 h-10 rounded-full bg-white text-[#B71C1C] flex items-center justify-center animate-pulse shrink-0">
           <Bell size={20} />
         </div>
@@ -186,6 +192,12 @@ function EmergencyOverlay({ call, currentCaptain, onAccept }) {
   // Full Screen Emergency Mode
   return (
     <div className="fixed inset-0 z-[9999] animate-police-flash text-white flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+      <button 
+        onClick={() => onDismiss && onDismiss(call)}
+        className="absolute top-6 right-6 w-12 h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center backdrop-blur-sm transition-all z-50 text-white/80 hover:text-white"
+      >
+        <X size={24} />
+      </button>
       <div className="relative z-10 flex flex-col items-center text-center animate-emergency-shake w-full max-w-2xl">
         <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-white text-[#E53935] flex items-center justify-center mb-4 sm:mb-6 shadow-[0_0_100px_rgba(255,255,255,0.5)] relative">
           <div className="absolute inset-0 rounded-full border-4 border-white animate-ping opacity-50" />
@@ -980,6 +992,7 @@ export default function CaptainApp({ onLogout }) {
         <EmergencyOverlay
           call={pendingCalls[0]}
           currentCaptain={currentCaptain}
+          onDismiss={(call) => clearCall(call.callId)}
           onAccept={(call) => {
             if (currentCaptain) {
               // 2. Collision check: Did someone else just lock this table in the live floor map?
