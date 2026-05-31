@@ -10,7 +10,7 @@ import {
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, requestBilling } from '../services/orderApi';
-import { printBillQZ, printKOTQZ } from '../services/printService';
+import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -1131,7 +1131,18 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
-        updateOrderItems(selectedTable.activeOrder.id, apiItems, selectedTable.section?.restaurantId || activeRestaurantId)
+        const existingItems = (selectedTable.activeOrder.items || []).map(i => ({
+          menuItemId: String(i.menuItemId || i.id || i.name),
+          name: i.name || i.n,
+          price: Number(i.price || i.p || 0),
+          quantity: Number(i.quantity || i.q || 1),
+          notes: i.notes || null,
+        }));
+
+        // Merge previous KOT items with new cart items to prevent backend overwrite
+        const mergedApiItems = [...existingItems, ...apiItems];
+
+        updateOrderItems(selectedTable.activeOrder.id, mergedApiItems, selectedTable.section?.restaurantId || activeRestaurantId)
           .then(response => {
             // Extract real KOT ID from API response
             const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
@@ -1157,22 +1168,6 @@ const CashierDashboard = ({ onLogout }) => {
           restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
           items: apiItems,
         })
-          .then(response => {
-            // Extract real KOT ID from API response
-            const realKotId = response?.kotHistory?.[response.kotHistory.length - 1]?.id ?? kotsToCreate[0]?.id;
-
-            // Fire-and-forget print with real KOT ID
-            printKOTQZ({
-              tableId: selectedTable.backendId,
-              kotId: realKotId,
-              orderId: response?.id ?? kotsToCreate[0]?.id,
-              kotNumber: realKotId,
-              items: cart,
-            }).catch(err => {
-              console.warn('[KOT] Print failed (non-blocking):', err.message);
-              addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
-            });
-          })
           .catch(err => console.warn('[BG] createOrder failed:', err.message));
       }
     }

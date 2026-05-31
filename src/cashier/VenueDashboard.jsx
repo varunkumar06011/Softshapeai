@@ -23,7 +23,7 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 import { fetchVenueMenu } from '../services/venueTableApi';
 import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
 import { createOrder, updateOrderItems, saveTransaction } from '../services/orderApi';
-import { printKOTQZ, printBillQZ } from '../services/printService';
+import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -230,23 +230,8 @@ export default function VenueDashboard({ addNotification }) {
         })
       );
 
-      // Print KOT
-      const foodItems = cart.map((i) => ({
-        name: i.n,
-        quantity: i.q,
-        price: i.p,
-        notes: i.notes || null,
-        type: 'food',
-      }));
-
-      await printKOTQZ({
-        tableId: selectedTable.backendId,
-        kotId,
-        orderId,
-        items: foodItems,
-        captainId: null,
-        kotNumber: (selectedTable.kotHistory?.length || 0) + 1,
-      });
+      // KOT Print is now purely handled via backend socket `print_job` emit
+      // to the PrintStation.
 
       setCart([]);
       addNotification?.('KOT Sent', `KOT sent for ${getTableLabel(activeSection, selectedTable.number)}`, 'success');

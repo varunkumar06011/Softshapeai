@@ -1,24 +1,24 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { 
-  LayoutDashboard, 
-  Table2, 
-  UtensilsCrossed, 
-  ClipboardList, 
-  ChartNoAxesCombined, 
-  DollarSign, 
-  Megaphone, 
-  Camera, 
-  Package, 
-  Sparkles, 
-  Settings, 
-  LogOut, 
-  Bell, 
-  Search, 
+import {
+  LayoutDashboard,
+  Table2,
+  UtensilsCrossed,
+  ClipboardList,
+  ChartNoAxesCombined,
+  DollarSign,
+  Megaphone,
+  Camera,
+  Package,
+  Sparkles,
+  Settings,
+  LogOut,
+  Bell,
+  Search,
   Bot,
   Send,
   Star
 } from 'lucide-react';
-import { 
+import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage
 } from './AdminComponents';
 import { useOutlet } from '../context/OutletContext';
@@ -61,13 +61,13 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [spireOpen, setSpireOpen] = useState(false);
   const [dishModalOpen, setDishModalOpen] = useState(false);
-  
+
   // Marketing AI State
   const [mUpload, setMUpload] = useState(null);
   const [mGenerated, setMGenerated] = useState(false);
   const [mPosted, setMPosted] = useState(false);
   const mUploadRef = useRef(null);
-  
+
   // Shared State
   const [revenue, setRevenue] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
@@ -92,7 +92,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     const onOrderUpdated = ({ order }) => pushLog(`Order ${order?.id?.slice(-6) || ''} updated`, "info");
     const onBillingRequested = ({ table }) => pushLog(`Billing requested for Table ${table?.number || ''}`, "warning");
     const onOrderPaid = ({ tableId }) => pushLog(`Payment completed for table ${tableId || ''}`, "success");
-    
+
     const onTableUpdated = ({ table } = {}) => {
       if (!table) return;
       pushLog(`Table ${table.number} → ${table.workflowStatus || table.status}`, "info");
@@ -160,7 +160,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     };
   }, [socket, outlet]);
 
-  const displayNavItems = role === 'manager' 
+  const displayNavItems = role === 'manager'
     ? navItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
     : navItems;
 
@@ -177,10 +177,10 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
         <div className="flex flex-col flex-grow overflow-hidden p-4">
           <div className="flex items-center justify-between flex-shrink-0 mb-2">
             <div className="bg-white p-4 rounded-[32px] shadow-2xl border border-white/10 aspect-square w-40 flex items-center justify-center">
-              <img 
-                src="/logo softshape.ai.png" 
-                alt="Softshape.ai" 
-                className="w-full h-full object-contain" 
+              <img
+                src="/logo softshape.ai.png"
+                alt="Softshape.ai"
+                className="w-full h-full object-contain"
               />
             </div>
             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
@@ -212,16 +212,16 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
       <div className="flex flex-col md:ml-[240px] h-[100dvh] overflow-hidden">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6 shadow-sm">
-            <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
-              <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
-                <LayoutDashboard size={18} />
-              </button>
-              <div className="text-base md:text-xl font-black truncate tracking-tight">{title}</div>
-            </div>
+          <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
+            <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
+              <LayoutDashboard size={18} />
+            </button>
+            <div className="text-base md:text-xl font-black truncate tracking-tight">{title}</div>
+          </div>
 
-            <div className="hidden lg:block text-xs font-medium text-gray-500">
-               {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </div>
+          <div className="hidden lg:block text-xs font-medium text-gray-500">
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
           <div className="flex items-center gap-3">
             <OutletToggle className="flex" />
             <button className="relative rounded-md border border-[#FFCDD2] p-2">
@@ -234,7 +234,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
           {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} statsLoading={statsLoading} />}
-          {page === "tables" && outlet === 'restaurant' && <Tables onOpen={() => {}} />}
+          {page === "tables" && outlet === 'restaurant' && <Tables onOpen={() => { }} />}
           {page === "tables" && outlet === 'bar' && <BarTables />}
           {page === "menu" && outlet === 'restaurant' && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
           {page === "menu" && outlet === 'bar' && <BarMenuPage />}
@@ -244,9 +244,9 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "captains" && (
             <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
           )}
-          {page === "payroll" && <Payroll onPayslip={() => {}} />}
+          {page === "payroll" && <Payroll onPayslip={() => { }} />}
           {page === "marketing" && <Marketing upload={mUpload} setUpload={setMUpload} uploadRef={mUploadRef} generated={mGenerated} setGenerated={setMGenerated} posted={mPosted} setPosted={setMPosted} />}
-          {page === "surveillance" && <SurveillanceDashboard onIncident={() => {}} />}
+          {page === "surveillance" && <SurveillanceDashboard onIncident={() => { }} />}
           {page === "inventory" && <Inventory />}
           {page === "pricing" && <Pricing />}
           {page === "settings" && <SettingsPage />}
@@ -255,12 +255,12 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
       {role !== 'manager' && (
         <>
-          <motion.button 
-            drag 
+          <motion.button
+            drag
             dragMomentum={false}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setSpireOpen(true)} 
+            onClick={() => setSpireOpen(true)}
             className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-[#E53935] px-4 py-2.5 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[10px] transition-colors group cursor-grab active:cursor-grabbing"
           >
             <Sparkles size={14} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
@@ -280,57 +280,57 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                   <Bot size={24} />
                 </div>
                 <div>
-                   <h3 className="text-xl font-black tracking-tight leading-none">Spire.ai Assistant</h3>
-                   <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Operational Intelligence Active</p>
+                  <h3 className="text-xl font-black tracking-tight leading-none">Spire.ai Assistant</h3>
+                  <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Operational Intelligence Active</p>
                 </div>
               </div>
               <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">✕</button>
             </div>
-            
+
             <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-[#FFF9F9]">
-               <div className="flex justify-end">
-                  <div className="bg-white p-5 rounded-3xl rounded-tr-none border border-red-50 text-sm font-medium shadow-sm max-w-[85%] text-gray-700 leading-relaxed">
-                    Where did my 50kg chicken go today?
+              <div className="flex justify-end">
+                <div className="bg-white p-5 rounded-3xl rounded-tr-none border border-red-50 text-sm font-medium shadow-sm max-w-[85%] text-gray-700 leading-relaxed">
+                  Where did my 50kg chicken go today?
+                </div>
+              </div>
+
+              <div className="bg-white p-8 rounded-[40px] border border-red-100 shadow-sm space-y-6 animate-in zoom-in-95 duration-500">
+                <div className="flex items-center gap-2 text-[#B71C1C]">
+                  <Sparkles size={18} />
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em]">Spire Intelligence</p>
+                </div>
+                <p className="text-base font-bold text-gray-900 leading-tight">
+                  Analyzing sales, inventory logs, and camera feeds...
+                </p>
+                <ul className="space-y-3 text-sm font-bold text-gray-700">
+                  <li className="flex gap-2"><span>•</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
+                  <li className="flex gap-2"><span>•</span> 35kg remains in cold storage (Fridge 2)</li>
+                  <li className="flex gap-2 text-[#E53935] font-black"><span>•</span> 2.5kg discrepancy found.</li>
+                </ul>
+
+                <div className="relative aspect-[16/10] rounded-[32px] overflow-hidden bg-black group border-[3px] border-[#E53935] shadow-2xl">
+                  <div className="absolute top-4 left-4 z-10 bg-[#E53935] text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest animate-pulse">LIVE INCIDENT</div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                  <div className="absolute inset-4 border-2 border-[#E53935]/30 rounded-2xl animate-pulse" />
+
+                  <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between">
+                    <div>
+                      <p className="text-xs font-black text-white">Unauthorized Access</p>
+                      <p className="text-[9px] font-bold text-white/50">Zone: Cold Storage #2</p>
+                    </div>
+                    <p className="text-[10px] font-black text-white/70 tabular-nums">14:32:07</p>
                   </div>
-               </div>
-               
-               <div className="bg-white p-8 rounded-[40px] border border-red-100 shadow-sm space-y-6 animate-in zoom-in-95 duration-500">
-                  <div className="flex items-center gap-2 text-[#B71C1C]">
-                     <Sparkles size={18} />
-                     <p className="text-[11px] font-black uppercase tracking-[0.2em]">Spire Intelligence</p>
-                  </div>
-                  <p className="text-base font-bold text-gray-900 leading-tight">
-                    Analyzing sales, inventory logs, and camera feeds...
-                  </p>
-                  <ul className="space-y-3 text-sm font-bold text-gray-700">
-                     <li className="flex gap-2"><span>•</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
-                     <li className="flex gap-2"><span>•</span> 35kg remains in cold storage (Fridge 2)</li>
-                     <li className="flex gap-2 text-[#E53935] font-black"><span>•</span> 2.5kg discrepancy found.</li>
-                  </ul>
-                  
-                  <div className="relative aspect-[16/10] rounded-[32px] overflow-hidden bg-black group border-[3px] border-[#E53935] shadow-2xl">
-                     <div className="absolute top-4 left-4 z-10 bg-[#E53935] text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest animate-pulse">LIVE INCIDENT</div>
-                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                     <div className="absolute inset-4 border-2 border-[#E53935]/30 rounded-2xl animate-pulse" />
-                     
-                     <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between">
-                        <div>
-                           <p className="text-xs font-black text-white">Unauthorized Access</p>
-                           <p className="text-[9px] font-bold text-white/50">Zone: Cold Storage #2</p>
-                        </div>
-                        <p className="text-[10px] font-black text-white/70 tabular-nums">14:32:07</p>
-                     </div>
-                  </div>
-               </div>
+                </div>
+              </div>
             </div>
-            
+
             <div className="p-8 bg-white border-t border-gray-100">
-               <div className="flex gap-3">
-                  <div className="flex-grow relative">
-                    <input className="w-full p-4 bg-gray-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-red-100" placeholder="Ask Spire anything..." />
-                  </div>
-                  <button className="h-14 w-14 bg-[#B71C1C] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-100 hover:scale-105 active:scale-95 transition-all"><Send size={24} /></button>
-               </div>
+              <div className="flex gap-3">
+                <div className="flex-grow relative">
+                  <input className="w-full p-4 bg-gray-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-red-100" placeholder="Ask Spire anything..." />
+                </div>
+                <button className="h-14 w-14 bg-[#B71C1C] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-100 hover:scale-105 active:scale-95 transition-all"><Send size={24} /></button>
+              </div>
             </div>
           </div>
         </div>
