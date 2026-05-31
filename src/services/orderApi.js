@@ -164,3 +164,16 @@ export async function editBill(orderId, { removedItemIds = [], addedItems = [], 
   });
   return parseResponse(res);
 }
+
+export async function transferItems(sourceTableBackendId, targetTableBackendId, itemIds, transferredBy, restaurantId) {
+  const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/transfer-items`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetTableId: targetTableBackendId, itemIds, transferredBy, restaurantId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to transfer items');
+  }
+  return res.json();
+}

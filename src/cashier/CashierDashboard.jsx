@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, requestBilling } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, requestBilling } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -32,6 +32,39 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
+
+const toFrontendTableStatus = (backendStatus) => {
+  const map = {
+    AVAILABLE: 'Free',
+    OCCUPIED: 'Occupied',
+    BILLING_REQUESTED: 'Waiting Bill',
+    RESERVED: 'Reserved',
+    CLEANING: 'Cleaning',
+  };
+  return map[backendStatus] || 'Free';
+};
+
+const mapRealtimeTablePayload = (row, existing = null) => {
+  if (!row) return existing;
+
+  return {
+    backendId: row.id,
+    id: Number(row.number) || row.number,
+    number: row.number,
+    dbStatus: row.status,
+    status: row.workflowStatus || toFrontendTableStatus(row.status),
+    capacity: row.capacity,
+    sectionId: row.sectionId,
+    section: row.section,
+    guests: row.guests ?? 0,
+    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
+    captainId: row.captainId ?? null,
+    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
+    currentBill: Number(row.currentBill ?? 0),
+    activeOrder: row.orders?.[0] || row.activeOrder || null,
+    ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
+  };
+};
 
 const CAPTAINS = [
   { id: 'C1', name: 'Ajay Kumar' },
@@ -221,6 +254,10 @@ const CashierDashboard = ({ onLogout }) => {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapTargetId, setSwapTargetId] = useState(null);
+  const [showItemSwapModal, setShowItemSwapModal] = useState(false);
+  const [itemSwapSelectedIds, setItemSwapSelectedIds] = useState([]);
+  const [itemSwapTargetId, setItemSwapTargetId] = useState(null);
+  const [isSwappingItems, setIsSwappingItems] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -247,6 +284,10 @@ const CashierDashboard = ({ onLogout }) => {
     setBillRemovals([]);
     setBillAdditions([]);
     setBillEditSearch('');
+    setShowItemSwapModal(false);
+    setItemSwapSelectedIds([]);
+    setItemSwapTargetId(null);
+    setIsSwappingItems(false);
   }, [selectedTable?.backendId]);
 
   const { outlet } = useOutlet();
@@ -442,11 +483,38 @@ const CashierDashboard = ({ onLogout }) => {
       }
     };
 
+    const onTableItemsTransferred = (payload) => {
+      const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
+      const mappedSource = mapRealtimeTablePayload(
+        sourceTable,
+        activeTables.find((table) => table.backendId === sourceTableId) || null,
+      );
+      const mappedTarget = mapRealtimeTablePayload(
+        targetTable,
+        activeTables.find((table) => table.backendId === targetTableId) || null,
+      );
+
+      setActiveTables(prev => prev.map((table) => {
+        if (table.backendId === sourceTableId) return mappedSource || table;
+        if (table.backendId === targetTableId) return mappedTarget || table;
+        return table;
+      }));
+
+      if (selectedTable?.backendId === sourceTableId && mappedSource) {
+        setSelectedTable(mappedSource);
+      }
+
+      if (selectedTable?.backendId === targetTableId && mappedTarget) {
+        setSelectedTable(mappedTarget);
+      }
+    };
+
     socket.on('billing:requested', onBillingRequested);
     socket.on('order:created', onOrderCreated);
     socket.on('order:updated', onOrderUpdated);
     socket.on('order:paid', onOrderPaid);
     socket.on('table:swapped', onTableSwapped);
+    socket.on('table:items-transferred', onTableItemsTransferred);
 
     return () => {
       socket.off('billing:requested', onBillingRequested);
@@ -454,8 +522,9 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('order:updated', onOrderUpdated);
       socket.off('order:paid', onOrderPaid);
       socket.off('table:swapped', onTableSwapped);
+      socket.off('table:items-transferred', onTableItemsTransferred);
     };
-  }, [socket, selectedTable?.backendId, loadTransactions]);
+  }, [socket, activeTables, selectedTable?.backendId, loadTransactions]);
 
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -525,6 +594,49 @@ const CashierDashboard = ({ onLogout }) => {
         return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
       });
   }, [activeTables]);
+
+  const itemSwapItems = useMemo(() => {
+    return (selectedTable?.activeOrder?.items || []).filter(item => !item.removedFromBill && item.id);
+  }, [selectedTable?.activeOrder?.items]);
+
+  const itemSwapDestinationTables = useMemo(() => {
+    return activeTables
+      .filter(table => table.backendId !== selectedTable?.backendId)
+      .sort((a, b) => Number(a.id) - Number(b.id));
+  }, [activeTables, selectedTable?.backendId]);
+
+  const selectedItemSwapTarget = useMemo(() => {
+    return activeTables.find(table => table.backendId === itemSwapTargetId) || null;
+  }, [activeTables, itemSwapTargetId]);
+
+  const handleTransferItems = async () => {
+    if (!selectedTable?.backendId || !itemSwapTargetId || itemSwapSelectedIds.length === 0 || isSwappingItems) return;
+
+    setIsSwappingItems(true);
+    try {
+      await transferItems(
+        selectedTable.backendId,
+        itemSwapTargetId,
+        itemSwapSelectedIds,
+        'Cashier',
+        selectedTable.section?.restaurantId || activeRestaurantId,
+      );
+      setShowItemSwapModal(false);
+      setItemSwapSelectedIds([]);
+      setItemSwapTargetId(null);
+      addNotification(
+        'Items Transferred',
+        `${itemSwapSelectedIds.length} items moved to ${outlet === 'bar'
+          ? `B${selectedItemSwapTarget?.number ?? selectedItemSwapTarget?.id}`
+          : `T${selectedItemSwapTarget?.id}`}`,
+        'success',
+      );
+    } catch (err) {
+      addNotification('Transfer Failed', err.message, 'error');
+    } finally {
+      setIsSwappingItems(false);
+    }
+  };
 
   const liveKotQueue = useMemo(() => {
     return activeTableOrders.flatMap((order) =>
@@ -2340,13 +2452,26 @@ const CashierDashboard = ({ onLogout }) => {
               {/* Swap Table & Terminate Session buttons */}
               {selectedTable.status && selectedTable.status !== 'Free' && (
                 <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
-                  <button
-                    onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
-                    className="w-full py-3.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <ArrowRightLeft size={14} />
-                    Swap Table
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
+                      className="w-1/2 py-3.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <ArrowRightLeft size={14} />
+                      Swap Table
+                    </button>
+                    <button
+                      onClick={() => {
+                        setItemSwapSelectedIds([]);
+                        setItemSwapTargetId(null);
+                        setShowItemSwapModal(true);
+                      }}
+                      className="w-1/2 py-3.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <ArrowRightLeft size={14} />
+                      Swap Items
+                    </button>
+                  </div>
                   <button
                     onClick={terminateTableSession}
                     className="w-full py-3.5 rounded-xl border border-red-200 bg-red-50 text-red-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
@@ -2735,6 +2860,152 @@ const CashierDashboard = ({ onLogout }) => {
                   }`}
               >
                 {isSwapping ? 'Moving...' : swapTargetId ? 'Confirm Move' : 'Select a Table'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showItemSwapModal && selectedTable && (
+        <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col max-h-[90vh]">
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <div>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Swap Selected Items</p>
+                <p className="text-base font-black text-gray-900 mt-0.5">
+                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Choose Items & Destination
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowItemSwapModal(false);
+                  setItemSwapSelectedIds([]);
+                  setItemSwapTargetId(null);
+                }}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Select Items to Transfer</p>
+                  <button
+                    onClick={() => {
+                      if (itemSwapItems.length > 0 && itemSwapSelectedIds.length === itemSwapItems.length) {
+                        setItemSwapSelectedIds([]);
+                        return;
+                      }
+                      setItemSwapSelectedIds(itemSwapItems.map(item => item.id));
+                    }}
+                    className="text-xs font-black uppercase tracking-wider text-indigo-700 hover:text-indigo-900 cursor-pointer"
+                  >
+                    {itemSwapItems.length > 0 && itemSwapSelectedIds.length === itemSwapItems.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {itemSwapItems.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm font-semibold text-gray-400">
+                      No active items available to transfer
+                    </div>
+                  ) : (
+                    itemSwapItems.map((item) => {
+                      const isSelected = itemSwapSelectedIds.includes(item.id);
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setItemSwapSelectedIds(prev =>
+                              isSelected ? prev.filter(id => id !== item.id) : [...prev, item.id]
+                            );
+                          }}
+                          className={`w-full rounded-2xl border-2 px-4 py-3.5 text-left transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
+                            isSelected
+                              ? 'border-indigo-300 bg-indigo-50/80'
+                              : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`flex h-5 w-5 items-center justify-center rounded border ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-gray-300 bg-white text-transparent'}`}>
+                                <Check size={12} />
+                              </div>
+                              <div>
+                                <p className="text-sm sm:text-base font-bold text-gray-900">{item.name ?? item.n}</p>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Qty {Number(item.quantity ?? item.q ?? 1)}</p>
+                              </div>
+                            </div>
+                            <p className="text-sm sm:text-base font-black text-indigo-800">
+                              ₹{(Number(item.price ?? item.p ?? 0) * Number(item.quantity ?? item.q ?? 1)).toFixed(2)}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider mb-3">Select Destination Table</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {itemSwapDestinationTables.map((table) => {
+                    const isFree = !table.status || table.status === 'Free';
+                    const isSelected = itemSwapTargetId === table.backendId;
+                    return (
+                      <button
+                        key={table.backendId || table.id}
+                        onClick={() => setItemSwapTargetId(table.backendId)}
+                        className={`rounded-2xl border-2 p-4 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${
+                          isSelected
+                            ? 'border-indigo-300 bg-indigo-50 shadow-md shadow-indigo-100/60'
+                            : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg font-black text-gray-900">
+                              {outlet === 'bar' ? `B${table.number ?? table.id}` : `T${table.id}`}
+                            </p>
+                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mt-1">
+                              {table.section?.name || 'Table'}
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
+                            isFree
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {isFree ? 'Free' : `₹${Number(table.currentBill || 0).toFixed(0)}`}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-gray-100 shrink-0">
+              <button
+                onClick={handleTransferItems}
+                disabled={itemSwapSelectedIds.length === 0 || !itemSwapTargetId || isSwappingItems}
+                className={`w-full py-4 rounded-xl text-xs sm:text-sm font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${
+                  itemSwapSelectedIds.length > 0 && itemSwapTargetId && !isSwappingItems
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                }`}
+              >
+                {isSwappingItems
+                  ? 'Transferring...'
+                  : itemSwapSelectedIds.length > 0 && itemSwapTargetId
+                    ? `Transfer ${itemSwapSelectedIds.length} items to ${outlet === 'bar'
+                      ? `B${selectedItemSwapTarget?.number ?? selectedItemSwapTarget?.id}`
+                      : `T${selectedItemSwapTarget?.id}`}`
+                    : 'Select items and table'}
               </button>
             </div>
           </div>
