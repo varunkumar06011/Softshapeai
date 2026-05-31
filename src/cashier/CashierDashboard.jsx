@@ -930,7 +930,7 @@ const CashierDashboard = ({ onLogout }) => {
     setCart(prev => {
       const existing = prev.find(i => i.n === item.n);
       if (existing) return prev.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
-      return [...prev, { ...item, q: 1, id: Date.now() }];
+      return [...prev, { ...item, q: 1 }];
     });
   };
 
