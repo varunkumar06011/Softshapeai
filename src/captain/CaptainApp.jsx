@@ -10,7 +10,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
-import { printKOTQZ } from '../services/printService';
 import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
@@ -757,20 +756,7 @@ export default function CaptainApp({ onLogout }) {
         realKotId = savedOrder?.kotHistory?.[savedOrder.kotHistory.length - 1]?.id;
       }
 
-      // 2. NOW print with real sequential KOT number (not random ID)
-      if (realKotId && itemsForPrint.length > 0) {
-        printKOTQZ({
-          tableId: activeTable.backendId,
-          kotId: realKotId, // Use real "KOT-03" instead of random "5432"
-          orderId: savedOrder.id,
-          items: itemsForPrint,
-        }).catch(err => {
-          console.warn('[KOT] Print failed (non-blocking):', err.message);
-          addNotification('Warning: Order saved but print failed', 'warning');
-        });
-      }
-
-      // 3. Update UI with real KOT data from backend
+      // 2. Update UI with real KOT data from backend
       const newKOT = {
         id: realKotId || Math.floor(1000 + Math.random() * 9000).toString(),
         time: new Date().toISOString(),
