@@ -66,7 +66,7 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(separator("-"));
 
   // Item header
-  lines.push('Item          Qty    Price    Amount\n');
+  lines.push('Item            Qty    Price    Amount\n');
   lines.push(separator("-"));
 
   // Items
@@ -74,11 +74,20 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
     lines.push('NO ITEMS\n');
   } else {
     items.forEach(item => {
-      const name = (item.n || item.name || '').substring(0, 12).padEnd(12);
+      lines.push(SIZE_HEIGHT);
+      lines.push(BOLD_ON);
+      lines.push(`${(item.n || item.name || '').toUpperCase()}\n`);
+      lines.push(BOLD_OFF);
+      lines.push(SIZE_NORMAL);
+      
       const qty = String(item.q || item.quantity || 1).padStart(4);
-      const price = String((item.p || item.price || 0).toFixed(2)).padStart(9);
-      const amount = String(((item.p || item.price || 0) * (item.q || item.quantity || 1)).toFixed(2)).padStart(10);
-      lines.push(`${name}${qty}  ${price}  ${amount}\n`);
+      const price = String(Number(item.p || item.price || 0).toFixed(2)).padStart(9);
+      const amount = String((Number(item.p || item.price || 0) * Number(item.q || item.quantity || 1)).toFixed(2)).padStart(10);
+      
+      lines.push(BOLD_ON);
+      // Pad left space to align under Qty (approx 14 spaces)
+      lines.push(`              ${qty}  ${price}  ${amount}\n`);
+      lines.push(BOLD_OFF);
     });
   }
 
@@ -92,7 +101,13 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   // Discount (if applicable)
   if (discount && discount.percent > 0) {
     lines.push(BOLD_ON);
-    lines.push(`(-) Discount ${discount.percent.toFixed(2)}% :${String(discount.amount.toFixed(2)).padStart(LINE_NORMAL - 22)}\n`);
+    lines.push(`(-) Discount ${Number(discount.percent).toFixed(2)}% :${String(Number(discount.amount).toFixed(2)).padStart(LINE_NORMAL - 22)}\n`);
+    lines.push(BOLD_OFF);
+    
+    // Total after discount (before tax and rounding)
+    const afterDiscount = subtotal - discount.amount;
+    lines.push(BOLD_ON);
+    lines.push(`Total :${String(afterDiscount.toFixed(2)).padStart(LINE_NORMAL - 8)}\n`);
     lines.push(BOLD_OFF);
   }
 
@@ -105,20 +120,23 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
     lines.push(BOLD_OFF);
   }
 
+  // Round off: difference between grandTotal and exact calculated total
+  // Here, total parameter from CashierDashboard is the exact Total (subtotal - discount + taxes)
+  const exactTotal = Number(total);
+  const roundedTotal = Math.round(exactTotal);
+  const roundOff = roundedTotal - exactTotal;
+  if (Math.abs(roundOff) > 0.001) {
+    lines.push(BOLD_ON);
+    lines.push(`Round Off :${String((roundOff >= 0 ? '+' : '') + roundOff.toFixed(2)).padStart(LINE_NORMAL - 12)}\n`);
+    lines.push(BOLD_OFF);
+  }
+
   lines.push(separator("-"));
 
-  // Total
+  // Grand Total (keep existing SIZE and BOLD)
   lines.push(BOLD_ON);
-  lines.push(`Total :${String(Number(total).toFixed(2)).padStart(LINE_NORMAL - 8)}\n`);
+  lines.push(`Grand Total : ${roundedTotal.toFixed(2)}\n`);
   lines.push(BOLD_OFF);
-
-  // Grand Total (bold, slightly larger — double height only)
-  lines.push(`Grand Total : `);
-  lines.push(SIZE_HEIGHT);
-  lines.push(BOLD_ON);
-  lines.push(`${Number(total).toFixed(2)}\n`);
-  lines.push(BOLD_OFF);
-  lines.push(SIZE_NORMAL);
 
   lines.push(separator("-"));
   const itemCount = items.length;
@@ -175,7 +193,7 @@ async function sendToPrinter(printerName, data) {
 }
 
 // ── API Print functions ───────────────────────
-export async function printBillQZ({ table, items, subtotal, taxes, total, method, orderId }) {
+export async function printBillQZ({ table, items, subtotal, taxes, total, method, orderId, discount, kotNumbers, captainName, section, billNumber }) {
   if (orderId) {
     const response = await fetch(`${import.meta.env.VITE_API_URL}/api/print/receipt`, {
       method: 'POST',
@@ -193,7 +211,7 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
   }
 
   // Fallback if no orderId or data is null
-  const commands = buildBillCommands({ table, items, subtotal, taxes, total, method });
+  const commands = buildBillCommands({ table, items, subtotal, taxes, total, method, discount, kotNumbers, captainName, section, billNumber });
   const formattedData = [{ type: 'raw', format: 'plain', data: commands.join('') }];
   await sendToPrinter(BILLING_PRINTER, formattedData);
   return { success: true };

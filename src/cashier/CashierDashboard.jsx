@@ -628,6 +628,15 @@ const CashierDashboard = ({ onLogout }) => {
         menuType: item.menuType || 'FOOD'
       }));
 
+      const discountObj = discountPercent > 0 ? {
+        percent: discountPercent,
+        amount: (activeSubtotal * discountPercent / 100)
+      } : null;
+      
+      const finalTotal = discountPercent > 0 
+        ? (total - (activeSubtotal * discountPercent / 100)) 
+        : total;
+
       // Print the bill using printBillQZ WITHOUT orderId to use local fallback
       // This bypasses the backend foreign key constraint error
       await printBillQZ({
@@ -639,10 +648,11 @@ const CashierDashboard = ({ onLogout }) => {
         items: printItems,
         subtotal,
         taxes,
-        total,
+        total: finalTotal,
         method: null, // No payment method yet for final bill
         kotNumbers: (selectedTable.kotHistory || []).map(k => k.id || k.kotNumber),
-        captainName: CAPTAINS.find(c => c.id === selectedTable.captainId)?.name || selectedTable.captainId || 'N/A'
+        captainName: CAPTAINS.find(c => c.id === selectedTable.captainId)?.name || selectedTable.captainId || 'N/A',
+        discount: discountObj
       });
 
       addNotification('Success', 'Bill printed successfully.', 'success');
