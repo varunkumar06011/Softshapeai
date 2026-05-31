@@ -23,7 +23,6 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 import { fetchVenueMenu } from '../services/venueTableApi';
 import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
 import { createOrder, updateOrderItems, saveTransaction } from '../services/orderApi';
-import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -264,16 +263,14 @@ export default function VenueDashboard({ addNotification }) {
 
     setIsSettling(true);
     try {
-      // Print receipt first
-      await printBillQZ({
-        orderId,
-        table: { id: getTableLabel(activeSection, selectedTable.number) },
-        items: existingItems,
-        subtotal: orderSubtotal,
-        taxes: orderTaxes,
-        total: amount,
-        method,
-      });
+      // Call backend print-bill endpoint first - emits FINAL_BILL socket event to PrintStation
+      await fetch(
+        `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/print-bill?restaurantId=${VENUE_ID}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
 
       // Settle on backend
       const settleRes = await fetch(

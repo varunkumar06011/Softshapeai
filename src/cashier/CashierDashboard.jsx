@@ -616,44 +616,14 @@ const CashierDashboard = ({ onLogout }) => {
         });
       }
 
-      // Step 2: Print bill directly using printService (bypasses backend foreign key error)
-      // Calculate bill details locally
-      const { subtotal, taxes, total, cgst, sgst } = activeOrderCalc;
-
-      // Prepare items for printing (all food and liquor combined)
-      const printItems = orderItems.map(item => ({
-        name: item.n || item.name,
-        quantity: item.q || item.quantity,
-        price: item.p || item.price,
-        menuType: item.menuType || 'FOOD'
-      }));
-
-      const discountObj = discountPercent > 0 ? {
-        percent: discountPercent,
-        amount: (activeSubtotal * discountPercent / 100)
-      } : null;
-      
-      const finalTotal = discountPercent > 0 
-        ? (total - (activeSubtotal * discountPercent / 100)) 
-        : total;
-
-      // Print the bill using printBillQZ WITHOUT orderId to use local fallback
-      // This bypasses the backend foreign key constraint error
-      await printBillQZ({
-        orderId: null, // Don't pass orderId to avoid backend call
-        table: {
-          id: selectedTable.id || selectedTable.number || 'N/A',
-          guests: selectedTable.guestCount || selectedTable.guests || 0
-        },
-        items: printItems,
-        subtotal,
-        taxes,
-        total: finalTotal,
-        method: null, // No payment method yet for final bill
-        kotNumbers: (selectedTable.kotHistory || []).map(k => k.id || k.kotNumber),
-        captainName: CAPTAINS.find(c => c.id === selectedTable.captainId)?.name || selectedTable.captainId || 'N/A',
-        discount: discountObj
-      });
+      // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
+      const orderId = selectedTable?.activeOrder?.id;
+      if (orderId) {
+        await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${activeRestaurantId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
 
       addNotification('Success', 'Bill printed successfully.', 'success');
       setDiscountPercent(0);
