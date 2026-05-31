@@ -250,6 +250,7 @@ export default function PrintStation() {
   const [log,       setLog]       = useState([]);
   const socketRef   = useRef(null);
   const retryTimer  = useRef(null);
+  const printedKotIds = useRef(new Set());
 
   const pushLog = useCallback((msg, ok = true) => {
     setLog(prev => [
@@ -342,6 +343,24 @@ export default function PrintStation() {
             pushLog(`Unknown print_job type: ${type}`, false);
             return;
           }
+
+          // Deduplication for KOT and BAR_KOT
+          if (type === 'KOT' || type === 'BAR_KOT') {
+            const itemCount = data.items?.length || 0;
+            const compositeKey = `${data.kotId}-${data.tableNumber}-${itemCount}`;
+            if (printedKotIds.current.has(compositeKey)) {
+              pushLog(`Duplicate KOT skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
+              return;
+            }
+            printedKotIds.current.add(compositeKey);
+            // Keep the dedup cache from growing unbounded — trim if over 200 entries
+            if (printedKotIds.current.size > 200) {
+              const entries = [...printedKotIds.current];
+              entries.splice(0, 100); // remove oldest 100
+              printedKotIds.current = new Set(entries);
+            }
+          }
+
           await sendToPrinter(printer, cmds);
           pushLog(`✓ Printed [${type}] → ${printer} (Table ${data?.tableNumber ?? '?'})`);
         } catch (err) {
