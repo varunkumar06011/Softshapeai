@@ -32,7 +32,7 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(CENTER);
   lines.push(SIZE_2X);
   lines.push(BOLD_ON);
-  lines.push('V GRAND LOUNGH\n');
+  lines.push('V GRAND LOUNGE\n');
   lines.push(BOLD_OFF);
   lines.push(SIZE_NORMAL);
 
@@ -49,7 +49,7 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
 
   // Transaction info
   lines.push(BOLD_ON);
-  lines.push(`Bill No : ${billNumber || 'N/A'}    Table: ${tableNumeric}\n`);
+  lines.push(`Table: ${tableNumeric}\n`);
   lines.push(BOLD_OFF);
 
   const now = new Date();
@@ -58,11 +58,10 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(`Date: ${dateStr}    Time: ${timeStr}\n`);
   lines.push(`KOT No : ${kotNumbers?.length ? kotNumbers.join(', ') : 'N/A'}\n`);
   lines.push(`Captain:${captainName || 'N/A'}\n`);
-  lines.push('Waiter:Waiter\n');
   lines.push(separator("-"));
 
   // Item header
-  lines.push('Item            Qty    Price    Amount\n');
+  lines.push('Item          Qty    Price    Amount\n');
   lines.push(separator("-"));
 
   // Items
@@ -70,15 +69,11 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
     lines.push('NO ITEMS\n');
   } else {
     items.forEach(item => {
-      lines.push(SIZE_2X);
-      lines.push(BOLD_ON);
-      lines.push(`${(item.n || item.name || '').toUpperCase()}\n`);
-      lines.push(BOLD_OFF);
-      lines.push(SIZE_NORMAL);
+      const name = (item.n || item.name || '').substring(0, 12).padEnd(12);
       const qty = String(item.q || item.quantity || 1).padStart(4);
       const price = String((item.p || item.price || 0).toFixed(2)).padStart(9);
       const amount = String(((item.p || item.price || 0) * (item.q || item.quantity || 1)).toFixed(2)).padStart(10);
-      lines.push(`${qty}  ${price}  ${amount}\n`);
+      lines.push(`${name}${qty}  ${price}  ${amount}\n`);
     });
   }
 
@@ -112,12 +107,10 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(`Total :${String(Number(total).toFixed(2)).padStart(LINE_NORMAL - 8)}\n`);
   lines.push(BOLD_OFF);
 
-  // Grand Total (2x bold)
-  lines.push(SIZE_2X);
+  // Grand Total (bold, normal size)
   lines.push(BOLD_ON);
   lines.push(`Grand Total : ${Number(total).toFixed(2)}\n`);
   lines.push(BOLD_OFF);
-  lines.push(SIZE_NORMAL);
 
   lines.push(separator("-"));
   const itemCount = items.length;
@@ -125,10 +118,9 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(`Items / Qty : ${itemCount} / ${qtyCount}\n`);
   lines.push(separator("-"));
   lines.push('(Rounded Off to NearestRupees)\n');
-  lines.push('* *\n');
-  lines.push(`${section || 'N/A'}\n`);
   lines.push(CENTER);
-  lines.push('Thank You, Please Visit again\n');
+  lines.push('Thank You, Please Visit Again\n');
+  lines.push('Powered by Softshape.ai\n');
   lines.push('\n\n\n');
   lines.push(CUT);
 

@@ -29,6 +29,12 @@ import { API_BASE } from '../services/apiConfig';
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 
+const CAPTAINS = [
+  { id: 'C1', name: 'Ajay Kumar' },
+  { id: 'C2', name: 'Raja Behera' },
+  { id: 'C3', name: 'Sagar' },
+];
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -520,7 +526,9 @@ const CashierDashboard = ({ onLogout }) => {
       subtotal,          // Subtotal amount
       taxes,             // Tax amount
       total,             // Total amount
-      method             // Payment method (can be null for final bill)
+      method,            // Payment method (can be null for final bill)
+      kotNumbers: (table?.kotHistory || []).map(k => k.id || k.kotNumber),
+      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A'
     });
   };
 
@@ -580,7 +588,9 @@ const CashierDashboard = ({ onLogout }) => {
         subtotal,
         taxes,
         total,
-        method: null // No payment method yet for final bill
+        method: null, // No payment method yet for final bill
+        kotNumbers: (selectedTable.kotHistory || []).map(k => k.id || k.kotNumber),
+        captainName: CAPTAINS.find(c => c.id === selectedTable.captainId)?.name || selectedTable.captainId || 'N/A'
       });
 
       addNotification('Success', 'Bill printed successfully.', 'success');
