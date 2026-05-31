@@ -12,6 +12,7 @@ const BOLD_ON = '\x1B\x45\x01';
 const BOLD_OFF = '\x1B\x45\x00';
 const SIZE_2X = '\x1D\x21\x11';
 const SIZE_NORMAL = '\x1D\x21\x00';
+const SIZE_HEIGHT = '\x1D\x21\x01';
 const CUT = '\x1D\x56\x42\x00';
 
 const LINE_NORMAL = 42;
@@ -56,8 +57,12 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   lines.push(`Date: ${dateStr}    Time: ${timeStr}\n`);
-  lines.push(`KOT No : ${kotNumbers?.length ? kotNumbers.join(', ') : 'N/A'}\n`);
-  lines.push(`Captain:${captainName || 'N/A'}\n`);
+  if (kotNumbers && kotNumbers.length > 0) {
+    lines.push(`KOT No : ${kotNumbers.join(', ')}\n`);
+  }
+  if (captainName && captainName !== 'N/A') {
+    lines.push(`Captain: ${captainName}\n`);
+  }
   lines.push(separator("-"));
 
   // Item header
@@ -107,10 +112,13 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   lines.push(`Total :${String(Number(total).toFixed(2)).padStart(LINE_NORMAL - 8)}\n`);
   lines.push(BOLD_OFF);
 
-  // Grand Total (bold, normal size)
+  // Grand Total (bold, slightly larger — double height only)
+  lines.push(`Grand Total : `);
+  lines.push(SIZE_HEIGHT);
   lines.push(BOLD_ON);
-  lines.push(`Grand Total : ${Number(total).toFixed(2)}\n`);
+  lines.push(`${Number(total).toFixed(2)}\n`);
   lines.push(BOLD_OFF);
+  lines.push(SIZE_NORMAL);
 
   lines.push(separator("-"));
   const itemCount = items.length;

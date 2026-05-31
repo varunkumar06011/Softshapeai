@@ -30,6 +30,7 @@ const BOLD_ON = '\x1B\x45\x01';
 const BOLD_OFF = '\x1B\x45\x00';
 const SIZE_2X = '\x1D\x21\x11';
 const SIZE_NORMAL = '\x1D\x21\x00';
+const SIZE_HEIGHT = '\x1D\x21\x01';
 const CUT = '\x1D\x56\x42\x00';
 
 const LINE_NORMAL = 42;
@@ -54,7 +55,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     BOLD_OFF,
     LEFT,
     separator("-"),
-    SIZE_2X,
+    SIZE_HEIGHT,
     BOLD_ON,
     kotTableLine + "\n",
     BOLD_OFF,
@@ -70,9 +71,9 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
   ];
 
   (items || []).forEach(item => {
-    const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`.padEnd(LINE_2X);
+    const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_2X,
+      SIZE_HEIGHT,
       BOLD_ON,
       itemLine + "\n",
       BOLD_OFF,
@@ -111,9 +112,9 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
   ];
 
   if (item) {
-    const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`.padEnd(LINE_2X);
+    const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_2X,
+      SIZE_HEIGHT,
       BOLD_ON,
       itemLine + "\n",
       BOLD_OFF,
@@ -125,9 +126,11 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
   cmds.push(
     separator("-"),
     CENTER,
+    SIZE_HEIGHT,
     BOLD_ON,
     '** CANCELLED **\n',
     BOLD_OFF,
+    SIZE_NORMAL,
     '\n\n\n',
     CUT
   );
