@@ -56,9 +56,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     LEFT,
     separator("-"),
     SIZE_HEIGHT,
-    BOLD_ON,
     kotTableLine + "\n",
-    BOLD_OFF,
     SIZE_NORMAL,
     separator("-"),
     "Waiter : Waiter\n",
@@ -74,18 +72,15 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`;
     cmds.push(
       SIZE_HEIGHT,
-      BOLD_ON,
       itemLine + "\n",
-      BOLD_OFF,
       SIZE_NORMAL,
-      `[${item.price}]\n`,
       "\n"
     );
   });
 
   cmds.push(
     separator("-"),
-    `Hall Name : ${sectionName || 'N/A'}\n`,
+    `Hall Name : BAR AC HALL\n`,
     "\n\n\n",
     CUT
   );
