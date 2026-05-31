@@ -1021,20 +1021,6 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
 
-    // Fire-and-forget — print failure must not block order save
-    if (selectedTable?.backendId) {
-      printKOTQZ({
-        tableId: selectedTable.backendId,
-        kotId: kotsToCreate[0]?.id ?? String(Date.now()),
-        orderId: selectedTable.activeOrder?.id ?? kotsToCreate[0]?.id ?? String(Date.now()),
-        kotNumber: kotsToCreate[0]?.id ?? String(Date.now()),
-        items: cart,
-      }).catch(err => {
-        console.warn('[KOT] Print failed (non-blocking):', err.message);
-        addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
-      });
-    }
-
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
         const existingItems = (selectedTable.activeOrder.items || []).map(i => ({
@@ -1049,13 +1035,48 @@ const CashierDashboard = ({ onLogout }) => {
         const mergedApiItems = [...existingItems, ...apiItems];
 
         updateOrderItems(selectedTable.activeOrder.id, mergedApiItems)
+          .then(response => {
+            // Extract real KOT ID from API response
+            const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
+              (response?.order?.kotHistory || response?.kotHistory)?.length - 1
+            ]?.id ?? kotsToCreate[0]?.id;
+
+            // Fire-and-forget print with real KOT ID
+            printKOTQZ({
+              tableId: selectedTable.backendId,
+              kotId: realKotId,
+              orderId: selectedTable.activeOrder.id,
+              kotNumber: realKotId,
+              items: cart,
+            }).catch(err => {
+              console.warn('[KOT] Print failed (non-blocking):', err.message);
+              addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
+            });
+          })
           .catch(err => console.warn('[BG] updateOrderItems failed:', err.message));
       } else {
         createOrder({
           tableId: selectedTable.backendId,
           restaurantId: activeRestaurantId,
           items: apiItems,
-        }).catch(err => console.warn('[BG] createOrder failed:', err.message));
+        })
+          .then(response => {
+            // Extract real KOT ID from API response
+            const realKotId = response?.kotHistory?.[response.kotHistory.length - 1]?.id ?? kotsToCreate[0]?.id;
+
+            // Fire-and-forget print with real KOT ID
+            printKOTQZ({
+              tableId: selectedTable.backendId,
+              kotId: realKotId,
+              orderId: response?.id ?? kotsToCreate[0]?.id,
+              kotNumber: realKotId,
+              items: cart,
+            }).catch(err => {
+              console.warn('[KOT] Print failed (non-blocking):', err.message);
+              addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
+            });
+          })
+          .catch(err => console.warn('[BG] createOrder failed:', err.message));
       }
     }
   };
