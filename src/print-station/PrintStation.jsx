@@ -293,13 +293,19 @@ export default function PrintStation() {
       });
       socketRef.current = socket;
 
+      let hasJoined = false;
       socket.on('connect', () => {
         setSockOk(true);
-        // Join both restaurant rooms so we receive print_job events
-        // from all outlets (restaurant + bar).
-        socket.emit('join', 'restaurant-001');
-        socket.emit('join', 'bar-001');
-        pushLog('Socket connected ✓');
+        if (!hasJoined) {
+          // Join both restaurant rooms so we receive print_job events
+          // from all outlets (restaurant + bar).
+          socket.emit('join', 'restaurant-001');
+          socket.emit('join', 'bar-001');
+          hasJoined = true;
+          pushLog('Socket connected ✓');
+        } else {
+          pushLog('Socket reconnected ✓');
+        }
       });
       socket.on('disconnect', () => {
         setSockOk(false);
@@ -345,14 +351,18 @@ export default function PrintStation() {
           }
 
           // Deduplication for KOT and BAR_KOT
+          // Primary key: server-stamped UUID (eventId) — immune to timing and item count.
+          // Fallback: composite key for older backend payloads without eventId.
           if (type === 'KOT' || type === 'BAR_KOT') {
             const itemCount = data.items?.length || 0;
-            const compositeKey = `${data.kotId}-${data.tableNumber}-${itemCount}`;
-            if (printedKotIds.current.has(compositeKey)) {
+            const dedupKey = data.eventId
+              ? String(data.eventId)
+              : `${data.kotId}-${data.tableNumber}-${itemCount}`;
+            if (printedKotIds.current.has(dedupKey)) {
               pushLog(`Duplicate KOT skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
               return;
             }
-            printedKotIds.current.add(compositeKey);
+            printedKotIds.current.add(dedupKey);
             // Keep the dedup cache from growing unbounded — trim if over 200 entries
             if (printedKotIds.current.size > 200) {
               const entries = [...printedKotIds.current];
