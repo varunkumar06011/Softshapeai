@@ -4,100 +4,133 @@ const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PR
 const BAR_PRINTER = import.meta.env.VITE_BAR_PRINTER_NAME || 'BAR_PRINTER';
 const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
 
-// ── ESC/POS helpers ──────────────────────────
-const ESC = '\x1B';
-const GS = '\x1D';
+// ── ESC/POS Constants ──────────────────────────
+const INIT = '\x1B\x40';
+const CENTER = '\x1B\x61\x01';
+const LEFT = '\x1B\x61\x00';
+const BOLD_ON = '\x1B\x45\x01';
+const BOLD_OFF = '\x1B\x45\x00';
+const SIZE_2X = '\x1D\x21\x11';
+const SIZE_NORMAL = '\x1D\x21\x00';
+const CUT = '\x1D\x56\x42\x00';
 
-const CMD = {
-  INIT: ESC + '@',
-  ALIGN_CENTER: ESC + 'a\x01',
-  ALIGN_LEFT: ESC + 'a\x00',
-  BOLD_ON: ESC + 'E\x01',
-  BOLD_OFF: ESC + 'E\x00',
-  SIZE_2X: GS + '!\x11',      // Double width AND double height (2x size)
-  NORMAL_SIZE: GS + '!\x00',
-  CUT: GS + 'V\x41\x03',
-  LINE: '\n',
-};
+const LINE_NORMAL = 42;
+const LINE_2X = 21;
 
-function pad(str, width) {
-  return String(str).slice(0, width).padEnd(width);
-}
-
-function padRight(left, right, width = 21) {
-  const gap = width - left.length - right.length;
-  return left + ' '.repeat(Math.max(1, gap)) + right;
-}
-
-function divider(char = '-', width = 21) {
-  return char.repeat(width) + '\n';
+function separator(ch = "-") {
+  return ch.repeat(LINE_NORMAL) + '\n';
 }
 
 // ── Bill receipt builder (Fallback) ──────────
-export function buildBillCommands({ table, items, subtotal, taxes, total, method, restaurantName = 'V GRAND LOUNGE' }) {
+export function buildBillCommands({ table, items, subtotal, taxes, total, method, kotNumbers, captainName, section, discount, billNumber }) {
   const lines = [];
 
-  lines.push(CMD.INIT);
-  lines.push(CMD.SIZE_2X);           // 2x size
-  lines.push(CMD.ALIGN_CENTER);
-  lines.push(CMD.BOLD_ON);
-  lines.push(restaurantName + '\n');
-  lines.push(CMD.BOLD_OFF);
-  lines.push(CMD.NORMAL_SIZE);       // Back to normal size
-  lines.push('Jubilee Hills, Hyderabad\n');
-  lines.push('Tel: +91 99999 99999\n');
-  lines.push(divider());
+  // Initialize printer
+  lines.push(INIT);
 
-  lines.push(CMD.ALIGN_LEFT);
-  lines.push(`Table : ${table?.id || 'Walk-in'}\n`);
-  lines.push(`Guests: ${table?.guests || 1}\n`);
-  lines.push(`Date  : ${new Date().toLocaleString('en-IN')}\n`);
-  lines.push(divider());
+  // Header - Restaurant Name (centered, 2x size with bold)
+  lines.push(CENTER);
+  lines.push(SIZE_2X);
+  lines.push(BOLD_ON);
+  lines.push('V GRAND LOUNGH\n');
+  lines.push(BOLD_OFF);
+  lines.push(SIZE_NORMAL);
 
-  lines.push(CMD.BOLD_ON);
-  lines.push(pad('ITEM', 10) + pad('QTY', 3) + pad('AMT', 3) + '\n');
-  lines.push(CMD.BOLD_OFF);
-  lines.push(divider());
+  // Address lines (centered, normal size)
+  lines.push(CENTER);
+  lines.push('Opp:TDP Office,Guntur Road,\n');
+  lines.push('Ongole-523001,Cell:8074829846,9866011278\n');
+  lines.push('GST IN:37AEXPT1195E1ZU\n');
+  lines.push(LEFT);
+  lines.push(separator("-"));
 
-  items.forEach(item => {
-    const name = String(item.n || item.name || '').slice(0, 11);
-    const qty = String(item.q || item.quantity || 1);
-    const amt = 'Rs.' + ((item.p || item.price || 0) * (item.q || item.quantity || 1)).toFixed(0);
-    // Item name in 2x size + bold on its own line
-    lines.push(CMD.SIZE_2X);
-    lines.push(CMD.BOLD_ON);
-    lines.push(name + '\n');
-    lines.push(CMD.BOLD_OFF);
-    lines.push(CMD.NORMAL_SIZE);
-    // Qty and amount on next line in normal size
-    lines.push('  ' + qty.padStart(3) + '  ' + amt + '\n');
-  });
+  // Extract numeric table number (remove B or T prefix)
+  const tableNumeric = (table?.id || table?.number || 'N/A').toString().replace(/^[BT]/i, '');
 
-  lines.push(divider());
-  lines.push(CMD.BOLD_ON);
-  lines.push(padRight('Subtotal', 'Rs.' + Number(subtotal).toFixed(0)) + '\n');
-  lines.push(CMD.BOLD_OFF);
-  // Show CGST + SGST only when taxes > 0 (liquor-only orders are 0% GST)
-  if (Number(taxes) > 0) {
-    const halfTax = (Number(taxes) / 2).toFixed(0);
-    lines.push(CMD.BOLD_ON);
-    lines.push(padRight('CGST (2.5%)', 'Rs.' + halfTax) + '\n');
-    lines.push(padRight('SGST (2.5%)', 'Rs.' + halfTax) + '\n');
-    lines.push(CMD.BOLD_OFF);
+  // Transaction info
+  lines.push(BOLD_ON);
+  lines.push(`Bill No : ${billNumber || 'N/A'}    Table: ${tableNumeric}\n`);
+  lines.push(BOLD_OFF);
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  lines.push(`Date: ${dateStr}    Time: ${timeStr}\n`);
+  lines.push(`KOT No : ${kotNumbers?.length ? kotNumbers.join(', ') : 'N/A'}\n`);
+  lines.push(`Captain:${captainName || 'N/A'}\n`);
+  lines.push('Waiter:Waiter\n');
+  lines.push(separator("-"));
+
+  // Item header
+  lines.push('Item            Qty    Price    Amount\n');
+  lines.push(separator("-"));
+
+  // Items
+  if (!items || items.length === 0) {
+    lines.push('NO ITEMS\n');
+  } else {
+    items.forEach(item => {
+      lines.push(SIZE_2X);
+      lines.push(BOLD_ON);
+      lines.push(`${(item.n || item.name || '').toUpperCase()}\n`);
+      lines.push(BOLD_OFF);
+      lines.push(SIZE_NORMAL);
+      const qty = String(item.q || item.quantity || 1).padStart(4);
+      const price = String((item.p || item.price || 0).toFixed(2)).padStart(9);
+      const amount = String(((item.p || item.price || 0) * (item.q || item.quantity || 1)).toFixed(2)).padStart(10);
+      lines.push(`${qty}  ${price}  ${amount}\n`);
+    });
   }
-  lines.push(divider('='));
-  lines.push(CMD.BOLD_ON);
-  lines.push(padRight('TOTAL', 'Rs.' + Number(total).toFixed(0)) + '\n');
-  lines.push(CMD.BOLD_OFF);
-  lines.push(divider());
 
-  lines.push(CMD.ALIGN_CENTER);
-  lines.push(`Payment: ${method}\n`);
-  lines.push('\n');
-  lines.push('Thank you! Visit again.\n');
-  lines.push('Powered by Softshape.ai\n');
+  lines.push(separator("-"));
+
+  // Subtotal
+  lines.push(BOLD_ON);
+  lines.push(`Sub Total :${String(Number(subtotal).toFixed(2)).padStart(LINE_NORMAL - 12)}\n`);
+  lines.push(BOLD_OFF);
+
+  // Discount (if applicable)
+  if (discount && discount.percent > 0) {
+    lines.push(BOLD_ON);
+    lines.push(`(-) Discount ${discount.percent.toFixed(2)}% :${String(discount.amount.toFixed(2)).padStart(LINE_NORMAL - 22)}\n`);
+    lines.push(BOLD_OFF);
+  }
+
+  // Tax breakdown (only if taxes > 0)
+  if (Number(taxes) > 0) {
+    const halfTax = (Number(taxes) / 2).toFixed(2);
+    lines.push(BOLD_ON);
+    lines.push(`CGST 2.5% :${String(halfTax).padStart(LINE_NORMAL - 12)}\n`);
+    lines.push(`SGST 2.5% :${String(halfTax).padStart(LINE_NORMAL - 12)}\n`);
+    lines.push(BOLD_OFF);
+  }
+
+  lines.push(separator("-"));
+
+  // Total
+  lines.push(BOLD_ON);
+  lines.push(`Total :${String(Number(total).toFixed(2)).padStart(LINE_NORMAL - 8)}\n`);
+  lines.push(BOLD_OFF);
+
+  // Grand Total (2x bold)
+  lines.push(SIZE_2X);
+  lines.push(BOLD_ON);
+  lines.push(`Grand Total : ${Number(total).toFixed(2)}\n`);
+  lines.push(BOLD_OFF);
+  lines.push(SIZE_NORMAL);
+
+  lines.push(separator("-"));
+  const itemCount = items.length;
+  const qtyCount = items.reduce((sum, item) => sum + (item.q || item.quantity || 1), 0);
+  lines.push(`Items / Qty : ${itemCount} / ${qtyCount}\n`);
+  lines.push(separator("-"));
+  lines.push('(Rounded Off to NearestRupees)\n');
+  lines.push('* *\n');
+  lines.push(`${section || 'N/A'}\n`);
+  lines.push(CENTER);
+  lines.push('Thank You, Please Visit again\n');
   lines.push('\n\n\n');
-  lines.push(CMD.CUT);
+  lines.push(CUT);
 
   return lines;
 }

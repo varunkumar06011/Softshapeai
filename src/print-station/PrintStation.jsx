@@ -23,94 +23,115 @@ const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PR
 const VITE_API_URL    = import.meta.env.VITE_API_URL || API_BASE;
 
 // ── ESC/POS constants ────────────────────────────────────────────────────────
-const ESC = '\x1B';
-const GS  = '\x1D';
-const CMD = {
-  INIT:           ESC + '@',
-  ALIGN_CENTER:   ESC + 'a\x01',
-  ALIGN_LEFT:     ESC + 'a\x00',
-  BOLD_ON:        ESC + 'E\x01',
-  BOLD_OFF:       ESC + 'E\x00',
-  NORMAL_SIZE:    GS  + '!\x00',
-  DOUBLE_WIDTH:   GS  + '!\x01',
-  DOUBLE_HEIGHT:  GS  + '!\x10',
-  SCALE_2X2:      GS  + '!\x11',
-  SCALE_3X3:      GS  + '!\x22',
-  SCALE_4X4:      GS  + '!\x33',
-  CUT:            GS  + 'V\x41\x03',
-};
-function divider(ch = '-', w = 42) { return ch.repeat(w) + '\n'; }
-function pad(s, w) { return String(s).slice(0, w).padEnd(w); }
-function padRight(l, r, w = 42) {
-  return l + ' '.repeat(Math.max(0, w - l.length - r.length)) + r;
-}
+const INIT = '\x1B\x40';
+const CENTER = '\x1B\x61\x01';
+const LEFT = '\x1B\x61\x00';
+const BOLD_ON = '\x1B\x45\x01';
+const BOLD_OFF = '\x1B\x45\x00';
+const SIZE_2X = '\x1D\x21\x11';
+const SIZE_NORMAL = '\x1D\x21\x00';
+const CUT = '\x1D\x56\x42\x00';
+
+const LINE_NORMAL = 42;
+const LINE_2X = 21;
+
+function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
-function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER' }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', sectionName }) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+  const displayKotId = kotId || "N/A";
+  const kotTableLine = `KOT No:${displayKotId}  Table:${tableNumber}`.padEnd(LINE_2X);
+
   const cmds = [
-    CMD.INIT,
-    CMD.ALIGN_CENTER,
-    CMD.BOLD_ON,
-    label + '\n',
-    CMD.BOLD_OFF,
-    divider(),
-    CMD.ALIGN_LEFT,
-    `Table : ${tableNumber}\n`,
-    `KOT   : ${String(kotId).slice(-6).toUpperCase()}\n`,
-    `Time  : ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
-    divider(),
-    CMD.BOLD_ON,
-    padRight('ITEM', 'QTY', 42) + '\n',
-    CMD.BOLD_OFF,
-    divider(),
+    INIT,
+    CENTER,
+    BOLD_ON,
+    `${label}\n`,
+    BOLD_OFF,
+    LEFT,
+    separator("-"),
+    SIZE_2X,
+    BOLD_ON,
+    kotTableLine + "\n",
+    BOLD_OFF,
+    SIZE_NORMAL,
+    separator("-"),
+    "Waiter : Waiter\n",
+    `Ordered Date : ${dateStr}  Time : ${timeStr}\n`,
+    separator("-"),
+    BOLD_ON,
+    "Qty  Item\n",
+    BOLD_OFF,
+    separator("-"),
   ];
+
   (items || []).forEach(item => {
-    cmds.push(CMD.BOLD_ON);
-    const name = String(item.name || '').slice(0, 30);
-    const qty  = String(item.quantity || 1).slice(0, 4);
-    cmds.push(pad(name, 30) + padRight('', qty, 12) + '\n');
-    cmds.push(CMD.BOLD_OFF);
-    if (item.notes) cmds.push(`  ** ${item.notes} **\n`);
+    const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`.padEnd(LINE_2X);
+    cmds.push(
+      SIZE_2X,
+      BOLD_ON,
+      itemLine + "\n",
+      BOLD_OFF,
+      SIZE_NORMAL,
+      `[${item.price}]\n`,
+      "\n"
+    );
   });
-  cmds.push(divider(), '\n\n', CMD.CUT);
+
+  cmds.push(
+    separator("-"),
+    `Hall Name : ${sectionName || 'N/A'}\n`,
+    "\n\n\n",
+    CUT
+  );
+
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
 function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
+  const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  const itemType = item?.menuType === 'BAR' ? 'Bar Item' : 'Food Item';
+
   const cmds = [
-    CMD.INIT,
-    CMD.ALIGN_CENTER,
-    divider('='),
-    CMD.BOLD_ON,
+    INIT,
+    CENTER,
+    BOLD_ON,
     'CANCEL ITEM\n',
-    CMD.BOLD_OFF,
-    divider('='),
-    CMD.ALIGN_LEFT,
-    `Table: ${tableNumber}  |  Time: ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
-    `By: ${cancelledBy || 'Staff'}\n`,
-    divider('-'),
-    '\n',
-    CMD.BOLD_ON,
-    'CANCELLED ITEM:\n',
-    CMD.BOLD_OFF,
-    '\n',
+    BOLD_OFF,
+    separator("-"),
+    LEFT,
+    `Table : ${tableNumber}\n`,
+    `Time  : ${timeStr}\n`,
+    `By    : ${cancelledBy || 'Staff'}\n`,
+    separator("-"),
   ];
+
   if (item) {
-    cmds.push(CMD.BOLD_ON);
-    const lineStr = `${item.quantity}x ${item.name || ''}`;
-    cmds.push(lineStr + '\n');
-    cmds.push(CMD.BOLD_OFF, '\n');
+    const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`.padEnd(LINE_2X);
+    cmds.push(
+      SIZE_2X,
+      BOLD_ON,
+      itemLine + "\n",
+      BOLD_OFF,
+      SIZE_NORMAL,
+      `Type  : ${itemType}\n`
+    );
   }
+
   cmds.push(
-    divider('='),
-    CMD.ALIGN_CENTER,
-    CMD.BOLD_ON,
-    'CANCELLED\n',
-    CMD.BOLD_OFF,
-    divider('='),
-    '\n\n',
-    CMD.CUT
+    separator("-"),
+    CENTER,
+    BOLD_ON,
+    '** CANCELLED **\n',
+    BOLD_OFF,
+    '\n\n\n',
+    CUT
   );
+
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
@@ -291,7 +312,7 @@ export default function PrintStation() {
         try {
           let cmds, printer;
           if (type === 'KOT') {
-            cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER' });
+            cmds    = buildKOTCommands({ ...data, label: 'KOT (Kitchen)' });
             printer = KITCHEN_PRINTER;
           } else if (type === 'BAR_KOT') {
             cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER' });
