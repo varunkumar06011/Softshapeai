@@ -300,7 +300,7 @@ async function fetchRestaurantItemsRaw() {
 
 export async function fetchBarMenuFromBackend() {
   const [barRes, restaurantItems] = await Promise.all([
-    fetch(apiUrl("/api/venue/menu?venueId=venue-bar"), {
+    fetch(apiUrl("/api/bar/menu/items"), {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
     }),
@@ -308,23 +308,8 @@ export async function fetchBarMenuFromBackend() {
   ]);
 
   if (!barRes.ok) throw new Error(`Bar menu fetch failed (${barRes.status})`);
-  
-  // The venue menu API returns items natively shaped like restaurantItems, but with venue-overridden prices.
   const items = await barRes.json();
-  
-  // mapBarMenuItems expects items to have .price (which venue menu sets to basePrice), .category string, etc.
-  // Wait, let's format the items array so it perfectly mimics the expected bar shape.
-  const formattedItems = items.map(item => ({
-    id: item.id,
-    name: item.name,
-    price: Number(item.basePrice), // venue API returns overridden price in basePrice
-    category: item.category?.name || "Imported from Excel",
-    isVeg: item.isVeg,
-    menuType: item.menuType,
-    imageUrl: item.imageUrl
-  }));
-
-  return mapBarMenuItems(formattedItems, restaurantItems);
+  return mapBarMenuItems(items, restaurantItems);
 }
 
 /**
