@@ -177,3 +177,14 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
   }
   return res.json();
 }
+
+export async function deleteTransaction(transactionId, restaurantId) {
+  const res = await fetch(apiUrl(`/api/transactions/${transactionId}?restaurantId=${restaurantId}`), {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to delete transaction');
+  }
+  return res.json();
+}

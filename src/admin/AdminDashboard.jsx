@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   LayoutDashboard,
   Table2,
   UtensilsCrossed,
   ClipboardList,
+  Receipt,
   ChartNoAxesCombined,
   DollarSign,
   Megaphone,
@@ -26,6 +27,7 @@ import OutletToggle from '../shared/components/OutletToggle';
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
+import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
@@ -41,6 +43,7 @@ const navItems = [
   ["menu", "Menu", UtensilsCrossed],
   ["specials", "Today Specials", Star],
   ["orders", "Orders", ClipboardList],
+  ["transactions", "Transactions", Receipt],
   ["reports", "Reports", ChartNoAxesCombined],
   ["captains", "Captain Analytics", ChartNoAxesCombined],
   ["payroll", "Payroll", DollarSign],
@@ -73,12 +76,42 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [ordersCount, setOrdersCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([
-    { id: 1, text: "Raju closed Table 4 bill for ₹2,450", time: "2 min ago", type: "success" },
+    { id: 1, text: "Raju closed Table 4 bill for â‚¹2,450", time: "2 min ago", type: "success" },
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
   const { setTables } = useTableSync();
   const { outlet } = useOutlet();
   const socket = useSocket(outlet === 'bar' ? BAR_ID : RESTAURANT_ID);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const [restaurantTxns, barTxns, venueTxns] = await Promise.allSettled([
+        fetchTransactions(RESTAURANT_ID, 500),
+        fetchTransactions(BAR_ID, 500),
+        fetchTransactions('venue-001', 500),
+      ]);
+      const transactions = [
+        ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
+        ...(barTxns.status === 'fulfilled' ? barTxns.value : []),
+        ...(venueTxns.status === 'fulfilled' ? venueTxns.value : []),
+      ];
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const todayTxns = transactions.filter(txn => {
+        const txnDate = new Date(txn.paidAt || txn.createdAt);
+        return txnDate >= todayStart;
+      });
+
+      setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + Number(txn.amount || 0), 0)));
+      setOrdersCount(todayTxns.length);
+    } catch (err) {
+      console.warn('[AdminStats] Failed to load stats:', err.message);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const pushLog = (text, type = "info") => {
@@ -95,7 +128,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table) return;
-      pushLog(`Table ${table.number} → ${table.workflowStatus || table.status}`, "info");
+      pushLog(`Table ${table.number} â†’ ${table.workflowStatus || table.status}`, "info");
     };
 
     socket.on("order:created", onOrderCreated);
@@ -113,44 +146,19 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     };
   }, [socket, setTables]);
 
-  // ── Real stats fetch ─────────────────────────────────────────────────
+  // â”€â”€ Real stats fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let cancelled = false;
 
-    const loadStats = async () => {
-      try {
-        const [restaurantTxns, barTxns] = await Promise.allSettled([
-          fetchTransactions(RESTAURANT_ID, 500),
-          fetchTransactions(BAR_ID, 500),
-        ]);
-        const transactions = [
-          ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
-          ...(barTxns.status === 'fulfilled' ? barTxns.value : []),
-        ];
-        if (cancelled) return;
-
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-
-        const todayTxns = transactions.filter(txn => {
-          const txnDate = new Date(txn.paidAt || txn.createdAt);
-          return txnDate >= todayStart;
-        });
-
-        setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + Number(txn.amount || 0), 0)));
-        setOrdersCount(todayTxns.length);
-      } catch (err) {
-        console.warn('[AdminStats] Failed to load stats:', err.message);
-        // Keep at 0 on failure — don’t show stale fake data
-      } finally {
-        if (!cancelled) setStatsLoading(false);
-      }
+    const loadStatsEffect = async () => {
+      await loadStats();
+      if (cancelled) return;
     };
 
-    loadStats();
-    const interval = setInterval(loadStats, 60000);
+    loadStatsEffect();
+    const interval = setInterval(loadStatsEffect, 60000);
 
-    const onOrderPaidRefresh = () => loadStats();
+    const onOrderPaidRefresh = () => loadStatsEffect();
     if (socket) socket.on('order:paid', onOrderPaidRefresh);
 
     return () => {
@@ -158,7 +166,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       clearInterval(interval);
       if (socket) socket.off('order:paid', onOrderPaidRefresh);
     };
-  }, [socket, outlet]);
+  }, [socket, outlet, loadStats]);
 
   const displayNavItems = role === 'manager'
     ? navItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
@@ -168,7 +176,6 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A] font-sans">
-      {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
@@ -183,7 +190,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                 className="w-full h-full object-contain"
               />
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">âœ•</button>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-bold text-white/90 flex-shrink-0 mb-2 mt-4">
             <span className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" />
@@ -240,6 +247,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "menu" && outlet === 'bar' && <BarMenuPage />}
           {page === "specials" && <TodaySpecials />}
           {page === "orders" && <Orders />}
+          {page === "transactions" && <AdminTransactions onStatsRefresh={loadStats} />}
           {page === "reports" && <Reports />}
           {page === "captains" && (
             <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
@@ -263,13 +271,12 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
             onClick={() => setSpireOpen(true)}
             className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-[#E53935] px-4 py-2.5 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[10px] transition-colors group cursor-grab active:cursor-grabbing"
           >
-            <Sparkles size={14} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
+            <Sparkles size={14} className="group-hover:rotate-12 transition-transform" /> Ask Spire âœ¨
           </motion.button>
           <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
         </>
       )}
 
-      {/* Spire.ai Assistant Side Drawer */}
       {spireOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-md animate-in fade-in duration-500" onClick={() => setSpireOpen(false)} />
@@ -284,7 +291,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                   <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Operational Intelligence Active</p>
                 </div>
               </div>
-              <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">✕</button>
+              <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">âœ•</button>
             </div>
 
             <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-[#FFF9F9]">
@@ -303,9 +310,9 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                   Analyzing sales, inventory logs, and camera feeds...
                 </p>
                 <ul className="space-y-3 text-sm font-bold text-gray-700">
-                  <li className="flex gap-2"><span>•</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
-                  <li className="flex gap-2"><span>•</span> 35kg remains in cold storage (Fridge 2)</li>
-                  <li className="flex gap-2 text-[#E53935] font-black"><span>•</span> 2.5kg discrepancy found.</li>
+                  <li className="flex gap-2"><span>â€¢</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
+                  <li className="flex gap-2"><span>â€¢</span> 35kg remains in cold storage (Fridge 2)</li>
+                  <li className="flex gap-2 text-[#E53935] font-black"><span>â€¢</span> 2.5kg discrepancy found.</li>
                 </ul>
 
                 <div className="relative aspect-[16/10] rounded-[32px] overflow-hidden bg-black group border-[3px] border-[#E53935] shadow-2xl">

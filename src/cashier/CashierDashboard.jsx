@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, requestBilling } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -29,6 +29,8 @@ import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
 import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useVenueTableSync } from '../services/venueTableSyncService';
+import DateInputButton from '../shared/components/DateInputButton';
+import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -291,7 +293,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [selectedTable?.backendId]);
 
   const { outlet } = useOutlet();
-  const TX_CACHE_KEY = `softshape_transactions_${outlet}_${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })}`;
+  const TX_CACHE_KEY = `softshape_transactions_${outlet}_${getKolkataDateString()}`;
 
   const [pastTransactions, setPastTransactions] = useState(() => {
     // Start with localStorage cache for instant display
@@ -305,6 +307,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnsLoading, setTxnsLoading] = useState(false);
   const [expandedTxnId, setExpandedTxnId] = useState(null);
   const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
+  const [txnCustomDate, setTxnCustomDate] = useState('');
   const txnDateFilterRef = useRef('today'); // Keeps latest filter accessible inside closures without re-subscribing
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
@@ -326,31 +329,25 @@ const CashierDashboard = ({ onLogout }) => {
   const socket = useSocket(activeRestaurantId);
 
   function formatBillNumber(txnDate, txnNumber) {
-    if (!txnDate || !txnNumber) return 'Bill #—';
-    const datePart = String(txnDate || '').replace(/-/g, '').slice(2); // "YYYY-MM-DD" → "YYMMDD"
-    const seqPart = String(txnNumber).padStart(3, '0');   // 7 → "007"
-    return `${datePart}-${seqPart}`;
+    return formatTxnDisplayId(txnDate, txnNumber);
   }
 
   const loadTransactions = useCallback(async (filter = 'today') => {
     setTxnsLoading(true);
     setPastTransactions([]);
     try {
-      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-      const nowIST = new Date(Date.now() + IST_OFFSET_MS);
-
       let dateParam = null;
       let monthParam = null;
       let limitParam = 200;
 
-      if (filter === 'today') {
-        dateParam = nowIST.toISOString().slice(0, 10);
+      if (filter === 'custom' && txnCustomDate) {
+        dateParam = txnCustomDate;
+      } else if (filter === 'today') {
+        dateParam = getKolkataDateString();
       } else if (filter === 'yesterday') {
-        const yest = new Date(nowIST);
-        yest.setDate(yest.getDate() - 1);
-        dateParam = yest.toISOString().slice(0, 10);
+        dateParam = shiftKolkataDate(new Date(), -1);
       } else if (filter === 'month') {
-        monthParam = nowIST.toISOString().slice(0, 7); // 'YYYY-MM'
+        monthParam = getKolkataMonthString();
         limitParam = 500;
       } else {
         // 'all' — no date filter
@@ -384,12 +381,13 @@ const CashierDashboard = ({ onLogout }) => {
         displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
         amount: Number(txn.amount || 0),
-        time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
-        date: new Date(txn.paidAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }),
+        time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
+        date: new Date(txn.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
         timestamp: new Date(txn.paidAt).getTime(),
         items: txn.itemCount || 0,
         itemsList: txn.items || [],
         captainId: txn.captainId || 'CASHIER',
+        captainName: CAPTAINS.find(c => c.id === txn.captainId)?.name || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
         method: txn.method || 'UPI',
         tableNumber: txn.tableNumber || null,
         source: txn._sourceRestaurantId === 'venue-001'
@@ -416,7 +414,7 @@ const CashierDashboard = ({ onLogout }) => {
     } finally {
       setTxnsLoading(false);
     }
-  }, [TX_CACHE_KEY, activeRestaurantId, outlet]);
+  }, [TX_CACHE_KEY, activeRestaurantId, outlet, txnCustomDate]);
 
   // FIX 2: Filtered transactions based on method and search
   const filteredTransactions = useMemo(() => {
@@ -435,7 +433,10 @@ const CashierDashboard = ({ onLogout }) => {
     if (txnSearch.trim()) {
       const q = txnSearch.trim().toLowerCase();
       list = list.filter(txn =>
-        (txn.displayId || '').toLowerCase().includes(q)
+        (txn.displayId || '').toLowerCase().includes(q) ||
+        (txn.captainName || '').toLowerCase().includes(q) ||
+        String(txn.tableNumber || '').toLowerCase().includes(q) ||
+        String(txn.amount || '').includes(q)
       );
     }
 
@@ -1781,6 +1782,18 @@ const CashierDashboard = ({ onLogout }) => {
                       <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
                         {selectedTable ? 'Change' : '+ Table'}
                       </button>
+                      <DateInputButton
+                        value={txnCustomDate}
+                        max={getKolkataDateString()}
+                        onChange={(val) => {
+                          setTxnCustomDate(val);
+                          if (val) {
+                            setTxnDateFilter('custom');
+                            loadTransactions('custom');
+                          }
+                        }}
+                        className="ml-2"
+                      />
                     </div>
                   </div>
                   <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">
@@ -2078,7 +2091,7 @@ const CashierDashboard = ({ onLogout }) => {
                       ].map(f => (
                         <button
                           key={f.key}
-                          onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); }}
+                          onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                           className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key
                               ? 'bg-[#E53935] text-white shadow-sm'
                               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
@@ -2088,7 +2101,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </button>
                       ))}
                       <button
-                        onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); }}
+                        onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                         className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
                       >
                         ↻ Sync
@@ -2170,7 +2183,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   {/* FIX 6: Captain */}
                                   <td className="p-4">
                                     <span className="text-xs font-bold text-gray-500 uppercase">
-                                      {txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'}
+                                      {txn.captainName || 'Head Cashier'}
                                     </span>
                                   </td>
                                   <td className="p-4">

@@ -4,41 +4,72 @@ import { API_BASE } from '../services/apiConfig';
 
 const RESTAURANT_ID = 'restaurant-001';
 const BAR_ID = 'bar-001';
+const VENUE_ID = 'venue-001';
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 
-// Helper function to determine ml poured for liquor items
 function getLiquorMlPoured(itemName, quantity) {
   if (itemName.endsWith('Full Bottle')) return FULL_BOTTLE_ML * quantity;
   if (itemName.endsWith('30ml')) return BAR_UNIT_ML * quantity;
-  return null; // bottle items or food — no ml display
+  return null;
+}
+
+function getRestaurantIdForSource(source) {
+  if (source === 'bar') return BAR_ID;
+  if (source === 'restaurant') return RESTAURANT_ID;
+  return VENUE_ID;
 }
 
 export default function ItemAnalytics({ outlet = 'restaurant' }) {
-  const [timeFilter, setTimeFilter] = useState('today'); // today, yesterday, month, custom
+  const defaultSource = outlet === 'bar' ? 'bar' : 'restaurant';
+  const [source, setSource] = useState(defaultSource);
+
+  const [timeFilter, setTimeFilter] = useState('today');
   const [customDate, setCustomDate] = useState('');
   const [itemsData, setItemsData] = useState([]);
   const [summary, setSummary] = useState({ totalItems: 0, totalQuantity: 0, totalRevenue: 0 });
   const [loading, setLoading] = useState(false);
-  const [sortField, setSortField] = useState('revenue'); // revenue, quantity, name
+  const [sortField, setSortField] = useState('revenue');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [typeFilter, setTypeFilter] = useState('all'); // all, food, liquor
+  const [typeFilter, setTypeFilter] = useState('all');
 
-  const restaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
+  useEffect(() => {
+    setSource(outlet === 'bar' ? 'bar' : 'restaurant');
+  }, [outlet]);
 
   useEffect(() => {
     fetchAnalytics();
-  }, [timeFilter, customDate, outlet]);
+  }, [timeFilter, customDate, source]);
+
+  const getDateRange = () => {
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const now = new Date(Date.now() + IST_OFFSET_MS);
+    const today = now.toISOString().slice(0, 10);
+
+    if (timeFilter === 'custom' && customDate) {
+      return { startDate: customDate, endDate: customDate };
+    } else if (timeFilter === 'today') {
+      return { startDate: today, endDate: today };
+    } else if (timeFilter === 'yesterday') {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const y = yesterday.toISOString().slice(0, 10);
+      return { startDate: y, endDate: y };
+    } else if (timeFilter === 'month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      return { startDate: firstDay, endDate: today };
+    }
+    return { startDate: today, endDate: today };
+  };
 
   const fetchAnalytics = async () => {
     setLoading(true);
     try {
       const { startDate, endDate } = getDateRange();
-
+      const restaurantId = getRestaurantIdForSource(source);
       const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
       const response = await fetch(url);
       const data = await response.json();
-
       if (data.items) {
         setItemsData(data.items);
         setSummary(data.summary);
@@ -50,52 +81,20 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     }
   };
 
-  const getDateRange = () => {
-    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-    const now = new Date(Date.now() + IST_OFFSET_MS);
-    const today = now.toISOString().slice(0, 10);
-
-    if (timeFilter === 'today') {
-      return { startDate: today, endDate: today };
-    } else if (timeFilter === 'yesterday') {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
-      return { startDate: yesterdayStr, endDate: yesterdayStr };
-    } else if (timeFilter === 'month') {
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      return { startDate: firstDay, endDate: today };
-    } else if (timeFilter === 'custom' && customDate) {
-      return { startDate: customDate, endDate: customDate };
-    }
-    return { startDate: today, endDate: today };
-  };
-
   const filteredAndSortedData = useMemo(() => {
     let filtered = itemsData;
-
-    // Apply type filter
     if (typeFilter !== 'all') {
       filtered = filtered.filter(item => item.type === typeFilter);
     }
-
-    // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
-
       if (sortField === 'name') {
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
       }
-
-      if (sortDirection === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
+      return sortDirection === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
     });
-
     return sorted;
   }, [itemsData, sortField, sortDirection, typeFilter]);
 
@@ -109,22 +108,23 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   };
 
   const handleExport = () => {
+    const { startDate } = getDateRange();
     const csv = [
-      ['Item Name', 'Type', 'Quantity Sold', 'ML Poured', 'Revenue (₹)'],
+      ['Item Name', 'Type', 'Quantity Sold', 'ML Poured', 'Revenue (Rs)'],
       ...filteredAndSortedData.map(item => [
         item.name,
         item.type === 'liquor' ? 'Liquor' : 'Food',
         item.quantity,
         getLiquorMlPoured(item.name, item.quantity) ?? '',
-        item.revenue.toFixed(2)
-      ])
+        item.revenue.toFixed(2),
+      ]),
     ].map(row => row.join(',')).join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `item-analytics-${getDateRange().startDate}.csv`;
+    a.download = `item-analytics-${source}-${startDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -134,9 +134,17 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
 
+  const sourcePills = [
+    { id: 'bar', label: 'Bar' },
+    { id: 'restaurant', label: 'Restaurant' },
+    { id: 'conference1', label: 'Conf 1' },
+    { id: 'conference2', label: 'Conf 2' },
+    { id: 'pdr', label: 'PDR' },
+    { id: 'parcel', label: 'Parcel' },
+  ];
+
   return (
     <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider">Item Analytics</h2>
@@ -151,24 +159,44 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         </button>
       </div>
 
-      {/* Time Filter Buttons */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <Filter size={16} className="text-[#E53935]" />
+          <span className="text-xs font-black uppercase text-gray-700">Source</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {sourcePills.map(pill => (
+            <button
+              key={pill.id}
+              onClick={() => { setSource(pill.id); setTypeFilter('all'); }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                source === pill.id
+                  ? 'bg-[#E53935] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {pill.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <Calendar size={16} className="text-[#E53935]" />
           <span className="text-xs font-black uppercase text-gray-700">Time Period</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {[
             { id: 'today', label: 'Today' },
             { id: 'yesterday', label: 'Yesterday' },
             { id: 'month', label: 'This Month' },
-            { id: 'custom', label: 'Custom Date' }
           ].map(filter => (
             <button
               key={filter.id}
-              onClick={() => setTimeFilter(filter.id)}
+              onClick={() => { setTimeFilter(filter.id); setCustomDate(''); }}
               className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
-                timeFilter === filter.id
+                timeFilter === filter.id && !customDate
                   ? 'bg-[#E53935] text-white shadow-md'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
@@ -176,22 +204,24 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
               {filter.label}
             </button>
           ))}
+          <input
+            type="date"
+            value={customDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={e => {
+              const val = e.target.value;
+              setCustomDate(val);
+              if (val) setTimeFilter('custom');
+            }}
+            className={`px-3 py-2 rounded-lg text-xs font-bold border-2 outline-none transition-colors cursor-pointer ${
+              customDate
+                ? 'border-[#E53935] text-[#E53935] bg-red-50'
+                : 'border-gray-200 text-gray-600 bg-white hover:border-gray-400'
+            }`}
+          />
         </div>
-
-        {/* Custom Date Picker */}
-        {timeFilter === 'custom' && (
-          <div className="mt-3">
-            <input
-              type="date"
-              value={customDate}
-              onChange={(e) => setCustomDate(e.target.value)}
-              className="w-full sm:w-auto px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-[#E53935] outline-none text-sm"
-            />
-          </div>
-        )}
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center gap-3">
@@ -204,7 +234,6 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
             </div>
           </div>
         </div>
-
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center">
@@ -216,7 +245,6 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
             </div>
           </div>
         </div>
-
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
@@ -224,13 +252,12 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
             </div>
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase">Total Revenue</p>
-              <p className="text-2xl font-black text-gray-900">₹{summary.totalRevenue.toFixed(0)}</p>
+              <p className="text-2xl font-black text-gray-900">Rs{summary.totalRevenue.toFixed(0)}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Type Filter */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
         <div className="flex items-center gap-3">
           <Filter size={14} className="text-[#E53935]" />
@@ -239,7 +266,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
             {[
               { id: 'all', label: 'All' },
               { id: 'food', label: 'Food' },
-              { id: 'liquor', label: 'Liquor' }
+              { id: 'liquor', label: 'Liquor' },
             ].map(filter => (
               <button
                 key={filter.id}
@@ -257,7 +284,6 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         </div>
       </div>
 
-      {/* Items Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -267,31 +293,20 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                   onClick={() => handleSort('name')}
                   className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600 cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
-                    Item Name
-                    <SortIcon field="name" />
-                  </div>
+                  <div className="flex items-center gap-1">Item Name <SortIcon field="name" /></div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">
-                  Type
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Type</th>
                 <th
                   onClick={() => handleSort('quantity')}
                   className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600 cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center justify-end gap-1">
-                    Quantity
-                    <SortIcon field="quantity" />
-                  </div>
+                  <div className="flex items-center justify-end gap-1">Quantity <SortIcon field="quantity" /></div>
                 </th>
                 <th
                   onClick={() => handleSort('revenue')}
                   className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600 cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center justify-end gap-1">
-                    Revenue
-                    <SortIcon field="revenue" />
-                  </div>
+                  <div className="flex items-center justify-end gap-1">Revenue <SortIcon field="revenue" /></div>
                 </th>
               </tr>
             </thead>
@@ -327,13 +342,13 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                     <td className="px-4 py-3 text-right">
                       <div className="text-sm font-black text-gray-900">{item.quantity}</div>
                       {item.type === 'liquor' && (() => {
-                        const mlPoured = getLiquorMlPoured(item.name, item.quantity);
-                        return mlPoured !== null && (
-                          <div className="text-[10px] font-bold text-gray-500">{mlPoured}ml poured</div>
+                        const ml = getLiquorMlPoured(item.name, item.quantity);
+                        return ml !== null && (
+                          <div className="text-[10px] font-bold text-gray-500">{ml}ml poured</div>
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{item.revenue.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">Rs{item.revenue.toFixed(2)}</td>
                   </tr>
                 ))
               )}
@@ -348,7 +363,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                     {filteredAndSortedData.reduce((sum, item) => sum + item.quantity, 0)}
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">
-                    ₹{filteredAndSortedData.reduce((sum, item) => sum + item.revenue, 0).toFixed(2)}
+                    Rs{filteredAndSortedData.reduce((sum, item) => sum + item.revenue, 0).toFixed(2)}
                   </td>
                 </tr>
               </tfoot>
