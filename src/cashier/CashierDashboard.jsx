@@ -307,6 +307,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
   const txnDateFilterRef = useRef('today'); // Keeps latest filter accessible inside closures without re-subscribing
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
+  const [txnSourceFilter, setTxnSourceFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
 
   const { menuItems, categories, loading: menuLoading } = useMenu();
@@ -356,8 +357,28 @@ const CashierDashboard = ({ onLogout }) => {
         limitParam = 500;
       }
 
-      const dbTxns = await fetchTransactions(activeRestaurantId, limitParam, dateParam, monthParam);
-      const mapped = dbTxns.map(txn => ({
+      const restaurantIds = outlet === 'bar'
+        ? ['bar-001', 'venue-001']
+        : ['restaurant-001', 'venue-001'];
+
+      const allResults = await Promise.all(
+        restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(() => []))
+      );
+
+      const allTxns = allResults.flatMap((txns, idx) => {
+        const rid = restaurantIds[idx];
+        return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
+      });
+
+      const seen = new Set();
+      const deduped = allTxns.filter(txn => {
+        if (seen.has(txn.id)) return false;
+        seen.add(txn.id);
+        return true;
+      });
+
+      deduped.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
+      const mapped = deduped.map(txn => ({
         id: txn.id,
         txnNumber: txn.txnNumber || null,
         displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
@@ -371,6 +392,20 @@ const CashierDashboard = ({ onLogout }) => {
         captainId: txn.captainId || 'CASHIER',
         method: txn.method || 'UPI',
         tableNumber: txn.tableNumber || null,
+        source: txn._sourceRestaurantId === 'venue-001'
+          ? (String(txn.sectionTag || '').toLowerCase().includes('conference hall 1') || String(txn.sectionTag || '').toLowerCase().includes('conf1')
+            ? 'conference1'
+            : String(txn.sectionTag || '').toLowerCase().includes('conference hall 2') || String(txn.sectionTag || '').toLowerCase().includes('conf2')
+              ? 'conference2'
+              : String(txn.sectionTag || '').toLowerCase().includes('pdr')
+                ? 'pdr'
+                : String(txn.sectionTag || '').toLowerCase().includes('parcel')
+                  ? 'parcel'
+                  : 'venue')
+          : txn._sourceRestaurantId === 'restaurant-001'
+            ? 'restaurant'
+            : 'bar',
+        restaurantId: txn._sourceRestaurantId,
       }));
       setPastTransactions(mapped);
       if (filter === 'today') {
@@ -381,11 +416,15 @@ const CashierDashboard = ({ onLogout }) => {
     } finally {
       setTxnsLoading(false);
     }
-  }, [TX_CACHE_KEY, activeRestaurantId]);
+  }, [TX_CACHE_KEY, activeRestaurantId, outlet]);
 
   // FIX 2: Filtered transactions based on method and search
   const filteredTransactions = useMemo(() => {
     let list = pastTransactions;
+
+    if (txnSourceFilter !== 'all') {
+      list = list.filter(txn => txn.source === txnSourceFilter);
+    }
 
     // Method filter
     if (txnMethodFilter !== 'all') {
@@ -401,7 +440,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return list;
-  }, [pastTransactions, txnMethodFilter, txnSearch]);
+  }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -2007,6 +2046,28 @@ const CashierDashboard = ({ onLogout }) => {
                         );
                       })}
                     </div>
+                    {/* Source filter */}
+                    <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
+                      {[
+                        { key: 'all', label: 'All' },
+                        { key: 'bar', label: 'Bar' },
+                        { key: 'conference1', label: 'Conf 1' },
+                        { key: 'conference2', label: 'Conf 2' },
+                        { key: 'pdr', label: 'PDR' },
+                        { key: 'parcel', label: 'Parcel' },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => setTxnSourceFilter(f.key)}
+                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key
+                              ? 'bg-[#E53935] text-white shadow-sm'
+                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                            }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
                     {/* Date filter tabs */}
                     <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
                       {[
@@ -2017,7 +2078,7 @@ const CashierDashboard = ({ onLogout }) => {
                       ].map(f => (
                         <button
                           key={f.key}
-                          onClick={() => { setTxnDateFilter(f.key); setTxnMethodFilter('all'); setTxnSearch(''); }}
+                          onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); }}
                           className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key
                               ? 'bg-[#E53935] text-white shadow-sm'
                               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
@@ -2027,7 +2088,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </button>
                       ))}
                       <button
-                        onClick={() => { loadTransactions(txnDateFilter); setTxnMethodFilter('all'); setTxnSearch(''); }}
+                        onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); }}
                         className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
                       >
                         ↻ Sync
