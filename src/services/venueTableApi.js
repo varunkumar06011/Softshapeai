@@ -7,8 +7,8 @@ async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
-      const b = await res.json();
-      if (b?.error) message = b.error;
+      const errBody = await res.json();
+      if (errBody?.error) message = errBody.error;
     } catch {}
     throw new Error(message);
   }

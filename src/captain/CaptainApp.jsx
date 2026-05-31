@@ -58,7 +58,6 @@ import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
-import { useVenuePrices } from '../hooks/useVenuePrices';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -268,7 +267,7 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
   const { activeCalls, clearCall } = useWaiterCalls();
-  const venuePrices = useVenuePrices();
+
 
   // ── All useState/useRef declarations FIRST (before any useMemo that references them) ──
   const [currentCaptain, setCurrentCaptain] = useState(() => {
@@ -384,31 +383,8 @@ export default function CaptainApp({ onLogout }) {
     } else {
       baseItems = activeMenuItems.filter(item => item.menuType === 'FOOD');
     }
-
-    // Apply venue pricing if a venue table is selected
-    const sectionName = activeTable?.sectionName || activeTable?.section?.name || '';
-    if (sectionName) {
-      let venueId = null;
-      const t = sectionName.toLowerCase();
-      if (t.includes('conference hall 1') || t.includes('conf1')) venueId = 'venue-conference1';
-      else if (t.includes('conference hall 2') || t.includes('conf2')) venueId = 'venue-conference2';
-      else if (t.includes('pdr')) venueId = 'venue-pdr';
-      else if (t.includes('parcel')) venueId = 'venue-parcel';
-
-      if (venueId && venuePrices[venueId]) {
-        const prices = venuePrices[venueId];
-        baseItems = baseItems.map(item => {
-          const vp = prices[item.id];
-          if (vp !== undefined) {
-            return { ...item, p: vp, price: vp, hasVenuePrice: true };
-          }
-          return null; // Item has no price for this venue
-        }).filter(Boolean); // Hide items with no venue price
-      }
-    }
-
     return baseItems;
-  }, [outlet, activeMenuItems, activeTable, venuePrices]);
+  }, [outlet, activeMenuItems]);
 
   const categories = useMemo(() => {
     if (outlet === 'restaurant') return restaurantCategories;
