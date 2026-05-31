@@ -74,11 +74,9 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
     lines.push('NO ITEMS\n');
   } else {
     items.forEach(item => {
-      lines.push(SIZE_HEIGHT);
       lines.push(BOLD_ON);
       lines.push(`${(item.n || item.name || '').toUpperCase()}\n`);
       lines.push(BOLD_OFF);
-      lines.push(SIZE_NORMAL);
       
       const qty = String(item.q || item.quantity || 1).padStart(4);
       const price = String(Number(item.p || item.price || 0).toFixed(2)).padStart(9);
