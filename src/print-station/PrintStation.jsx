@@ -297,13 +297,20 @@ export default function PrintStation() {
       socket.on('connect', () => {
         setSockOk(true);
         if (!hasJoined) {
-          // Join both restaurant rooms so we receive print_job events
-          // from all outlets (restaurant + bar).
-          socket.emit('join', 'restaurant-001');
-          socket.emit('join', 'bar-001');
+          // Join DEDICATED print rooms — these are isolated from the main
+          // restaurant/bar rooms that captain and cashier sockets join.
+          // This guarantees print_job events are only delivered to this
+          // PrintStation socket, preventing double-printing.
+          socket.emit('join:print', 'restaurant-001');
+          socket.emit('join:print', 'bar-001');
           hasJoined = true;
           pushLog('Socket connected ✓');
         } else {
+          // On reconnect: re-join the print rooms because the server treats
+          // the reconnected socket as a new connection (new socket ID) and
+          // removes it from all rooms. We MUST re-emit join:print.
+          socket.emit('join:print', 'restaurant-001');
+          socket.emit('join:print', 'bar-001');
           pushLog('Socket reconnected ✓');
         }
       });
