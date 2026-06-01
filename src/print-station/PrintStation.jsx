@@ -303,6 +303,7 @@ export default function PrintStation() {
           // PrintStation socket, preventing double-printing.
           socket.emit('join:print', 'restaurant-001');
           socket.emit('join:print', 'bar-001');
+          socket.emit('join:print', 'venue-001');
           hasJoined = true;
           pushLog('Socket connected ✓');
         } else {
@@ -311,6 +312,7 @@ export default function PrintStation() {
           // removes it from all rooms. We MUST re-emit join:print.
           socket.emit('join:print', 'restaurant-001');
           socket.emit('join:print', 'bar-001');
+          socket.emit('join:print', 'venue-001');
           pushLog('Socket reconnected ✓');
         }
       });
