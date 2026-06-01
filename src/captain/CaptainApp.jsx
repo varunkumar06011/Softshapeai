@@ -310,6 +310,7 @@ export default function CaptainApp({ onLogout }) {
   const [activeBarMenu, setActiveBarMenu] = useState('food');
   const [activeVariantItem, setActiveVariantItem] = useState(null);
   const [currentSessionItems, setCurrentSessionItems] = useState([]);
+  const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
 
   // Cancel-item state
   const [cancelLoading,  setCancelLoading]  = useState({});
@@ -732,6 +733,7 @@ export default function CaptainApp({ onLogout }) {
 
       // Clear session items early for optimistic UI
       setCurrentSessionItems([]);
+      setExpandedNoteItemId(null);
       setKotError(null);
 
       // 1. Create/update order in DB FIRST (CRITICAL: Wait for real KOT ID)
@@ -1797,6 +1799,41 @@ export default function CaptainApp({ onLogout }) {
                                 <button onClick={() => updateDraftQty(item.n, 1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Plus size={14} strokeWidth={3} /></button>
                               </div>
                               <span className="text-sm font-black text-gray-900">₹{item.p * item.q}</span>
+                            </div>
+                            <div className="mt-1 ml-1">
+                              {expandedNoteItemId === (item.menuItemId || item.id || item.n) ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    maxLength={40}
+                                    value={item.notes || ''}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setCurrentSessionItems(prev => prev.map(ci =>
+                                        (ci.menuItemId || ci.id || ci.n) === (item.menuItemId || item.id || item.n)
+                                          ? { ...ci, notes: val || null }
+                                          : ci
+                                      ));
+                                    }}
+                                    placeholder="e.g. Less spicy, No onion"
+                                    autoFocus
+                                    className="flex-1 text-[11px] font-bold px-2 py-1 rounded-lg border border-orange-300 bg-orange-50 text-gray-700 placeholder-gray-400 outline-none focus:border-orange-500 transition-colors"
+                                  />
+                                  <button
+                                    onClick={() => setExpandedNoteItemId(null)}
+                                    className="text-[10px] font-black text-gray-400 hover:text-gray-600 px-1"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setExpandedNoteItemId(item.menuItemId || item.id || item.n)}
+                                  className="text-[10px] font-black uppercase tracking-wide text-orange-500 hover:text-orange-700 transition-colors"
+                                >
+                                  {item.notes ? `📝 ${item.notes}` : '+ Add Instruction'}
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}

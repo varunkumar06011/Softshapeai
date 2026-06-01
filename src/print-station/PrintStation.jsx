@@ -74,8 +74,15 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
       SIZE_HEIGHT,
       itemLine + "\n",
       SIZE_NORMAL,
-      "\n"
     );
+    if (item.notes && item.notes.trim()) {
+      cmds.push(
+        BOLD_ON,
+        `** ${item.notes.trim()}\n`,
+        BOLD_OFF,
+      );
+    }
+    cmds.push("\n");
   });
 
   cmds.push(

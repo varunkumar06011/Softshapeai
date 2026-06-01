@@ -198,6 +198,7 @@ const CashierDashboard = ({ onLogout }) => {
       return [];
     }
   });
+  const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(() => {
     try {
@@ -522,6 +523,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === tableId) {
         setSelectedTable(null);
         setCart([]);
+        setExpandedNoteItemId(null);
         setShowPaymentModal(false);
       }
       // Refresh using the user's current date filter (not always 'today')
@@ -898,6 +900,7 @@ const CashierDashboard = ({ onLogout }) => {
       setShowPaymentModal(false);
       setSelectedTable(null);
       setCart([]);
+      setExpandedNoteItemId(null);
       setRemovedItemIds([]);
 
       // Show success notification
@@ -929,6 +932,7 @@ const CashierDashboard = ({ onLogout }) => {
     // Step 2: Clear UI selections
     setSelectedTable(null);
     setCart([]);
+    setExpandedNoteItemId(null);
     setRemovedItemIds([]);
 
     // Step 3: Show notification
@@ -1087,6 +1091,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     setCart([]);
+    setExpandedNoteItemId(null);
 
     if (!table.status || table.status === 'Free') {
       setActiveTab('pos');
@@ -1116,7 +1121,7 @@ const CashierDashboard = ({ onLogout }) => {
       ...item,
       n: itemName,
       p: Number(variant.price),
-      notes: null
+      notes: item.notes || null
     });
     setVariantPickerItem(null);
     setSearchQuery('');
@@ -1263,6 +1268,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     setCart([]);
+    setExpandedNoteItemId(null);
     setIsKotSending(false);
     setIsKotSuccess(true);
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
@@ -1784,7 +1790,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <ShoppingCart size={22} className="text-[#E53935]" />
                         Cart Log
                       </h2>
-                      <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setCart([]); setExpandedNoteItemId(null); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
                       <div className="flex items-center gap-3">
@@ -1868,6 +1874,41 @@ const CashierDashboard = ({ onLogout }) => {
                                 </div>
                                 <button className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg">Edit</button>
                               </>
+                            )}
+                          </div>
+                          <div className="mt-1">
+                            {expandedNoteItemId === (item.menuItemId || item.id || item.n || item.name) ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  maxLength={40}
+                                  value={item.notes || ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setCart(prev => prev.map(ci =>
+                                      (ci.menuItemId || ci.id || ci.n || ci.name) === (item.menuItemId || item.id || item.n || item.name)
+                                        ? { ...ci, notes: val || null }
+                                        : ci
+                                    ));
+                                  }}
+                                  placeholder="e.g. Less spicy, Extra sauce"
+                                  autoFocus
+                                  className="flex-1 text-[11px] font-bold px-2 py-1 rounded-lg border border-orange-300 bg-orange-50 text-gray-700 placeholder-gray-400 outline-none focus:border-orange-500 transition-colors"
+                                />
+                                <button
+                                  onClick={() => setExpandedNoteItemId(null)}
+                                  className="text-[10px] font-black text-gray-400 hover:text-gray-600 px-1"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setExpandedNoteItemId(item.menuItemId || item.id || item.n || item.name)}
+                                className="text-[10px] font-black uppercase tracking-wide text-orange-500 hover:text-orange-700 transition-colors"
+                              >
+                                {item.notes ? `📝 ${item.notes}` : '+ Add Instruction'}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -2419,7 +2460,7 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               </div>
               <button
-                onClick={() => { setShowTableModal(false); setDiscountPercent(0); }}
+                onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
                 className="p-3 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
               >
                 <X size={22} />
@@ -2511,7 +2552,7 @@ const CashierDashboard = ({ onLogout }) => {
               {/* ── Action buttons ──────────────────────────────────── */}
               <div className="grid grid-cols-3 gap-3">
                 <button
-                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); }}
+                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
                   className="py-3.5 rounded-xl border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-gray-50 hover:border-gray-450 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm hover:shadow cursor-pointer"
                 >
                   Add Items

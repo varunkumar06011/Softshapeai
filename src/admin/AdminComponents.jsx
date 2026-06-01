@@ -827,6 +827,7 @@ export function MenuPage({ onAddDish }) {
         name: editingItem.n,
         isVeg: editingItem.t === 'veg',
         price: Number(editingItem.p),
+        menuType: editingItem.menuType || 'FOOD',
         ...(imageUrl !== undefined ? { imageUrl } : {}),
       };
 
@@ -849,7 +850,7 @@ export function MenuPage({ onAddDish }) {
           t: body.isVeg ? 'veg' : 'non',
           img: imageUrl ?? editingItem.img ?? DEFAULT_IMG,
           desc: editingItem.desc ?? '',
-          menuType: editingItem.menuType,
+          menuType: editingItem.menuType || 'FOOD',
         };
         // Apply optimistic update instantly — no loading flash
         setGlobalMenu(prev => prev.map(i => i.id === editingItem.id ? optimisticItem : i));
@@ -916,7 +917,7 @@ export function MenuPage({ onAddDish }) {
           category: addingItem.c,
           isVeg: addingItem.t === 'veg',
           price: Number(addingItem.p),
-          menuType: 'FOOD',
+          menuType: addingItem.menuType || 'FOOD',
           ...(imageUrl ? { imageUrl } : {}),
         }),
       });
@@ -1007,6 +1008,7 @@ export function MenuPage({ onAddDish }) {
             <th className="px-4 py-2">Category</th>
             <th className="px-4 py-2">Price</th>
             <th className="px-4 py-2">Veg/Non</th>
+            <th className="px-4 py-2 text-left text-xs font-black uppercase text-gray-500">KOT Type</th>
             <th className="px-4 py-2">Available</th>
             <th className="px-4 py-2">Action</th>
           </tr>
@@ -1042,6 +1044,15 @@ export function MenuPage({ onAddDish }) {
               <td className="px-4 py-2">
                 <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
                 {item.t === "veg" ? "Veg" : "Non-Veg"}
+              </td>
+              <td className="px-4 py-2">
+                <span className={`rounded-full px-2 py-0.5 text-xs font-black uppercase ${
+                  item.menuType === 'LIQUOR'
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'bg-green-100 text-green-700'
+                }`}>
+                  {item.menuType === 'LIQUOR' ? '🥃 Bar' : '🍽 Food'}
+                </span>
               </td>
               <td className="px-4 py-2">
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -1138,6 +1149,31 @@ export function MenuPage({ onAddDish }) {
                   </label>
                </div>
             </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
+                  { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
+                    className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                      (editingItem.menuType || 'FOOD') === opt.value
+                        ? opt.value === 'FOOD'
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <div>{opt.label}</div>
+                    <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
             <button onClick={() => setEditingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
@@ -1210,6 +1246,31 @@ export function MenuPage({ onAddDish }) {
                      <span className="text-red-700">Non-Veg</span>
                   </label>
                </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
+                  { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setAddingItem({ ...addingItem, menuType: opt.value })}
+                    className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                      (addingItem.menuType || 'FOOD') === opt.value
+                        ? opt.value === 'FOOD'
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <div>{opt.label}</div>
+                    <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
