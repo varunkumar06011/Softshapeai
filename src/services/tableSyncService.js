@@ -225,8 +225,7 @@ async function persistStatusChanges(prevTables, nextTables) {
       table.captainId !== prev.captainId ||
       table.guests !== prev.guests ||
       table.time !== prev.time ||
-      table.currentBill !== prev.currentBill ||
-      JSON.stringify(table.kotHistory ?? []) !== JSON.stringify(prev.kotHistory ?? []);
+      table.currentBill !== prev.currentBill;
 
     if (sessionChanged) {
       tasks.push(
@@ -236,7 +235,6 @@ async function persistStatusChanges(prevTables, nextTables) {
           guests: table.guests ?? 0,
           time: table.time ?? null,
           currentBill: table.currentBill ?? 0,
-          kotHistory: table.kotHistory ?? [],
         })
           .then((updated) => ({ updated }))
           .catch((err) => {
