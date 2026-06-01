@@ -382,37 +382,64 @@ const CashierDashboard = ({ onLogout }) => {
       });
 
       deduped.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
-      const mapped = deduped.map(txn => ({
-        id: txn.id,
-        txnNumber: txn.txnNumber || null,
-        displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
-        kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
-        amount: Number(txn.grandTotal ?? txn.amount ?? 0),
-        grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : null,
-        time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
-        date: new Date(txn.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
-        timestamp: new Date(txn.paidAt).getTime(),
-        items: txn.itemCount || 0,
-        itemsList: txn.items || [],
-        captainId: txn.captainId || 'CASHIER',
-        captainName: CAPTAINS.find(c => c.id === txn.captainId)?.name || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
-        method: txn.method || 'UPI',
-        tableNumber: txn.tableNumber || null,
-        source: txn._sourceRestaurantId === 'venue-001'
-          ? (String(txn.sectionTag || '').toLowerCase().includes('conference hall 1') || String(txn.sectionTag || '').toLowerCase().includes('conf1')
-            ? 'conference1'
-            : String(txn.sectionTag || '').toLowerCase().includes('conference hall 2') || String(txn.sectionTag || '').toLowerCase().includes('conf2')
-              ? 'conference2'
-              : String(txn.sectionTag || '').toLowerCase().includes('pdr')
-                ? 'pdr'
-                : String(txn.sectionTag || '').toLowerCase().includes('parcel')
-                  ? 'parcel'
-                  : 'venue')
+      const mapped = deduped.map(txn => {
+        const subtotal = txn.subtotal != null ? Number(txn.subtotal) : null;
+        const cgst = txn.cgst != null ? Number(txn.cgst) : 0;
+        const sgst = txn.sgst != null ? Number(txn.sgst) : 0;
+        const grandTotal = txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0);
+        const storedDiscountAmount = txn.discountAmount != null ? Number(txn.discountAmount) : null;
+        const discountAmount = storedDiscountAmount != null
+          ? storedDiscountAmount
+          : subtotal != null
+            ? Math.max(0, Math.round((subtotal + cgst + sgst - grandTotal) * 100) / 100)
+            : 0;
+        const storedDiscountPercent = txn.discountPercent != null ? Number(txn.discountPercent) : null;
+        const discountPercent = storedDiscountPercent != null
+          ? storedDiscountPercent
+          : subtotal && discountAmount > 0
+            ? Math.round((discountAmount / subtotal) * 10000) / 100
+            : 0;
+        const source = txn._sourceRestaurantId === 'venue-001'
+          ? (
+            String(txn.sectionTag || '').toLowerCase().includes('conference hall 1') || String(txn.sectionTag || '').toLowerCase().includes('conf1')
+              ? 'conference1'
+              : String(txn.sectionTag || '').toLowerCase().includes('conference hall 2') || String(txn.sectionTag || '').toLowerCase().includes('conf2')
+                ? 'conference2'
+                : String(txn.sectionTag || '').toLowerCase().includes('pdr')
+                  ? 'pdr'
+                  : String(txn.sectionTag || '').toLowerCase().includes('parcel')
+                    ? 'parcel'
+                    : 'venue'
+          )
           : txn._sourceRestaurantId === 'restaurant-001'
             ? 'restaurant'
-            : 'bar',
-        restaurantId: txn._sourceRestaurantId,
-      }));
+            : 'bar';
+
+        return {
+          id: txn.id,
+          txnNumber: txn.txnNumber || null,
+          displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
+          kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
+          amount: grandTotal,
+          grandTotal: txn.grandTotal != null ? grandTotal : null,
+          subtotal,
+          discountPercent,
+          discountAmount,
+          cgst,
+          sgst,
+          time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
+          date: new Date(txn.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
+          timestamp: new Date(txn.paidAt).getTime(),
+          items: txn.itemCount || 0,
+          itemsList: txn.items || [],
+          captainId: txn.captainId || 'CASHIER',
+          captainName: CAPTAINS.find(c => c.id === txn.captainId)?.name || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
+          method: txn.method || 'UPI',
+          tableNumber: txn.tableNumber || null,
+          source,
+          restaurantId: txn._sourceRestaurantId,
+        };
+      });
       setPastTransactions(mapped);
       if (filter === 'today') {
         localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
@@ -802,7 +829,6 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       addNotification('Success', 'Bill printed successfully.', 'success');
-      setDiscountPercent(0);
 
       // Optimistically update local table status → shows "Settlement" button
       setActiveTables((prev) =>
@@ -905,6 +931,7 @@ const CashierDashboard = ({ onLogout }) => {
       setShowPaymentModal(false);
       setSelectedTable(null);
       setCart([]);
+      setDiscountPercent(0);
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
 
@@ -2276,6 +2303,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   <tr key={`${txn.id}-detail`} className="bg-gray-50">
                                     <td colSpan={6} className="px-6 pb-4 pt-2">
                                       {txn.itemsList && txn.itemsList.length > 0 ? (
+                                        <>
                                         <div className="flex flex-col gap-2">
                                           <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
                                           {txn.itemsList.map((item, idx) => (
@@ -2289,6 +2317,29 @@ const CashierDashboard = ({ onLogout }) => {
                                             <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                           </div>
                                         </div>
+                                          <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 mt-2 space-y-2">
+                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                              <span>Subtotal</span>
+                                              <span className="text-gray-800">₹{Number(txn.subtotal ?? txn.itemsList.reduce((sum, item) => sum + Number(item.price || item.p || 0) * Number(item.quantity || item.q || 1), 0)).toFixed(0)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                              <span>Discount {Number(txn.discountPercent ?? 0) > 0 ? `(${Number(txn.discountPercent).toFixed(0)}%)` : '(0%)'}</span>
+                                              <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(0)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                              <span>CGST</span>
+                                              <span className="text-gray-800">₹{Number(txn.cgst ?? 0).toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                              <span>SGST</span>
+                                              <span className="text-gray-800">₹{Number(txn.sgst ?? 0).toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                                              <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
+                                              <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                            </div>
+                                          </div>
+                                        </>
                                       ) : (
                                         <p className="text-xs text-gray-400 py-3">No item details available.</p>
                                       )}
