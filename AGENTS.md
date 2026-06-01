@@ -42,6 +42,7 @@ Do not rewrite commit history.
 
 Always create branches for changes.
 
+The backend is on https://softshape-backend.onrender.com, always clone https://github.com/varunkumar06011/softshape-backend for backend repo and chnage both simaltaneously
 ---
 
 ## BRANCH NAMING
