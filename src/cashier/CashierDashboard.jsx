@@ -1045,6 +1045,13 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     if (tableSnap?.backendId) {
+      const terminateUrl = outlet === 'bar'
+        ? `${import.meta.env.VITE_API_URL}/api/bar-tables/terminate-table/${tableSnap.backendId}`
+        : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
+
+      fetch(terminateUrl, { method: 'POST' })
+        .catch(err => console.warn('[Terminate] order cancel failed:', err.message));
+
       if (outlet === 'bar') {
         import('../services/barTableApi').then(({ updateBarTableSession }) => {
           updateBarTableSession(tableSnap.backendId, resetSessionPayload)
@@ -1393,18 +1400,6 @@ const CashierDashboard = ({ onLogout }) => {
         const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
           (response?.order?.kotHistory || response?.kotHistory)?.length - 1
         ]?.id ?? kotsToCreate[0]?.id;
-
-        // Fire-and-forget print with real KOT ID
-        printKOTQZ({
-          tableId: selectedTable.backendId,
-          kotId: realKotId,
-          orderId: selectedTable.activeOrder.id,
-          kotNumber: realKotId,
-          items: cart,
-        }).catch(err => {
-          console.warn('[KOT] Print failed (non-blocking):', err.message);
-          addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
-        });
         } else {
           await createOrder({
             tableId: selectedTable.backendId,
