@@ -90,9 +90,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
     time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
-    kotHistory: mergedKotHistory,
-    currentBill: Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
-    activeOrder,
+    kotHistory: dbStatus === 'AVAILABLE' ? [] : mergedKotHistory,
+    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
   };
 
   return base;

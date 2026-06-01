@@ -2367,18 +2367,6 @@ const CashierDashboard = ({ onLogout }) => {
                           <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
                             {selectedTable ? 'Change' : '+ Table'}
                           </button>
-                          <DateInputButton
-                            value={txnCustomDate}
-                            max={getKolkataDateString()}
-                            onChange={(val) => {
-                              setTxnCustomDate(val);
-                              if (val) {
-                                setTxnDateFilter('custom');
-                                loadTransactions('custom');
-                              }
-                            }}
-                            className="ml-2"
-                          />
                         </div>
                       </div>
                       <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">

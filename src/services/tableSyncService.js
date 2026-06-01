@@ -89,7 +89,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     guests: row.guests ?? 0,
     time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
     captainId: row.captainId ?? null,
-    kotHistory: Array.isArray(row.kotHistory)
+    kotHistory: dbStatus === 'AVAILABLE' ? [] : (Array.isArray(row.kotHistory)
       ? row.kotHistory.map((kot, ki) => {
           const existingKot = existing?.kotHistory?.[ki];
           return {
@@ -100,9 +100,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
             })) : [],
           };
         })
-      : [],
-    currentBill: Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
-    activeOrder,
+      : []),
+    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
   };
 
   return base;

@@ -94,10 +94,10 @@ function mapBackendTable(row, existing = null) {
     guests: row.guests ?? existing?.guests ?? 0,
     time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : (existing?.time ?? null),
     captainId: row.captainId ?? existing?.captainId ?? null,
-    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? []),
+    kotHistory: dbStatus === 'AVAILABLE' ? [] : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? [])),
     items: activeOrder?.items || existing?.items || [],
-    currentBill: Math.max(row.currentBill ?? existing?.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
-    activeOrder,
+    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(row.currentBill ?? existing?.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
   };
 }
 
