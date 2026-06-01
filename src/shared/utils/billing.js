@@ -90,8 +90,7 @@ export const getTableItems = (table) => {
     return table.kotHistory.flatMap(kot => kot.items || []);
   }
 
-  // 3. Last resort: flat items array (used by bar tables)
-  return table.items || [];
+  return [];
 };
 
 /**
