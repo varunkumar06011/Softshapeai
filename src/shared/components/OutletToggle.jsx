@@ -56,17 +56,6 @@ export default function OutletToggle({ className = '', requireAuth = false }) {
           <span className="text-base sm:text-lg">🍺</span>
           <span className="hidden xs:inline">Bar</span>
         </button>
-        <button
-          onClick={() => handleToggle('venue')}
-          className={`px-2.5 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
-            outlet === 'venue'
-              ? 'bg-[#4527A0] text-white shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <span className="text-base sm:text-lg">🏛</span>
-          <span className="hidden xs:inline">Venue</span>
-        </button>
       </div>
 
       {showModal && (
