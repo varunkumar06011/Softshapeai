@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
+<<<<<<< HEAD
 import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling } from '../services/orderApi';
+=======
+import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, requestBilling, cancelOrderItem } from '../services/orderApi';
+>>>>>>> 7f6daf6 (fix by varun)
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -208,6 +212,10 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   const [showTableModal, setShowTableModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelSelected, setCancelSelected] = useState({});
+  const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState({});
   const [isKotSending, setIsKotSending] = useState(false);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -1939,7 +1947,9 @@ const CashierDashboard = ({ onLogout }) => {
                     {/* ── RESTAURANT / BAR TABLES (existing grid — completely unchanged) ── */}
                     {tableSubCategory === 'restaurant' && (
                       <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                        {activeTables.map((table, i) => {
+                        {activeTables
+                          .filter(t => Number(t.number) !== 999 && String(t.number) !== '999')
+                          .map((table, i) => {
                           const isFree = table.status === 'Free' || !table.status;
                           const isWaitingBill = table.status === 'Waiting Bill';
                           const isBusy = !isFree && !isWaitingBill;
@@ -2426,6 +2436,17 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
                     ))}
                 </div>
+                {getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 && (
+                  <button
+                    onClick={() => {
+                      setShowCancelModal(true);
+                      setCancelSelected({});
+                    }}
+                    className="w-full mt-3 py-2 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-red-200"
+                  >
+                    <X size={14} /> Cancel Items
+                  </button>
+                )}
               </div>
 
               {/* ── Discount Input ──────────────────────────────────── */}
@@ -3100,6 +3121,148 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         ))}
       </div>
+
+      {/* CANCEL ITEMS MODAL */}
+      {showCancelModal && selectedTable && (() => {
+        const cancellableItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+        const selectedCount = Object.keys(cancelSelected).length;
+
+        const handleCancelSelected = async () => {
+          if (selectedCount === 0) return;
+          if (!selectedTable?.activeOrder?.id) {
+            addNotification('No active order found.', 'error');
+            return;
+          }
+          setCancelBatchLoading(true);
+          const entries = Object.values(cancelSelected);
+
+          let hasError = false;
+          for (const { item } of entries) {
+            setCancelLoading(prev => ({ ...prev, [item.id]: true }));
+            try {
+              await cancelOrderItem(
+                selectedTable.activeOrder.id,
+                item.id,
+                'Cashier',
+                selectedTable.number || selectedTable.id
+              );
+            } catch (err) {
+              console.error('[CancelBatch]', err.message);
+              addNotification(`Failed to cancel ${item.n}`, 'error');
+              hasError = true;
+            } finally {
+              setCancelLoading(prev => ({ ...prev, [item.id]: false }));
+            }
+          }
+
+          if (!hasError) {
+            addNotification(
+              selectedCount === 1
+                ? `${entries[0].item.n} cancelled`
+                : `${selectedCount} items cancelled`,
+              'success'
+            );
+          }
+          setCancelSelected({});
+          setCancelBatchLoading(false);
+          setShowCancelModal(false);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowCancelModal(false); setCancelSelected({}); }}>
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm mx-0 sm:mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => { setShowCancelModal(false); setCancelSelected({}); }} className="p-2 bg-red-50 hover:bg-red-100 rounded-xl transition-colors cursor-pointer active:scale-95">
+                    <X size={18} className="text-red-500" />
+                  </button>
+                  <div>
+                    <h3 className="font-black text-sm text-gray-900">Cancel Items</h3>
+                    <p className="text-[10px] text-gray-400 font-semibold">Table {selectedTable?.number || selectedTable?.id} — select items to remove</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Body: List items */}
+              <div className="p-5 max-h-[40vh] overflow-y-auto custom-scrollbar bg-gray-50/50 space-y-2">
+                {cancellableItems.length === 0 ? (
+                  <p className="text-xs text-gray-400 font-bold text-center py-4">No cancellable items.</p>
+                ) : (
+                  cancellableItems.map((item, idx) => {
+                    const isSelected = !!cancelSelected[item.id];
+                    const isLoading = cancelLoading[item.id];
+                    return (
+                      <button
+                        key={item.id || idx}
+                        disabled={isLoading}
+                        onClick={() => {
+                          setCancelSelected(prev => {
+                            const next = { ...prev };
+                            if (next[item.id]) delete next[item.id];
+                            else next[item.id] = { item };
+                            return next;
+                          });
+                        }}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                          isSelected 
+                            ? 'border-red-500 bg-red-50' 
+                            : 'border-transparent bg-white hover:border-gray-200'
+                        } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {/* Custom Checkbox */}
+                        <div className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 transition-colors ${
+                          isSelected 
+                            ? 'bg-red-500 border-red-500' 
+                            : 'border-gray-300'
+                        }`}>
+                          {isSelected && <Check size={12} className="text-white" />}
+                        </div>
+                        
+                        <div className="flex-1">
+                          <p className={`text-xs font-black ${isSelected ? 'text-red-900' : 'text-gray-700'}`}>
+                            {item.n}
+                          </p>
+                          <p className="text-[10px] font-bold text-gray-400 mt-0.5">
+                            Qty: {item.q}
+                          </p>
+                        </div>
+                        {isLoading && <Loader2 size={14} className="text-red-500 animate-spin" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 bg-white border-t border-gray-100 flex gap-3">
+                <button
+                  onClick={() => { setShowCancelModal(false); setCancelSelected({}); }}
+                  className="flex-1 py-3.5 rounded-xl text-xs font-black text-gray-500 hover:bg-gray-100 transition-colors uppercase tracking-widest"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleCancelSelected}
+                  disabled={selectedCount === 0 || cancelBatchLoading}
+                  className={`flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                    selectedCount > 0
+                      ? 'bg-[#E53935] text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {cancelBatchLoading ? (
+                    <><Loader2 size={16} className="animate-spin" /> Cancelling...</>
+                  ) : (
+                    <>Confirm Cancel ({selectedCount})</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <VariantPicker
         item={variantPickerItem}
         onSelect={handleVariantSelect}
