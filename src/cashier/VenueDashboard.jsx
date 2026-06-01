@@ -196,7 +196,7 @@ export default function VenueDashboard({ addNotification }) {
           )
         );
       } else {
-        await updateOrderItems(orderId, [...existingItems, ...cart]);
+        await updateOrderItems(orderId, cart);
       }
 
       // Build KOT entry

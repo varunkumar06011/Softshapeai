@@ -626,7 +626,15 @@ export default function CaptainApp({ onLogout }) {
       if (existing) {
         return prev.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
       }
-      return [...prev, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending' }];
+      return [...prev, {
+        ...item,
+        n: finalName,
+        p: finalPrice,
+        q: 1,
+        notes: null,
+        s: 'Pending',
+        menuType: item.menuType || 'FOOD',
+      }];
     });
     addNotification(`${finalName} added`, 'success');
     setSearchQuery('');
@@ -717,14 +725,16 @@ export default function CaptainApp({ onLogout }) {
     try {
       // Format items for the API — menuType MUST be included so the backend
       // can split food → KOT (kitchen) and liquor → BAR_KOT (bar printer).
-      const apiItems = currentSessionItems.map(i => ({
-        menuItemId: String(i.id || i.menuItemId || i.n || i.name),
-        name: i.n || i.name,
-        price: Number(i.p ?? i.price ?? 0),
-        quantity: Number(i.q ?? i.quantity ?? 1),
-        notes: i.notes || null,
-        menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
-      }));
+      const apiItems = currentSessionItems
+        .map(i => ({
+          menuItemId: String(i.id || i.menuItemId || ''),
+          name: i.n || i.name,
+          price: Number(i.p ?? i.price ?? 0),
+          quantity: Number(i.q ?? i.quantity ?? 1),
+          notes: i.notes || null,
+          menuType: String(i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+        }))
+        .filter(i => !!i.menuItemId);
 
       // Snapshot items before clearing — needed for print and retry
       const itemsForPrint = [...currentSessionItems];

@@ -34,7 +34,6 @@ const SIZE_HEIGHT = '\x1D\x21\x01';
 const CUT = '\x1D\x56\x42\x00';
 
 const LINE_NORMAL = 42;
-const LINE_2X = 21;
 
 function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
@@ -45,7 +44,10 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
   const displayKotId = kotId || "N/A";
-  const kotTableLine = `KOT No:${displayKotId}  Table:${tableNumber}`.padEnd(LINE_2X);
+  const kotLeft = `KOT No : ${displayKotId}`;
+  const tableRight = `Table : ${tableNumber}`;
+  const gap = LINE_NORMAL - kotLeft.length - tableRight.length;
+  const kotTableLine = kotLeft + ' '.repeat(Math.max(1, gap)) + tableRight;
 
   const cmds = [
     INIT,

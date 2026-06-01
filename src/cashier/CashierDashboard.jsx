@@ -1242,15 +1242,17 @@ const CashierDashboard = ({ onLogout }) => {
       });
     }
 
-    const apiItems = cart.map(i => ({
-      menuItemId: String(i.id || i.menuItemId || i.n || i.name),
-      name: i.n || i.name,
-      price: Number(i.p ?? i.price ?? 0),
-      quantity: Number(i.q ?? i.quantity ?? 1),
-      notes: i.notes || null,
-      // Preserve menuType so the backend can correctly classify food vs liquor for GST
-      menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
-    }));
+    const apiItems = cart
+      .map(i => ({
+        menuItemId: String(i.id || i.menuItemId || ''),
+        name: i.n || i.name,
+        price: Number(i.p ?? i.price ?? 0),
+        quantity: Number(i.q ?? i.quantity ?? 1),
+        notes: i.notes || null,
+        // Preserve menuType so the backend can correctly classify food vs liquor for GST
+        menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+      }))
+      .filter(i => !!i.menuItemId);
 
     if (selectedTable) {
       const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
@@ -1276,18 +1278,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
-        const existingItems = (selectedTable.activeOrder.items || []).map(i => ({
-          menuItemId: String(i.menuItemId || i.id || i.name),
-          name: i.name || i.n,
-          price: Number(i.price || i.p || 0),
-          quantity: Number(i.quantity || i.q || 1),
-          notes: i.notes || null,
-        }));
-
-        // Merge previous KOT items with new cart items to prevent backend overwrite
-        const mergedApiItems = [...existingItems, ...apiItems];
-
-        updateOrderItems(selectedTable.activeOrder.id, mergedApiItems, selectedTable.section?.restaurantId || activeRestaurantId)
+        updateOrderItems(selectedTable.activeOrder.id, apiItems, selectedTable.section?.restaurantId || activeRestaurantId)
           .then(response => {
             // Extract real KOT ID from API response
             const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
