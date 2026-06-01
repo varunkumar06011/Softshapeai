@@ -28,39 +28,15 @@ export default function VenueSectionView({
     return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">No tables found for {sectionName}</div>;
   }
 
-  // If PDR 4-room mode, we need to show room selection tabs
+  // If PDR 4-room mode, show the four rooms directly as table cards.
   if (roomMode === 'pdr4') {
-    // Group tables by room number (assuming table names are like PDR-1-T1, PDR-1-T2, etc.)
-    // For simplicity, since PDR usually has 1 table per room or similar, we can just filter
-    // If the database has 4 tables for PDR, we can just treat each table as a room, or use the selectedRoom to filter.
-    // Let's assume the user wants to select a room first.
+    const pdrTables = [...sectionTables].sort((a, b) => (a.number || 0) - (b.number || 0));
+
     return (
-      <div className="space-y-4">
-        <div className="flex gap-2">
-          {[1, 2, 3, 4].map(roomNum => (
-            <button
-              key={roomNum}
-              onClick={() => onSelectRoom && onSelectRoom(roomNum)}
-              className={`px-4 py-2 rounded-xl text-sm font-black border-2 transition-all ${
-                selectedRoom === roomNum
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-              }`}
-            >
-              Room {roomNum}
-            </button>
-          ))}
-        </div>
-        
-        {selectedRoom && (
-          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-            {sectionTables
-              .filter(t => t.name?.includes(`${selectedRoom}`) || t.number === selectedRoom)
-              .map((table, i) => (
-                <VenueTableCard key={table.id || i} table={table} onClick={() => onTableSelect && onTableSelect(table)} />
-              ))}
-          </div>
-        )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 max-w-[680px]">
+        {pdrTables.map((table, i) => (
+          <VenueTableCard key={table.id || i} table={table} onClick={() => onTableSelect && onTableSelect(table)} />
+        ))}
       </div>
     );
   }
