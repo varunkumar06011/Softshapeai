@@ -215,7 +215,9 @@ export default function VenueDashboard({ addNotification }) {
       setVenueTables((prev) =>
         prev.map((t) => {
           if (t.backendId !== selectedTable.backendId) return t;
-          const history = [...(t.kotHistory || []), kotEntry];
+          const currentHistory = t.kotHistory || [];
+          const exists = currentHistory.some(k => String(k.id) === String(kotEntry.id));
+          const history = exists ? currentHistory : [...currentHistory, kotEntry];
           const billTotal = [...existingItems, ...cart].reduce(
             (sum, i) => sum + (i.p || i.price || 0) * (i.q || i.quantity || 1),
             0

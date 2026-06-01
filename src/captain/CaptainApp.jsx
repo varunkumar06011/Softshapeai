@@ -860,7 +860,11 @@ export default function CaptainApp({ onLogout }) {
           status: TABLE_STATUS.PREPARING,
           time: t.time || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
           captainId: currentCaptain.id,
-          kotHistory: [...(t.kotHistory || []), newKOT],
+          kotHistory: (() => {
+            const currentHistory = t.kotHistory || [];
+            const exists = currentHistory.some(k => String(k.id) === String(newKOT.id));
+            return exists ? currentHistory : [...currentHistory, newKOT];
+          })(),
           currentBill: newTotalBill,
         };
       }));
