@@ -18,11 +18,22 @@ export default function VenueSectionView({
     return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest animate-pulse">Loading {sectionName}...</div>;
   }
 
-  // Filter tables belonging to this section by matching the section name
-  const sectionTables = (venueTables || []).filter(t => 
-    t.sectionName?.toLowerCase().includes(sectionName.toLowerCase()) || 
-    t.section?.name?.toLowerCase().includes(sectionName.toLowerCase())
-  );
+  const sectionIdByVenueId = {
+    'venue-conference1': 'section-venue-conf1',
+    'venue-pdr': 'section-venue-conf2',
+    'venue-rooms': 'section-venue-pdr',
+    'venue-parcel': 'section-venue-parcel',
+  };
+  const targetSectionId = sectionIdByVenueId[venueId];
+  const targetName = (sectionName || '').trim().toLowerCase();
+
+  const sectionTables = (venueTables || []).filter((table) => {
+    if (targetSectionId) {
+      return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
+    }
+    const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
+    return currentName === targetName;
+  });
 
   if (!sectionTables || sectionTables.length === 0) {
     return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">No tables found for {sectionName}</div>;
@@ -35,7 +46,7 @@ export default function VenueSectionView({
     return (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 max-w-[680px]">
         {pdrTables.map((table, i) => (
-          <VenueTableCard key={table.id || i} table={table} onClick={() => onTableSelect && onTableSelect(table)} />
+          <VenueTableCard key={table.id || i} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
         ))}
       </div>
     );
@@ -45,24 +56,24 @@ export default function VenueSectionView({
   return (
     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
       {sectionTables.map((table, i) => (
-        <VenueTableCard key={table.id || i} table={table} onClick={() => onTableSelect && onTableSelect(table)} />
+        <VenueTableCard key={table.id || i} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
       ))}
     </div>
   );
 }
 
-function getDynamicVenueLabel(table) {
-  if (table.displayName) return table.displayName;
-  const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
+function getDynamicVenueLabel(table, activeSectionName) {
+  const sectionName = (activeSectionName || table.sectionName || table.section?.name || '').toLowerCase();
   const num = table.number || 1;
-  if (sectionName.includes('conference hall 1') || sectionName.includes('conf1')) return `C${num}`;
-  if (sectionName.includes('conference hall 2') || sectionName.includes('conf2')) return num > 1 ? `C2-${num}` : 'C2';
-  if (sectionName.includes('pdr')) return `R${num}`;
-  if (sectionName.includes('parcel')) return 'VIJAY';
+  if (sectionName.includes('conference hall') || sectionName.includes('conf1')) return 'C1';
+  if (sectionName.includes('pdr')) return 'PDR';
+  if (sectionName.includes('rooms')) return `R${num}`;
+  if (sectionName.includes('parcel')) return 'P1';
+  if (table.displayName) return table.displayName;
   return table.name || `T${num}`;
 }
 
-function VenueTableCard({ table, onClick }) {
+function VenueTableCard({ table, sectionName, onClick }) {
   const isFree = table.status === 'Free' || table.status === 'AVAILABLE' || !table.status;
   const isWaitingBill = table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED';
   const isBusy = !isFree && !isWaitingBill;
@@ -78,19 +89,19 @@ function VenueTableCard({ table, onClick }) {
     statusText = 'Busy';
   }
   
-  const displayLabel = getDynamicVenueLabel(table);
+  const displayLabel = getDynamicVenueLabel(table, sectionName);
   
   return (
     <div
       onClick={onClick}
-      className={`aspect-[4/3] sm:aspect-square border-[3px] rounded-3xl flex flex-col items-center justify-center text-center p-6 sm:p-8 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass} min-h-[140px] sm:min-h-[160px]`}
+      className={`aspect-[4/3] sm:aspect-square border-[3px] rounded-3xl flex flex-col items-center justify-center text-center p-4 sm:p-5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass} min-h-[140px] sm:min-h-[160px] overflow-hidden`}
     >
       {table.captainName && (
         <div className="absolute top-3 right-3 bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg text-xs md:text-sm font-black uppercase tracking-widest max-w-[80%] truncate shadow-md">
           {table.captainName.split(' ')[0]}
         </div>
       )}
-      <span className="text-5xl sm:text-6xl font-black px-2 leading-none tracking-tight">
+      <span className="text-4xl sm:text-5xl font-black px-2 leading-none tracking-tight max-w-full truncate">
         {displayLabel}
       </span>
       <span className="text-sm sm:text-base font-black uppercase tracking-widest leading-tight mt-3 opacity-90">{statusText}</span>

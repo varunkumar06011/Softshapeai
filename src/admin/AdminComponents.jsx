@@ -60,6 +60,7 @@ import { API_BASE, apiUrl } from '../services/apiConfig';
 import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
+import { VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
@@ -665,6 +666,8 @@ export function Tables({ onOpen }) {
 export function MenuPage({ onAddDish }) {
   const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu, setGlobalMenu } = useMenu();
   const [filter, setFilter] = useState("");
+  const [activeVenueId, setActiveVenueId] = useState(VENUE_PRICE_COLUMNS[0].id);
+  const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
 
   // ── Admin items: fetched from admin endpoint (includes unavailable) ───
   const [adminItems, setAdminItems] = useState([]);
@@ -688,6 +691,7 @@ export function MenuPage({ onAddDish }) {
         desc: item.description || '',
         menuType: item.menuType,
         isAvailable: item.isAvailable,
+        venuePrices: item.venuePrices || {},
       })));
     } catch (err) {
       console.error('[MenuPage] Failed to load admin items:', err);
@@ -700,10 +704,13 @@ export function MenuPage({ onAddDish }) {
 
   useEffect(() => { fetchAdminItems(); }, []);
 
-  const items = useMemo(
-    () => adminItems.filter((x) => menuItemMatchesSearch(x, filter)),
-    [filter, adminItems]
-  );
+  const items = useMemo(() => {
+    return adminItems
+      .filter((x) => showHiddenVenueItems || Number(x.venuePrices?.[activeVenueId] || 0) > 0)
+      .filter((x) => menuItemMatchesSearch(x, filter));
+  }, [filter, adminItems, activeVenueId, showHiddenVenueItems]);
+
+  const activeVenue = VENUE_PRICE_COLUMNS.find((venue) => venue.id === activeVenueId) || VENUE_PRICE_COLUMNS[0];
 
   const [editingItem, setEditingItem] = useState(null);
   const [addingItem, setAddingItem] = useState(null);
@@ -763,7 +770,12 @@ export function MenuPage({ onAddDish }) {
     fetchCategories();
   }, []);
 
-  const handleEdit = (item) => setEditingItem({ originalName: item.n, ...item });
+  const handleEdit = (item) => setEditingItem({
+    originalName: item.n,
+    ...item,
+    basePrice: item.p,
+    venuePrice: Number(item.venuePrices?.[activeVenueId] || 0),
+  });
   const handleDeleteClick = (item) => setDeletingItem(item);
 
   // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
@@ -826,8 +838,12 @@ export function MenuPage({ onAddDish }) {
       const body = {
         name: editingItem.n,
         isVeg: editingItem.t === 'veg',
-        price: Number(editingItem.p),
+        price: Number(editingItem.basePrice ?? editingItem.p ?? 0),
         menuType: editingItem.menuType || 'FOOD',
+        venuePrices: {
+          ...(editingItem.venuePrices || {}),
+          [activeVenueId]: Number(editingItem.venuePrice ?? 0),
+        },
         ...(imageUrl !== undefined ? { imageUrl } : {}),
       };
 
@@ -851,9 +867,12 @@ export function MenuPage({ onAddDish }) {
           img: imageUrl ?? editingItem.img ?? DEFAULT_IMG,
           desc: editingItem.desc ?? '',
           menuType: editingItem.menuType || 'FOOD',
+          venuePrices: body.venuePrices,
         };
         // Apply optimistic update instantly — no loading flash
         setGlobalMenu(prev => prev.map(i => i.id === editingItem.id ? optimisticItem : i));
+        setAdminItems(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...optimisticItem, isAvailable: editingItem.isAvailable } : i));
+        window.dispatchEvent(new CustomEvent('softshape_venue_prices_updated'));
         setEditingItem(null);
         // Background re-sync to confirm server state
         refreshMenu().catch(() => {});
@@ -918,6 +937,9 @@ export function MenuPage({ onAddDish }) {
           isVeg: addingItem.t === 'veg',
           price: Number(addingItem.p),
           menuType: addingItem.menuType || 'FOOD',
+          venuePrices: Object.fromEntries(
+            VENUE_PRICE_COLUMNS.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
+          ),
           ...(imageUrl ? { imageUrl } : {}),
         }),
       });
@@ -936,9 +958,14 @@ export function MenuPage({ onAddDish }) {
           img: serverItem.imageUrl || imageUrl || DEFAULT_IMG,
           desc: serverItem.description || '',
           menuType: serverItem.menuType,
+          venuePrices: Object.fromEntries(
+            VENUE_PRICE_COLUMNS.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
+          ),
         };
         // Append new item instantly — no loading flash
         setGlobalMenu(prev => [...prev, optimisticItem]);
+        setAdminItems(prev => [...prev, { ...optimisticItem, isAvailable: true }]);
+        window.dispatchEvent(new CustomEvent('softshape_venue_prices_updated'));
         setAddingItem(null);
         // Background re-sync
         refreshMenu().catch(() => {});
@@ -979,7 +1006,14 @@ export function MenuPage({ onAddDish }) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto justify-end">
         <button 
           className="rounded-lg bg-white border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md hover:border-gray-300 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap w-full sm:w-auto" 
-          onClick={() => setAddingItem({ n: '', c: dbCategories[0]?.name ?? '', p: '', t: 'veg', img: null })}
+          onClick={() => setAddingItem({
+            n: '',
+            c: dbCategories[0]?.name ?? '',
+            p: '',
+            t: 'veg',
+            img: null,
+            venuePrices: Object.fromEntries(VENUE_PRICE_COLUMNS.map((venue) => [venue.id, venue.id === activeVenueId ? '' : 0])),
+          })}
         >
           <span className="text-gray-400 font-black">+</span> Add Item
         </button>
@@ -999,6 +1033,33 @@ export function MenuPage({ onAddDish }) {
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
       {filter ? ` matching "${filter}"` : ""} · synced from backend
     </p>
+    <div className="mb-3 flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
+        {VENUE_PRICE_COLUMNS.map((venue) => (
+          <button
+            key={venue.id}
+            type="button"
+            onClick={() => setActiveVenueId(venue.id)}
+            className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
+              activeVenueId === venue.id
+                ? 'border-[#E53935] bg-[#E53935] text-white'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+            }`}
+          >
+            {venue.label}
+          </button>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
+        <input
+          type="checkbox"
+          checked={showHiddenVenueItems}
+          onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
+          className="accent-[#E53935]"
+        />
+        Show items hidden from {activeVenue.label}
+      </label>
+    </div>
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
       <table className="w-full text-left text-sm whitespace-nowrap">
         <thead className="sticky top-0 bg-white z-10">
@@ -1006,7 +1067,7 @@ export function MenuPage({ onAddDish }) {
             <th className="px-4 py-2">Image</th>
             <th className="px-4 py-2">Name</th>
             <th className="px-4 py-2">Category</th>
-            <th className="px-4 py-2">Price</th>
+            <th className="px-4 py-2">{activeVenue.label} Price</th>
             <th className="px-4 py-2">Veg/Non</th>
             <th className="px-4 py-2 text-left text-xs font-black uppercase text-gray-500">KOT Type</th>
             <th className="px-4 py-2">Available</th>
@@ -1016,13 +1077,13 @@ export function MenuPage({ onAddDish }) {
         <tbody>
           {adminLoading ? (
             <tr>
-              <td colSpan={7} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
                 Syncing menu from server…
               </td>
             </tr>
           ) : items.length === 0 ? (
             <tr>
-              <td colSpan={7} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
                 {filter.trim()
                   ? `No items found for "${filter.trim()}".`
                   : 'No menu items loaded. Click "Refresh from server" to load from backend.'}
@@ -1040,7 +1101,11 @@ export function MenuPage({ onAddDish }) {
               </td>
               <td className="px-4 py-2 font-medium">{item.n}</td>
               <td className="px-4 py-2">{item.c}</td>
-              <td className="px-4 py-2">₹{item.p}</td>
+              <td className="px-4 py-2">
+                {Number(item.venuePrices?.[activeVenueId] || 0) > 0
+                  ? `₹${Number(item.venuePrices?.[activeVenueId] || 0)}`
+                  : <span className="text-gray-400 font-bold">Hidden</span>}
+              </td>
               <td className="px-4 py-2">
                 <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
                 {item.t === "veg" ? "Veg" : "Non-Veg"}
@@ -1132,9 +1197,30 @@ export function MenuPage({ onAddDish }) {
                   )}
                </div>
                <div>
-                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Price (₹)</label>
-                  <input type="number" value={editingItem.p} onChange={e => setEditingItem({...editingItem, p: e.target.value})} className={input + " w-full bg-gray-50"} />
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">{activeVenue.label} Price (₹)</label>
+                  <input type="number" value={editingItem.venuePrice} onChange={e => setEditingItem({...editingItem, venuePrice: e.target.value})} className={input + " w-full bg-gray-50"} />
                </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Venue Prices</label>
+              <div className="grid grid-cols-2 gap-3">
+                {VENUE_PRICE_COLUMNS.map((venue) => (
+                  <div key={venue.id}>
+                    <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">{venue.label}</label>
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={venue.id === activeVenueId ? editingItem.venuePrice : (editingItem.venuePrices?.[venue.id] ?? '')}
+                      onChange={(e) => setEditingItem({
+                        ...editingItem,
+                        venuePrice: venue.id === activeVenueId ? e.target.value : editingItem.venuePrice,
+                        venuePrices: { ...(editingItem.venuePrices || {}), [venue.id]: e.target.value },
+                      })}
+                      className={input + " w-full bg-gray-50"}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
@@ -1230,9 +1316,30 @@ export function MenuPage({ onAddDish }) {
                   )}
                </div>
                <div>
-                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Price (₹)</label>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Base Price (₹)</label>
                   <input type="number" placeholder="0.00" value={addingItem.p} onChange={e => setAddingItem({...addingItem, p: e.target.value})} className={input + " w-full bg-gray-50"} />
                </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Venue Prices</label>
+              <div className="grid grid-cols-2 gap-3">
+                {VENUE_PRICE_COLUMNS.map((venue) => (
+                  <div key={venue.id}>
+                    <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">{venue.label}</label>
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={addingItem.venuePrices?.[venue.id] ?? ''}
+                      onChange={(e) => setAddingItem({
+                        ...addingItem,
+                        venuePrices: { ...(addingItem.venuePrices || {}), [venue.id]: e.target.value },
+                        p: venue.id === activeVenueId ? e.target.value : addingItem.p,
+                      })}
+                      className={input + " w-full bg-gray-50"}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>

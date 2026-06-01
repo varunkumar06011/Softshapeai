@@ -56,6 +56,7 @@ import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
+import { useVenuePrices } from '../hooks/useVenuePrices';
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -266,6 +267,7 @@ export default function CaptainApp({ onLogout }) {
   const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
+  const venuePrices = useVenuePrices();
   const { activeCalls, clearCall } = useWaiterCalls();
 
 
@@ -387,10 +389,25 @@ export default function CaptainApp({ onLogout }) {
     if (outlet === 'bar') {
       baseItems = activeMenuItems.filter(item => item.isAvailable !== false);
     } else {
-      baseItems = activeMenuItems.filter(item => item.menuType === 'FOOD');
+      baseItems = tableSubCategory === 'restaurant'
+        ? activeMenuItems.filter(item => item.menuType === 'FOOD')
+        : activeMenuItems.filter(item => item.isAvailable !== false);
     }
-    return baseItems;
-  }, [outlet, activeMenuItems]);
+    let currentVenueId = null;
+    if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
+    else if (tableSubCategory === 'conference2') currentVenueId = 'venue-pdr';
+    else if (tableSubCategory === 'pdr') currentVenueId = 'venue-rooms';
+    else if (tableSubCategory === 'parcel') currentVenueId = 'venue-parcel';
+
+    if (!currentVenueId) return baseItems;
+    const venueSpecificPrices = venuePrices?.[currentVenueId] || {};
+    return baseItems
+      .map((item) => ({
+        ...item,
+        p: venueSpecificPrices[item.id] !== undefined ? Number(venueSpecificPrices[item.id]) : 0,
+      }))
+      .filter((item) => Number(item.p || 0) > 0);
+  }, [outlet, activeMenuItems, tableSubCategory, venuePrices]);
 
   const categories = useMemo(() => {
     if (outlet === 'restaurant') return restaurantCategories;
@@ -798,6 +815,7 @@ export default function CaptainApp({ onLogout }) {
         // First KOT — create a brand-new order row
         savedOrder = await createOrder({
           tableId: activeTable.backendId,
+          tableNumber: activeTable.id,
           restaurantId: activeRestaurantId,
           items: apiItems,
         });
@@ -1317,10 +1335,10 @@ export default function CaptainApp({ onLogout }) {
               <div className="flex gap-2 flex-wrap mb-4">
                 {[
                   { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant' },
-                  { id: 'conference1', label: '🏛 conference hall' },
-                  { id: 'conference2', label: '🏛 PDR' },
-                  { id: 'pdr', label: '🚪 Rooms' },
-                  { id: 'parcel', label: '📦 Vijay (parcel)' },
+                  { id: 'conference1', label: 'Conference Hall' },
+                  { id: 'conference2', label: 'PDR' },
+                  { id: 'pdr', label: 'Rooms' },
+                  { id: 'parcel', label: 'Parcel(vijay)' },
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -1420,13 +1438,13 @@ export default function CaptainApp({ onLogout }) {
           <VenueSectionView
             venueId={
               tableSubCategory === 'conference1' ? 'venue-conference1' :
-              tableSubCategory === 'conference2' ? 'venue-conference2' :
-              tableSubCategory === 'pdr' ? 'venue-pdr' : 'venue-parcel'
+              tableSubCategory === 'conference2' ? 'venue-pdr' :
+              tableSubCategory === 'pdr' ? 'venue-rooms' : 'venue-parcel'
             }
             sectionName={
-              tableSubCategory === 'conference1' ? 'Conference Hall 1' :
-              tableSubCategory === 'conference2' ? 'Conference Hall 2' :
-              tableSubCategory === 'pdr' ? 'PDR' : 'Parcel'
+              tableSubCategory === 'conference1' ? 'Conference Hall' :
+              tableSubCategory === 'conference2' ? 'PDR' :
+              tableSubCategory === 'pdr' ? 'Rooms' : 'Parcel(vijay)'
             }
             restaurantId="venue-001"
             roomMode={tableSubCategory === 'pdr' ? 'pdr4' : 'single'}
@@ -2553,3 +2571,4 @@ export default function CaptainApp({ onLogout }) {
     </div>
   );
 }
+

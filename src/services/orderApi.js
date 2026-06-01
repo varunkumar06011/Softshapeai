@@ -29,8 +29,8 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, items, restaurantId = RESTAURANT_ID }) {
-  const orderData = { tableId, restaurantId, items: toOrderItems(items) };
+export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID }) {
+  const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));

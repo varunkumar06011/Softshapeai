@@ -380,6 +380,7 @@ export default function BarMenu({ tableId }) {
       } else {
         await createOrder({
           tableId: tableBackendId,
+          tableNumber: matched.number || matched.id,
           restaurantId: "bar-001",
           items: apiItems
         });

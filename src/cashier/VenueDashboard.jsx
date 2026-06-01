@@ -2,10 +2,10 @@
  * VenueDashboard.jsx
  *
  * Venue outlet panel for the Cashier, displayed when outlet === 'venue'.
- * Supports: Conference Hall 1, Conference Hall 2, PDR (4 rooms), Parcel.
+ * Supports: Conference Hall, PDR, Rooms, Parcel(vijay).
  *
  * Features:
- * - Section tabs (Conf 1 / Conf 2 / PDR / Parcel)
+ * - Section tabs (Conference Hall / PDR / Rooms / Parcel)
  * - Table selection per section
  * - Menu with venue-specific pricing
  * - KOT send (food → kitchen printer)
@@ -27,12 +27,12 @@ import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const SECTION_ORDER = ['Conference Hall 1', 'Conference Hall 2', 'PDR', 'Parcel'];
+const SECTION_ORDER = ['Conference Hall', 'PDR', 'Rooms', 'Parcel(vijay)'];
 const SECTION_COLORS = {
-  'Conference Hall 1': { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', active: 'bg-[#4527A0]' },
-  'Conference Hall 2': { bg: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-700', active: 'bg-[#6A1B9A]' },
+  'Conference Hall':   { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', active: 'bg-[#4527A0]' },
   'PDR':              { bg: 'bg-teal-50',   border: 'border-teal-300',   text: 'text-teal-700',   active: 'bg-[#00695C]' },
-  'Parcel':           { bg: 'bg-amber-50',  border: 'border-amber-300',  text: 'text-amber-700',  active: 'bg-[#E65100]' },
+  'Rooms':            { bg: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-700', active: 'bg-[#6A1B9A]' },
+  'Parcel(vijay)':    { bg: 'bg-amber-50',  border: 'border-amber-300',  text: 'text-amber-700',  active: 'bg-[#E65100]' },
 };
 
 function getVenueId(sectionName) {
@@ -40,10 +40,10 @@ function getVenueId(sectionName) {
 }
 
 function getTableLabel(sectionName, tableNumber) {
-  if (sectionName === 'Conference Hall 1') return 'CONF-1';
-  if (sectionName === 'Conference Hall 2') return 'CONF-2';
-  if (sectionName === 'PDR') return `PDR-${tableNumber}`;
-  if (sectionName === 'Parcel') return 'PARCEL';
+  if (sectionName === 'Conference Hall') return 'C1';
+  if (sectionName === 'PDR') return 'PDR';
+  if (sectionName === 'Rooms') return `R${tableNumber}`;
+  if (sectionName === 'Parcel(vijay)') return 'P1';
   return `V${tableNumber}`;
 }
 
@@ -53,7 +53,7 @@ export default function VenueDashboard({ addNotification }) {
   const { tables: venueTables, setTables: setVenueTables, isSyncing } = useVenueTableSync();
 
   // ── Section / table selection ──
-  const [activeSection, setActiveSection] = useState('Conference Hall 1');
+  const [activeSection, setActiveSection] = useState('Conference Hall');
   const [selectedTable, setSelectedTable] = useState(null);
 
   // ── Menu ──
@@ -184,6 +184,7 @@ export default function VenueDashboard({ addNotification }) {
       if (!orderId) {
         const order = await createOrder({
           tableId: selectedTable.backendId,
+          tableNumber: selectedTable.id || selectedTable.number,
           items: cart,
           restaurantId: VENUE_ID,
         });
@@ -311,7 +312,7 @@ export default function VenueDashboard({ addNotification }) {
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
-  const colors = SECTION_COLORS[activeSection] || SECTION_COLORS['Conference Hall 1'];
+  const colors = SECTION_COLORS[activeSection] || SECTION_COLORS['Conference Hall'];
 
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">

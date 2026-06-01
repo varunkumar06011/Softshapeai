@@ -1140,8 +1140,12 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
+    const isVenueContext = tableSubCategory !== 'restaurant' || Boolean(selectedTable?.restaurantId === 'venue-001');
+
     if (outlet === 'restaurant') {
-      itemsToFilter = menuItems.filter(item => item.menuType === 'FOOD');
+      itemsToFilter = isVenueContext
+        ? menuItems.filter(item => item.isAvailable !== false)
+        : menuItems.filter(item => item.menuType === 'FOOD');
     } else {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
@@ -1150,12 +1154,12 @@ const CashierDashboard = ({ onLogout }) => {
     let currentVenueId = null;
     if (selectedTable) {
       const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
-      if (sectionName.includes('conference hall 1') || sectionName.includes('conf1')) {
+      if (sectionName.includes('conference hall') || sectionName.includes('conf1')) {
         currentVenueId = 'venue-conference1';
-      } else if (sectionName.includes('conference hall 2') || sectionName.includes('conf2')) {
-        currentVenueId = 'venue-conference2';
       } else if (sectionName.includes('pdr')) {
         currentVenueId = 'venue-pdr';
+      } else if (sectionName.includes('rooms')) {
+        currentVenueId = 'venue-rooms';
       } else if (sectionName.includes('parcel')) {
         currentVenueId = 'venue-parcel';
       } else if (outlet === 'bar') {
@@ -1163,8 +1167,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } else {
       if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
-      else if (tableSubCategory === 'conference2') currentVenueId = 'venue-conference2';
-      else if (tableSubCategory === 'pdr') currentVenueId = 'venue-pdr';
+      else if (tableSubCategory === 'conference2') currentVenueId = 'venue-pdr';
+      else if (tableSubCategory === 'pdr') currentVenueId = 'venue-rooms';
       else if (tableSubCategory === 'parcel') currentVenueId = 'venue-parcel';
       else if (outlet === 'bar') currentVenueId = 'venue-bar';
     }
@@ -1174,12 +1178,14 @@ const CashierDashboard = ({ onLogout }) => {
     const mapped = itemsToFilter.map(item => {
       // Map price using the venue override if it exists
       const overridePrice = venueSpecificPrices[item.id];
-      const finalPrice = overridePrice !== undefined ? Number(overridePrice) : Number(item.p || item.price || 0);
+      const finalPrice = currentVenueId
+        ? (overridePrice !== undefined ? Number(overridePrice) : 0)
+        : Number(item.p || item.price || 0);
       return {
         ...item,
         p: finalPrice, // override the display price
       };
-    });
+    }).filter((item) => !currentVenueId || Number(item.p || 0) > 0);
 
     const q = searchQuery.trim().toLowerCase();
 
@@ -1428,6 +1434,7 @@ const CashierDashboard = ({ onLogout }) => {
         } else {
           await createOrder({
             tableId: selectedTable.backendId,
+            tableNumber: selectedTable.number || selectedTable.id,
             restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
             items: apiItems,
           });
@@ -1680,7 +1687,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="flex items-center justify-between">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
-                          ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'conference hall' : tableSubCategory === 'conference2' ? 'PDR' : tableSubCategory === 'pdr' ? 'Rooms' : 'Vijay (parcel)')
+                          ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'Conference Hall' : tableSubCategory === 'conference2' ? 'PDR' : tableSubCategory === 'pdr' ? 'Rooms' : 'Parcel(vijay)')
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
                     </div>
@@ -1691,10 +1698,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <div className="flex gap-2 flex-wrap">
                           {[
                             { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant', emoji: '' },
-                            { id: 'conference1', label: '🏛 conference hall', emoji: '' },
-                            { id: 'conference2', label: '🏛 PDR', emoji: '' },
-                            { id: 'pdr', label: '🚪 Rooms', emoji: '' },
-                            { id: 'parcel', label: '📦 Vijay (parcel)', emoji: '' },
+                            { id: 'conference1', label: 'Conference Hall', emoji: '' },
+                            { id: 'conference2', label: 'PDR', emoji: '' },
+                            { id: 'pdr', label: 'Rooms', emoji: '' },
+                            { id: 'parcel', label: 'Parcel(vijay)', emoji: '' },
                           ].map(tab => (
                             <button
                               key={tab.id}
@@ -1753,7 +1760,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {tableSubCategory === 'conference1' && (
                           <VenueSectionView
                             venueId="venue-conference1"
-                            sectionName="Conference Hall 1"
+                            sectionName="Conference Hall"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}
@@ -1764,8 +1771,8 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* ── CONFERENCE HALL 2 ── */}
                         {tableSubCategory === 'conference2' && (
                           <VenueSectionView
-                            venueId="venue-conference2"
-                            sectionName="Conference Hall 2"
+                            venueId="venue-pdr"
+                            sectionName="PDR"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}
@@ -1776,8 +1783,8 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* ── PDR — show 4 room buttons first ── */}
                         {tableSubCategory === 'pdr' && (
                           <VenueSectionView
-                            venueId="venue-pdr"
-                            sectionName="PDR"
+                            venueId="venue-rooms"
+                            sectionName="Rooms"
                             restaurantId="venue-001"
                             roomMode="pdr4"
                             selectedRoom={selectedPDRRoom}
@@ -1791,7 +1798,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {tableSubCategory === 'parcel' && (
                           <VenueSectionView
                             venueId="venue-parcel"
-                            sectionName="Parcel"
+                            sectionName="Parcel(vijay)"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}
@@ -1839,10 +1846,10 @@ const CashierDashboard = ({ onLogout }) => {
                           {[
                             { key: 'all', label: 'All' },
                             { key: 'bar', label: 'Bar' },
-                            { key: 'conference1', label: 'conference hall' },
+                            { key: 'conference1', label: 'Conference Hall' },
                             { key: 'conference2', label: 'PDR' },
                             { key: 'pdr', label: 'Rooms' },
-                            { key: 'parcel', label: 'Vijay (parcel)' },
+                            { key: 'parcel', label: 'Parcel(vijay)' },
                           ].map(f => (
                             <button
                               key={f.key}
@@ -3546,3 +3553,4 @@ const CashierDashboard = ({ onLogout }) => {
 };
 
 export default CashierDashboard;
+

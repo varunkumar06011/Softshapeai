@@ -45,17 +45,17 @@ function writeCache(tables) {
  */
 export function getVenueTableLabel(sectionName, tableNumber) {
   const name = (sectionName || '').toLowerCase();
-  if (name.includes('conference hall 1') || name.includes('conf1')) {
-    return `C${tableNumber}`;
-  }
-  if (name.includes('conference hall 2') || name.includes('conf2')) {
-    return tableNumber > 1 ? `C2-${tableNumber}` : 'C2';
+  if (name.includes('conference hall') || name.includes('conf1')) {
+    return 'C1';
   }
   if (name.includes('pdr')) {
+    return 'PDR';
+  }
+  if (name.includes('rooms')) {
     return `R${tableNumber}`;
   }
   if (name.includes('parcel')) {
-    return 'VIJAY';
+    return 'P1';
   }
   return `V${tableNumber}`;
 }
