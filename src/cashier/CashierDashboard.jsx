@@ -2412,7 +2412,7 @@ const CashierDashboard = ({ onLogout }) => {
           onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
         >
           <div 
-            className="w-full max-w-lg max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
+            className="w-full max-w-lg h-[85vh] min-h-[500px] max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
@@ -2435,13 +2435,13 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
             </div>
 
-            <div className="p-3 sm:p-4 bg-white flex flex-col flex-1 overflow-hidden">
+            <div className="p-3 sm:p-4 bg-white flex flex-col flex-1 min-h-[100px] overflow-hidden">
               {/* ── Order Summary (read-only view) ─────────────────── */}
-              <div className="flex flex-col flex-1 overflow-hidden mb-2 sm:mb-3">
+              <div className="flex flex-col flex-1 min-h-[50px] mb-2 sm:mb-3 overflow-hidden">
                 <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
-                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-1 mt-2 min-h-[60px]">
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-1 mt-2 min-h-[50px]">
                   {getTableItems(selectedTable)
                     .filter(i => !i.removedFromBill)
                     .map((item, idx) => (
@@ -2452,92 +2452,99 @@ const CashierDashboard = ({ onLogout }) => {
                           </span>
                           <span className="text-sm font-bold text-gray-900 leading-tight pt-1">{item.n}</span>
                         </div>
-                        <span className="text-sm font-black text-gray-900 pt-1">₹{Number(item.p * item.q).toFixed(0)}</span>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <span className="text-sm font-black text-gray-900 pt-1">₹{Number(item.p * item.q).toFixed(0)}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowCancelModal(true);
+                              setCancelSelected({ [item.id]: 1 });
+                            }}
+                            className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
+                            title="Cancel Item"
+                          >
+                            <X size={16} strokeWidth={3} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                 </div>
-                {getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 && (
-                  <button
-                    onClick={() => {
-                      setShowCancelModal(true);
-                      setCancelSelected({});
-                    }}
-                    className="w-full mt-2 py-1.5 flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-black text-[10px] uppercase tracking-widest transition-colors border border-red-200 shrink-0"
-                  >
-                    <X size={14} /> Cancel Items
-                  </button>
-                )}
               </div>
 
               {/* ── Fixed Bottom Area ─────────────────────────────── */}
               <div className="shrink-0 pt-2 border-t border-gray-100">
 
-              {/* ── Discount Input ──────────────────────────────────── */}
-              <div className="mb-2.5 sm:mb-3">
-                <label className="block text-[10px] sm:text-[11px] font-black uppercase text-gray-400 tracking-wider mb-1 sm:mb-1.5">
-                  Discount %
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={discountPercent === 0 ? '' : discountPercent}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    if (raw === '' || raw === null) {
-                      setDiscountPercent(0);
-                    } else {
-                      const parsed = parseFloat(raw);
-                      if (!isNaN(parsed)) {
-                        setDiscountPercent(Math.max(0, Math.min(100, parsed)));
+              {/* ── Discount & Totals (Ultra Compact) ──────────────── */}
+              <div className="flex gap-2 sm:gap-3 mb-2">
+                {/* Discount */}
+                <div className="w-24 sm:w-28 shrink-0">
+                  <label className="block text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-wider mb-0.5">
+                    Discount %
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={discountPercent === 0 ? '' : discountPercent}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '' || raw === null) setDiscountPercent(0);
+                      else {
+                        const parsed = parseFloat(raw);
+                        if (!isNaN(parsed)) setDiscountPercent(Math.max(0, Math.min(100, parsed)));
                       }
-                    }
-                  }}
-                  className="w-full px-3 py-2 sm:py-2.5 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-lg sm:rounded-xl outline-none text-sm font-bold"
-                  placeholder="0"
-                />
-              </div>
+                    }}
+                    className="w-full px-2 py-1.5 sm:py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-xs font-bold text-center transition-colors"
+                    placeholder="0"
+                  />
+                </div>
 
-              {/* ── Totals ──────────────────────────────────────────── */}
-              {/* ── Totals ──────────────────────────────────────────── */}
-              <div className="bg-gray-50/90 rounded-xl p-3 sm:p-4 space-y-1.5 sm:space-y-2 mb-3 sm:mb-4 border border-gray-200 shadow-sm">
-                <div className="flex justify-between text-[11px] sm:text-xs font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span></div>
-                <div className="flex justify-between text-[11px] sm:text-xs font-black text-gray-500 uppercase tracking-wider"><span>GST (5% on food only)</span><span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span></div>
-                {discountPercent > 0 && (
-                  <div className="flex justify-between text-[11px] sm:text-xs font-black text-[#E53935] uppercase tracking-wider">
-                    <span>Discount ({discountPercent}%)</span>
-                    <span>-₹{activeDiscountAmount.toFixed(0)}</span>
+                {/* Totals */}
+                <div className="flex-1 bg-gray-50/90 rounded-lg p-1.5 sm:p-2 border border-gray-200 shadow-sm flex flex-col justify-center gap-0.5">
+                  <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
+                    <span>Subtotal</span>
+                    <span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span>
                   </div>
-                )}
-                <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-1.5 sm:mt-2">
-                  <span className="text-[11px] sm:text-xs font-black text-gray-900 uppercase tracking-widest">
-                    {discountPercent > 0 ? 'Final Total' : 'Running Total'}
-                  </span>
-                  <span className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">
-                    ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
-                  </span>
+                  <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
+                    <span>GST</span>
+                    <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span>
+                  </div>
+                  {discountPercent > 0 && (
+                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-[#E53935] uppercase">
+                      <span>Discount ({discountPercent}%)</span>
+                      <span>-₹{activeDiscountAmount.toFixed(0)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-0.5">
+                    <span className="text-[9px] sm:text-[10px] font-black text-gray-900 uppercase tracking-widest">
+                      {discountPercent > 0 ? 'Final' : 'Total'}
+                    </span>
+                    <span className="text-lg sm:text-xl font-black text-[#E53935] tracking-tight leading-none">
+                      ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               {/* ── Action buttons ──────────────────────────────────── */}
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
-                  className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-gray-300 bg-white text-gray-700 text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-gray-50 hover:border-gray-450 transition-all duration-150 shadow-sm cursor-pointer"
+                  className="py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
                 >
                   Add Items
                 </button>
                 <button
                   onClick={() => setShowBillEditor(true)}
-                  className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
+                  className="py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
                 >
                   Edit Bill
                 </button>
                 {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
                   <button
                     onClick={() => setShowMethodPicker(true)}
-                    className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl bg-[#E53935] border border-red-750 text-white text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
+                    className="py-2 rounded-lg bg-[#E53935] border border-red-750 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
                   >
                     Settlement
                   </button>
@@ -2546,16 +2553,16 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       onClick={handleFinalBill}
                       disabled={isPrintingBill || printCooldown}
-                      className={`py-2.5 sm:py-3 rounded-lg sm:rounded-xl border text-white text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                      className={`py-2 rounded-lg border text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
                         ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                         : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
                         }`}
                     >
-                      {isPrintingBill ? <Loader2 size={14} className="animate-spin" /> : null}
+                      {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
                       {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
                     </button>
                   ) : (
-                    <div className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-gray-300 bg-gray-200 text-gray-500 text-[10px] sm:text-xs font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
+                    <div className="py-2 rounded-lg border border-gray-300 bg-gray-200 text-gray-500 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
                       No Items
                     </div>
                   )
@@ -2564,33 +2571,31 @@ const CashierDashboard = ({ onLogout }) => {
 
               {/* Swap Table & Terminate Session buttons */}
               {selectedTable.status && selectedTable.status !== 'Free' && (
-                <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-gray-100 space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
-                      className="w-1/2 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <ArrowRightLeft size={12} />
-                      Swap Table
-                    </button>
-                    <button
-                      onClick={() => {
-                        setItemSwapSelectedIds([]);
-                        setItemSwapTargetId(null);
-                        setShowItemSwapModal(true);
-                      }}
-                      className="w-1/2 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <ArrowRightLeft size={12} />
-                      Swap Items
-                    </button>
-                  </div>
+                <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
+                    className="py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <ArrowRightLeft size={10} />
+                    Swap Table
+                  </button>
+                  <button
+                    onClick={() => {
+                      setItemSwapSelectedIds([]);
+                      setItemSwapTargetId(null);
+                      setShowItemSwapModal(true);
+                    }}
+                    className="py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <ArrowRightLeft size={10} />
+                    Swap Items
+                  </button>
                   <button
                     onClick={terminateTableSession}
-                    className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-red-200 bg-red-50 text-red-800 text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
                   >
-                    <X size={12} />
-                    Terminate Session
+                    <X size={10} />
+                    Terminate
                   </button>
                 </div>
               )}
