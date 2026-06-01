@@ -300,6 +300,7 @@ export default function CaptainApp({ onLogout }) {
   // value without needing to be in its dependency array.
   const activeOrderIdRef = useRef(null);
   const kotRequestIdRef = useRef(null);
+  const isSubmittingKotRef = useRef(false);
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
@@ -744,7 +745,7 @@ export default function CaptainApp({ onLogout }) {
   }, [activeTableId]);
 
   const sendIncrementalKOT = async () => {
-    if (sendingKOT) return; // Prevent duplicate clicks
+    if (sendingKOT || isSubmittingKotRef.current) return; // Prevent duplicate clicks
     if (currentSessionItems.length === 0) return;
     if (!currentCaptain) { setIsLoginView(true); return; }
     if (!activeTable?.backendId) {
@@ -752,6 +753,7 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
+    isSubmittingKotRef.current = true;
     setSendingKOT(true);
 
     try {
@@ -869,6 +871,7 @@ export default function CaptainApp({ onLogout }) {
         retryItems: retrySnapshot,
       });
     } finally {
+      isSubmittingKotRef.current = false;
       setSendingKOT(false);
     }
   };

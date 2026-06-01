@@ -214,6 +214,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState({});
   const [isKotSending, setIsKotSending] = useState(false);
+  const isSubmittingKotRef = useRef(false);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
@@ -552,8 +553,10 @@ const CashierDashboard = ({ onLogout }) => {
       // Clear selectedTable if it was the paid one
       if (selectedTable?.backendId === tableId) {
         setSelectedTable(null);
+        setSelectedOrder(null);
         setCart([]);
         setExpandedNoteItemId(null);
+        setRemovedItemIds([]);
         setShowPaymentModal(false);
       }
       // Refresh using the user's current date filter (not always 'today')
@@ -647,9 +650,15 @@ const CashierDashboard = ({ onLogout }) => {
     const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId) ||
       venueTables.find((table) => table.backendId === selectedTable.backendId);
 
-    // Only update if we found a fresher version of the table.
-    // NEVER wipe the selected table automatically to prevent race conditions.
     if (liveTable) {
+      if (liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free') {
+        setSelectedTable(null);
+        setSelectedOrder(null);
+        setCart([]);
+        setExpandedNoteItemId(null);
+        setRemovedItemIds([]);
+        return;
+      }
       setSelectedTable(liveTable);
     }
   }, [activeTables, venueTables, selectedTable?.backendId]);
@@ -911,6 +920,7 @@ const CashierDashboard = ({ onLogout }) => {
               status: 'Free',
               workflowStatus: 'Free',
               activeOrder: null,
+              orders: [],
               items: [],
               captainId: null,
               kotHistory: [],
@@ -930,6 +940,7 @@ const CashierDashboard = ({ onLogout }) => {
       setShowTableModal(false);
       setShowPaymentModal(false);
       setSelectedTable(null);
+      setSelectedOrder(null);
       setCart([]);
       setDiscountPercent(0);
       setExpandedNoteItemId(null);
@@ -956,13 +967,14 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Step 1: Update local state - free the table immediately
     setActiveTables(prev => prev.map(t =>
-      t.id === tableSnap.id
-        ? { ...t, status: 'Free', captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
+      t.id === tableSnap.id || t.backendId === tableSnap.backendId
+        ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], items: [], captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
         : t
     ));
 
     // Step 2: Clear UI selections
     setSelectedTable(null);
+    setSelectedOrder(null);
     setCart([]);
     setExpandedNoteItemId(null);
     setRemovedItemIds([]);
@@ -1244,8 +1256,10 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-  const handleSmartKOT = () => {
+  const handleSmartKOT = async () => {
+    if (isKotSending || isSubmittingKotRef.current) return;
     if (cart.length === 0) return;
+    isSubmittingKotRef.current = true;
     setIsKotSending(true);
     setIsKotSuccess(false);
 
@@ -1309,46 +1323,47 @@ const CashierDashboard = ({ onLogout }) => {
 
     setCart([]);
     setExpandedNoteItemId(null);
-    setIsKotSending(false);
     setIsKotSuccess(true);
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
 
-    if (selectedTable?.backendId) {
+    try {
+      if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
         // FIX: Only send the NEW cart items (apiItems) to the backend.
         // The backend PATCH /items endpoint always creates NEW orderItem rows for
         // whatever it receives — it does NOT replace old ones.
         // Previously we were merging existingItems + apiItems, which caused old items
         // to be re-inserted as duplicates on every KOT, bleeding across tables.
-        updateOrderItems(selectedTable.activeOrder.id, apiItems, crypto.randomUUID())
-          .then(response => {
-            // Extract real KOT ID from API response
-            const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
-              (response?.order?.kotHistory || response?.kotHistory)?.length - 1
-            ]?.id ?? kotsToCreate[0]?.id;
+        const response = await updateOrderItems(selectedTable.activeOrder.id, apiItems, crypto.randomUUID());
+        // Extract real KOT ID from API response
+        const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
+          (response?.order?.kotHistory || response?.kotHistory)?.length - 1
+        ]?.id ?? kotsToCreate[0]?.id;
 
-            // Fire-and-forget print with real KOT ID
-            printKOTQZ({
-              tableId: selectedTable.backendId,
-              kotId: realKotId,
-              orderId: selectedTable.activeOrder.id,
-              kotNumber: realKotId,
-              items: cart,
-            }).catch(err => {
-              console.warn('[KOT] Print failed (non-blocking):', err.message);
-              addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
-            });
-          })
-          .catch(err => console.warn('[BG] updateOrderItems failed:', err.message));
+        // Fire-and-forget print with real KOT ID
+        printKOTQZ({
+          tableId: selectedTable.backendId,
+          kotId: realKotId,
+          orderId: selectedTable.activeOrder.id,
+          kotNumber: realKotId,
+          items: cart,
+        }).catch(err => {
+          console.warn('[KOT] Print failed (non-blocking):', err.message);
+          addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
+        });
       } else {
-        createOrder({
+        await createOrder({
           tableId: selectedTable.backendId,
           restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
           items: apiItems,
-        })
-          .catch(err => console.warn('[BG] createOrder failed:', err.message));
+        });
       }
+    } catch (err) {
+      console.warn('[BG] order write failed:', err.message);
+    } finally {
+      isSubmittingKotRef.current = false;
+      setIsKotSending(false);
     }
   };
 

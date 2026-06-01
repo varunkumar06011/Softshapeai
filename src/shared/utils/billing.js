@@ -60,7 +60,7 @@ export const calculateOrderTotal = (items, discountPercent = 0) => {
 
 /**
  * Returns the canonical list of items for a table.
- * Priority: DB Order items (table.orders[0].items) → kotHistory flattened → table.items fallback.
+ * Priority: DB Order items (table.orders[0].items) → kotHistory flattened.
  * DB Order items are normalized to the { n, p, q } shape used by billing/print utilities.
  */
 export const getTableItems = (table) => {
@@ -69,25 +69,27 @@ export const getTableItems = (table) => {
   // 1. Prefer DB-backed Order items (set by useTableSync when orders relation is included)
   const activeOrder = table.activeOrder || (table.orders && table.orders[0]);
   if (activeOrder?.items && activeOrder.items.length > 0) {
-    return activeOrder.items.map(item => ({
-      id: item.id,
-      n: item.name ?? item.n,
-      p: Number(item.price ?? item.p ?? 0),
-      q: Number(item.quantity ?? item.q ?? 1),
-      quantity: Number(item.quantity ?? item.q ?? 1),
-      notes: item.notes || null,
-      removedFromBill: !!item.removedFromBill,
-      originalQuantity: item.originalQuantity ?? null,
-      cancelledQuantity: Number(item.cancelledQuantity ?? 0),
-      editedQuantity: Number(item.editedQuantity ?? 0),
-      // Preserve menuType so calculateOrderTotal can correctly apply 0% GST for liquor
-      menuType: item.menuType || item.menuItem?.menuType || null,
-    }));
+    return activeOrder.items
+      .filter(item => !item.removedFromBill)
+      .map(item => ({
+        id: item.id,
+        n: item.name ?? item.n,
+        p: Number(item.price ?? item.p ?? 0),
+        q: Number(item.quantity ?? item.q ?? 1),
+        quantity: Number(item.quantity ?? item.q ?? 1),
+        notes: item.notes || null,
+        removedFromBill: false,
+        originalQuantity: item.originalQuantity ?? null,
+        cancelledQuantity: Number(item.cancelledQuantity ?? 0),
+        editedQuantity: Number(item.editedQuantity ?? 0),
+        // Preserve menuType so calculateOrderTotal can correctly apply 0% GST for liquor
+        menuType: item.menuType || item.menuItem?.menuType || null,
+      }));
   }
 
   // 2. Fall back to kotHistory (legacy JSON blob — kept for KOT timeline display)
   if (table.kotHistory && table.kotHistory.length > 0) {
-    return table.kotHistory.flatMap(kot => kot.items || []);
+    return table.kotHistory.flatMap(kot => (kot.items || []).filter(item => !item.removedFromBill));
   }
 
   return [];
