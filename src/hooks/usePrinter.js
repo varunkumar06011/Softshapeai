@@ -84,8 +84,11 @@ export function usePrinter() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            tableId: orderData.tableId || orderData.tableNumber,
             tableNumber: orderData.tableNumber,
             orderId: orderData.orderId,
+            kotId: orderData.kotId,
+            kotNumber: orderData.kotNumber,
             items: orderData.items,
           }),
         });
@@ -122,8 +125,11 @@ export function usePrinter() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            tableId: orderData.tableId || orderData.tableNumber,
             tableNumber: orderData.tableNumber,
             orderId: orderData.orderId,
+            kotId: orderData.kotId,
+            kotNumber: orderData.kotNumber,
             items: orderData.items,
           }),
         });
