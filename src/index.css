@@ -144,6 +144,17 @@ h6:not([class*="text-"]) {
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
+/* Hide number input spinners globally */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 @keyframes policeFlash {
   0%, 100% { background-color: #B71C1C; }
   50% { background-color: #0D47A1; }

@@ -1020,7 +1020,7 @@ const CashierDashboard = ({ onLogout }) => {
           currentBill: updatedOrder.totalAmount,
           activeOrder: { ...t.activeOrder, ...updatedOrder },
         };
-      })); 
+      }));
       setBillRemovals([]);
       setBillEditQuantities({});
       setBillAdditions([]);
@@ -1583,517 +1583,516 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
 
 
-            </div>
-          )}
-          {activeTab !== 'dashboard' && activeTab !== 'pos' && (
-            <div className="flex-grow p-3 overflow-y-auto custom-scrollbar bg-gray-50/50">
-              <div className="max-w-6xl mx-auto space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
-                    {activeTab === 'tables'
-                      ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'Conference Hall 1' : tableSubCategory === 'conference2' ? 'Conference Hall 2' : tableSubCategory === 'pdr' ? 'PDR Rooms' : 'Parcel')
-                      : activeTab.replace('-', ' ') + ' Feed'}
-                  </h2>
                 </div>
-
-                {activeTab === 'tables' && (
-                  <div className="space-y-4">
-                    {/* ── SUBCATEGORY PILLS — sit inside Tables screen, not a separate toggle ── */}
-                    <div className="flex gap-2 flex-wrap">
-                      {[
-                        { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant', emoji: '' },
-                        { id: 'conference1', label: '🏛 Conference 1', emoji: '' },
-                        { id: 'conference2', label: '🏛 Conference 2', emoji: '' },
-                        { id: 'pdr', label: '🚪 PDR', emoji: '' },
-                        { id: 'parcel', label: '📦 Parcel', emoji: '' },
-                      ].map(tab => (
-                        <button
-                          key={tab.id}
-                          onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
-                          className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${
-                            tableSubCategory === tab.id
-                              ? 'bg-[#E53935] text-white border-[#E53935]'
-                              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+              )}
+              {activeTab !== 'dashboard' && activeTab !== 'pos' && (
+                <div className="flex-grow p-3 overflow-y-auto custom-scrollbar bg-gray-50/50">
+                  <div className="max-w-6xl mx-auto space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
+                        {activeTab === 'tables'
+                          ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'Conference Hall 1' : tableSubCategory === 'conference2' ? 'Conference Hall 2' : tableSubCategory === 'pdr' ? 'PDR Rooms' : 'Parcel')
+                          : activeTab.replace('-', ' ') + ' Feed'}
+                      </h2>
                     </div>
 
-                    {/* ── RESTAURANT / BAR TABLES (existing grid — completely unchanged) ── */}
-                    {tableSubCategory === 'restaurant' && (
-                      <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                        {activeTables
-                          .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
-                          .map((table, i) => {
-                          const isFree = table.status === 'Free' || !table.status;
-                          const isWaitingBill = table.status === 'Waiting Bill';
-                          const isBusy = !isFree && !isWaitingBill;
-
-                          let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
-                          let statusText = 'Open';
-
-                          if (isWaitingBill) {
-                            containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
-                            statusText = 'Billing Requested';
-                          } else if (isBusy) {
-                            containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
-                            statusText = 'Busy';
-                          }
-
-                          return (
-                            <div
-                              key={i}
-                              onClick={() => handleTableSelect(table)}
-                              className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                    {activeTab === 'tables' && (
+                      <div className="space-y-4">
+                        {/* ── SUBCATEGORY PILLS — sit inside Tables screen, not a separate toggle ── */}
+                        <div className="flex gap-2 flex-wrap">
+                          {[
+                            { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant', emoji: '' },
+                            { id: 'conference1', label: '🏛 Conference 1', emoji: '' },
+                            { id: 'conference2', label: '🏛 Conference 2', emoji: '' },
+                            { id: 'pdr', label: '🚪 PDR', emoji: '' },
+                            { id: 'parcel', label: '📦 Parcel', emoji: '' },
+                          ].map(tab => (
+                            <button
+                              key={tab.id}
+                              onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
+                              className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === tab.id
+                                  ? 'bg-[#E53935] text-white border-[#E53935]'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                                }`}
                             >
-                              {table.captainName && (
-                                <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
-                                  {table.captainName.split(' ')[0]}
-                                </div>
-                              )}
-                              <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
-                              <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
 
-                    {/* ── CONFERENCE HALL 1 ── */}
-                    {tableSubCategory === 'conference1' && (
-                      <VenueSectionView
-                        venueId="venue-conference1"
-                        sectionName="Conference Hall 1"
-                        restaurantId="venue-001"
-                        roomMode="single"
-                        onTableSelect={handleTableSelect}
-                        onOrderPlaced={() => {}}
-                      />
-                    )}
+                        {/* ── RESTAURANT / BAR TABLES (existing grid — completely unchanged) ── */}
+                        {tableSubCategory === 'restaurant' && (
+                          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
+                            {activeTables
+                              .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
+                              .map((table, i) => {
+                                const isFree = table.status === 'Free' || !table.status;
+                                const isWaitingBill = table.status === 'Waiting Bill';
+                                const isBusy = !isFree && !isWaitingBill;
 
-                    {/* ── CONFERENCE HALL 2 ── */}
-                    {tableSubCategory === 'conference2' && (
-                      <VenueSectionView
-                        venueId="venue-conference2"
-                        sectionName="Conference Hall 2"
-                        restaurantId="venue-001"
-                        roomMode="single"
-                        onTableSelect={handleTableSelect}
-                        onOrderPlaced={() => {}}
-                      />
-                    )}
+                                let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
+                                let statusText = 'Open';
 
-                    {/* ── PDR — show 4 room buttons first ── */}
-                    {tableSubCategory === 'pdr' && (
-                      <VenueSectionView
-                        venueId="venue-pdr"
-                        sectionName="PDR"
-                        restaurantId="venue-001"
-                        roomMode="pdr4"
-                        selectedRoom={selectedPDRRoom}
-                        onSelectRoom={setSelectedPDRRoom}
-                        onTableSelect={handleTableSelect}
-                        onOrderPlaced={() => {}}
-                      />
-                    )}
+                                if (isWaitingBill) {
+                                  containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
+                                  statusText = 'Billing Requested';
+                                } else if (isBusy) {
+                                  containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
+                                  statusText = 'Busy';
+                                }
 
-                    {/* ── PARCEL ── */}
-                    {tableSubCategory === 'parcel' && (
-                      <VenueSectionView
-                        venueId="venue-parcel"
-                        sectionName="Parcel"
-                        restaurantId="venue-001"
-                        roomMode="single"
-                        onTableSelect={handleTableSelect}
-                        onOrderPlaced={() => {}}
-                      />
-                    )}
-                  </div>
-                )}
-
-                {activeTab === 'history' && (
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                    {/* Total Amount Summary */}
-                    <div className="m-3 mb-2">
-                      <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
-                        <span className="text-3xl font-black text-white">
-                          ₹{pastTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
-                        </span>
-                        <span className="text-[10px] font-bold text-red-100">{pastTransactions.length} transactions</span>
-                      </div>
-                    </div>
-
-                    {/* Cash / UPI / Card summary */}
-                    <div className="grid grid-cols-3 gap-2 m-3 mt-0 mb-0">
-                      {[
-                        { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-                        { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-                        { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
-                      ].map(({ label, method, color, bg, border }) => {
-                        const total = pastTransactions
-                          .filter(t => t.method === method)
-                          .reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
-                        const count = pastTransactions.filter(t => t.method === method).length;
-                        return (
-                          <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
-                            <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
-                            <span className="text-sm font-black text-gray-900">₹{total.toFixed(0)}</span>
-                            <span className="text-[9px] font-bold text-gray-400">{count} txns</span>
+                                return (
+                                  <div
+                                    key={i}
+                                    onClick={() => handleTableSelect(table)}
+                                    className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                                  >
+                                    {table.captainName && (
+                                      <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
+                                        {table.captainName.split(' ')[0]}
+                                      </div>
+                                    )}
+                                    <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
+                                    <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
+                                  </div>
+                                );
+                              })}
                           </div>
-                        );
-                      })}
-                    </div>
-                    {/* Source filter */}
-                    <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
-                      {[
-                        { key: 'all', label: 'All' },
-                        { key: 'bar', label: 'Bar' },
-                        { key: 'conference1', label: 'Conf 1' },
-                        { key: 'conference2', label: 'Conf 2' },
-                        { key: 'pdr', label: 'PDR' },
-                        { key: 'parcel', label: 'Parcel' },
-                      ].map(f => (
-                        <button
-                          key={f.key}
-                          onClick={() => setTxnSourceFilter(f.key)}
-                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key
-                              ? 'bg-[#E53935] text-white shadow-sm'
-                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                            }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                    {/* Date filter tabs */}
-                    <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
-                      {[
-                        { key: 'today', label: 'Today' },
-                        { key: 'yesterday', label: 'Yesterday' },
-                        { key: 'month', label: 'This Month' },
-                        { key: 'all', label: 'All Time' },
-                      ].map(f => (
-                        <button
-                          key={f.key}
-                          onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
-                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key
-                              ? 'bg-[#E53935] text-white shadow-sm'
-                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                            }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
-                        className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
-                      >
-                        ↻ Sync
-                      </button>
-                    </div>
-                    {/* FIX 4: Method filter + Search row */}
-                    <div className="flex items-center gap-2 flex-wrap px-3 py-3 border-b border-gray-50">
-                      {[
-                        { key: 'all', label: 'All' },
-                        { key: 'CASH', label: 'Cash' },
-                        { key: 'UPI', label: 'UPI' },
-                        { key: 'CARD', label: 'Card' },
-                      ].map(f => (
-                        <button
-                          key={f.key}
-                          onClick={() => setTxnMethodFilter(f.key)}
-                          className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnMethodFilter === f.key
-                              ? 'bg-gray-900 text-white shadow-sm'
-                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                            }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                      <input
-                        type="text"
-                        value={txnSearch}
-                        onChange={e => setTxnSearch(e.target.value)}
-                        placeholder="Search bill number..."
-                        className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-450 w-44 sm:w-52 shadow-inner transition-colors"
-                      />
-                    </div>
-                    <div className="overflow-x-auto scrollbar-hide relative">
-                      {txnsLoading && filteredTransactions.length > 0 && (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
-                          <div className="flex flex-col items-center gap-2">
-                            <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
+                        )}
+
+                        {/* ── CONFERENCE HALL 1 ── */}
+                        {tableSubCategory === 'conference1' && (
+                          <VenueSectionView
+                            venueId="venue-conference1"
+                            sectionName="Conference Hall 1"
+                            restaurantId="venue-001"
+                            roomMode="single"
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                          />
+                        )}
+
+                        {/* ── CONFERENCE HALL 2 ── */}
+                        {tableSubCategory === 'conference2' && (
+                          <VenueSectionView
+                            venueId="venue-conference2"
+                            sectionName="Conference Hall 2"
+                            restaurantId="venue-001"
+                            roomMode="single"
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                          />
+                        )}
+
+                        {/* ── PDR — show 4 room buttons first ── */}
+                        {tableSubCategory === 'pdr' && (
+                          <VenueSectionView
+                            venueId="venue-pdr"
+                            sectionName="PDR"
+                            restaurantId="venue-001"
+                            roomMode="pdr4"
+                            selectedRoom={selectedPDRRoom}
+                            onSelectRoom={setSelectedPDRRoom}
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                          />
+                        )}
+
+                        {/* ── PARCEL ── */}
+                        {tableSubCategory === 'parcel' && (
+                          <VenueSectionView
+                            venueId="venue-parcel"
+                            sectionName="Parcel"
+                            restaurantId="venue-001"
+                            roomMode="single"
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                        {/* Total Amount Summary */}
+                        <div className="m-3 mb-2">
+                          <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
+                            <span className="text-3xl font-black text-white">
+                              ₹{pastTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
+                            </span>
+                            <span className="text-[10px] font-bold text-red-100">{pastTransactions.length} transactions</span>
                           </div>
                         </div>
-                      )}
-                      <table className="w-full text-left">
-                        <thead className="bg-gray-50 border-b border-gray-100">
-                          <tr>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Table</th>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Captain</th>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
-                            <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {txnsLoading && filteredTransactions.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className="p-12 text-center">
-                                <div className="flex flex-col items-center justify-center gap-2 py-8">
-                                  <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
-                                </div>
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredTransactions.map(txn => (
-                              <React.Fragment key={txn.id}>
-                                <tr
-                                  onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
-                                  className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
-                                >
-                                  <td className="p-4">
-                                    <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
-                                  </td>
-                                  {/* FIX 6: Table Number */}
-                                  <td className="p-4">
-                                    <span className="text-xs md:text-sm font-black text-gray-700">
-                                      {txn.tableNumber ? `T-${txn.tableNumber}` : '—'}
-                                    </span>
-                                  </td>
-                                  {/* FIX 6: Captain */}
-                                  <td className="p-4">
-                                    <span className="text-xs font-bold text-gray-500 uppercase">
-                                      {txn.captainName || 'Head Cashier'}
-                                    </span>
-                                  </td>
-                                  <td className="p-4">
-                                    <div className="flex flex-col">
-                                      <span className="text-xs md:text-sm font-black text-gray-700">{txn.date}</span>
-                                      <span className="text-xs text-gray-400 font-bold mt-0.5">{txn.time}</span>
-                                    </div>
-                                  </td>
-                                  <td className="p-4">
-                                    <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
-                                      txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
-                                        'bg-purple-100 text-purple-700'
-                                      }`}>{txn.method}</span>
-                                  </td>
-                                  <td className="p-4 text-right">
-                                    <div className="flex items-center justify-end gap-3">
-                                      <div className="flex flex-col items-end">
-                                        <span className="text-sm md:text-base font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
-                                        <span className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">{txn.items} Items</span>
-                                      </div>
-                                      <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
-                                        <ChevronDown size={14} />
-                                      </span>
+
+                        {/* Cash / UPI / Card summary */}
+                        <div className="grid grid-cols-3 gap-2 m-3 mt-0 mb-0">
+                          {[
+                            { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
+                            { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+                            { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
+                          ].map(({ label, method, color, bg, border }) => {
+                            const total = pastTransactions
+                              .filter(t => t.method === method)
+                              .reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
+                            const count = pastTransactions.filter(t => t.method === method).length;
+                            return (
+                              <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
+                                <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
+                                <span className="text-sm font-black text-gray-900">₹{total.toFixed(0)}</span>
+                                <span className="text-[9px] font-bold text-gray-400">{count} txns</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Source filter */}
+                        <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
+                          {[
+                            { key: 'all', label: 'All' },
+                            { key: 'bar', label: 'Bar' },
+                            { key: 'conference1', label: 'Conf 1' },
+                            { key: 'conference2', label: 'Conf 2' },
+                            { key: 'pdr', label: 'PDR' },
+                            { key: 'parcel', label: 'Parcel' },
+                          ].map(f => (
+                            <button
+                              key={f.key}
+                              onClick={() => setTxnSourceFilter(f.key)}
+                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key
+                                ? 'bg-[#E53935] text-white shadow-sm'
+                                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Date filter tabs */}
+                        <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
+                          {[
+                            { key: 'today', label: 'Today' },
+                            { key: 'yesterday', label: 'Yesterday' },
+                            { key: 'month', label: 'This Month' },
+                            { key: 'all', label: 'All Time' },
+                          ].map(f => (
+                            <button
+                              key={f.key}
+                              onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
+                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key
+                                ? 'bg-[#E53935] text-white shadow-sm'
+                                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
+                            className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
+                          >
+                            ↻ Sync
+                          </button>
+                        </div>
+                        {/* FIX 4: Method filter + Search row */}
+                        <div className="flex items-center gap-2 flex-wrap px-3 py-3 border-b border-gray-50">
+                          {[
+                            { key: 'all', label: 'All' },
+                            { key: 'CASH', label: 'Cash' },
+                            { key: 'UPI', label: 'UPI' },
+                            { key: 'CARD', label: 'Card' },
+                          ].map(f => (
+                            <button
+                              key={f.key}
+                              onClick={() => setTxnMethodFilter(f.key)}
+                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnMethodFilter === f.key
+                                ? 'bg-gray-900 text-white shadow-sm'
+                                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                          <input
+                            type="text"
+                            value={txnSearch}
+                            onChange={e => setTxnSearch(e.target.value)}
+                            placeholder="Search bill number..."
+                            className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-450 w-44 sm:w-52 shadow-inner transition-colors"
+                          />
+                        </div>
+                        <div className="overflow-x-auto scrollbar-hide relative">
+                          {txnsLoading && filteredTransactions.length > 0 && (
+                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
+                              <div className="flex flex-col items-center gap-2">
+                                <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
+                              </div>
+                            </div>
+                          )}
+                          <table className="w-full text-left">
+                            <thead className="bg-gray-50 border-b border-gray-100">
+                              <tr>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Table</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Captain</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {txnsLoading && filteredTransactions.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="p-12 text-center">
+                                    <div className="flex flex-col items-center justify-center gap-2 py-8">
+                                      <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+                                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
                                     </div>
                                   </td>
                                 </tr>
-                                {expandedTxnId === txn.id && (
-                                  <tr key={`${txn.id}-detail`} className="bg-gray-50">
-                                    <td colSpan={6} className="px-6 pb-4 pt-2">
-                                      {txn.itemsList && txn.itemsList.length > 0 ? (
-                                        <>
-                                        <div className="flex flex-col gap-2">
-                                          <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
-                                          {txn.itemsList.map((item, idx) => (
-                                            <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
-                                              <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
-                                              <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
-                                            </div>
-                                          ))}
-                                          <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
-                                            <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                            <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
-                                          </div>
+                              ) : (
+                                filteredTransactions.map(txn => (
+                                  <React.Fragment key={txn.id}>
+                                    <tr
+                                      onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
+                                      className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
+                                    >
+                                      <td className="p-4">
+                                        <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
+                                      </td>
+                                      {/* FIX 6: Table Number */}
+                                      <td className="p-4">
+                                        <span className="text-xs md:text-sm font-black text-gray-700">
+                                          {txn.tableNumber ? `T-${txn.tableNumber}` : '—'}
+                                        </span>
+                                      </td>
+                                      {/* FIX 6: Captain */}
+                                      <td className="p-4">
+                                        <span className="text-xs font-bold text-gray-500 uppercase">
+                                          {txn.captainName || 'Head Cashier'}
+                                        </span>
+                                      </td>
+                                      <td className="p-4">
+                                        <div className="flex flex-col">
+                                          <span className="text-xs md:text-sm font-black text-gray-700">{txn.date}</span>
+                                          <span className="text-xs text-gray-400 font-bold mt-0.5">{txn.time}</span>
                                         </div>
-                                          <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 mt-2 space-y-2">
-                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                              <span>Subtotal</span>
-                                              <span className="text-gray-800">₹{Number(txn.subtotal ?? txn.itemsList.reduce((sum, item) => sum + Number(item.price || item.p || 0) * Number(item.quantity || item.q || 1), 0)).toFixed(0)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                              <span>Discount {Number(txn.discountPercent ?? 0) > 0 ? `(${Number(txn.discountPercent).toFixed(0)}%)` : '(0%)'}</span>
-                                              <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(0)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                              <span>CGST</span>
-                                              <span className="text-gray-800">₹{Number(txn.cgst ?? 0).toFixed(2)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                              <span>SGST</span>
-                                              <span className="text-gray-800">₹{Number(txn.sgst ?? 0).toFixed(2)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                                              <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
-                                              <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
-                                            </div>
+                                      </td>
+                                      <td className="p-4">
+                                        <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
+                                          txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
+                                            'bg-purple-100 text-purple-700'
+                                          }`}>{txn.method}</span>
+                                      </td>
+                                      <td className="p-4 text-right">
+                                        <div className="flex items-center justify-end gap-3">
+                                          <div className="flex flex-col items-end">
+                                            <span className="text-sm md:text-base font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                            <span className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">{txn.items} Items</span>
                                           </div>
-                                        </>
-                                      ) : (
-                                        <p className="text-xs text-gray-400 py-3">No item details available.</p>
-                                      )}
-                                    </td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            )))}
-                        </tbody>
-                      </table>
-                    </div>
+                                          <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
+                                            <ChevronDown size={14} />
+                                          </span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                    {expandedTxnId === txn.id && (
+                                      <tr key={`${txn.id}-detail`} className="bg-gray-50">
+                                        <td colSpan={6} className="px-6 pb-4 pt-2">
+                                          {txn.itemsList && txn.itemsList.length > 0 ? (
+                                            <>
+                                              <div className="flex flex-col gap-2">
+                                                <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
+                                                {txn.itemsList.map((item, idx) => (
+                                                  <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
+                                                    <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
+                                                    <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                                  </div>
+                                                ))}
+                                                <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
+                                                  <span className="text-xs font-black uppercase text-gray-500">Total</span>
+                                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                                </div>
+                                              </div>
+                                              <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 mt-2 space-y-2">
+                                                <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                                  <span>Subtotal</span>
+                                                  <span className="text-gray-800">₹{Number(txn.subtotal ?? txn.itemsList.reduce((sum, item) => sum + Number(item.price || item.p || 0) * Number(item.quantity || item.q || 1), 0)).toFixed(0)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                                  <span>Discount {Number(txn.discountPercent ?? 0) > 0 ? `(${Number(txn.discountPercent).toFixed(0)}%)` : '(0%)'}</span>
+                                                  <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(0)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                                  <span>CGST</span>
+                                                  <span className="text-gray-800">₹{Number(txn.cgst ?? 0).toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                                  <span>SGST</span>
+                                                  <span className="text-gray-800">₹{Number(txn.sgst ?? 0).toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                                                  <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
+                                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                                </div>
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <p className="text-xs text-gray-400 py-3">No item details available.</p>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
+                                )))}
+                            </tbody>
+                          </table>
+                        </div>
 
-                    {!txnsLoading && filteredTransactions.length === 0 && (
-                      <div className="p-12 text-center flex flex-col items-center">
-                        <History size={32} className="text-gray-250 mb-2" />
-                        <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest">No Recent Transactions</p>
+                        {!txnsLoading && filteredTransactions.length === 0 && (
+                          <div className="p-12 text-center flex flex-col items-center">
+                            <History size={32} className="text-gray-250 mb-2" />
+                            <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest">No Recent Transactions</p>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                {activeTab === 'analytics' && (
-                  <ItemAnalytics outlet={outlet} />
-                )}
+                    {activeTab === 'analytics' && (
+                      <ItemAnalytics outlet={outlet} />
+                    )}
 
-                {false && (
-                  <div className="flex flex-col gap-4 h-full">
-                    {/* Smart Summary Header */}
-                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 bg-white p-3 rounded-xl border border-gray-100 shadow-sm shrink-0">
-                      <div className="text-center">
-                        <p className="text-[9px] font-black uppercase text-gray-400">Incoming</p>
-                        <p className="text-lg font-black text-gray-900">{liveKotQueue.filter(k => k.type === 'FOOD' && (k.status === 'Incoming' || (!['Preparing', 'Ready'].includes(k.status)))).length}</p>
-                      </div>
-                      <div className="text-center border-l border-gray-100">
-                        <p className="text-[9px] font-black uppercase text-gray-400">Preparing</p>
-                        <p className="text-lg font-black text-amber-600">{liveKotQueue.filter(k => k.type === 'FOOD' && k.status === 'Preparing').length}</p>
-                      </div>
-                      <div className="text-center border-l border-gray-100">
-                        <p className="text-[9px] font-black uppercase text-gray-400">Ready</p>
-                        <p className="text-lg font-black text-green-600">{liveKotQueue.filter(k => k.type === 'FOOD' && k.status === 'Ready').length}</p>
-                      </div>
-                      <div className="text-center border-l border-gray-100 hidden md:block">
-                        <p className="text-[9px] font-black uppercase text-gray-400">Delayed</p>
-                        <p className="text-lg font-black text-[#E53935]">
-                          {liveKotQueue.filter(k => k.type === 'FOOD' && k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
-                        </p>
-                      </div>
-                      <div className="text-center border-l border-gray-100 hidden md:block">
-                        <p className="text-[9px] font-black uppercase text-gray-400">Avg Time</p>
-                        <p className="text-lg font-black text-gray-900">8m</p>
-                      </div>
-                      <div className="text-center border-l border-gray-100 hidden md:block">
-                        <p className="text-[9px] font-black uppercase text-gray-400">Active Tables</p>
-                        <p className="text-lg font-black text-gray-900">{activeTableOrders.length}</p>
-                      </div>
-                    </div>
-
-                    {/* Kanban Board */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow min-h-0 overflow-y-auto pb-6">
-                      {['Incoming', 'Preparing', 'Ready'].map((status) => (
-                        <div key={status} className="flex flex-col gap-3 bg-gray-50/50 rounded-xl p-2 h-full border border-gray-100">
-                          <div className="flex justify-between items-center px-1">
-                            <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-900">{status}</h3>
-                            <span className="bg-white text-[9px] font-black px-2 py-0.5 rounded-md border border-gray-200">
-                              {liveKotQueue.filter(k => k.type === 'FOOD' && (k.status === status || (status === 'Incoming' && !['Preparing', 'Ready'].includes(k.status)))).length}
-                            </span>
+                    {false && (
+                      <div className="flex flex-col gap-4 h-full">
+                        {/* Smart Summary Header */}
+                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 bg-white p-3 rounded-xl border border-gray-100 shadow-sm shrink-0">
+                          <div className="text-center">
+                            <p className="text-[9px] font-black uppercase text-gray-400">Incoming</p>
+                            <p className="text-lg font-black text-gray-900">{liveKotQueue.filter(k => k.type === 'FOOD' && (k.status === 'Incoming' || (!['Preparing', 'Ready'].includes(k.status)))).length}</p>
                           </div>
-                          <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-grow">
-                            {liveKotQueue
-                              .filter((kot) => {
-                                if (kot.type !== 'FOOD') return false;
-                                if (status === 'Incoming') return kot.status === 'Incoming' || (!['Preparing', 'Ready'].includes(kot.status));
-                                return kot.status === status;
-                              })
-                              .map((kot) => (
-                                <div key={`${status}-${kot.id}`} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 group relative overflow-hidden transition-all hover:shadow-md">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[10px] font-black text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{kot.tableLabel}</span>
-                                      <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">KOT-{kot.id}</span>
-                                    </div>
-                                    <LiveTimer startTime={kot.createdAt} status={kot.status} />
-                                  </div>
+                          <div className="text-center border-l border-gray-100">
+                            <p className="text-[9px] font-black uppercase text-gray-400">Preparing</p>
+                            <p className="text-lg font-black text-amber-600">{liveKotQueue.filter(k => k.type === 'FOOD' && k.status === 'Preparing').length}</p>
+                          </div>
+                          <div className="text-center border-l border-gray-100">
+                            <p className="text-[9px] font-black uppercase text-gray-400">Ready</p>
+                            <p className="text-lg font-black text-green-600">{liveKotQueue.filter(k => k.type === 'FOOD' && k.status === 'Ready').length}</p>
+                          </div>
+                          <div className="text-center border-l border-gray-100 hidden md:block">
+                            <p className="text-[9px] font-black uppercase text-gray-400">Delayed</p>
+                            <p className="text-lg font-black text-[#E53935]">
+                              {liveKotQueue.filter(k => k.type === 'FOOD' && k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
+                            </p>
+                          </div>
+                          <div className="text-center border-l border-gray-100 hidden md:block">
+                            <p className="text-[9px] font-black uppercase text-gray-400">Avg Time</p>
+                            <p className="text-lg font-black text-gray-900">8m</p>
+                          </div>
+                          <div className="text-center border-l border-gray-100 hidden md:block">
+                            <p className="text-[9px] font-black uppercase text-gray-400">Active Tables</p>
+                            <p className="text-lg font-black text-gray-900">{activeTableOrders.length}</p>
+                          </div>
+                        </div>
 
-                                  <div className="mb-3">
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase">Capt. {kot.table.captainName?.split(' ')[0] || 'Walk-in'}</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <span className="text-[9px] font-black text-[#E53935] uppercase">{kot.items.length} Items</span>
-                                      <div className="w-1 h-1 rounded-full bg-gray-300" />
-                                      <span className="text-[9px] font-black text-gray-500">{kot.itemsReady || 0}/{kot.items.length} Ready</span>
-                                    </div>
-                                  </div>
-
-                                  <div className="space-y-1 text-[9px] text-gray-600 font-bold border-t border-gray-50 pt-2 mb-3">
-                                    {kot.items.map((item, idx) => (
-                                      <div key={`${kot.id}-${idx}`} className="flex justify-between items-center">
-                                        <div className="flex items-center gap-1.5">
-                                          <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
-                                          <span className="truncate max-w-[120px]">{item.n}</span>
+                        {/* Kanban Board */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow min-h-0 overflow-y-auto pb-6">
+                          {['Incoming', 'Preparing', 'Ready'].map((status) => (
+                            <div key={status} className="flex flex-col gap-3 bg-gray-50/50 rounded-xl p-2 h-full border border-gray-100">
+                              <div className="flex justify-between items-center px-1">
+                                <h3 className="font-black text-[10px] uppercase tracking-widest text-gray-900">{status}</h3>
+                                <span className="bg-white text-[9px] font-black px-2 py-0.5 rounded-md border border-gray-200">
+                                  {liveKotQueue.filter(k => k.type === 'FOOD' && (k.status === status || (status === 'Incoming' && !['Preparing', 'Ready'].includes(k.status)))).length}
+                                </span>
+                              </div>
+                              <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-grow">
+                                {liveKotQueue
+                                  .filter((kot) => {
+                                    if (kot.type !== 'FOOD') return false;
+                                    if (status === 'Incoming') return kot.status === 'Incoming' || (!['Preparing', 'Ready'].includes(kot.status));
+                                    return kot.status === status;
+                                  })
+                                  .map((kot) => (
+                                    <div key={`${status}-${kot.id}`} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 group relative overflow-hidden transition-all hover:shadow-md">
+                                      <div className="flex justify-between items-start mb-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[10px] font-black text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{kot.tableLabel}</span>
+                                          <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">KOT-{kot.id}</span>
                                         </div>
-                                        <span>x{item.q}</span>
+                                        <LiveTimer startTime={kot.createdAt} status={kot.status} />
                                       </div>
-                                    ))}
-                                  </div>
 
-                                  {/* Actions */}
-                                  <div className="flex gap-2 mt-2">
-                                    {status === 'Incoming' && (
-                                      <button onClick={() => updateKotStatus(kot.table.id, kot.id, 'Preparing')} className="flex-1 bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors">Start Prep</button>
-                                    )}
-                                    {status === 'Preparing' && (
-                                      <button onClick={() => updateKotStatus(kot.table.id, kot.id, 'Ready')} className="flex-1 bg-green-50 text-green-600 hover:bg-green-100 border border-green-200 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors">Mark Ready</button>
-                                    )}
-                                    {status === 'Ready' && (
-                                      <div className="flex-1 bg-gray-50 text-gray-400 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest text-center border border-gray-100">Waiting Pickup</div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                                      <div className="mb-3">
+                                        <p className="text-[9px] font-bold text-gray-400 uppercase">Capt. {kot.table.captainName?.split(' ')[0] || 'Walk-in'}</p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <span className="text-[9px] font-black text-[#E53935] uppercase">{kot.items.length} Items</span>
+                                          <div className="w-1 h-1 rounded-full bg-gray-300" />
+                                          <span className="text-[9px] font-black text-gray-500">{kot.itemsReady || 0}/{kot.items.length} Ready</span>
+                                        </div>
+                                      </div>
 
-                {activeTab === 'online' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {onlineOrders.map(order => (
-                      <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:border-[#E53935] transition-all">
-                        <div className="flex justify-between items-start mb-3">
-                          <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${order.platform === 'Swiggy' ? 'bg-orange-100 text-orange-600' : 'bg-red-100 text-red-600'
-                            }`}>{order.platform}</span>
-                          <span className="text-[9px] font-black text-gray-400">{order.time}</span>
-                        </div>
-                        <h3 className="text-[11px] font-black text-gray-900 mb-1">{order.id}</h3>
-                        <div className="space-y-0.5 mb-4">
-                          {order.items.map(item => <p key={item} className="text-[9px] text-gray-500 font-bold">{item}</p>)}
-                        </div>
-                        <div className="flex justify-between items-center pt-3 border-t border-gray-50">
-                          <span className="text-[10px] font-black text-gray-900">₹{order.amount}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${order.status === 'Ready' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                            }`}>{order.status}</span>
+                                      <div className="space-y-1 text-[9px] text-gray-600 font-bold border-t border-gray-50 pt-2 mb-3">
+                                        {kot.items.map((item, idx) => (
+                                          <div key={`${kot.id}-${idx}`} className="flex justify-between items-center">
+                                            <div className="flex items-center gap-1.5">
+                                              <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                              <span className="truncate max-w-[120px]">{item.n}</span>
+                                            </div>
+                                            <span>x{item.q}</span>
+                                          </div>
+                                        ))}
+                                      </div>
 
+                                      {/* Actions */}
+                                      <div className="flex gap-2 mt-2">
+                                        {status === 'Incoming' && (
+                                          <button onClick={() => updateKotStatus(kot.table.id, kot.id, 'Preparing')} className="flex-1 bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors">Start Prep</button>
+                                        )}
+                                        {status === 'Preparing' && (
+                                          <button onClick={() => updateKotStatus(kot.table.id, kot.id, 'Ready')} className="flex-1 bg-green-50 text-green-600 hover:bg-green-100 border border-green-200 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors">Mark Ready</button>
+                                        )}
+                                        {status === 'Ready' && (
+                                          <div className="flex-1 bg-gray-50 text-gray-400 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest text-center border border-gray-100">Waiting Pickup</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    )}
+
+                    {activeTab === 'online' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {onlineOrders.map(order => (
+                          <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:border-[#E53935] transition-all">
+                            <div className="flex justify-between items-start mb-3">
+                              <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${order.platform === 'Swiggy' ? 'bg-orange-100 text-orange-600' : 'bg-red-100 text-red-600'
+                                }`}>{order.platform}</span>
+                              <span className="text-[9px] font-black text-gray-400">{order.time}</span>
+                            </div>
+                            <h3 className="text-[11px] font-black text-gray-900 mb-1">{order.id}</h3>
+                            <div className="space-y-0.5 mb-4">
+                              {order.items.map(item => <p key={item} className="text-[9px] text-gray-500 font-bold">{item}</p>)}
+                            </div>
+                            <div className="flex justify-between items-center pt-3 border-t border-gray-50">
+                              <span className="text-[10px] font-black text-gray-900">₹{order.amount}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${order.status === 'Ready' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                }`}>{order.status}</span>
+
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+
+
+
                   </div>
-                )}
-
-
-
-
                 </div>
-              </div>
-            )}
+              )}
               {activeTab === 'pos' && (
                 <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
                   {/* COMPACT MENU */}
@@ -2407,11 +2406,11 @@ const CashierDashboard = ({ onLogout }) => {
 
       {/* TABLE DETAILS MODAL */}
       {showTableModal && selectedTable && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
           onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
         >
-          <div 
+          <div
             className="w-full max-w-lg h-[85vh] min-h-[500px] max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2474,131 +2473,131 @@ const CashierDashboard = ({ onLogout }) => {
               {/* ── Fixed Bottom Area ─────────────────────────────── */}
               <div className="shrink-0 pt-2 border-t border-gray-100">
 
-              {/* ── Discount & Totals (Ultra Compact) ──────────────── */}
-              <div className="flex gap-2 sm:gap-3 mb-2">
-                {/* Discount */}
-                <div className="w-24 sm:w-28 shrink-0">
-                  <label className="block text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-wider mb-0.5">
-                    Discount %
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={discountPercent === 0 ? '' : discountPercent}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      if (raw === '' || raw === null) setDiscountPercent(0);
-                      else {
-                        const parsed = parseFloat(raw);
-                        if (!isNaN(parsed)) setDiscountPercent(Math.max(0, Math.min(100, parsed)));
-                      }
-                    }}
-                    className="w-full px-2 py-1.5 sm:py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-xs font-bold text-center transition-colors"
-                    placeholder="0"
-                  />
-                </div>
+                {/* ── Discount & Totals (Ultra Compact) ──────────────── */}
+                <div className="flex gap-2 sm:gap-3 mb-2">
+                  {/* Discount */}
+                  <div className="w-24 sm:w-28 shrink-0">
+                    <label className="block text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-wider mb-0.5">
+                      Discount %
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={discountPercent === 0 ? '' : discountPercent}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '' || raw === null) setDiscountPercent(0);
+                        else {
+                          const parsed = parseFloat(raw);
+                          if (!isNaN(parsed)) setDiscountPercent(Math.max(0, Math.min(100, parsed)));
+                        }
+                      }}
+                      className="w-full px-2 py-1.5 sm:py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-xs font-bold text-center transition-colors"
+                      placeholder="0"
+                    />
+                  </div>
 
-                {/* Totals */}
-                <div className="flex-1 bg-gray-50/90 rounded-lg p-1.5 sm:p-2 border border-gray-200 shadow-sm flex flex-col justify-center gap-0.5">
-                  <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
-                    <span>Subtotal</span>
-                    <span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span>
-                  </div>
-                  <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
-                    <span>GST</span>
-                    <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span>
-                  </div>
-                  {discountPercent > 0 && (
-                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-[#E53935] uppercase">
-                      <span>Discount ({discountPercent}%)</span>
-                      <span>-₹{activeDiscountAmount.toFixed(0)}</span>
+                  {/* Totals */}
+                  <div className="flex-1 bg-gray-50/90 rounded-lg p-1.5 sm:p-2 border border-gray-200 shadow-sm flex flex-col justify-center gap-0.5">
+                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
+                      <span>Subtotal</span>
+                      <span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span>
                     </div>
-                  )}
-                  <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-0.5">
-                    <span className="text-[9px] sm:text-[10px] font-black text-gray-900 uppercase tracking-widest">
-                      {discountPercent > 0 ? 'Final' : 'Total'}
-                    </span>
-                    <span className="text-lg sm:text-xl font-black text-[#E53935] tracking-tight leading-none">
-                      ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
-                    </span>
+                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
+                      <span>GST</span>
+                      <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span>
+                    </div>
+                    {discountPercent > 0 && (
+                      <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-[#E53935] uppercase">
+                        <span>Discount ({discountPercent}%)</span>
+                        <span>-₹{activeDiscountAmount.toFixed(0)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-0.5">
+                      <span className="text-[9px] sm:text-[10px] font-black text-gray-900 uppercase tracking-widest">
+                        {discountPercent > 0 ? 'Final' : 'Total'}
+                      </span>
+                      <span className="text-lg sm:text-xl font-black text-[#E53935] tracking-tight leading-none">
+                        ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* ── Action buttons ──────────────────────────────────── */}
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
-                  className="py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
-                >
-                  Add Items
-                </button>
-                <button
-                  onClick={() => setShowBillEditor(true)}
-                  className="py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
-                >
-                  Edit Bill
-                </button>
-                {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
+                {/* ── Action buttons ──────────────────────────────────── */}
+                <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => setShowMethodPicker(true)}
-                    className="py-2 rounded-lg bg-[#E53935] border border-red-750 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
+                    onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
+                    className="py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
                   >
-                    Settlement
+                    Add Items
                   </button>
-                ) : (
-                  getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 ? (
+                  <button
+                    onClick={() => setShowBillEditor(true)}
+                    className="py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
+                  >
+                    Edit Bill
+                  </button>
+                  {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
                     <button
-                      onClick={handleFinalBill}
-                      disabled={isPrintingBill || printCooldown}
-                      className={`py-2 rounded-lg border text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
-                        ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
-                        : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
-                        }`}
+                      onClick={() => setShowMethodPicker(true)}
+                      className="py-2 rounded-lg bg-[#E53935] border border-red-750 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
                     >
-                      {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
-                      {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
+                      Settlement
                     </button>
                   ) : (
-                    <div className="py-2 rounded-lg border border-gray-300 bg-gray-200 text-gray-500 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
-                      No Items
-                    </div>
-                  )
-                )}
-              </div>
-
-              {/* Swap Table & Terminate Session buttons */}
-              {selectedTable.status && selectedTable.status !== 'Free' && (
-                <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
-                    className="py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <ArrowRightLeft size={10} />
-                    Swap Table
-                  </button>
-                  <button
-                    onClick={() => {
-                      setItemSwapSelectedIds([]);
-                      setItemSwapTargetId(null);
-                      setShowItemSwapModal(true);
-                    }}
-                    className="py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <ArrowRightLeft size={10} />
-                    Swap Items
-                  </button>
-                  <button
-                    onClick={terminateTableSession}
-                    className="py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <X size={10} />
-                    Terminate
-                  </button>
+                    getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 ? (
+                      <button
+                        onClick={handleFinalBill}
+                        disabled={isPrintingBill || printCooldown}
+                        className={`py-2 rounded-lg border text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                          ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
+                          : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
+                          }`}
+                      >
+                        {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
+                        {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
+                      </button>
+                    ) : (
+                      <div className="py-2 rounded-lg border border-gray-300 bg-gray-200 text-gray-500 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
+                        No Items
+                      </div>
+                    )
+                  )}
                 </div>
-              )}
+
+                {/* Swap Table & Terminate Session buttons */}
+                {selectedTable.status && selectedTable.status !== 'Free' && (
+                  <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
+                      className="py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <ArrowRightLeft size={10} />
+                      Swap Table
+                    </button>
+                    <button
+                      onClick={() => {
+                        setItemSwapSelectedIds([]);
+                        setItemSwapTargetId(null);
+                        setShowItemSwapModal(true);
+                      }}
+                      className="py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <ArrowRightLeft size={10} />
+                      Swap Items
+                    </button>
+                    <button
+                      onClick={terminateTableSession}
+                      className="py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <X size={10} />
+                      Terminate
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3115,8 +3114,8 @@ const CashierDashboard = ({ onLogout }) => {
                             );
                           }}
                           className={`w-full rounded-2xl border-2 px-4 py-3.5 text-left transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${isSelected
-                              ? 'border-indigo-300 bg-indigo-50/80'
-                              : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
+                            ? 'border-indigo-300 bg-indigo-50/80'
+                            : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
                             }`}
                         >
                           <div className="flex items-center justify-between gap-3">
@@ -3151,8 +3150,8 @@ const CashierDashboard = ({ onLogout }) => {
                         key={table.backendId || table.id}
                         onClick={() => setItemSwapTargetId(table.backendId)}
                         className={`rounded-2xl border-2 p-4 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${isSelected
-                            ? 'border-indigo-300 bg-indigo-50 shadow-md shadow-indigo-100/60'
-                            : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
+                          ? 'border-indigo-300 bg-indigo-50 shadow-md shadow-indigo-100/60'
+                          : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
                           }`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -3165,8 +3164,8 @@ const CashierDashboard = ({ onLogout }) => {
                             </p>
                           </div>
                           <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${isFree
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-orange-100 text-orange-700'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-orange-100 text-orange-700'
                             }`}>
                             {isFree ? 'Free' : `₹${Number(table.currentBill || 0).toFixed(0)}`}
                           </span>
@@ -3183,8 +3182,8 @@ const CashierDashboard = ({ onLogout }) => {
                 onClick={handleTransferItems}
                 disabled={itemSwapSelectedIds.length === 0 || !itemSwapTargetId || isSwappingItems}
                 className={`w-full py-4 rounded-xl text-xs sm:text-sm font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${itemSwapSelectedIds.length > 0 && itemSwapTargetId && !isSwappingItems
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700'
+                  : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                   }`}
               >
                 {isSwappingItems
@@ -3318,14 +3317,14 @@ const CashierDashboard = ({ onLogout }) => {
                           });
                         }}
                         className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${isSelected
-                            ? 'border-red-500 bg-red-50'
-                            : 'border-transparent bg-white hover:border-gray-200'
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-transparent bg-white hover:border-gray-200'
                           } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         {/* Custom Checkbox */}
                         <div className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 transition-colors ${isSelected
-                            ? 'bg-red-500 border-red-500'
-                            : 'border-gray-300'
+                          ? 'bg-red-500 border-red-500'
+                          : 'border-gray-300'
                           }`}>
                           {isSelected && <Check size={12} className="text-white" />}
                         </div>
@@ -3420,8 +3419,8 @@ const CashierDashboard = ({ onLogout }) => {
                   onClick={handleCancelSelected}
                   disabled={selectedCount === 0 || cancelBatchLoading}
                   className={`flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${selectedCount > 0
-                      ? 'bg-[#E53935] text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    ? 'bg-[#E53935] text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     }`}
                 >
                   {cancelBatchLoading ? (
