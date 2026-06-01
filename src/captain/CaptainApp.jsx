@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useTableSync } from '../services/tableSyncService';
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
-import { calculateSessionBill, calculateOrderTotal } from '../shared/utils/billing';
+import { calculateSessionBill, calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
 
@@ -309,8 +309,11 @@ export default function CaptainApp({ onLogout }) {
   const [todayRevenue, setTodayRevenue] = useState(0);
 
   const [activeBarMenu, setActiveBarMenu] = useState('food');
+  const [tableCarts, setTableCarts] = useState({});
+  const lastConfirmedItemsRef = useRef([]);
+  const currentSessionItems = tableCarts[activeTableId] ?? [];
+
   const [activeVariantItem, setActiveVariantItem] = useState(null);
-  const [currentSessionItems, setCurrentSessionItems] = useState([]);
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
 
   // Cancel-item state
@@ -408,6 +411,15 @@ export default function CaptainApp({ onLogout }) {
 
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
+  const sessionBill = useMemo(() => {
+    if (!activeTable) return { subtotal: 0, taxes: 0, total: 0 };
+    const committedItems = getTableItems(activeTable);
+    const itemsForTotal = committedItems.length > 0
+      ? committedItems
+      : lastConfirmedItemsRef.current;
+    return calculateOrderTotal([...itemsForTotal, ...currentSessionItems]);
+  }, [activeTable, currentSessionItems]);
+
   // Helper functions for captain colors
   const getCaptainBorderColor = (captainId) => {
     const captain = CAPTAINS.find(c => c.id === captainId);
@@ -422,11 +434,12 @@ export default function CaptainApp({ onLogout }) {
 
   // Filtered tables based on filter selection
   const filteredTables = useMemo(() => {
+    const baseTables = activeTables;
     if (tableFilter === 'all') {
-      return activeTables;
+      return baseTables;
     }
     // "My Tables" - show only tables assigned to this captain
-    return activeTables.filter(t => t.captainId === currentCaptain?.id);
+    return baseTables.filter(t => t.captainId === currentCaptain?.id);
   }, [activeTables, tableFilter, currentCaptain?.id]);
 
   const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
@@ -524,6 +537,18 @@ export default function CaptainApp({ onLogout }) {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
   }, [tableFilter]);
 
+  // Clean up stale cart keys and clear table carts when table is freed
+  useEffect(() => {
+    const validIds = new Set(activeTables.map(t => String(t.id)));
+    const freeIds = new Set(activeTables.filter(t => t.status === TABLE_STATUS.FREE).map(t => String(t.id)));
+    setTableCarts(prev => {
+      const cleaned = Object.fromEntries(
+        Object.entries(prev).filter(([k]) => validIds.has(k) && !freeIds.has(k))
+      );
+      return Object.keys(cleaned).length === Object.keys(prev).length ? prev : cleaned;
+    });
+  }, [activeTables]);
+
   // SHARED STATE PERSISTENCE
 
   const addNotification = (title, type = 'success') => {
@@ -604,11 +629,13 @@ export default function CaptainApp({ onLogout }) {
 
   const openTableSession = (table) => {
     setActiveTableId(table.id);
-    setCurrentSessionItems([]);
+    lastConfirmedItemsRef.current = [];
     setView('session');
   };
 
   const addItemToSession = (item, variant = null) => {
+    if (!activeTableId) return; // no active table, do nothing
+
     if (currentSessionItems.length === 0) {
       setActiveTables(currentTables => currentTables.map(t => {
         if (t.id === activeTableId && t.status === TABLE_STATUS.FREE) {
@@ -622,20 +649,16 @@ export default function CaptainApp({ onLogout }) {
     const finalName = `${item.n}${variantSuffix}`;
     const finalPrice = variant ? Number(variant.price) : item.p;
 
-    setCurrentSessionItems(prev => {
-      const existing = prev.find(i => i.n === finalName);
+    setTableCarts(prev => {
+      const currentCart = prev[activeTableId] ?? [];
+      const existing = currentCart.find(i => i.n === finalName);
+      let updatedCart;
       if (existing) {
-        return prev.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
+        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
+      } else {
+        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
       }
-      return [...prev, {
-        ...item,
-        n: finalName,
-        p: finalPrice,
-        q: 1,
-        notes: null,
-        s: 'Pending',
-        menuType: item.menuType || 'FOOD',
-      }];
+      return { ...prev, [activeTableId]: updatedCart };
     });
     addNotification(`${finalName} added`, 'success');
     setSearchQuery('');
@@ -656,7 +679,8 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const cancelSession = () => {
-    setCurrentSessionItems([]);
+    setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
+    lastConfirmedItemsRef.current = [];
     kotRequestIdRef.current = null;
     if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
       setActiveTables(currentTables => currentTables.map(t => {
@@ -670,8 +694,9 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const updateDraftQty = (name, delta) => {
-    setCurrentSessionItems(prev => {
-      const itemToUpdate = prev.find(i => i.n === name);
+    setTableCarts(prev => {
+      const currentCart = prev[activeTableId] ?? [];
+      const itemToUpdate = currentCart.find(i => i.n === name);
       if (itemToUpdate && itemToUpdate.q + delta <= 0) {
         setRemovedItem(itemToUpdate);
         if (removeTimeoutRef.current) clearTimeout(removeTimeoutRef.current);
@@ -679,18 +704,20 @@ export default function CaptainApp({ onLogout }) {
           setRemovedItem(null);
         }, 5000);
       }
-      return prev.map(i => {
+      const updatedCart = currentCart.map(i => {
         if (i.n === name) return { ...i, q: i.q + delta };
         return i;
       }).filter(i => i.q > 0);
+      return { ...prev, [activeTableId]: updatedCart };
     });
   };
 
   const undoRemove = () => {
     if (removedItem) {
-      setCurrentSessionItems(prev => {
-        if (prev.find(i => i.n === removedItem.n)) return prev;
-        return [...prev, removedItem];
+      setTableCarts(prev => {
+        const currentCart = prev[activeTableId] ?? [];
+        if (currentCart.find(i => i.n === removedItem.n)) return prev;
+        return { ...prev, [activeTableId]: [...currentCart, removedItem] };
       });
       setRemovedItem(null);
       if (removeTimeoutRef.current) clearTimeout(removeTimeoutRef.current);
@@ -747,9 +774,8 @@ export default function CaptainApp({ onLogout }) {
         ? (kotRequestIdRef.current || (kotRequestIdRef.current = crypto.randomUUID()))
         : null;
 
-      // Clear session items early for optimistic UI
-      setCurrentSessionItems([]);
       setExpandedNoteItemId(null);
+      // Clear error state
       setKotError(null);
 
       // 1. Create/update order in DB FIRST (CRITICAL: Wait for real KOT ID)
@@ -825,13 +851,17 @@ export default function CaptainApp({ onLogout }) {
         };
       }));
 
-      // ✅ DB confirmed — now show success
+      // ✅ DB confirmed — snapshot and clear draft
+      const committedSoFar = getTableItems(activeTable);
+      lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
+      setTableCarts(prev => ({ ...prev, [activeTableId]: [] })); // clear draft
+
       addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
     } catch (err) {
       console.error('[KOT] DB write failed:', err.message);
       // ❌ DB failed — show persistent error banner with Retry instead of success toast.
       // Restore the session items so the captain can retry without re-selecting.
-      setCurrentSessionItems(retrySnapshot);
+      setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
       setKotError({
         message: err.message || 'Network error — kitchen did not receive this order.',
         retryItems: retrySnapshot,
@@ -1728,7 +1758,7 @@ export default function CaptainApp({ onLogout }) {
                     <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-black text-gray-900">₹{calculateSessionBill(activeTable, currentSessionItems).subtotal}</span>
+                    <span className="text-sm font-black text-gray-900">₹{sessionBill.subtotal}</span>
                     {isCartMinimized && (
                       <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400">
                         <ChevronLeft size={16} className="rotate-90" />
@@ -1894,7 +1924,7 @@ export default function CaptainApp({ onLogout }) {
                   <div className="flex justify-between items-center">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
-                      <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{calculateSessionBill(activeTable, currentSessionItems).subtotal}</p>
+                      <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{sessionBill.subtotal}</p>
                     </div>
                     <div className="text-right flex flex-col gap-1">
                       <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">KOT Draft</span>

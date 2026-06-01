@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -645,7 +645,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!selectedTable?.backendId) return;
     const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId) ||
-                      venueTables.find((table) => table.backendId === selectedTable.backendId);
+      venueTables.find((table) => table.backendId === selectedTable.backendId);
 
     // Only update if we found a fresher version of the table.
     // NEVER wipe the selected table automatically to prevent race conditions.
@@ -1316,6 +1316,11 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
+        // FIX: Only send the NEW cart items (apiItems) to the backend.
+        // The backend PATCH /items endpoint always creates NEW orderItem rows for
+        // whatever it receives — it does NOT replace old ones.
+        // Previously we were merging existingItems + apiItems, which caused old items
+        // to be re-inserted as duplicates on every KOT, bleeding across tables.
         updateOrderItems(selectedTable.activeOrder.id, apiItems, crypto.randomUUID())
           .then(response => {
             // Extract real KOT ID from API response
@@ -1434,560 +1439,153 @@ const CashierDashboard = ({ onLogout }) => {
               <VenueDashboard addNotification={addNotification} />
             </div>
           ) : (
-          <>
-          {/* Billing Alert Banner */}
-          {billingAlerts.length > 0 && (
-            <div className="mx-4 mt-3 flex flex-col gap-2">
-              {billingAlerts.map(alert => (
-                <div
-                  key={alert.tableBackendId}
-                  className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:bg-amber-100 transition-all"
-                  onClick={() => {
-                    // Find and select the table so cashier can process payment
-                    const t = activeTables.find(tbl => tbl.backendId === alert.tableBackendId);
-                    if (t) {
-                      setSelectedTable(t);
-                      setShowPaymentModal(true);
-                      setActiveTab('tables');
-                      localStorage.setItem('cashier_active_tab', 'tables');
-                    }
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-2.5 w-2.5 bg-amber-500 rounded-full animate-pulse" />
-                    <div>
-                      <p className="text-sm font-bold text-amber-900">
-                        Table {alert.tableNumber} — Billing Requested
-                      </p>
-                      <p className="text-xs text-amber-700">
-                        ₹{Number(alert.totalAmount || 0).toFixed(2)} • {alert.requestedAt}
-                      </p>
-                    </div>
-                  </div>
-                  <button className="text-xs font-bold text-amber-700 bg-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition">
-                    Collect →
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'dashboard' ? (
-            <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
-              {/* Stats Row */}
-              <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
-                {stats.map((stat, i) => (
-                  <div key={i} className="min-w-[75vw] sm:min-w-0 snap-start shrink-0 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
-                    <div className={`w-9 h-9 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center shrink-0`}>
-                      <stat.icon size={18} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest truncate">{stat.label}</p>
-                      <p className="text-lg font-black text-gray-900 leading-none mt-1">{stat.value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Live Floor Status — Full Width, Only Running Tables */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                  <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
-                    <Table2 size={18} className="text-[#E53935]" />
-                    Live Floor Status
-                    <span className="bg-[#E53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
-                      {activeTables.filter(t => t.status && t.status !== 'Free').length} Running
-                    </span>
-                  </h3>
-                  <div className="flex gap-4">
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#E53935]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preparing</span></div>
-                  </div>
-                </div>
-
-                {activeTables.filter(t => t.status && t.status !== 'Free').length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 text-center">
-                    <Table2 size={52} className="text-gray-200 mb-4" />
-                    <p className="text-base font-black uppercase tracking-widest text-gray-300">All Tables Free</p>
-                    <p className="text-xs text-gray-300 font-bold mt-1.5">No active sessions on the floor</p>
-                  </div>
-                ) : (
-                  <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {activeTables
-                      .filter(t => t.status && t.status !== 'Free' && Number(t.number) !== 999 && String(t.number) !== '999')
-                      .sort((a, b) => {
-                        if (a.status === 'Waiting Bill' && b.status !== 'Waiting Bill') return -1;
-                        if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
-                        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
-                      })
-                      .map((table, i) => {
-                        const isWaitingBill = table.status === 'Waiting Bill';
-                        const isPreparing = table.status === 'Preparing';
-                        const bill = calculateTableBill(table);
-                        const billAmt = Number(table.currentBill || bill?.subtotal || 0);
-
-                        let cardBg = 'bg-red-50 border-[#E53935]';
-                        let textColor = 'text-[#E53935]';
-                        let badgeCls = 'bg-red-100 text-red-700';
-                        let statusLabel = 'Occupied';
-                        let pulseClass = '';
-
-                        if (isWaitingBill) {
-                          cardBg = 'bg-amber-50 border-amber-400';
-                          textColor = 'text-amber-700';
-                          badgeCls = 'bg-amber-100 text-amber-800';
-                          statusLabel = 'Bill Requested';
-                          pulseClass = 'animate-pulse';
-                        } else if (isPreparing) {
-                          cardBg = 'bg-orange-50 border-orange-400';
-                          textColor = 'text-orange-700';
-                          badgeCls = 'bg-orange-100 text-orange-700';
-                          statusLabel = 'Preparing';
+            <>
+              {/* Billing Alert Banner */}
+              {billingAlerts.length > 0 && (
+                <div className="mx-4 mt-3 flex flex-col gap-2">
+                  {billingAlerts.map(alert => (
+                    <div
+                      key={alert.tableBackendId}
+                      className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:bg-amber-100 transition-all"
+                      onClick={() => {
+                        // Find and select the table so cashier can process payment
+                        const t = activeTables.find(tbl => tbl.backendId === alert.tableBackendId);
+                        if (t) {
+                          setSelectedTable(t);
+                          setShowPaymentModal(true);
+                          setActiveTab('tables');
+                          localStorage.setItem('cashier_active_tab', 'tables');
                         }
-
-                        return (
-                          <div
-                            key={i}
-                            onClick={() => {
-                              setSelectedTable(table);
-                              setShowTableModal(true);
-                            }}
-                            className={`border-2 rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition-all hover:scale-[1.04] active:scale-[0.97] shadow-sm hover:shadow-lg select-none ${cardBg} ${pulseClass}`}
-                          >
-                            <div className="flex items-start justify-between gap-1">
-                              <span className={`text-4xl font-black leading-none ${textColor}`}>
-                                {outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}
-                              </span>
-                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
-                                {statusLabel}
-                              </span>
-                            </div>
-                            <div className="mt-auto">
-                              {table.captainName && (
-                                <p className={`text-[10px] font-black uppercase tracking-wider truncate mb-1 opacity-60 ${textColor}`}>
-                                  {table.captainName}
-                                </p>
-                              )}
-                              <p className="text-xl font-black text-gray-900">
-                                ₹{billAmt > 0 ? billAmt.toFixed(0) : '—'}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-
-              {/* VIJAY KUMAR COUNTER SECTION (ONLY FOR BAR) */}
-              {outlet === 'bar' && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden mt-4 shrink-0">
-                  <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                    <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
-                      <Users size={18} className="text-[#B71C1C]" />
-                      Counter Section / Parcel
-                    </h3>
-                  </div>
-                  <div className="p-4 flex gap-4">
-                    {(() => {
-                      const counterTable = activeTables.find(t => Number(t.number) === 999 || String(t.number) === '999');
-                      if (!counterTable) return null;
-                      
-                      const isWaitingBill = counterTable.status === 'Waiting Bill';
-                      const bill = calculateTableBill(counterTable);
-                      const billAmt = Number(counterTable.currentBill || bill?.subtotal || 0);
-
-                      let cardBg = 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100';
-                      let textColor = 'text-gray-700';
-                      let badgeCls = 'bg-gray-200 text-gray-700';
-                      let statusLabel = 'Available';
-                      let pulseClass = '';
-
-                      if (isWaitingBill) {
-                        cardBg = 'bg-amber-50 border-amber-400 hover:bg-amber-100';
-                        textColor = 'text-amber-700';
-                        badgeCls = 'bg-amber-100 text-amber-800';
-                        statusLabel = 'Bill Requested';
-                        pulseClass = 'animate-pulse';
-                      } else if (counterTable.status && counterTable.status !== 'Free') {
-                        cardBg = 'bg-red-50 border-[#E53935] hover:bg-red-100';
-                        textColor = 'text-[#E53935]';
-                        badgeCls = 'bg-red-100 text-red-700';
-                        statusLabel = 'Occupied';
-                      }
-
-                      return (
-                        <div
-                          onClick={() => {
-                            setSelectedTable(counterTable);
-                            setShowTableModal(true);
-                          }}
-                          className={`w-full sm:w-64 border-2 rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm ${cardBg} ${pulseClass}`}
-                        >
-                          <div className="flex items-start justify-between gap-1">
-                            <span className={`text-2xl font-black leading-none ${textColor}`}>
-                              Vijay Kumar
-                            </span>
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
-                              {statusLabel}
-                            </span>
-                          </div>
-                          <div className="mt-auto flex justify-between items-end">
-                            <p className={`text-[10px] font-black uppercase tracking-wider mb-1 opacity-60 ${textColor}`}>
-                              Walking / Parcel
-                            </p>
-                            <p className="text-xl font-black text-gray-900">
-                              ₹{billAmt > 0 ? billAmt.toFixed(0) : '—'}
-                            </p>
-                          </div>
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-2.5 w-2.5 bg-amber-500 rounded-full animate-pulse" />
+                        <div>
+                          <p className="text-sm font-bold text-amber-900">
+                            Table {alert.tableNumber} — Billing Requested
+                          </p>
+                          <p className="text-xs text-amber-700">
+                            ₹{Number(alert.totalAmount || 0).toFixed(2)} • {alert.requestedAt}
+                          </p>
                         </div>
-                      );
-                    })()}
-                  </div>
+                      </div>
+                      <button className="text-xs font-bold text-amber-700 bg-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition">
+                        Collect →
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {/* END VIJAY KUMAR SECTION */}
-            </div>
-          ) : activeTab === 'pos' ? (
-            <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
-              {/* COMPACT MENU */}
-              <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
-                <div className="px-4 py-3.5 border-b border-gray-100 flex flex-col gap-3.5 bg-white">
 
-                  <div className="relative w-full">
-                    {/* Animated Search Icon */}
-                    <motion.div
-                      animate={{
-                        scale: isSearchFocused ? 1.15 : 1,
-                        x: isSearchFocused ? 2 : 0
-                      }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                      className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none z-10"
-                    >
-                      <Search size={24} />
-                    </motion.div>
-
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
-                      className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${isSearchFocused
-                          ? 'border-[#E53935] ring-4 ring-red-100/80 shadow-red-100/20 scale-[1.002]'
-                          : 'border-gray-300 hover:border-[#E53935]/50 hover:shadow-md'
-                        }`}
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setIsSearchFocused(true);
-                      }}
-                      onFocus={() => setIsSearchFocused(true)}
-                      onBlur={() => setIsSearchFocused(false)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === 'Escape') {
-                          setIsSearchFocused(false);
-                          e.target.blur();
-                        }
-                      }}
-                      autoComplete="off"
-                    />
-
-                    {/* Clear Button (X) with slide/scale animation */}
-                    <AnimatePresence>
-                      {searchQuery && (
-                        <motion.button
-                          initial={{ opacity: 0, scale: 0.8, y: '-50%' }}
-                          animate={{ opacity: 1, scale: 1, y: '-50%' }}
-                          exit={{ opacity: 0, scale: 0.8, y: '-50%' }}
-                          transition={{ duration: 0.15 }}
-                          onClick={() => {
-                            setSearchQuery('');
-                            searchInputRef.current?.focus();
-                          }}
-                          className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-red-50 text-gray-405 hover:text-[#E53935] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
-                        >
-                          <X size={16} />
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 py-1">
-                    <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
-                      {activeCategories.map(cat => (
-                        <button
-                          key={cat}
-                          onClick={() => setSelectedCategory(cat)}
-                          className={`px-7 py-3.5 rounded-xl text-sm md:text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
-                              ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
-                            }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shrink-0 shadow-sm">
-                      {['All', 'veg', 'non'].map(diet => (
-                        <button
-                          key={diet}
-                          onClick={() => setActiveDiet(diet)}
-                          className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${activeDiet === diet
-                              ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
-                              : 'text-gray-500 hover:text-gray-850 bg-transparent'
-                            }`}
-                        >
-                          {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
-                  {menuLoading ? (
-                    <p className="text-center text-sm text-gray-400 py-12 font-bold uppercase tracking-widest animate-pulse">Syncing menu…</p>
-                  ) : activeMenuItems.length === 0 ? (
-                    <div
-                      className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm mt-4 w-full"
-                    >
-                      <AlertCircle size={44} className="text-[#E53935] mb-4" />
-                      <h3 className="text-lg font-black text-gray-900 mb-1">No matching items found</h3>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest max-w-xs text-center">
-                        {searchQuery.trim()
-                          ? `We couldn't find anything matching "${searchQuery.trim()}".`
-                          : "No items found in this category."}
-                      </p>
-                      {searchQuery.trim() && (
-                        <button
-                          onClick={() => setSearchQuery('')}
-                          className="mt-6 px-6 py-2.5 bg-[#E53935] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-red-100 cursor-pointer"
-                        >
-                          Clear Search
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div
-                      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6"
-                    >
-                      {activeMenuItems.map((item) => (
-                        <div
-                          key={item.id || item.n}
-                          onClick={() => handleAddItem(item)}
-                          className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-250 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md"
-                        >
-                          <div className="h-32 sm:h-36 lg:h-40 w-full overflow-hidden relative shrink-0">
-                            <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                            {outlet === 'bar' && item.menuType && (
-                              <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50 text-[9px] font-black uppercase tracking-wider text-gray-700 select-none">
-                                {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
-                              </div>
-                            )}
-                            <div className="absolute top-2.5 right-2.5 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50">
-                              <div className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
-                              </div>
-                            </div>
+              {activeTab === 'dashboard' && (
+                <div className="flex flex-col lg:flex-row flex-grow overflow-hidden w-full">
+                  <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
+                    {/* Stats Row */}
+                    <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
+                      {stats.map((stat, i) => (
+                        <div key={i} className="min-w-[75vw] sm:min-w-0 snap-start shrink-0 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                          <div className={`w-9 h-9 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center shrink-0`}>
+                            <stat.icon size={18} />
                           </div>
-                          <div className="p-4 sm:p-5 flex flex-col flex-grow gap-2 sm:gap-3">
-                            <h4 className="cashier-item-title text-gray-900 line-clamp-2 h-[2.5rem] sm:h-[2.75rem] md:h-[3.25rem] flex items-center tracking-tight">
-                              <HighlightedText text={item.n} highlight={searchQuery} />
-                            </h4>
-                            <div className="flex items-center justify-between mt-auto">
-                              <p className="text-base md:text-lg lg:text-xl font-black text-[#E53935]">₹{item.p}</p>
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
-                                <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
-                              </div>
-                            </div>
+                          <div>
+                            <p className="text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-widest">{stat.label}</p>
+                            <p className={`text-lg sm:text-xl font-black ${stat.color} leading-none mt-0.5`}>{stat.value}</p>
                           </div>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* COMPACT CART */}
-              <div className={`w-full lg:w-[440px] flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'}`}>
-                <div
-                  className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
-                  onClick={() => setIsCartMinimized(!isCartMinimized)}
-                >
-                  <div className="flex flex-col w-full">
-                    <div className="flex justify-between items-center mb-3">
-                      <h2 className="font-black text-base md:text-lg uppercase tracking-widest text-gray-900 flex items-center gap-2.5">
-                        <ShoppingCart size={22} className="text-[#E53935]" />
-                        Cart Log
-                      </h2>
-                      <button onClick={(e) => { e.stopPropagation(); setCart([]); setExpandedNoteItemId(null); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center text-[#E53935] font-black text-lg shadow-sm border border-red-100">
-                          {selectedTable ? (selectedTable.displayName || selectedTable.name || (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`)) : 'POS'}
-                        </div>
-                        <div className="flex-grow min-w-0">
-                          <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.displayName || selectedTable.name || selectedTable.id}` : 'Walk-in Order'}</p>
-                          <p className="text-xs text-gray-405 font-black uppercase tracking-widest leading-none mt-1">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
+                    {/* Live Floor Status — Full Width, Only Running Tables */}
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+                      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                        <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
+                          <Table2 size={18} className="text-[#E53935]" />
+                          Live Floor Status
+                          <span className="bg-[#E53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
+                            {activeTables.filter(t => t.status && t.status !== 'Free').length} Running
+                          </span>
+                        </h3>
+                        <div className="flex gap-4">
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#E53935]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preparing</span></div>
                         </div>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
-                        {selectedTable ? 'Change' : '+ Table'}
-                      </button>
-                      <DateInputButton
-                        value={txnCustomDate}
-                        max={getKolkataDateString()}
-                        onChange={(val) => {
-                          setTxnCustomDate(val);
-                          if (val) {
-                            setTxnDateFilter('custom');
-                            loadTransactions('custom');
-                          }
-                        }}
-                        className="ml-2"
-                      />
-                    </div>
-                  </div>
-                  <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">
-                    <ChevronDown size={18} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-180' : ''}`} />
-                  </div>
-                </div>
 
-                <div className="flex-grow overflow-y-auto p-4.5 space-y-4 custom-scrollbar bg-white">
-                  {(() => {
-                    const sessionItems = selectedTable
-                      ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })))
-                      : [];
-                    const pendingItems = cart.map(i => ({ ...i, isKotSent: false }));
-                    const displayCart = [...sessionItems, ...pendingItems];
-
-                    if (displayCart.length === 0) {
-                      return (
-                        <div className="h-full flex flex-col items-center justify-center opacity-40 py-16">
-                          <Package size={44} className="mb-2 text-gray-405" />
-                          <p className="text-sm font-black uppercase text-gray-500 tracking-wider">Pending Items</p>
+                      {activeTables.filter(t => t.status && t.status !== 'Free').length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-24 text-center">
+                          <Table2 size={52} className="text-gray-200 mb-4" />
+                          <p className="text-base font-black uppercase tracking-widest text-gray-300">All Tables Free</p>
+                          <p className="text-xs text-gray-300 font-bold mt-1.5">No active sessions on the floor</p>
                         </div>
-                      );
-                    }
+                      ) : (
+                        <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                          {activeTables
+                            .filter(t => t.status && t.status !== 'Free')
+                            .sort((a, b) => {
+                              if (a.status === 'Waiting Bill' && b.status !== 'Waiting Bill') return -1;
+                              if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
+                              return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+                            })
+                            .map((table, i) => {
+                              const isWaitingBill = table.status === 'Waiting Bill';
+                              const isPreparing = table.status === 'Preparing';
+                              const bill = calculateTableBill(table);
+                              const billAmt = Number(table.currentBill || bill?.subtotal || 0);
 
-                    return displayCart.map((item, idx) => (
-                      <div key={item.id || idx} className={`flex gap-3 pb-4 border-b border-gray-100 ${item.isKotSent ? 'opacity-60' : ''}`}>
-                        <div className="flex-grow min-w-0">
-                          <div className="flex justify-between items-start mb-1.5">
-                            <div>
-                              <p className="text-sm md:text-base font-black text-gray-900 truncate flex items-center gap-1.5">
-                                {item.n}
-                                {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
-                              </p>
-                              {item.menuType === 'LIQUOR' && !item.isBottleItem && (
-                                <p className="text-xs font-black text-gray-500 mt-1">
-                                  {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${item.q} × ${BAR_UNIT_ML}ml = ${item.q * BAR_UNIT_ML}ml`}
-                                </p>
-                              )}
-                            </div>
-                            <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
-                          </div>
-                          <div className="flex items-center justify-between gap-2.5">
-                            {item.isKotSent ? (
-                              <div className="flex items-center gap-1.5 text-sm font-black text-gray-500">
-                                <span>QTY: {item.q}</span>
-                                <span>•</span>
-                                <span>KOT-{item.kotId}</span>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="flex items-center bg-gray-100 rounded-lg p-1.5 gap-2">
-                                  <button onClick={() => updateQty(item.id, -1)} className="p-1.5 text-gray-600 hover:text-red-650 hover:bg-gray-200 rounded-lg transition-colors"><Minus size={14} /></button>
-                                  <span className="w-9 text-center text-sm md:text-base font-black text-gray-805">{item.q}</span>
-                                  <button onClick={() => updateQty(item.id, 1)} className="p-1.5 text-gray-600 hover:text-red-655 hover:bg-gray-200 rounded-lg transition-colors"><Plus size={14} /></button>
-                                </div>
-                                <button className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg">Edit</button>
-                              </>
-                            )}
-                          </div>
-                          <div className="mt-1">
-                            {expandedNoteItemId === (item.menuItemId || item.id || item.n || item.name) ? (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="text"
-                                  maxLength={40}
-                                  value={item.notes || ''}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setCart(prev => prev.map(ci =>
-                                      (ci.menuItemId || ci.id || ci.n || ci.name) === (item.menuItemId || item.id || item.n || item.name)
-                                        ? { ...ci, notes: val || null }
-                                        : ci
-                                    ));
-                                  }}
-                                  placeholder="e.g. Less spicy, Extra sauce"
-                                  autoFocus
-                                  className="flex-1 text-[11px] font-bold px-2 py-1 rounded-lg border border-orange-300 bg-orange-50 text-gray-700 placeholder-gray-400 outline-none focus:border-orange-500 transition-colors"
-                                />
-                                <button
-                                  onClick={() => setExpandedNoteItemId(null)}
-                                  className="text-[10px] font-black text-gray-400 hover:text-gray-600 px-1"
+                              let cardBg = 'bg-red-50 border-[#E53935]';
+                              let textColor = 'text-[#E53935]';
+                              let badgeCls = 'bg-red-100 text-red-700';
+                              let statusLabel = 'Occupied';
+                              let pulseClass = '';
+
+                              if (isWaitingBill) {
+                                cardBg = 'bg-amber-50 border-amber-400';
+                                textColor = 'text-amber-700';
+                                badgeCls = 'bg-amber-100 text-amber-800';
+                                statusLabel = 'Bill Requested';
+                                pulseClass = 'animate-pulse';
+                              } else if (isPreparing) {
+                                cardBg = 'bg-orange-50 border-orange-400';
+                                textColor = 'text-orange-700';
+                                badgeCls = 'bg-orange-100 text-orange-700';
+                                statusLabel = 'Preparing';
+                              }
+
+                              return (
+                                <div
+                                  key={i}
+                                  className={`border-2 rounded-2xl p-4 flex flex-col gap-3 transition-all shadow-sm select-none ${cardBg} ${pulseClass}`}
                                 >
-                                  ×
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setExpandedNoteItemId(item.menuItemId || item.id || item.n || item.name)}
-                                className="text-[10px] font-black uppercase tracking-wide text-orange-500 hover:text-orange-700 transition-colors"
-                              >
-                                {item.notes ? `📝 ${item.notes}` : '+ Add Instruction'}
-                              </button>
-                            )}
-                          </div>
+                                  <div className="flex items-start justify-between gap-1">
+                                    <span className={`text-4xl font-black leading-none ${textColor}`}>
+                                      {outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}
+                                    </span>
+                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
+                                      {statusLabel}
+                                    </span>
+                                  </div>
+                                  <div className="mt-auto">
+                                    {table.captainName && (
+                                      <p className={`text-[10px] font-black uppercase tracking-wider truncate mb-1 opacity-60 ${textColor}`}>
+                                        {table.captainName}
+                                      </p>
+                                    )}
+                                    <p className="text-xl font-black text-gray-900">
+                                      ₹{billAmt > 0 ? billAmt.toFixed(0) : '—'}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
                         </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-
-                <div className="p-4 sm:p-4.5 border-t border-gray-100 bg-gray-50/50 space-y-3 shrink-0">
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
-                      <span>Subtotal</span>
-                      <span className="font-black text-gray-855 text-sm">₹{Number(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
-                    </div>
-                    {/* CGST + SGST — shown only when food items are present (taxes > 0) */}
-                    {(selectedTable ? activeCgst : cartCgst) > 0 && (
-                      <>
-                        <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
-                          <span>CGST (2.5%)</span>
-                          <span>₹{(selectedTable ? activeCgst : cartCgst).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
-                          <span>SGST (2.5%)</span>
-                          <span>₹{(selectedTable ? activeSgst : cartSgst).toFixed(2)}</span>
-                        </div>
-                      </>
-                    )}
-                    <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
-                      <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                      <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : total).toFixed(0)}</span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="pt-0.5">
-                    <button
-                      onClick={handleSmartKOT}
-                      disabled={isKotSending || cart.length === 0}
-                      className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
-                        isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
-                          'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
-                        }`}
-                    >
-                      {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
-                      <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+
             </div>
-          ) : (
+          )}
+          {activeTab !== 'dashboard' && activeTab !== 'pos' && (
             <div className="flex-grow p-3 overflow-y-auto custom-scrollbar bg-gray-50/50">
               <div className="max-w-6xl mx-auto space-y-3">
                 <div className="flex items-center justify-between">
@@ -2027,7 +1625,7 @@ const CashierDashboard = ({ onLogout }) => {
                     {tableSubCategory === 'restaurant' && (
                       <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                         {activeTables
-                          .filter(t => Number(t.number) !== 999 && String(t.number) !== '999')
+                          .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
                           .map((table, i) => {
                           const isFree = table.status === 'Free' || !table.status;
                           const isWaitingBill = table.status === 'Waiting Bill';
@@ -2483,24 +2081,341 @@ const CashierDashboard = ({ onLogout }) => {
                           <span className="text-[10px] font-black text-gray-900">₹{order.amount}</span>
                           <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${order.status === 'Ready' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                             }`}>{order.status}</span>
+
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
+
+
+
+
+                </div>
               </div>
-            </div>
-          )}
-          </>
+            )}
+              {activeTab === 'pos' && (
+                <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
+                  {/* COMPACT MENU */}
+                  <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
+                    <div className="px-4 py-3.5 border-b border-gray-100 flex flex-col gap-3.5 bg-white">
+
+                      <div className="relative w-full">
+                        {/* Animated Search Icon */}
+                        <motion.div
+                          animate={{
+                            scale: isSearchFocused ? 1.15 : 1,
+                            x: isSearchFocused ? 2 : 0
+                          }}
+                          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                          className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none z-10"
+                        >
+                          <Search size={24} />
+                        </motion.div>
+
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
+                          className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${isSearchFocused
+                            ? 'border-[#E53935] ring-4 ring-red-100/80 shadow-red-100/20 scale-[1.002]'
+                            : 'border-gray-300 hover:border-[#E53935]/50 hover:shadow-md'
+                            }`}
+                          value={searchQuery}
+                          onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setIsSearchFocused(true);
+                          }}
+                          onFocus={() => setIsSearchFocused(true)}
+                          onBlur={() => setIsSearchFocused(false)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === 'Escape') {
+                              setIsSearchFocused(false);
+                              e.target.blur();
+                            }
+                          }}
+                          autoComplete="off"
+                        />
+
+                        {/* Clear Button (X) with slide/scale animation */}
+                        <AnimatePresence>
+                          {searchQuery && (
+                            <motion.button
+                              initial={{ opacity: 0, scale: 0.8, y: '-50%' }}
+                              animate={{ opacity: 1, scale: 1, y: '-50%' }}
+                              exit={{ opacity: 0, scale: 0.8, y: '-50%' }}
+                              transition={{ duration: 0.15 }}
+                              onClick={() => {
+                                setSearchQuery('');
+                                searchInputRef.current?.focus();
+                              }}
+                              className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-red-50 text-gray-405 hover:text-[#E53935] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
+                            >
+                              <X size={16} />
+                            </motion.button>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-1">
+                        <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
+                          {activeCategories.map(cat => (
+                            <button
+                              key={cat}
+                              onClick={() => setSelectedCategory(cat)}
+                              className={`px-7 py-3.5 rounded-xl text-sm md:text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
+                                ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
+                                }`}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shrink-0 shadow-sm">
+                          {['All', 'veg', 'non'].map(diet => (
+                            <button
+                              key={diet}
+                              onClick={() => setActiveDiet(diet)}
+                              className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${activeDiet === diet
+                                ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
+                                : 'text-gray-500 hover:text-gray-850 bg-transparent'
+                                }`}
+                            >
+                              {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
+                      {menuLoading ? (
+                        <p className="text-center text-sm text-gray-400 py-12 font-bold uppercase tracking-widest animate-pulse">Syncing menu…</p>
+                      ) : activeMenuItems.length === 0 ? (
+                        <div
+                          className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm mt-4 w-full"
+                        >
+                          <AlertCircle size={44} className="text-[#E53935] mb-4" />
+                          <h3 className="text-lg font-black text-gray-900 mb-1">No matching items found</h3>
+                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest max-w-xs text-center">
+                            {searchQuery.trim()
+                              ? `We couldn't find anything matching "${searchQuery.trim()}".`
+                              : "No items found in this category."}
+                          </p>
+                          {searchQuery.trim() && (
+                            <button
+                              onClick={() => setSearchQuery('')}
+                              className="mt-6 px-6 py-2.5 bg-[#E53935] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-red-100 cursor-pointer"
+                            >
+                              Clear Search
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6"
+                        >
+                          {activeMenuItems.map((item) => (
+                            <div
+                              key={item.id || item.n}
+                              onClick={() => handleAddItem(item)}
+                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-250 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md"
+                            >
+                              <div className="h-32 sm:h-36 lg:h-40 w-full overflow-hidden relative shrink-0">
+                                <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                {outlet === 'bar' && item.menuType && (
+                                  <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50 text-[9px] font-black uppercase tracking-wider text-gray-700 select-none">
+                                    {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
+                                  </div>
+                                )}
+                                <div className="absolute top-2.5 right-2.5 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50">
+                                  <div className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="p-4 sm:p-5 flex flex-col flex-grow gap-2 sm:gap-3">
+                                <h4 className="cashier-item-title text-gray-900 line-clamp-2 h-[2.5rem] sm:h-[2.75rem] md:h-[3.25rem] flex items-center tracking-tight">
+                                  <HighlightedText text={item.n} highlight={searchQuery} />
+                                </h4>
+                                <div className="flex items-center justify-between mt-auto">
+                                  <p className="text-base md:text-lg lg:text-xl font-black text-[#E53935]">₹{item.p}</p>
+                                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
+                                    <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COMPACT CART */}
+                  <div className={`w-full lg:w-[440px] flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'}`}>
+                    <div
+                      className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
+                      onClick={() => setIsCartMinimized(!isCartMinimized)}
+                    >
+                      <div className="flex flex-col w-full">
+                        <div className="flex justify-between items-center mb-3">
+                          <h2 className="font-black text-base md:text-lg uppercase tracking-widest text-gray-900 flex items-center gap-2.5">
+                            <ShoppingCart size={22} className="text-[#E53935]" />
+                            Cart Log
+                          </h2>
+                          <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
+                          <div className="flex items-center gap-3">
+                            <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center text-[#E53935] font-black text-lg shadow-sm border border-red-100">
+                              {selectedTable ? (selectedTable.displayName || selectedTable.name || (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`)) : 'POS'}
+                            </div>
+                            <div className="flex-grow min-w-0">
+                              <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.displayName || selectedTable.name || selectedTable.id}` : 'Walk-in Order'}</p>
+                              <p className="text-xs text-gray-405 font-black uppercase tracking-widest leading-none mt-1">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
+                            </div>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
+                            {selectedTable ? 'Change' : '+ Table'}
+                          </button>
+                          <DateInputButton
+                            value={txnCustomDate}
+                            max={getKolkataDateString()}
+                            onChange={(val) => {
+                              setTxnCustomDate(val);
+                              if (val) {
+                                setTxnDateFilter('custom');
+                                loadTransactions('custom');
+                              }
+                            }}
+                            className="ml-2"
+                          />
+                        </div>
+                      </div>
+                      <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">
+                        <ChevronDown size={18} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-180' : ''}`} />
+                      </div>
+                    </div>
+
+                    <div className="flex-grow overflow-y-auto p-4.5 space-y-4 custom-scrollbar bg-white">
+                      {(() => {
+                        const sessionItems = selectedTable
+                          ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })))
+                          : [];
+                        const pendingItems = cart.map(i => ({ ...i, isKotSent: false }));
+                        const displayCart = [...sessionItems, ...pendingItems];
+
+                        if (displayCart.length === 0) {
+                          return (
+                            <div className="h-full flex flex-col items-center justify-center opacity-40 py-16">
+                              <Package size={44} className="mb-2 text-gray-405" />
+                              <p className="text-sm font-black uppercase text-gray-500 tracking-wider">Pending Items</p>
+                            </div>
+                          );
+                        }
+
+                        return displayCart.map((item, idx) => (
+                          <div key={item.id || idx} className={`flex gap-3 pb-4 border-b border-gray-100 ${item.isKotSent ? 'opacity-60' : ''}`}>
+                            <div className="flex-grow min-w-0">
+                              <div className="flex justify-between items-start mb-1.5">
+                                <div>
+                                  <p className="text-sm md:text-base font-black text-gray-900 truncate flex items-center gap-1.5">
+                                    {item.n}
+                                    {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
+                                  </p>
+                                  {item.menuType === 'LIQUOR' && !item.isBottleItem && (
+                                    <p className="text-xs font-black text-gray-500 mt-1">
+                                      {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${item.q} × ${BAR_UNIT_ML}ml = ${item.q * BAR_UNIT_ML}ml`}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
+                              </div>
+                              <div className="flex items-center justify-between gap-2.5">
+                                {item.isKotSent ? (
+                                  <div className="flex items-center gap-1.5 text-sm font-black text-gray-500">
+                                    <span>QTY: {item.q}</span>
+                                    <span>•</span>
+                                    <span>KOT-{item.kotId}</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center bg-gray-100 rounded-lg p-1.5 gap-2">
+                                      <button onClick={() => updateQty(item.id, -1)} className="p-1.5 text-gray-600 hover:text-red-650 hover:bg-gray-200 rounded-lg transition-colors"><Minus size={14} /></button>
+                                      <span className="w-9 text-center text-sm md:text-base font-black text-gray-805">{item.q}</span>
+                                      <button onClick={() => updateQty(item.id, 1)} className="p-1.5 text-gray-600 hover:text-red-655 hover:bg-gray-200 rounded-lg transition-colors"><Plus size={14} /></button>
+                                    </div>
+                                    <button className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg">Edit</button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+
+                    <div className="p-4 sm:p-4.5 border-t border-gray-100 bg-gray-50/50 space-y-3 shrink-0">
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
+                          <span>Subtotal</span>
+                          <span className="font-black text-gray-855 text-sm">₹{Number(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
+                        </div>
+                        {/* CGST + SGST — shown only when food items are present (taxes > 0) */}
+                        {(selectedTable ? activeCgst : cartCgst) > 0 && (
+                          <>
+                            <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
+                              <span>CGST (2.5%)</span>
+                              <span>₹{(selectedTable ? activeCgst : cartCgst).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
+                              <span>SGST (2.5%)</span>
+                              <span>₹{(selectedTable ? activeSgst : cartSgst).toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
+                          <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
+                          <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-0.5">
+                        <button
+                          onClick={handleSmartKOT}
+                          disabled={isKotSending || cart.length === 0}
+                          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
+                            isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
+                              'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
+                            }`}
+                        >
+                          {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
+                          <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
+            </>
           )}
         </main>
       </div>
 
       {/* TABLE DETAILS MODAL */}
       {showTableModal && selectedTable && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
-            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
+        >
+          <div 
+            className="w-full max-w-lg max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-2xl border-2 border-red-700 shadow-md transform hover:rotate-1 transition-transform">
                   {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
@@ -2520,22 +2435,24 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
             </div>
 
-            <div className="p-5 bg-white">
+            <div className="p-5 bg-white flex flex-col flex-1 overflow-hidden">
               {/* ── Order Summary (read-only view) ─────────────────── */}
-              <div className="space-y-3.5 mb-5">
-                <h3 className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1.5">
+              <div className="flex flex-col flex-1 overflow-hidden mb-4">
+                <h3 className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1.5 shrink-0">
                   Order Summary
                 </h3>
-                <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-1 mt-2 min-h-[60px]">
                   {getTableItems(selectedTable)
                     .filter(i => !i.removedFromBill)
                     .map((item, idx) => (
-                      <div key={item.id || idx} className="flex justify-between items-center py-0.5">
-                        <div className="flex items-center gap-3">
-                          <span className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-xs font-black text-gray-600">{item.q}x</span>
-                          <span className="text-xs sm:text-sm font-bold text-gray-850">{item.n}</span>
+                      <div key={item.id || idx} className="flex justify-between items-start py-1.5 border-b border-gray-50 last:border-0">
+                        <div className="flex items-start gap-3">
+                          <span className="min-w-[32px] h-7 rounded-lg bg-red-50 text-red-600 border border-red-100 shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5">
+                            {item.q}×
+                          </span>
+                          <span className="text-sm font-bold text-gray-900 leading-tight pt-1">{item.n}</span>
                         </div>
-                        <span className="text-xs sm:text-sm font-black text-gray-900">₹{Number(item.p * item.q).toFixed(0)}</span>
+                        <span className="text-sm font-black text-gray-900 pt-1">₹{Number(item.p * item.q).toFixed(0)}</span>
                       </div>
                     ))}
                 </div>
@@ -2545,12 +2462,15 @@ const CashierDashboard = ({ onLogout }) => {
                       setShowCancelModal(true);
                       setCancelSelected({});
                     }}
-                    className="w-full mt-3 py-2 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-red-200"
+                    className="w-full mt-3 py-2 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-red-200 shrink-0"
                   >
                     <X size={14} /> Cancel Items
                   </button>
                 )}
               </div>
+
+              {/* ── Fixed Bottom Area ─────────────────────────────── */}
+              <div className="shrink-0 overflow-y-auto custom-scrollbar pr-1" style={{ maxHeight: '60vh' }}>
 
               {/* ── Discount Input ──────────────────────────────────── */}
               <div className="mb-4">
@@ -2629,8 +2549,8 @@ const CashierDashboard = ({ onLogout }) => {
                       onClick={handleFinalBill}
                       disabled={isPrintingBill || printCooldown}
                       className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${isPrintingBill || printCooldown
-                          ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
-                          : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
+                        ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
+                        : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
                         }`}
                     >
                       {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -2676,6 +2596,7 @@ const CashierDashboard = ({ onLogout }) => {
                   </button>
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>
@@ -3091,8 +3012,8 @@ const CashierDashboard = ({ onLogout }) => {
                       key={t.backendId || t.id}
                       onClick={() => setSwapTargetId(t.backendId)}
                       className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center text-xs font-black transition-all hover:scale-105 active:scale-95 ${swapTargetId === t.backendId
-                          ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
-                          : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-300'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
+                        : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-300'
                         }`}
                     >
                       <span className="text-lg font-black">{outlet === 'bar' ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
@@ -3123,8 +3044,8 @@ const CashierDashboard = ({ onLogout }) => {
                 }}
                 disabled={!swapTargetId || isSwapping}
                 className={`mt-4 w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${swapTargetId && !isSwapping
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                   }`}
               >
                 {isSwapping ? 'Moving...' : swapTargetId ? 'Confirm Move' : 'Select a Table'}
@@ -3190,11 +3111,10 @@ const CashierDashboard = ({ onLogout }) => {
                               isSelected ? prev.filter(id => id !== item.id) : [...prev, item.id]
                             );
                           }}
-                          className={`w-full rounded-2xl border-2 px-4 py-3.5 text-left transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
-                            isSelected
+                          className={`w-full rounded-2xl border-2 px-4 py-3.5 text-left transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${isSelected
                               ? 'border-indigo-300 bg-indigo-50/80'
                               : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-3">
@@ -3227,11 +3147,10 @@ const CashierDashboard = ({ onLogout }) => {
                       <button
                         key={table.backendId || table.id}
                         onClick={() => setItemSwapTargetId(table.backendId)}
-                        className={`rounded-2xl border-2 p-4 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${
-                          isSelected
+                        className={`rounded-2xl border-2 p-4 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${isSelected
                             ? 'border-indigo-300 bg-indigo-50 shadow-md shadow-indigo-100/60'
                             : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -3242,11 +3161,10 @@ const CashierDashboard = ({ onLogout }) => {
                               {table.section?.name || 'Table'}
                             </p>
                           </div>
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
-                            isFree
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${isFree
                               ? 'bg-green-100 text-green-700'
                               : 'bg-orange-100 text-orange-700'
-                          }`}>
+                            }`}>
                             {isFree ? 'Free' : `₹${Number(table.currentBill || 0).toFixed(0)}`}
                           </span>
                         </div>
@@ -3261,11 +3179,10 @@ const CashierDashboard = ({ onLogout }) => {
               <button
                 onClick={handleTransferItems}
                 disabled={itemSwapSelectedIds.length === 0 || !itemSwapTargetId || isSwappingItems}
-                className={`w-full py-4 rounded-xl text-xs sm:text-sm font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${
-                  itemSwapSelectedIds.length > 0 && itemSwapTargetId && !isSwappingItems
+                className={`w-full py-4 rounded-xl text-xs sm:text-sm font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-95 ${itemSwapSelectedIds.length > 0 && itemSwapTargetId && !isSwappingItems
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700'
                     : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                }`}
+                  }`}
               >
                 {isSwappingItems
                   ? 'Transferring...'
@@ -3397,21 +3314,19 @@ const CashierDashboard = ({ onLogout }) => {
                             return next;
                           });
                         }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
-                          isSelected 
-                            ? 'border-red-500 bg-red-50' 
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${isSelected
+                            ? 'border-red-500 bg-red-50'
                             : 'border-transparent bg-white hover:border-gray-200'
-                        } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         {/* Custom Checkbox */}
-                        <div className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 transition-colors ${
-                          isSelected 
-                            ? 'bg-red-500 border-red-500' 
+                        <div className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 transition-colors ${isSelected
+                            ? 'bg-red-500 border-red-500'
                             : 'border-gray-300'
-                        }`}>
+                          }`}>
                           {isSelected && <Check size={12} className="text-white" />}
                         </div>
-                        
+
                         <div className="flex-1">
                           <p className={`text-xs font-black ${isSelected ? 'text-red-900' : 'text-gray-700'}`}>
                             {item.n}
@@ -3501,11 +3416,10 @@ const CashierDashboard = ({ onLogout }) => {
                 <button
                   onClick={handleCancelSelected}
                   disabled={selectedCount === 0 || cancelBatchLoading}
-                  className={`flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
-                    selectedCount > 0
+                  className={`flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${selectedCount > 0
                       ? 'bg-[#E53935] text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
                       : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }`}
+                    }`}
                 >
                   {cancelBatchLoading ? (
                     <><Loader2 size={16} className="animate-spin" /> Cancelling...</>
