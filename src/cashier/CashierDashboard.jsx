@@ -225,7 +225,32 @@ const CashierDashboard = ({ onLogout }) => {
   const [printCooldown, setPrintCooldown] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
-  const [discountPercent, setDiscountPercent] = useState(0);
+  const [discountMode, setDiscountMode] = useState('percent');
+  const [rawDiscountInput, setRawDiscountInput] = useState('');
+  
+  const rawSubtotal = useMemo(() => {
+    let items = [];
+    if (activeTab === 'pos' && !selectedTable) {
+      items = cart;
+    } else if (selectedTable) {
+      items = [...getTableItems(selectedTable), ...cart];
+    }
+    return items.filter(i => !i.removedFromBill).reduce((acc, item) => acc + (Number(item.p || 0) * Number(item.q || 1)), 0);
+  }, [selectedTable, activeTab, cart]);
+
+  const discountPercent = useMemo(() => {
+    const val = parseFloat(rawDiscountInput);
+    if (isNaN(val) || val <= 0) return 0;
+    
+    if (discountMode === 'percent') {
+      return Math.min(100, val);
+    } else {
+      if (rawSubtotal <= 0) return 0;
+      const effectivePct = (val / rawSubtotal) * 100;
+      return Math.min(100, effectivePct);
+    }
+  }, [rawDiscountInput, discountMode, rawSubtotal]);
+
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -942,7 +967,7 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedTable(null);
       setSelectedOrder(null);
       setCart([]);
-      setDiscountPercent(0);
+      setRawDiscountInput('');
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
 
@@ -1358,6 +1383,7 @@ const CashierDashboard = ({ onLogout }) => {
           restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
           items: apiItems,
         });
+      }
       }
     } catch (err) {
       console.warn('[BG] order write failed:', err.message);
@@ -2423,7 +2449,7 @@ const CashierDashboard = ({ onLogout }) => {
       {showTableModal && selectedTable && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-          onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
+          onClick={() => { setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
         >
           <div
             className="w-full max-w-lg h-[85vh] min-h-[500px] max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
@@ -2442,7 +2468,7 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               </div>
               <button
-                onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
+                onClick={() => { setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
                 className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
               >
                 <X size={20} />
@@ -2491,24 +2517,28 @@ const CashierDashboard = ({ onLogout }) => {
                 {/* ── Discount & Totals (Ultra Compact) ──────────────── */}
                 <div className="flex gap-2 sm:gap-3 mb-2">
                   {/* Discount */}
-                  <div className="w-24 sm:w-28 shrink-0">
-                    <label className="block text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-wider mb-0.5">
-                      Discount %
-                    </label>
+                  <div className="w-32 sm:w-36 shrink-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">
+                        Discount
+                      </label>
+                      <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
+                        <button 
+                          onClick={() => { setDiscountMode('percent'); setRawDiscountInput(''); }}
+                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#E53935]' : 'text-gray-400 hover:text-gray-600'}`}
+                        >%</button>
+                        <button 
+                          onClick={() => { setDiscountMode('fixed'); setRawDiscountInput(''); }}
+                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'fixed' ? 'bg-white shadow-sm border border-gray-200/50 text-[#E53935]' : 'text-gray-400 hover:text-gray-600'}`}
+                        >₹</button>
+                      </div>
+                    </div>
                     <input
                       type="number"
                       min="0"
-                      max="100"
-                      step="0.01"
-                      value={discountPercent === 0 ? '' : discountPercent}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        if (raw === '' || raw === null) setDiscountPercent(0);
-                        else {
-                          const parsed = parseFloat(raw);
-                          if (!isNaN(parsed)) setDiscountPercent(Math.max(0, Math.min(100, parsed)));
-                        }
-                      }}
+                      step={discountMode === 'percent' ? "0.01" : "1"}
+                      value={rawDiscountInput}
+                      onChange={(e) => setRawDiscountInput(e.target.value)}
                       className="w-full px-2 py-1.5 sm:py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-xs font-bold text-center transition-colors"
                       placeholder="0"
                     />
@@ -2526,7 +2556,7 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
                     {discountPercent > 0 && (
                       <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-[#E53935] uppercase">
-                        <span>Discount ({discountPercent}%)</span>
+                        <span>Discount {discountMode === 'percent' ? `(${discountPercent}%)` : ''}</span>
                         <span>-₹{activeDiscountAmount.toFixed(0)}</span>
                       </div>
                     )}
@@ -2544,7 +2574,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {/* ── Action buttons ──────────────────────────────────── */}
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
+                    onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
                     className="py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
                   >
                     Add Items
