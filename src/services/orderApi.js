@@ -17,14 +17,16 @@ async function parseResponse(res) {
 }
 
 export function toOrderItems(items) {
-  return (items || []).map((item) => ({
-    menuItemId: String(item.id || item.menuItemId || item.n || item.name),
-    name: item.name || item.n,
-    price: Number(item.price ?? item.p ?? 0),
-    quantity: Number(item.quantity ?? item.q ?? 1),
-    notes: item.notes || null,
-    menuType: (item.menuType || item.type || "FOOD").toUpperCase() === "LIQUOR" ? "LIQUOR" : "FOOD",
-  }));
+  return (items || [])
+    .map((item) => ({
+      menuItemId: String(item.id || item.menuItemId || ''),  // never fall back to name
+      name: item.name || item.n,
+      price: Number(item.price ?? item.p ?? 0),
+      quantity: Number(item.quantity ?? item.q ?? 1),
+      notes: item.notes || null,
+      menuType: String(item.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+    }))
+    .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
 export async function createOrder({ tableId, items, restaurantId = RESTAURANT_ID }) {

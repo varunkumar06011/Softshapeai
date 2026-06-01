@@ -44,10 +44,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
   const displayKotId = kotId || "N/A";
+  // Left-right justified: KOT No on left, Table No on right, full 42-char line
   const kotLeft = `KOT No : ${displayKotId}`;
-  const tableRight = `Table : ${tableNumber}`;
-  const gap = LINE_NORMAL - kotLeft.length - tableRight.length;
-  const kotTableLine = kotLeft + ' '.repeat(Math.max(1, gap)) + tableRight;
+  const tableRight = `Table  : ${tableNumber}`;
+  const gap = Math.max(1, LINE_NORMAL - kotLeft.length - tableRight.length);
+  const kotTableLine = kotLeft + ' '.repeat(gap) + tableRight;
 
   const cmds = [
     INIT,
@@ -58,7 +59,9 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     LEFT,
     separator("-"),
     SIZE_HEIGHT,
+    BOLD_ON,
     kotTableLine + "\n",
+    BOLD_OFF,
     SIZE_NORMAL,
     separator("-"),
     "Waiter : Waiter\n",
