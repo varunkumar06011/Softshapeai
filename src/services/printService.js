@@ -57,6 +57,7 @@ export function buildBillCommands({ table, items, subtotal, taxes, total, method
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   lines.push(`Date: ${dateStr}    Time: ${timeStr}\n`);
+  lines.push(`Bill No : ${billNumber || 'N/A'}\n`);
   if (kotNumbers && kotNumbers.length > 0) {
     lines.push(`KOT No : ${kotNumbers.join(', ')}\n`);
   }

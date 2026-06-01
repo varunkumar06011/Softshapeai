@@ -1329,7 +1329,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     try {
       if (selectedTable?.backendId) {
-      if (selectedTable.activeOrder?.id) {
+        if (selectedTable.activeOrder?.id) {
         // FIX: Only send the NEW cart items (apiItems) to the backend.
         // The backend PATCH /items endpoint always creates NEW orderItem rows for
         // whatever it receives — it does NOT replace old ones.
@@ -1352,12 +1352,13 @@ const CashierDashboard = ({ onLogout }) => {
           console.warn('[KOT] Print failed (non-blocking):', err.message);
           addNotification('Print failed — check QZ Tray on cashier PC', 'warning');
         });
-      } else {
-        await createOrder({
-          tableId: selectedTable.backendId,
-          restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-          items: apiItems,
-        });
+        } else {
+          await createOrder({
+            tableId: selectedTable.backendId,
+            restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+            items: apiItems,
+          });
+        }
       }
     } catch (err) {
       console.warn('[BG] order write failed:', err.message);
