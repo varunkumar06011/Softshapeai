@@ -2543,8 +2543,8 @@ export default function CaptainApp({ onLogout }) {
                           setMoveLoading(true);
                           try {
                             await swapTable(
-                              activeTable.id,
-                              t.id,
+                              activeTable.backendId,
+                              t.backendId,
                               currentCaptain?.name || 'Captain',
                               RESTAURANT_ID,
                             );
