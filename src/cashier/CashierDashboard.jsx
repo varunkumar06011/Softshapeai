@@ -464,6 +464,18 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   useEffect(() => {
+    if (!socket) return;
+
+    socket.emit('join', activeRestaurantId);
+    socket.emit('join', 'venue-001');
+
+    const onConnect = () => {
+      socket.emit('join', activeRestaurantId);
+      socket.emit('join', 'venue-001');
+    };
+
+    socket.on('connect', onConnect);
+
     const onBillingRequested = (payload) => {
       const { table, order } = payload;
       if (!table) return;
@@ -565,6 +577,7 @@ const CashierDashboard = ({ onLogout }) => {
     socket.on('table:items-transferred', onTableItemsTransferred);
 
     return () => {
+      socket.off('connect', onConnect);
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:created', onOrderCreated);
       socket.off('order:updated', onOrderUpdated);
@@ -572,7 +585,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:swapped', onTableSwapped);
       socket.off('table:items-transferred', onTableItemsTransferred);
     };
-  }, [socket, activeTables, selectedTable?.backendId, loadTransactions]);
+  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
 
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -779,7 +792,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
-        await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${activeRestaurantId}`, {
+        await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
