@@ -790,6 +790,8 @@ export default function CaptainApp({ onLogout }) {
     isSubmittingKotRef.current = true;
     setSendingKOT(true);
 
+    const existingOrderId = activeOrderIdRef.current;
+
     try {
       // Format items for the API — menuType MUST be included so the backend
       // can split food → KOT (kitchen) and liquor → BAR_KOT (bar printer).
@@ -808,7 +810,7 @@ export default function CaptainApp({ onLogout }) {
       const itemsForPrint = [...currentSessionItems];
       const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
       const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
-      const requestId = activeOrderIdRef.current
+      const requestId = existingOrderId
         ? (kotRequestIdRef.current || (kotRequestIdRef.current = crypto.randomUUID()))
         : null;
 
@@ -820,9 +822,9 @@ export default function CaptainApp({ onLogout }) {
       let savedOrder;
       let realKotId;
 
-      if (activeOrderIdRef.current) {
+      if (existingOrderId) {
         // Subsequent KOT on same table — append items to existing order
-        const response = await updateOrderItems(activeOrderIdRef.current, apiItems, requestId);
+        const response = await updateOrderItems(existingOrderId, apiItems, requestId);
         savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
         // Extract real KOT ID from kotHistory in response
         realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
@@ -983,10 +985,11 @@ export default function CaptainApp({ onLogout }) {
     }
   };
 
-  const requestFinalBill = () => {
+  const requestFinalBill = async () => {
     // Re-fetch from live tables in case state is stale
     const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
     const orderId = liveTable?.activeOrder?.id;
+    const previousStatus = liveTable?.status || TABLE_STATUS.PREPARING;
 
     // 1. Update UI immediately
     setActiveTables(prev => prev.map(t => {
@@ -999,11 +1002,21 @@ export default function CaptainApp({ onLogout }) {
     setView('tables');
     setActiveTableId(null);
 
-    // 2. Fire API in background
+    // 2. Fire API
     if (orderId) {
-      requestBilling(orderId).catch(err =>
-        console.warn('[BG] requestBilling failed:', err.message)
-      );
+      try {
+        await requestBilling(orderId);
+      } catch (err) {
+        console.error('[Billing] requestBilling failed:', err.message);
+        addNotification('Billing request failed — please try again', 'error');
+        // Revert table status back to previous status (e.g. PREPARING)
+        setActiveTables(prev => prev.map(t => {
+          if (t.id === liveTable?.id || t.backendId === liveTable?.backendId) {
+            return { ...t, status: previousStatus };
+          }
+          return t;
+        }));
+      }
     }
   };
 

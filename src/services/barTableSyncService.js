@@ -5,7 +5,7 @@ import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
 const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v3";
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const TABLE_STATUS = {
   FREE: "Free",

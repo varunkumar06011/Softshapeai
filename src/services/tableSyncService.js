@@ -6,7 +6,7 @@ import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
 const TABLES_CACHE_KEY = "softshape_tables_cache_v6";
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const TABLE_STATUS = {
   FREE: "Free",

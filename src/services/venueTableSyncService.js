@@ -3,7 +3,7 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchVenueSections, VENUE_ID, updateVenueTableSession } from "./venueTableApi";
 
 const TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const VENUE_TABLE_STATUS = {
   FREE: "Free",
