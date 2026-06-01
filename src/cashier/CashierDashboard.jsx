@@ -46,8 +46,12 @@ const toFrontendTableStatus = (backendStatus) => {
   return map[backendStatus] || 'Free';
 };
 
+// INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
 const mapRealtimeTablePayload = (row, existing = null) => {
   if (!row) return existing;
+
+  const dbStatus = row.status;
+  const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
 
   return {
     backendId: row.id,
@@ -58,12 +62,12 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
-    guests: row.guests ?? 0,
-    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
-    captainId: row.captainId ?? null,
-    kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : [],
-    currentBill: Number(row.currentBill ?? 0),
-    activeOrder: row.orders?.[0] || row.activeOrder || null,
+    guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
+    time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
+    captainId: isFreeWorkflow ? null : (row.captainId ?? null),
+    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kotHistory) ? row.kotHistory : []),
+    currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
+    activeOrder: isFreeWorkflow ? null : (row.orders?.[0] || row.activeOrder || null),
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
 };
@@ -1036,19 +1040,20 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  const terminateTableSession = () => {
+  // INVARIANT: terminateTableSession must be atomic — local state update and DB update must either both succeed or both roll back.
+  const terminateTableSession = async () => {
     if (!selectedTable) return;
 
     const tableSnap = selectedTable;
 
-    // Step 1: Update local state - free the table immediately
+    // Step 1: Optimistically free the table in local state
     setActiveTables(prev => prev.map(t =>
       t.id === tableSnap.id || t.backendId === tableSnap.backendId
         ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], items: [], captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
         : t
     ));
 
-    // Step 2: Clear UI selections
+    // Clear UI selections
     setSelectedTable(null);
     setSelectedOrder(null);
     setCart([]);
@@ -1057,10 +1062,6 @@ const CashierDashboard = ({ onLogout }) => {
     setExpandedNoteItemId(null);
     setRemovedItemIds([]);
 
-    // Step 3: Show notification
-    addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
-
-    // Step 4: Reset table session in backend (background, non-blocking)
     const resetSessionPayload = {
       status: 'Free',
       kotHistory: [],
@@ -1071,23 +1072,39 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (tableSnap?.backendId) {
       const terminateUrl = outlet === 'bar'
-        ? `${import.meta.env.VITE_API_URL}/api/bar-tables/terminate-table/${tableSnap.backendId}`
+        ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}`
         : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
 
-      fetch(terminateUrl, { method: 'POST' })
-        .catch(err => console.warn('[Terminate] order cancel failed:', err.message));
+      try {
+        const response = await fetch(terminateUrl, { method: 'POST' });
+        if (!response.ok) throw new Error('Backend sync failed');
 
-      if (outlet === 'bar') {
-        import('../services/barTableApi').then(({ updateBarTableSession }) => {
-          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
-            .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
-        });
-      } else {
-        import('../services/tableApi').then(({ updateTableSession }) => {
-          updateTableSession(tableSnap.backendId, resetSessionPayload)
-            .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
-        });
+        // Background cleanup
+        if (outlet === 'bar') {
+          import('../services/barTableApi').then(({ updateBarTableSession }) => {
+            updateBarTableSession(tableSnap.backendId, resetSessionPayload)
+              .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
+          });
+        } else {
+          import('../services/tableApi').then(({ updateTableSession }) => {
+            updateTableSession(tableSnap.backendId, resetSessionPayload)
+              .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
+          });
+        }
+        
+        addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
+      } catch (err) {
+        console.warn('[Terminate] order cancel failed:', err.message);
+        addNotification('Error', 'Termination failed. Table state rolled back.', 'error');
+        // Rollback optimistic update
+        setActiveTables(prev => prev.map(t =>
+          t.id === tableSnap.id || t.backendId === tableSnap.backendId
+            ? tableSnap
+            : t
+        ));
       }
+    } else {
+      addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
     }
   };
 
@@ -3354,8 +3371,12 @@ const CashierDashboard = ({ onLogout }) => {
                 );
               } catch (err) {
                 console.error('[CancelBatch]', err.message);
-                addNotification(`Failed to cancel ${item.n ?? item.name ?? 'item'}`, 'error');
-                hasError = true;
+                if (err.message && err.message.toLowerCase().includes('already cancelled')) {
+                  console.log('[CancelBatch] Item already cancelled in DB, skipping error alert');
+                } else {
+                  addNotification(`Failed to cancel ${item.n ?? item.name ?? 'item'}`, 'error');
+                  hasError = true;
+                }
               } finally {
                 setCancelLoading(prev => ({ ...prev, [item.id]: false }));
               }

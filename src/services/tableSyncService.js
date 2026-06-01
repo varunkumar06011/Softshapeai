@@ -4,7 +4,8 @@ import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
 
 
-const TABLES_CACHE_KEY = "softshape_tables_cache_v5";
+// INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
+const TABLES_CACHE_KEY = "softshape_tables_cache_v6";
 const POLL_INTERVAL_MS = 5000;
 
 export const TABLE_STATUS = {
@@ -28,6 +29,7 @@ function toFrontendStatus(backendStatus) {
 
 function readCache() {
   try {
+    localStorage.removeItem("softshape_tables_cache_v5"); // Clear contaminated cache
     const raw = localStorage.getItem(TABLES_CACHE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
@@ -70,12 +72,12 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
     const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
     const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
-    const incomingItemsCount = Array.isArray(incomingOrder.items) ? incomingOrder.items.length : 0;
-    const existingItemsCount = Array.isArray(existingOrder.items) ? existingOrder.items.length : 0;
-    if (existingUpdated > incomingUpdated || (existingUpdated === incomingUpdated && existingItemsCount > incomingItemsCount)) {
+    if (existingUpdated > incomingUpdated) {
       activeOrder = existingOrder;
     }
   }
+
+  const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
 
   const base = {
     backendId: row.id,
@@ -86,10 +88,10 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
-    guests: row.guests ?? 0,
-    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null,
-    captainId: row.captainId ?? null,
-    kotHistory: dbStatus === 'AVAILABLE' ? [] : (Array.isArray(row.kotHistory)
+    guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
+    time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
+    captainId: isFreeWorkflow ? null : (row.captainId ?? null),
+    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kotHistory)
       ? row.kotHistory.map((kot, ki) => {
           const existingKot = existing?.kotHistory?.[ki];
           return {
@@ -101,8 +103,8 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
           };
         })
       : []),
-    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
-    activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
+    currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    activeOrder: isFreeWorkflow ? null : activeOrder,
   };
 
   return base;
@@ -266,7 +268,7 @@ export function useTableSync() {
     const cached = readCache();
     if (cached.length > 0) {
       return cached.map(t => {
-        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
+        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE' || t.workflowStatus === 'Free') {
           return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
         }
         return t;
@@ -368,7 +370,6 @@ export function useTableSync() {
       }
 
       if (cancelled) return;
-      if (_persistingCount > 0) return;
 
       const fetchStartedAt = Date.now();
 
@@ -376,7 +377,6 @@ export function useTableSync() {
         const apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
         if (cancelled || apiTables.length === 0) return;
         if (_lastLocalUpdate > fetchStartedAt) return;
-        if (_persistingCount > 0) return;
 
         setTablesState((current) => {
           const merged = mergeTablesFromApi(apiTables, current);

@@ -68,7 +68,7 @@ export const getTableItems = (table) => {
 
   // 1. Prefer DB-backed Order items (set by useTableSync when orders relation is included)
   const activeOrder = table.activeOrder || (table.orders && table.orders[0]);
-  if (activeOrder?.items && activeOrder.items.length > 0) {
+  if (activeOrder && activeOrder.items) {
     return activeOrder.items
       .filter(item => !item.removedFromBill)
       .map(item => ({

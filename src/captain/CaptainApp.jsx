@@ -431,6 +431,12 @@ export default function CaptainApp({ onLogout }) {
 
   const sessionBill = useMemo(() => {
     if (!activeTable) return { subtotal: 0, taxes: 0, total: 0 };
+    // Fresh/free table — only count the current draft items
+    const isFreshSession = activeTable.status === TABLE_STATUS.FREE
+      || (!activeTable.kotHistory?.length && !activeTable.currentBill && !activeTable.activeOrder);
+    if (isFreshSession) {
+      return calculateOrderTotal(currentSessionItems);
+    }
     const committedItems = getTableItems(activeTable);
     const itemsForTotal = committedItems.length > 0
       ? committedItems
@@ -555,13 +561,12 @@ export default function CaptainApp({ onLogout }) {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
   }, [tableFilter]);
 
-  // Clean up stale cart keys and clear table carts when table is freed
+  // Clean up stale cart keys when a table is deleted from the active list
   useEffect(() => {
     const validIds = new Set(activeTables.map(t => String(t.id)));
-    const freeIds = new Set(activeTables.filter(t => t.status === TABLE_STATUS.FREE).map(t => String(t.id)));
     setTableCarts(prev => {
       const cleaned = Object.fromEntries(
-        Object.entries(prev).filter(([k]) => validIds.has(k) && !freeIds.has(k))
+        Object.entries(prev).filter(([k]) => validIds.has(k))
       );
       return Object.keys(cleaned).length === Object.keys(prev).length ? prev : cleaned;
     });
@@ -645,23 +650,21 @@ export default function CaptainApp({ onLogout }) {
     }
   };
 
+  // INVARIANT: lastConfirmedItemsRef.current must be reset to [] whenever openTableSession is called, not just when cancelSession is called.
+  // INVARIANT: activeOrderIdRef.current must be null when a captain opens a free table. It must only be set to a real DB order ID when that order exists, is active (not PAID/CANCELLED), and has items.
   const openTableSession = (table) => {
     setActiveTableId(table.id);
     lastConfirmedItemsRef.current = [];
+    activeOrderIdRef.current = null;
+    kotRequestIdRef.current = null;
     setView('session');
   };
 
+  // INVARIANT: Adding items to the cart NEVER changes table status or persists anything to backend.
+  // Table status only changes to PREPARING when a KOT is successfully sent (see sendIncrementalKOT).
+  // This prevents the cashier from seeing a table as occupied before any order is confirmed.
   const addItemToSession = (item, variant = null) => {
     if (!activeTableId) return; // no active table, do nothing
-
-    if (currentSessionItems.length === 0) {
-      setActiveTables(currentTables => currentTables.map(t => {
-        if (t.id === activeTableId && t.status === TABLE_STATUS.FREE) {
-          return { ...t, status: TABLE_STATUS.OCCUPIED, captainId: currentCaptain?.id };
-        }
-        return t;
-      }));
-    }
 
     const variantSuffix = variant ? ` ${variant.name}` : '';
     const finalName = `${item.n}${variantSuffix}`;
@@ -699,6 +702,7 @@ export default function CaptainApp({ onLogout }) {
   const cancelSession = () => {
     setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
     lastConfirmedItemsRef.current = [];
+    activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
     if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
       setActiveTables(currentTables => currentTables.map(t => {
@@ -744,6 +748,7 @@ export default function CaptainApp({ onLogout }) {
 
   // Reset the active-order ref when the captain navigates away from a table
   // so the next table session starts fresh.
+  // INVARIANT: activeOrderIdRef.current must be null when a captain opens a free table. It must only be set to a real DB order ID when that order exists, is active (not PAID/CANCELLED), and has items.
   useEffect(() => {
     // Always clear first - never carry a ref from a previous table
     activeOrderIdRef.current = null;
@@ -751,11 +756,23 @@ export default function CaptainApp({ onLogout }) {
 
     if (activeTableId) {
       // Re-seed from live state so second KOT on a reloaded session works correctly
-      const liveOrder = activeTables.find(
+      const liveTableEntry = activeTables.find(
         t => t.backendId === activeTableId || t.id === activeTableId
-      )?.activeOrder;
-      if (liveOrder?.id) {
+      );
+      const liveOrder = liveTableEntry?.activeOrder;
+      
+      if (
+        liveOrder?.id &&
+        liveTableEntry?.status !== 'Free' &&
+        liveTableEntry?.status !== 'AVAILABLE' &&
+        liveTableEntry?.dbStatus !== 'AVAILABLE' &&
+        liveOrder?.status !== 'CANCELLED' &&
+        liveOrder?.status !== 'PAID' &&
+        (liveOrder?.items?.length ?? 0) > 0
+      ) {
         activeOrderIdRef.current = liveOrder.id;
+      } else {
+        activeOrderIdRef.current = null;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
