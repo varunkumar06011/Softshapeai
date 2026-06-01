@@ -242,7 +242,14 @@ async function persistStatusChanges(prevTables, nextTables) {
 export function useBarTableSync() {
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
-    if (cached.length > 0) return cached;
+    if (cached.length > 0) {
+      return cached.map(t => {
+        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
+          return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
+        }
+        return t;
+      });
+    }
     return getFallbackTables([]);
   });
   const [isSyncing, setIsSyncing] = useState(true);

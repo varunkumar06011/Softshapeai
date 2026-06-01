@@ -209,7 +209,18 @@ function acquireSocket(handlers) {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useVenueTableSync() {
-  const [tables, setTablesState] = useState(() => readCache());
+  const [tables, setTablesState] = useState(() => {
+    const cached = readCache();
+    if (cached.length > 0) {
+      return cached.map(t => {
+        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
+          return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
+        }
+        return t;
+      });
+    }
+    return [];
+  });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
 

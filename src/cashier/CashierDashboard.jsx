@@ -192,6 +192,11 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
   const [cart, setCart] = useState(() => {
     try {
+      const savedTableStr = localStorage.getItem('cashier_selected_table');
+      const savedTable = savedTableStr ? JSON.parse(savedTableStr) : null;
+      if (!savedTable || savedTable.status === 'Free' || savedTable.status === 'AVAILABLE') {
+        return [];
+      }
       const saved = localStorage.getItem('cashier_cart');
       return saved ? JSON.parse(saved) : [];
     } catch {
@@ -596,6 +601,8 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
+        localStorage.removeItem('cashier_selected_table');
+        localStorage.setItem('cashier_cart', '[]');
         setExpandedNoteItemId(null);
         setRemovedItemIds([]);
         setShowPaymentModal(false);
@@ -688,6 +695,18 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
+
+    const isSelectedFree = !selectedTable.status || selectedTable.status === 'Free' || selectedTable.status === 'AVAILABLE' || selectedTable.workflowStatus === 'Free';
+    const hasStaleGhostData = isSelectedFree && ((selectedTable.kotHistory?.length > 0) || (selectedTable.currentBill > 0));
+    
+    if (hasStaleGhostData) {
+      setSelectedTable(null);
+      setCart([]);
+      localStorage.removeItem('cashier_selected_table');
+      localStorage.setItem('cashier_cart', '[]');
+      return;
+    }
+
     const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId) ||
       venueTables.find((table) => table.backendId === selectedTable.backendId);
 
@@ -702,6 +721,8 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
+        localStorage.removeItem('cashier_selected_table');
+        localStorage.setItem('cashier_cart', '[]');
         setExpandedNoteItemId(null);
         setRemovedItemIds([]);
         return;
@@ -995,6 +1016,8 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedTable(null);
       setSelectedOrder(null);
       setCart([]);
+      localStorage.removeItem('cashier_selected_table');
+      localStorage.setItem('cashier_cart', '[]');
       setRawDiscountInput('');
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
@@ -1029,6 +1052,8 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedTable(null);
     setSelectedOrder(null);
     setCart([]);
+    localStorage.removeItem('cashier_selected_table');
+    localStorage.setItem('cashier_cart', '[]');
     setExpandedNoteItemId(null);
     setRemovedItemIds([]);
 
