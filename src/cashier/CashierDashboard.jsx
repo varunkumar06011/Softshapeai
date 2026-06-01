@@ -677,6 +677,12 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (liveTable) {
       if (liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free') {
+        const wasFree = !selectedTable.status || selectedTable.status === 'Free' || selectedTable.status === 'AVAILABLE' || selectedTable.workflowStatus === 'Free';
+        if (wasFree) {
+            // It was already free, and the user is just building an order on it. Don't clear it.
+            return;
+        }
+
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
@@ -684,9 +690,15 @@ const CashierDashboard = ({ onLogout }) => {
         setRemovedItemIds([]);
         return;
       }
-      setSelectedTable(liveTable);
+      
+      // Prevent infinite loops by checking deep equality or just relying on reference updates if needed
+      // Actually, since we use `liveTable` object directly, let's only update if something changed
+      // to avoid infinite re-renders. A simple stringify comparison works for our needs here.
+      if (JSON.stringify(selectedTable) !== JSON.stringify(liveTable)) {
+        setSelectedTable(liveTable);
+      }
     }
-  }, [activeTables, venueTables, selectedTable?.backendId]);
+  }, [activeTables, venueTables, selectedTable]);
 
   useEffect(() => {
     setSelectedCategory('All');
