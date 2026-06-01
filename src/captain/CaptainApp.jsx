@@ -727,14 +727,16 @@ export default function CaptainApp({ onLogout }) {
   // Reset the active-order ref when the captain navigates away from a table
   // so the next table session starts fresh.
   useEffect(() => {
-    if (!activeTableId) {
-      activeOrderIdRef.current = null;
-      kotRequestIdRef.current = null;
-    } else {
-      // Pre-seed ref from synced table state so second KOT on a reloaded
-      // session doesn't create a duplicate order.
-      const liveOrder = activeTables.find(t => t.backendId === activeTableId || t.id === activeTableId)?.activeOrder;
-      if (liveOrder?.id && !activeOrderIdRef.current) {
+    // Always clear first - never carry a ref from a previous table
+    activeOrderIdRef.current = null;
+    kotRequestIdRef.current = null;
+
+    if (activeTableId) {
+      // Re-seed from live state so second KOT on a reloaded session works correctly
+      const liveOrder = activeTables.find(
+        t => t.backendId === activeTableId || t.id === activeTableId
+      )?.activeOrder;
+      if (liveOrder?.id) {
         activeOrderIdRef.current = liveOrder.id;
       }
     }
@@ -807,7 +809,7 @@ export default function CaptainApp({ onLogout }) {
       // 2. Update UI with real KOT data from backend
       const newKOT = {
         id: realKotId || Math.floor(1000 + Math.random() * 9000).toString(),
-        time: new Date().toISOString(),
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
         items: itemsForPrint.map(i => ({ ...i, s: 'KOT Sent' })),
         status: 'Incoming',
         createdAt: Date.now(),
@@ -819,7 +821,7 @@ export default function CaptainApp({ onLogout }) {
         return {
           ...t,
           status: TABLE_STATUS.PREPARING,
-          time: t.time || new Date().toISOString(),
+          time: t.time || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
           captainId: currentCaptain.id,
           kotHistory: [...(t.kotHistory || []), newKOT],
           currentBill: newTotalBill,
@@ -1446,7 +1448,9 @@ export default function CaptainApp({ onLogout }) {
                     <div className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[8px] font-black uppercase tracking-widest border border-blue-100 shrink-0">Live Session #10{activeTable?.id}</div>
                   </div>
                   <div className="flex items-center gap-4 mt-1">
-                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Timer size={10} /> {activeTable?.time || '1m'}</span>
+                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Timer size={10} /> {activeTable?.time
+                      ? new Date(activeTable.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                      : '—'}</span>
                     <span className="text-[9px] font-black text-[#E53935] uppercase tracking-widest flex items-center gap-1"><History size={10} /> {(activeTable?.kotHistory || []).length} KOTs</span>
                   </div>
                 </div>
@@ -1779,7 +1783,13 @@ export default function CaptainApp({ onLogout }) {
                         <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                           <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">KOT #{kot.id}</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time}</span>
+                            <span className="text-[9px] font-black text-gray-400 uppercase">
+                              {kot.time
+                                ? (kot.time.includes('T')
+                                    ? new Date(kot.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                                    : kot.time)
+                                : '—'}
+                            </span>
                             {cancellableItems.length > 0 && (
                               <button
                                 onClick={() => setShowCancelModal(true)}

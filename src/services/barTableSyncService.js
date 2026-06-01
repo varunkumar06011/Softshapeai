@@ -63,14 +63,7 @@ function unwrapTableEvent(payload) {
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
-
-  let mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
-
-  if (existing && _persistingCount > 0) {
-    mergedKotHistory = existing.kotHistory || mergedKotHistory;
-  } else if (existing && existing.kotHistory?.length > mergedKotHistory.length && dbStatus !== "AVAILABLE") {
-    mergedKotHistory = existing.kotHistory;
-  }
+  const mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
 
   const base = {
     backendId: row.id,
@@ -85,7 +78,6 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
     kotHistory: mergedKotHistory,
-    items: row.orders?.[0]?.items || row.activeOrder?.items || [],
     currentBill: _persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0),
     activeOrder: row.orders?.[0] || row.activeOrder || null,
   };
@@ -205,8 +197,7 @@ async function persistStatusChanges(prevTables, nextTables) {
       table.captainId !== prev.captainId ||
       table.guests !== prev.guests ||
       table.time !== prev.time ||
-      table.currentBill !== prev.currentBill ||
-      JSON.stringify(table.kotHistory ?? []) !== JSON.stringify(prev.kotHistory ?? []);
+      table.currentBill !== prev.currentBill;
 
     if (sessionChanged) {
       tasks.push(
@@ -216,7 +207,6 @@ async function persistStatusChanges(prevTables, nextTables) {
           guests: table.guests ?? 0,
           time: table.time ?? null,
           currentBill: table.currentBill ?? 0,
-          kotHistory: table.kotHistory ?? [],
         })
           .then((updated) => ({ updated }))
           .catch((err) => {
