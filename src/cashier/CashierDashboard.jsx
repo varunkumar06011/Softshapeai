@@ -1644,7 +1644,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="flex items-center justify-between">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
-                          ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'Conference Hall 1' : tableSubCategory === 'conference2' ? 'Conference Hall 2' : tableSubCategory === 'pdr' ? 'PDR Rooms' : 'Parcel')
+                          ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'conference hall' : tableSubCategory === 'conference2' ? 'PDR' : tableSubCategory === 'pdr' ? 'Rooms' : 'Vijay (parcel)')
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
                     </div>
@@ -1655,10 +1655,10 @@ const CashierDashboard = ({ onLogout }) => {
                         <div className="flex gap-2 flex-wrap">
                           {[
                             { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant', emoji: '' },
-                            { id: 'conference1', label: '🏛 Conference 1', emoji: '' },
-                            { id: 'conference2', label: '🏛 Conference 2', emoji: '' },
-                            { id: 'pdr', label: '🚪 PDR', emoji: '' },
-                            { id: 'parcel', label: '📦 Parcel', emoji: '' },
+                            { id: 'conference1', label: '🏛 conference hall', emoji: '' },
+                            { id: 'conference2', label: '🏛 PDR', emoji: '' },
+                            { id: 'pdr', label: '🚪 Rooms', emoji: '' },
+                            { id: 'parcel', label: '📦 Vijay (parcel)', emoji: '' },
                           ].map(tab => (
                             <button
                               key={tab.id}
@@ -1803,10 +1803,10 @@ const CashierDashboard = ({ onLogout }) => {
                           {[
                             { key: 'all', label: 'All' },
                             { key: 'bar', label: 'Bar' },
-                            { key: 'conference1', label: 'Conf 1' },
-                            { key: 'conference2', label: 'Conf 2' },
-                            { key: 'pdr', label: 'PDR' },
-                            { key: 'parcel', label: 'Parcel' },
+                            { key: 'conference1', label: 'conference hall' },
+                            { key: 'conference2', label: 'PDR' },
+                            { key: 'pdr', label: 'Rooms' },
+                            { key: 'parcel', label: 'Vijay (parcel)' },
                           ].map(f => (
                             <button
                               key={f.key}

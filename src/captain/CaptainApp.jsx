@@ -1317,10 +1317,10 @@ export default function CaptainApp({ onLogout }) {
               <div className="flex gap-2 flex-wrap mb-4">
                 {[
                   { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant' },
-                  { id: 'conference1', label: '🏛 Conf. 1' },
-                  { id: 'conference2', label: '🏛 Conf. 2' },
-                  { id: 'pdr', label: '🚪 PDR' },
-                  { id: 'parcel', label: '📦 Parcel' },
+                  { id: 'conference1', label: '🏛 conference hall' },
+                  { id: 'conference2', label: '🏛 PDR' },
+                  { id: 'pdr', label: '🚪 Rooms' },
+                  { id: 'parcel', label: '📦 Vijay (parcel)' },
                 ].map(tab => (
                   <button
                     key={tab.id}
