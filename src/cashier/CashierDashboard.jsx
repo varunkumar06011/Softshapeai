@@ -10,7 +10,7 @@ import {
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
-import { printBillQZ } from '../services/printService';
+import { printBillQZ, printKOTQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -256,7 +256,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const venuePrices = useVenuePrices();
-  const { tables: venueTables } = useVenueTableSync();
+  const { tables: venueTables, setTables: setVenueTables } = useVenueTableSync();
 
   // Persist selections to localStorage
   useEffect(() => {
@@ -554,20 +554,36 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const onOrderCreated = (payload) => {
-      const { order } = payload;
+      const order = payload?.order || payload;
       if (!order?.tableId) return;
       // useTableSync already updates table state via table:updated event.
-      // Here we just ensure the activeOrder reference on selectedTable stays fresh.
+      // Here we ensure the activeOrder reference stays fresh.
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: order } : prev);
+      }
+      setActiveTables(prev => prev.map(t =>
+        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+      ), { skipPersist: true });
+      if (setVenueTables) {
+        setVenueTables(prev => prev.map(t =>
+          t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+        ), { skipPersist: true });
       }
     };
 
     const onOrderUpdated = (payload) => {
-      const { order } = payload;
+      const order = payload?.order || payload;
       if (!order?.tableId) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: order } : prev);
+      }
+      setActiveTables(prev => prev.map(t =>
+        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+      ), { skipPersist: true });
+      if (setVenueTables) {
+        setVenueTables(prev => prev.map(t =>
+          t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+        ), { skipPersist: true });
       }
     };
 
@@ -3287,46 +3303,66 @@ const CashierDashboard = ({ onLogout }) => {
             return;
           }
           setCancelBatchLoading(true);
-          const entries = Object.values(cancelSelected);
 
-          let hasError = false;
-          for (const { item } of entries) {
-            const cancelQuantity = Math.max(
-              1,
-              Math.min(
-                Number(item.q ?? 1),
-                Math.round(Number(cancelSelected[item.id]?.quantity ?? 1))
-              )
-            );
-            setCancelLoading(prev => ({ ...prev, [item.id]: true }));
-            try {
-              await cancelOrderItem(
-                selectedTable.activeOrder.id,
-                item.id,
-                'Cashier',
-                selectedTable.number || selectedTable.id,
-                cancelQuantity
+          const cancelTimeout = setTimeout(() => {
+            setCancelBatchLoading(false);
+            setShowCancelModal(false);
+            setCancelSelected({});
+            addNotification('Cancel timed out — please try again', 'error');
+          }, 15000);
+
+          try {
+            const freshItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+            const freshItemMap = Object.fromEntries(freshItems.map(i => [i.id, i]));
+            let hasError = false;
+
+            for (const [itemId, { quantity }] of Object.entries(cancelSelected)) {
+              const item = freshItemMap[itemId];
+              if (!item) continue; // item was already removed by socket update — skip silently
+
+              const cancelQuantity = Math.max(
+                1,
+                Math.min(
+                  Number(item.q ?? item.quantity ?? 1),
+                  Math.round(Number(quantity ?? 1))
+                )
               );
-            } catch (err) {
-              console.error('[CancelBatch]', err.message);
-              addNotification(`Failed to cancel ${item.n}`, 'error');
-              hasError = true;
-            } finally {
-              setCancelLoading(prev => ({ ...prev, [item.id]: false }));
-            }
-          }
 
-          if (!hasError) {
-            addNotification(
-              selectedCount === 1
-                ? `${entries[0].item.n} x${selectedQuantityTotal} cancelled`
-                : `${selectedQuantityTotal} qty cancelled`,
-              'success'
-            );
+              setCancelLoading(prev => ({ ...prev, [item.id]: true }));
+              try {
+                await cancelOrderItem(
+                  selectedTable.activeOrder.id,
+                  item.id,
+                  'Cashier',
+                  selectedTable.number || selectedTable.id,
+                  cancelQuantity
+                );
+              } catch (err) {
+                console.error('[CancelBatch]', err.message);
+                addNotification(`Failed to cancel ${item.n ?? item.name ?? 'item'}`, 'error');
+                hasError = true;
+              } finally {
+                setCancelLoading(prev => ({ ...prev, [item.id]: false }));
+              }
+            }
+
+            if (!hasError) {
+              const entries = Object.values(cancelSelected);
+              const firstItem = entries[0]?.item;
+              const firstItemName = firstItem ? (firstItem.n ?? firstItem.name) : 'Item';
+              addNotification(
+                selectedCount === 1
+                  ? `${firstItemName} x${selectedQuantityTotal} cancelled`
+                  : `${selectedQuantityTotal} qty cancelled`,
+                'success'
+              );
+            }
+            setCancelSelected({});
+            setShowCancelModal(false);
+          } finally {
+            clearTimeout(cancelTimeout);
+            setCancelBatchLoading(false);
           }
-          setCancelSelected({});
-          setCancelBatchLoading(false);
-          setShowCancelModal(false);
         };
 
         return (

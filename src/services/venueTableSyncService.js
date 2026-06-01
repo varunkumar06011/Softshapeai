@@ -66,6 +66,19 @@ function mapBackendTable(row, existing = null) {
   const section = row.section ?? existing?.section;
   const sectionId = row.sectionId ?? existing?.sectionId;
 
+  const incomingOrder = row.orders?.[0] || row.activeOrder || existing?.activeOrder || null;
+  const existingOrder = existing?.activeOrder;
+  let activeOrder = incomingOrder;
+  if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
+    const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
+    const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
+    const incomingItemsCount = Array.isArray(incomingOrder.items) ? incomingOrder.items.length : 0;
+    const existingItemsCount = Array.isArray(existingOrder.items) ? existingOrder.items.length : 0;
+    if (existingUpdated > incomingUpdated || (existingUpdated === incomingUpdated && existingItemsCount > incomingItemsCount)) {
+      activeOrder = existingOrder;
+    }
+  }
+
   return {
     backendId: row.id,
     id: row.id,          // use full UUID as ID for venue (no numeric collision between sections)
@@ -82,9 +95,9 @@ function mapBackendTable(row, existing = null) {
     time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : (existing?.time ?? null),
     captainId: row.captainId ?? existing?.captainId ?? null,
     kotHistory: Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? []),
-    items: row.orders?.[0]?.items || row.activeOrder?.items || existing?.items || [],
-    currentBill: row.currentBill ?? existing?.currentBill ?? 0,
-    activeOrder: row.orders?.[0] || row.activeOrder || existing?.activeOrder || null,
+    items: activeOrder?.items || existing?.items || [],
+    currentBill: Math.max(row.currentBill ?? existing?.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    activeOrder,
   };
 }
 

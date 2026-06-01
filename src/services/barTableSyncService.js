@@ -65,6 +65,19 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
   const mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
 
+  const incomingOrder = row.orders?.[0] || row.activeOrder || null;
+  const existingOrder = existing?.activeOrder;
+  let activeOrder = incomingOrder;
+  if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
+    const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
+    const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
+    const incomingItemsCount = Array.isArray(incomingOrder.items) ? incomingOrder.items.length : 0;
+    const existingItemsCount = Array.isArray(existingOrder.items) ? existingOrder.items.length : 0;
+    if (existingUpdated > incomingUpdated || (existingUpdated === incomingUpdated && existingItemsCount > incomingItemsCount)) {
+      activeOrder = existingOrder;
+    }
+  }
+
   const base = {
     backendId: row.id,
     id: parseDisplayId(row.number),
@@ -78,8 +91,8 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
     kotHistory: mergedKotHistory,
-    currentBill: _persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0),
-    activeOrder: row.orders?.[0] || row.activeOrder || null,
+    currentBill: Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    activeOrder,
   };
 
   return base;
