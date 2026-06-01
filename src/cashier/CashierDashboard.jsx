@@ -1385,7 +1385,6 @@ const CashierDashboard = ({ onLogout }) => {
           });
         }
       }
-      }
     } catch (err) {
       console.warn('[BG] order write failed:', err.message);
     } finally {
