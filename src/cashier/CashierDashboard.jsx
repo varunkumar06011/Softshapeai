@@ -2415,30 +2415,30 @@ const CashierDashboard = ({ onLogout }) => {
             className="w-full max-w-lg max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-2xl border-2 border-red-700 shadow-md transform hover:rotate-1 transition-transform">
+            <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
                   {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
                 </div>
                 <div>
-                  <h2 className="text-[11px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
-                  <p className="text-lg sm:text-xl font-black text-gray-900 mt-1">
+                  <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
+                  <p className="text-base sm:text-lg font-black text-gray-900 mt-0.5 sm:mt-1">
                     {selectedTable.time ? new Date(selectedTable.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'Just now'}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => { setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
-                className="p-3 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
+                className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
               >
-                <X size={22} />
+                <X size={20} />
               </button>
             </div>
 
-            <div className="p-5 bg-white flex flex-col flex-1 overflow-hidden">
+            <div className="p-3 sm:p-4 bg-white flex flex-col flex-1 overflow-hidden">
               {/* ── Order Summary (read-only view) ─────────────────── */}
-              <div className="flex flex-col flex-1 overflow-hidden mb-4">
-                <h3 className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1.5 shrink-0">
+              <div className="flex flex-col flex-1 overflow-hidden mb-2 sm:mb-3">
+                <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-1 mt-2 min-h-[60px]">
@@ -2462,7 +2462,7 @@ const CashierDashboard = ({ onLogout }) => {
                       setShowCancelModal(true);
                       setCancelSelected({});
                     }}
-                    className="w-full mt-3 py-2 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-red-200 shrink-0"
+                    className="w-full mt-2 py-1.5 flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-black text-[10px] uppercase tracking-widest transition-colors border border-red-200 shrink-0"
                   >
                     <X size={14} /> Cancel Items
                   </button>
@@ -2470,11 +2470,11 @@ const CashierDashboard = ({ onLogout }) => {
               </div>
 
               {/* ── Fixed Bottom Area ─────────────────────────────── */}
-              <div className="shrink-0 overflow-y-auto custom-scrollbar pr-1" style={{ maxHeight: '60vh' }}>
+              <div className="shrink-0 pt-2 border-t border-gray-100">
 
               {/* ── Discount Input ──────────────────────────────────── */}
-              <div className="mb-4">
-                <label className="block text-xs sm:text-sm font-black uppercase text-gray-400 tracking-wider mb-2">
+              <div className="mb-2.5 sm:mb-3">
+                <label className="block text-[10px] sm:text-[11px] font-black uppercase text-gray-400 tracking-wider mb-1 sm:mb-1.5">
                   Discount %
                 </label>
                 <input
@@ -2494,70 +2494,68 @@ const CashierDashboard = ({ onLogout }) => {
                       }
                     }
                   }}
-                  className="w-full px-4 py-3 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-xl outline-none text-sm font-bold"
+                  className="w-full px-3 py-2 sm:py-2.5 bg-[#FFF5F5] border-2 focus:border-[#E53935] rounded-lg sm:rounded-xl outline-none text-sm font-bold"
                   placeholder="0"
                 />
               </div>
 
               {/* ── Totals ──────────────────────────────────────────── */}
-              <div className="bg-gray-50/90 rounded-2xl p-5 space-y-2.5 mb-6 border border-gray-200 shadow-sm">
-                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span></div>
-                <div className="flex justify-between text-xs sm:text-sm font-black text-gray-500 uppercase tracking-wider"><span>GST (5% on food only)</span><span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span></div>
+              {/* ── Totals ──────────────────────────────────────────── */}
+              <div className="bg-gray-50/90 rounded-xl p-3 sm:p-4 space-y-1.5 sm:space-y-2 mb-3 sm:mb-4 border border-gray-200 shadow-sm">
+                <div className="flex justify-between text-[11px] sm:text-xs font-black text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-[11px] sm:text-xs font-black text-gray-500 uppercase tracking-wider"><span>GST (5% on food only)</span><span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span></div>
                 {discountPercent > 0 && (
-                  <div className="flex justify-between text-xs sm:text-sm font-black text-[#E53935] uppercase tracking-wider">
+                  <div className="flex justify-between text-[11px] sm:text-xs font-black text-[#E53935] uppercase tracking-wider">
                     <span>Discount ({discountPercent}%)</span>
                     <span>-₹{activeDiscountAmount.toFixed(0)}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2.5">
-                  <span className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-widest">
+                <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-1.5 sm:mt-2">
+                  <span className="text-[11px] sm:text-xs font-black text-gray-900 uppercase tracking-widest">
                     {discountPercent > 0 ? 'Final Total' : 'Running Total'}
                   </span>
-                  <span className="text-3xl sm:text-4xl font-black text-[#E53935] tracking-tight">
+                  <span className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">
                     ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
                   </span>
                 </div>
               </div>
 
               {/* ── Action buttons ──────────────────────────────────── */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <button
                   onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setDiscountPercent(0); setExpandedNoteItemId(null); }}
-                  className="py-3.5 rounded-xl border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-gray-50 hover:border-gray-450 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm hover:shadow cursor-pointer"
+                  className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-gray-300 bg-white text-gray-700 text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-gray-50 hover:border-gray-450 transition-all duration-150 shadow-sm cursor-pointer"
                 >
                   Add Items
                 </button>
                 <button
                   onClick={() => setShowBillEditor(true)}
-                  className="py-3.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm hover:shadow-amber-100/50 cursor-pointer"
+                  className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
                 >
                   Edit Bill
                 </button>
                 {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
                   <button
                     onClick={() => setShowMethodPicker(true)}
-                    className="py-3.5 rounded-xl bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] hover:scale-[1.02] active:scale-95 shadow-lg shadow-red-500/20 cursor-pointer"
+                    className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl bg-[#E53935] border border-red-750 text-white text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
                   >
                     Settlement
                   </button>
                 ) : (
-                  // Show Final Bill button whenever the table has items — works for both
-                  // cashier-created orders (orderId in state) and captain-created orders
-                  // (orderId fetched lazily in handleFinalBill when clicked).
                   getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 ? (
                     <button
                       onClick={handleFinalBill}
                       disabled={isPrintingBill || printCooldown}
-                      className={`py-3.5 rounded-xl border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-lg flex items-center justify-center gap-2 ${isPrintingBill || printCooldown
+                      className={`py-2.5 sm:py-3 rounded-lg sm:rounded-xl border text-white text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
                         ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
-                        : 'bg-blue-600 border-blue-700 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-blue-500/20 cursor-pointer'
+                        : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
                         }`}
                     >
-                      {isPrintingBill ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {isPrintingBill ? <Loader2 size={14} className="animate-spin" /> : null}
                       {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
                     </button>
                   ) : (
-                    <div className="py-3.5 rounded-xl border border-gray-300 bg-gray-200 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
+                    <div className="py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-gray-300 bg-gray-200 text-gray-500 text-[10px] sm:text-xs font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
                       No Items
                     </div>
                   )
@@ -2566,13 +2564,13 @@ const CashierDashboard = ({ onLogout }) => {
 
               {/* Swap Table & Terminate Session buttons */}
               {selectedTable.status && selectedTable.status !== 'Free' && (
-                <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-gray-100 space-y-2">
                   <div className="flex gap-2">
                     <button
                       onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
-                      className="w-1/2 py-3.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-1/2 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <ArrowRightLeft size={14} />
+                      <ArrowRightLeft size={12} />
                       Swap Table
                     </button>
                     <button
@@ -2581,17 +2579,17 @@ const CashierDashboard = ({ onLogout }) => {
                         setItemSwapTargetId(null);
                         setShowItemSwapModal(true);
                       }}
-                      className="w-1/2 py-3.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-1/2 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <ArrowRightLeft size={14} />
+                      <ArrowRightLeft size={12} />
                       Swap Items
                     </button>
                   </div>
                   <button
                     onClick={terminateTableSession}
-                    className="w-full py-3.5 rounded-xl border border-red-200 bg-red-50 text-red-800 text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-red-200 bg-red-50 text-red-800 text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <X size={14} />
+                    <X size={12} />
                     Terminate Session
                   </button>
                 </div>
