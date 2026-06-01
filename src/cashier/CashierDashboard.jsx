@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
+import { fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
 import { printBillQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -282,6 +282,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [removedItemIds, setRemovedItemIds] = useState([]);
   const [showBillEditor, setShowBillEditor] = useState(false);
   const [billRemovals, setBillRemovals] = useState([]); // orderItemIds to remove
+  const [billEditQuantities, setBillEditQuantities] = useState({});
   const [billAdditions, setBillAdditions] = useState([]); // { menuItemId, name, price, quantity, menuType }
   const [billEditSearch, setBillEditSearch] = useState('');
   const [isSavingBillEdit, setIsSavingBillEdit] = useState(false);
@@ -289,6 +290,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     setRemovedItemIds([]);
     setBillRemovals([]);
+    setBillEditQuantities({});
     setBillAdditions([]);
     setBillEditSearch('');
     setShowItemSwapModal(false);
@@ -385,7 +387,8 @@ const CashierDashboard = ({ onLogout }) => {
         txnNumber: txn.txnNumber || null,
         displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
-        amount: Number(txn.amount || 0),
+        amount: Number(txn.grandTotal ?? txn.amount ?? 0),
+        grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : null,
         time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
         date: new Date(txn.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
         timestamp: new Date(txn.paidAt).getTime(),
@@ -441,7 +444,7 @@ const CashierDashboard = ({ onLogout }) => {
         (txn.displayId || '').toLowerCase().includes(q) ||
         (txn.captainName || '').toLowerCase().includes(q) ||
         String(txn.tableNumber || '').toLowerCase().includes(q) ||
-        String(txn.amount || '').includes(q)
+        String(txn.grandTotal ?? txn.amount ?? '').includes(q)
       );
     }
 
@@ -714,20 +717,22 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeTableOrders]);
 
   const todaysSales = useMemo(() => {
-    return pastTransactions.reduce((sum, txn) => sum + Number(txn.amount || 0), 0);
+    return pastTransactions.reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [pastTransactions]);
 
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
-    if (!selectedTable) return { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst };
+    if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
     const items = getTableItems(selectedTable).map(i =>
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
-    return calculateOrderTotal([...items, ...cart]);
-  }, [selectedTable, cart, subtotal, taxes, total, cartCgst, cartSgst, removedItemIds]);
+    return calculateOrderTotal([...items, ...cart], discountPercent);
+  }, [selectedTable, cart, discountPercent, removedItemIds]);
   const activeSubtotal = activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
+  const activeGrandTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
+  const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
   const fallbackTotal = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
@@ -825,7 +830,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (!selectedTable || !method) return;
 
     // Validate transaction amount
-    const txnAmount = Number(activeTotal > 0 ? activeTotal : fallbackTotal);
+    const txnAmount = Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal);
     if (txnAmount <= 0) {
       addNotification(
         'Cannot Settle',
@@ -858,7 +863,7 @@ const CashierDashboard = ({ onLogout }) => {
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentMethod: method })
+            body: JSON.stringify({ paymentMethod: method, discountPercent })
           }
         );
 
@@ -970,8 +975,13 @@ const CashierDashboard = ({ onLogout }) => {
     }
     setIsSavingBillEdit(true);
     try {
+      const editQuantities = billRemovals.reduce((acc, itemId) => {
+        acc[itemId] = Math.max(1, Math.round(Number(billEditQuantities[itemId] ?? 1)));
+        return acc;
+      }, {});
       const updatedOrder = await editBill(selectedTable.activeOrder.id, {
         removedItemIds: billRemovals,
+        editQuantities,
         addedItems: billAdditions,
         editedBy: 'Cashier',
       });
@@ -983,8 +993,9 @@ const CashierDashboard = ({ onLogout }) => {
           currentBill: updatedOrder.totalAmount,
           activeOrder: { ...t.activeOrder, ...updatedOrder },
         };
-      }));
+      })); 
       setBillRemovals([]);
+      setBillEditQuantities({});
       setBillAdditions([]);
       setBillEditSearch('');
       setShowBillEditor(false);
@@ -1278,7 +1289,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable?.backendId) {
       if (selectedTable.activeOrder?.id) {
-        updateOrderItems(selectedTable.activeOrder.id, apiItems, selectedTable.section?.restaurantId || activeRestaurantId)
+        updateOrderItems(selectedTable.activeOrder.id, apiItems, crypto.randomUUID())
           .then(response => {
             // Extract real KOT ID from API response
             const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
@@ -1929,7 +1940,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
                     <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
                       <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                      <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                      <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : total).toFixed(0)}</span>
                     </div>
                   </div>
 
@@ -2084,7 +2095,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                         <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
                         <span className="text-3xl font-black text-white">
-                          ₹{pastTransactions.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(0)}
+                          ₹{pastTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
                         </span>
                         <span className="text-[10px] font-bold text-red-100">{pastTransactions.length} transactions</span>
                       </div>
@@ -2099,7 +2110,7 @@ const CashierDashboard = ({ onLogout }) => {
                       ].map(({ label, method, color, bg, border }) => {
                         const total = pastTransactions
                           .filter(t => t.method === method)
-                          .reduce((sum, t) => sum + (t.amount || 0), 0);
+                          .reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
                         const count = pastTransactions.filter(t => t.method === method).length;
                         return (
                           <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
@@ -2252,7 +2263,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   <td className="p-4 text-right">
                                     <div className="flex items-center justify-end gap-3">
                                       <div className="flex flex-col items-end">
-                                        <span className="text-sm md:text-base font-black text-gray-900">₹{txn.amount}</span>
+                                        <span className="text-sm md:text-base font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                         <span className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">{txn.items} Items</span>
                                       </div>
                                       <span className={`text-gray-400 transition-transform duration-200 ${expandedTxnId === txn.id ? 'rotate-180' : ''}`}>
@@ -2275,7 +2286,7 @@ const CashierDashboard = ({ onLogout }) => {
                                           ))}
                                           <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
                                             <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                            <span className="text-sm font-black text-[#E53935]">₹{txn.amount}</span>
+                                            <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                           </div>
                                         </div>
                                       ) : (
@@ -2524,7 +2535,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {discountPercent > 0 && (
                   <div className="flex justify-between text-xs sm:text-sm font-black text-[#E53935] uppercase tracking-wider">
                     <span>Discount ({discountPercent}%)</span>
-                    <span>-₹{((activeSubtotal || 0) * discountPercent / 100).toFixed(0)}</span>
+                    <span>-₹{activeDiscountAmount.toFixed(0)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2.5">
@@ -2532,10 +2543,7 @@ const CashierDashboard = ({ onLogout }) => {
                     {discountPercent > 0 ? 'Final Total' : 'Running Total'}
                   </span>
                   <span className="text-3xl sm:text-4xl font-black text-[#E53935] tracking-tight">
-                    ₹{discountPercent > 0
-                      ? ((activeTotal || fallbackTotal || 0) - ((activeSubtotal || 0) * discountPercent / 100)).toFixed(0)
-                      : Number(activeTotal || fallbackTotal || 0).toFixed(0)
-                    }
+                    ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
                   </span>
                 </div>
               </div>
@@ -2634,10 +2642,16 @@ const CashierDashboard = ({ onLogout }) => {
           : [];
 
         // Live total: committed items minus removals + additions
+        const removedQtyTotal = billRemovals.reduce((sum, itemId) => {
+          return sum + Math.max(1, Math.round(Number(billEditQuantities[itemId] ?? 1)));
+        }, 0);
         const liveTotalItems = [
-          ...committedItems
-            .filter(i => !billRemovals.includes(i.id))
-            .map(i => ({ p: i.p, q: i.q })),
+          ...committedItems.map(i => {
+            const removedQty = billRemovals.includes(i.id)
+              ? Math.max(1, Math.min(Number(i.q ?? 0), Math.round(Number(billEditQuantities[i.id] ?? 1))))
+              : 0;
+            return { p: i.p, q: Math.max(0, Number(i.q ?? 0) - removedQty) };
+          }),
           ...billAdditions.map(i => ({ p: i.price, q: i.quantity })),
         ];
         const liveTotal = liveTotalItems.reduce((sum, i) => sum + i.p * i.q, 0);
@@ -2660,7 +2674,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{Number(liveTotal).toFixed(0)}</p>
                   </div>
                   <button
-                    onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillAdditions([]); setBillEditSearch(''); }}
+                    onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillEditQuantities({}); setBillAdditions([]); setBillEditSearch(''); }}
                     className="p-3 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
                   >
                     <X size={22} />
@@ -2681,14 +2695,27 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
                     {committedItems.map((item, idx) => {
                       const isMarked = billRemovals.includes(item.id);
+                      const removalQty = isMarked
+                        ? Math.max(1, Math.min(Number(item.q ?? 0), Math.round(Number(billEditQuantities[item.id] ?? 1))))
+                        : 0;
+                      const remainingQty = Math.max(0, Number(item.q ?? 0) - removalQty);
                       return (
                         <div
                           key={item.id || idx}
                           onClick={() => {
                             if (!item.id) return;
-                            setBillRemovals(prev =>
-                              isMarked ? prev.filter(x => x !== item.id) : [...prev, item.id]
-                            );
+                            setBillRemovals(prev => {
+                              const next = isMarked ? prev.filter(x => x !== item.id) : [...prev, item.id];
+                              return next;
+                            });
+                            setBillEditQuantities(prev => {
+                              if (isMarked) {
+                                const next = { ...prev };
+                                delete next[item.id];
+                                return next;
+                              }
+                              return { ...prev, [item.id]: prev[item.id] ?? 1 };
+                            });
                           }}
                           className={`flex justify-between items-center p-3.5 sm:p-4 rounded-2xl border-2 cursor-pointer transition-all duration-150 select-none hover:scale-[1.01] active:scale-[0.99]
                             ${isMarked
@@ -2700,13 +2727,67 @@ const CashierDashboard = ({ onLogout }) => {
                               ? <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-sm"><X size={12} className="text-white" /></div>
                               : <div className="w-6 h-6 rounded-full border-2 border-gray-300 bg-white shadow-inner" />
                             }
-                            <span className={`text-sm sm:text-base font-bold ${isMarked ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                              {item.q}× {item.n}
+                            <span className={`text-sm sm:text-base font-bold ${isMarked ? 'text-gray-400' : 'text-gray-800'}`}>
+                              {isMarked && removalQty < Number(item.q ?? 0) ? (
+                                <>
+                                  <span className="line-through">{removalQty}×</span>
+                                  <span className="ml-2 text-red-600">{remainingQty}× {item.n}</span>
+                                </>
+                              ) : (
+                                <>{item.q}× {item.n}</>
+                              )}
                             </span>
                           </div>
-                          <span className={`text-sm sm:text-base font-black ${isMarked ? 'text-red-550' : 'text-gray-900'}`}>
-                            {isMarked ? '−' : ''}₹{Number(item.p * item.q).toFixed(0)}
-                          </span>
+                          <div className="flex items-center gap-3">
+                            {isMarked && (
+                              <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-white px-2 py-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setBillEditQuantities(prev => ({
+                                      ...prev,
+                                      [item.id]: Math.max(1, Number(prev[item.id] ?? 1) - 1),
+                                    }));
+                                  }}
+                                  className="w-6 h-6 rounded-lg bg-red-50 text-red-600 font-black"
+                                >
+                                  −
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={item.q}
+                                  value={removalQty}
+                                  onChange={(e) => {
+                                    const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
+                                    setBillEditQuantities(prev => ({
+                                      ...prev,
+                                      [item.id]: nextValue,
+                                    }));
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setBillEditQuantities(prev => ({
+                                      ...prev,
+                                      [item.id]: Math.min(Number(item.q ?? 1), Number(prev[item.id] ?? 1) + 1),
+                                    }));
+                                  }}
+                                  className="w-6 h-6 rounded-lg bg-red-50 text-red-600 font-black"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+                            <span className={`text-sm sm:text-base font-black ${isMarked ? 'text-red-550' : 'text-gray-900'}`}>
+                              {isMarked ? '−' : ''}₹{Number(item.p * item.q).toFixed(0)}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}
@@ -2805,7 +2886,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div className="p-5 border-t border-gray-100 shrink-0 space-y-3">
                 {(billRemovals.length > 0 || billAdditions.length > 0) && (
                   <div className="flex gap-2 text-xs sm:text-sm font-black uppercase text-gray-500">
-                    {billRemovals.length > 0 && <span className="text-red-550">{billRemovals.length} item(s) removed</span>}
+                    {billRemovals.length > 0 && <span className="text-red-550">{removedQtyTotal} qty removed</span>}
                     {billRemovals.length > 0 && billAdditions.length > 0 && <span>·</span>}
                     {billAdditions.length > 0 && <span className="text-amber-500">{billAdditions.reduce((s, i) => s + i.quantity, 0)} item(s) added</span>}
                   </div>
@@ -2834,7 +2915,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
-                <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
+                <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}</p>
               </div>
               <button
                 onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
@@ -2894,7 +2975,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
               <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
               <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{Number(activeTotal > 0 ? activeTotal : fallbackTotal).toFixed(0)}</p>
+              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}</p>
               <div className="space-y-3">
                 <div className="flex justify-between border-b border-gray-200 pb-1">
                   <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>
@@ -3167,6 +3248,10 @@ const CashierDashboard = ({ onLogout }) => {
       {showCancelModal && selectedTable && (() => {
         const cancellableItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
         const selectedCount = Object.keys(cancelSelected).length;
+        const selectedQuantityTotal = Object.values(cancelSelected).reduce(
+          (sum, entry) => sum + Math.max(1, Math.round(Number(entry.quantity ?? 1))),
+          0
+        );
 
         const handleCancelSelected = async () => {
           if (selectedCount === 0) return;
@@ -3179,13 +3264,21 @@ const CashierDashboard = ({ onLogout }) => {
 
           let hasError = false;
           for (const { item } of entries) {
+            const cancelQuantity = Math.max(
+              1,
+              Math.min(
+                Number(item.q ?? 1),
+                Math.round(Number(cancelSelected[item.id]?.quantity ?? 1))
+              )
+            );
             setCancelLoading(prev => ({ ...prev, [item.id]: true }));
             try {
               await cancelOrderItem(
                 selectedTable.activeOrder.id,
                 item.id,
                 'Cashier',
-                selectedTable.number || selectedTable.id
+                selectedTable.number || selectedTable.id,
+                cancelQuantity
               );
             } catch (err) {
               console.error('[CancelBatch]', err.message);
@@ -3199,8 +3292,8 @@ const CashierDashboard = ({ onLogout }) => {
           if (!hasError) {
             addNotification(
               selectedCount === 1
-                ? `${entries[0].item.n} cancelled`
-                : `${selectedCount} items cancelled`,
+                ? `${entries[0].item.n} x${selectedQuantityTotal} cancelled`
+                : `${selectedQuantityTotal} qty cancelled`,
               'success'
             );
           }
@@ -3233,6 +3326,14 @@ const CashierDashboard = ({ onLogout }) => {
                   cancellableItems.map((item, idx) => {
                     const isSelected = !!cancelSelected[item.id];
                     const isLoading = cancelLoading[item.id];
+                    const cancelQuantity = Math.max(
+                      1,
+                      Math.min(
+                        Number(item.q ?? 1),
+                        Math.round(Number(cancelSelected[item.id]?.quantity ?? 1))
+                      )
+                    );
+                    const remainingQuantity = Math.max(0, Number(item.q ?? 0) - cancelQuantity);
                     return (
                       <button
                         key={item.id || idx}
@@ -3241,7 +3342,7 @@ const CashierDashboard = ({ onLogout }) => {
                           setCancelSelected(prev => {
                             const next = { ...prev };
                             if (next[item.id]) delete next[item.id];
-                            else next[item.id] = { item };
+                            else next[item.id] = { item, quantity: 1 };
                             return next;
                           });
                         }}
@@ -3265,10 +3366,73 @@ const CashierDashboard = ({ onLogout }) => {
                             {item.n}
                           </p>
                           <p className="text-[10px] font-bold text-gray-400 mt-0.5">
-                            Qty: {item.q}
+                            {isSelected && cancelQuantity < Number(item.q ?? 0) ? (
+                              <>
+                                <span className="line-through">{cancelQuantity}</span>
+                                <span className="ml-2 text-red-500">{remainingQuantity} remain</span>
+                              </>
+                            ) : (
+                              <>Qty: {item.q}</>
+                            )}
                           </p>
                         </div>
-                        {isLoading && <Loader2 size={14} className="text-red-500 animate-spin" />}
+                        <div className="flex items-center gap-2">
+                          {isSelected && (
+                            <div className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCancelSelected(prev => ({
+                                    ...prev,
+                                    [item.id]: {
+                                      ...prev[item.id],
+                                      quantity: Math.max(1, Number(prev[item.id]?.quantity ?? 1) - 1),
+                                    },
+                                  }));
+                                }}
+                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
+                              >
+                                −
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                max={item.q}
+                                value={cancelQuantity}
+                                onChange={(e) => {
+                                  const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
+                                  setCancelSelected(prev => ({
+                                    ...prev,
+                                    [item.id]: {
+                                      ...prev[item.id],
+                                      quantity: nextValue,
+                                    },
+                                  }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCancelSelected(prev => ({
+                                    ...prev,
+                                    [item.id]: {
+                                      ...prev[item.id],
+                                      quantity: Math.min(Number(item.q ?? 1), Number(prev[item.id]?.quantity ?? 1) + 1),
+                                    },
+                                  }));
+                                }}
+                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
+                              >
+                                +
+                              </button>
+                            </div>
+                          )}
+                          {isLoading && <Loader2 size={14} className="text-red-500 animate-spin" />}
+                        </div>
                       </button>
                     );
                   })
@@ -3295,7 +3459,7 @@ const CashierDashboard = ({ onLogout }) => {
                   {cancelBatchLoading ? (
                     <><Loader2 size={16} className="animate-spin" /> Cancelling...</>
                   ) : (
-                    <>Confirm Cancel ({selectedCount})</>
+                    <>Confirm Cancel ({selectedQuantityTotal})</>
                   )}
                 </button>
               </div>

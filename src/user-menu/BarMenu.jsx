@@ -376,7 +376,7 @@ export default function BarMenu({ tableId }) {
       }));
 
       if (activeOrderId) {
-        await updateOrderItems(activeOrderId, apiItems);
+        await updateOrderItems(activeOrderId, apiItems, crypto.randomUUID());
       } else {
         await createOrder({
           tableId: tableBackendId,

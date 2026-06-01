@@ -60,11 +60,13 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items) {
+export async function updateOrderItems(orderId, items, requestId = null) {
+  const body = { items: toOrderItems(items) };
+  if (requestId) body.requestId = requestId;
   const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items: toOrderItems(items) }),
+    body: JSON.stringify(body),
   });
   return parseResponse(res);
 }
@@ -112,6 +114,12 @@ export async function saveTransaction({
   method,
   itemCount,
   items,
+  subtotal,
+  discountPercent,
+  discountAmount,
+  cgst,
+  sgst,
+  grandTotal,
 }) {
   const res = await fetch(apiUrl('/api/transactions'), {
     method: 'POST',
@@ -125,6 +133,12 @@ export async function saveTransaction({
       method,
       itemCount,
       items,
+      subtotal,
+      discountPercent,
+      discountAmount,
+      cgst,
+      sgst,
+      grandTotal,
     }),
   });
   return parseResponse(res);
@@ -140,11 +154,11 @@ export async function fetchTransactions(restaurantId, limit = 100, date = null, 
   return parseResponse(res);
 }
 
-export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber) {
+export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orderItemId, cancelledBy, tableNumber }),
+    body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity }),
   });
   return parseResponse(res);
 }
@@ -158,11 +172,11 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
   return parseResponse(res);
 }
 
-export async function editBill(orderId, { removedItemIds = [], addedItems = [], editedBy = 'Cashier' }) {
+export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/bill-edit`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ removedItemIds, addedItems, editedBy }),
+    body: JSON.stringify({ removedItemIds, editQuantities, addedItems, editedBy }),
   });
   return parseResponse(res);
 }

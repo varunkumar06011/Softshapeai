@@ -2,9 +2,9 @@
  * Calculates the subtotal, taxes, and total for a given array of items.
  * Each item must have `p` (price) and `q` (quantity).
  */
-export const calculateOrderTotal = (items) => {
+export const calculateOrderTotal = (items, discountPercent = 0) => {
   if (!items || !Array.isArray(items) || items.length === 0) {
-    return { subtotal: 0, taxes: 0, total: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
+    return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
   }
 
   let foodSubtotal = 0;
@@ -33,15 +33,28 @@ export const calculateOrderTotal = (items) => {
   const taxes = cgst + sgst;  // Total 5% GST on food
   const subtotal = foodSubtotal + liquorSubtotal;
   const total = subtotal + taxes;
+  const discountAmount = discountPercent > 0
+    ? Math.round(subtotal * (discountPercent / 100) * 100) / 100
+    : 0;
+
+  const discountedFood = foodSubtotal - (discountAmount > 0 && subtotal > 0
+    ? discountAmount * (foodSubtotal / subtotal)
+    : 0);
+  const cgstFinal = Math.round(discountedFood * 0.025 * 100) / 100;
+  const sgstFinal = Math.round(discountedFood * 0.025 * 100) / 100;
+  const taxesFinal = cgstFinal + sgstFinal;
+  const grandTotal = Number((subtotal - discountAmount + taxesFinal).toFixed(2));
 
   return {
     subtotal: Number(subtotal.toFixed(2)),
-    taxes: Number(taxes.toFixed(2)),
+    taxes: Number(taxesFinal.toFixed(2)),
     total: Number(total.toFixed(2)),
+    grandTotal,
+    discountAmount: Number(discountAmount.toFixed(2)),
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
-    cgst: Number(cgst.toFixed(2)),
-    sgst: Number(sgst.toFixed(2))
+    cgst: Number(cgstFinal.toFixed(2)),
+    sgst: Number(sgstFinal.toFixed(2))
   };
 };
 
@@ -61,8 +74,12 @@ export const getTableItems = (table) => {
       n: item.name ?? item.n,
       p: Number(item.price ?? item.p ?? 0),
       q: Number(item.quantity ?? item.q ?? 1),
+      quantity: Number(item.quantity ?? item.q ?? 1),
       notes: item.notes || null,
       removedFromBill: !!item.removedFromBill,
+      originalQuantity: item.originalQuantity ?? null,
+      cancelledQuantity: Number(item.cancelledQuantity ?? 0),
+      editedQuantity: Number(item.editedQuantity ?? 0),
       // Preserve menuType so calculateOrderTotal can correctly apply 0% GST for liquor
       menuType: item.menuType || item.menuItem?.menuType || null,
     }));

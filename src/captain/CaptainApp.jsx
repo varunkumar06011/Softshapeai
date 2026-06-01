@@ -299,6 +299,7 @@ export default function CaptainApp({ onLogout }) {
   // Using a ref (not state) so sendIncrementalKOT always reads the latest
   // value without needing to be in its dependency array.
   const activeOrderIdRef = useRef(null);
+  const kotRequestIdRef = useRef(null);
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
@@ -656,6 +657,7 @@ export default function CaptainApp({ onLogout }) {
 
   const cancelSession = () => {
     setCurrentSessionItems([]);
+    kotRequestIdRef.current = null;
     if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
       setActiveTables(currentTables => currentTables.map(t => {
         if (t.id === activeTable.id) {
@@ -700,6 +702,7 @@ export default function CaptainApp({ onLogout }) {
   useEffect(() => {
     if (!activeTableId) {
       activeOrderIdRef.current = null;
+      kotRequestIdRef.current = null;
     } else {
       // Pre-seed ref from synced table state so second KOT on a reloaded
       // session doesn't create a duplicate order.
@@ -740,6 +743,9 @@ export default function CaptainApp({ onLogout }) {
       const itemsForPrint = [...currentSessionItems];
       const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
       const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
+      const requestId = activeOrderIdRef.current
+        ? (kotRequestIdRef.current || (kotRequestIdRef.current = crypto.randomUUID()))
+        : null;
 
       // Clear session items early for optimistic UI
       setCurrentSessionItems([]);
@@ -752,7 +758,7 @@ export default function CaptainApp({ onLogout }) {
 
       if (activeOrderIdRef.current) {
         // Subsequent KOT on same table — append items to existing order
-        const response = await updateOrderItems(activeOrderIdRef.current, apiItems);
+        const response = await updateOrderItems(activeOrderIdRef.current, apiItems, requestId);
         savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
         // Extract real KOT ID from kotHistory in response
         realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
@@ -770,6 +776,7 @@ export default function CaptainApp({ onLogout }) {
         // Extract real KOT ID from kotHistory in response
         realKotId = savedOrder?.kotHistory?.[savedOrder.kotHistory.length - 1]?.id;
       }
+      kotRequestIdRef.current = null;
 
       // 2. Update UI with real KOT data from backend
       const newKOT = {
@@ -871,7 +878,8 @@ export default function CaptainApp({ onLogout }) {
         activeOrderIdRef.current,
         kotItem.orderItemId,
         currentCaptain?.name || currentCaptain?.id || 'Captain',
-        activeTable?.number ?? activeTable?.id
+        activeTable?.number ?? activeTable?.id,
+        Number(kotItem.q ?? 1)
       );
       addNotification(`${kotItem.n} cancelled`, 'success');
       // Backend emits CANCEL_KOT print_job → PrintStation handles it
@@ -2151,6 +2159,10 @@ export default function CaptainApp({ onLogout }) {
           });
         });
         const selectedCount = Object.keys(cancelSelected).length;
+        const selectedQuantityTotal = Object.values(cancelSelected).reduce(
+          (sum, entry) => sum + Math.max(1, Math.round(Number(entry.quantity ?? 1))),
+          0
+        );
 
         const handleCancelSelected = async () => {
           if (selectedCount === 0) return;
@@ -2161,6 +2173,11 @@ export default function CaptainApp({ onLogout }) {
           setCancelBatchLoading(true);
           const entries = Object.values(cancelSelected); // [{ item, kotId }]
           for (const { item, kotId } of entries) {
+            const cancelQuantity = Math.max(1, Math.min(
+              Number(item.q ?? 0),
+              Math.round(Number(cancelSelected[item.orderItemId]?.quantity ?? 1))
+            ));
+            const isFullCancel = cancelQuantity >= Number(item.q ?? 0);
             // Optimistic update
             setActiveTables(prev => prev.map(t => {
               if (t.backendId !== activeTable?.backendId) return t;
@@ -2170,12 +2187,26 @@ export default function CaptainApp({ onLogout }) {
                   if (kot.id !== kotId) return kot;
                   return {
                     ...kot,
-                    items: kot.items.map(i =>
-                      i.orderItemId === item.orderItemId ? { ...i, s: 'Cancelled' } : i
-                    ),
+                    items: kot.items.map(i => {
+                      if (i.orderItemId !== item.orderItemId) return i;
+                      if (isFullCancel) {
+                        return {
+                          ...i,
+                          q: 0,
+                          s: 'Cancelled',
+                          cancelledQuantity: Number(i.cancelledQuantity ?? 0) + cancelQuantity,
+                        };
+                      }
+                      return {
+                        ...i,
+                        q: Math.max(0, Number(i.q ?? 0) - cancelQuantity),
+                        s: 'KOT Sent',
+                        cancelledQuantity: Number(i.cancelledQuantity ?? 0) + cancelQuantity,
+                      };
+                    }),
                   };
                 }),
-                currentBill: Math.max(0, (t.currentBill ?? 0) - (item.p ?? 0) * (item.q ?? 1)),
+                currentBill: Math.max(0, (t.currentBill ?? 0) - (item.p ?? 0) * cancelQuantity),
               };
             }));
             setCancelLoading(prev => ({ ...prev, [item.orderItemId]: true }));
@@ -2184,7 +2215,8 @@ export default function CaptainApp({ onLogout }) {
                 activeOrderIdRef.current,
                 item.orderItemId,
                 currentCaptain?.name || currentCaptain?.id || 'Captain',
-                activeTable?.number ?? activeTable?.id
+                activeTable?.number ?? activeTable?.id,
+                cancelQuantity
               );
             } catch (err) {
               console.error('[CancelBatch]', err.message);
@@ -2197,12 +2229,20 @@ export default function CaptainApp({ onLogout }) {
                     if (kot.id !== kotId) return kot;
                     return {
                       ...kot,
-                      items: kot.items.map(i =>
-                        i.orderItemId === item.orderItemId ? { ...i, s: 'KOT Sent' } : i
-                      ),
+                      items: kot.items.map(i => {
+                        if (i.orderItemId !== item.orderItemId) return i;
+                        return isFullCancel
+                          ? { ...i, q: Math.max(1, Number(item.q ?? 1)), s: 'KOT Sent' }
+                          : {
+                              ...i,
+                              q: Number(i.q ?? 0) + cancelQuantity,
+                              s: 'KOT Sent',
+                              cancelledQuantity: Math.max(0, Number(i.cancelledQuantity ?? 0) - cancelQuantity),
+                            };
+                      }),
                     };
                   }),
-                  currentBill: (t.currentBill ?? 0) + (item.p ?? 0) * (item.q ?? 1),
+                  currentBill: (t.currentBill ?? 0) + (item.p ?? 0) * cancelQuantity,
                 };
               }));
               addNotification(`Failed to cancel ${item.n}`, 'error');
@@ -2212,8 +2252,8 @@ export default function CaptainApp({ onLogout }) {
           }
           addNotification(
             selectedCount === 1
-              ? `${entries[0].item.n} cancelled`
-              : `${selectedCount} items cancelled`,
+              ? `${entries[0].item.n} x${selectedQuantityTotal} cancelled`
+              : `${selectedQuantityTotal} qty cancelled`,
             'success'
           );
           setCancelSelected({});
@@ -2250,6 +2290,14 @@ export default function CaptainApp({ onLogout }) {
                 ) : (
                   allCancellable.map(({ item, kotId, kotTime }) => {
                     const isChecked = !!cancelSelected[item.orderItemId];
+                    const cancelQuantity = Math.max(
+                      1,
+                      Math.min(
+                        Number(item.q ?? 1),
+                        Math.round(Number(cancelSelected[item.orderItemId]?.quantity ?? 1))
+                      )
+                    );
+                    const remainingQuantity = Math.max(0, Number(item.q ?? 0) - cancelQuantity);
                     return (
                       <button
                         key={item.orderItemId}
@@ -2259,7 +2307,7 @@ export default function CaptainApp({ onLogout }) {
                             delete next[item.orderItemId];
                             return next;
                           }
-                          return { ...prev, [item.orderItemId]: { item, kotId } };
+                          return { ...prev, [item.orderItemId]: { item, kotId, quantity: 1 } };
                         })}
                         className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left ${
                           isChecked
@@ -2275,10 +2323,75 @@ export default function CaptainApp({ onLogout }) {
                           </div>
                           <div>
                             <p className="text-[12px] font-black text-gray-900">{item.n}</p>
-                            <p className="text-[9px] font-bold text-gray-400 uppercase">{item.q}x · ₹{item.p * item.q} · KOT {kotTime}</p>
+                            <p className="text-[9px] font-bold text-gray-400 uppercase">
+                              {isChecked && cancelQuantity < Number(item.q ?? 0) ? (
+                                <>
+                                  <span className="line-through">{cancelQuantity}x</span>
+                                  <span className="ml-1 text-red-500">{remainingQuantity}x remain</span>
+                                </>
+                              ) : (
+                                <>{item.q}x · ₹{item.p * item.q} · KOT {kotTime}</>
+                              )}
+                            </p>
                           </div>
                         </div>
-                        <span className="text-[10px] font-black text-gray-500">₹{item.p * item.q}</span>
+                        <div className="flex items-center gap-2">
+                          {isChecked && (
+                            <div className="flex items-center gap-1 bg-white border border-red-200 rounded-lg px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCancelSelected(prev => ({
+                                    ...prev,
+                                    [item.orderItemId]: {
+                                      ...prev[item.orderItemId],
+                                      quantity: Math.max(1, Number(prev[item.orderItemId]?.quantity ?? 1) - 1),
+                                    },
+                                  }));
+                                }}
+                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
+                              >
+                                −
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                max={item.q}
+                                value={cancelQuantity}
+                                onChange={(e) => {
+                                  const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
+                                  setCancelSelected(prev => ({
+                                    ...prev,
+                                    [item.orderItemId]: {
+                                      ...prev[item.orderItemId],
+                                      quantity: nextValue,
+                                    },
+                                  }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCancelSelected(prev => ({
+                                    ...prev,
+                                    [item.orderItemId]: {
+                                      ...prev[item.orderItemId],
+                                      quantity: Math.min(Number(item.q ?? 1), Number(prev[item.orderItemId]?.quantity ?? 1) + 1),
+                                    },
+                                  }));
+                                }}
+                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
+                              >
+                                +
+                              </button>
+                            </div>
+                          )}
+                          <span className="text-[10px] font-black text-gray-500">₹{item.p * item.q}</span>
+                        </div>
                       </button>
                     );
                   })
@@ -2290,7 +2403,7 @@ export default function CaptainApp({ onLogout }) {
                 <div className="px-4 pb-5 pt-3 border-t border-gray-100 space-y-2">
                   {selectedCount > 0 && (
                     <p className="text-[10px] font-black text-red-500 uppercase tracking-widest text-center">
-                      {selectedCount} item{selectedCount > 1 ? 's' : ''} selected — will be removed from bill
+                      {selectedQuantityTotal} qty selected — will be removed from bill
                     </p>
                   )}
                   <button
@@ -2301,7 +2414,7 @@ export default function CaptainApp({ onLogout }) {
                     {cancelBatchLoading ? (
                       <><Loader2 size={15} className="animate-spin" /> Cancelling…</>
                     ) : (
-                      <><X size={15} /> Cancel {selectedCount > 0 ? `${selectedCount} Item${selectedCount > 1 ? 's' : ''}` : 'Selected'}</>
+                      <><X size={15} /> Cancel {selectedCount > 0 ? `${selectedQuantityTotal} Qty` : 'Selected'}</>
                     )}
                   </button>
                 </div>

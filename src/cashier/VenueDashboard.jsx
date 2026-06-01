@@ -22,7 +22,7 @@ import {
 import { useVenueTableSync } from '../services/venueTableSyncService';
 import { fetchVenueMenu } from '../services/venueTableApi';
 import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
-import { createOrder, updateOrderItems, saveTransaction } from '../services/orderApi';
+import { createOrder, updateOrderItems } from '../services/orderApi';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ export default function VenueDashboard({ addNotification }) {
           )
         );
       } else {
-        await updateOrderItems(orderId, cart);
+        await updateOrderItems(orderId, cart, crypto.randomUUID());
       }
 
       // Build KOT entry
@@ -285,18 +285,6 @@ export default function VenueDashboard({ addNotification }) {
         const err = await settleRes.json().catch(() => ({}));
         throw new Error(err.error || 'Settlement failed');
       }
-
-      // Save transaction
-      await saveTransaction({
-        restaurantId: VENUE_ID,
-        orderId,
-        tableNumber: getTableLabel(activeSection, selectedTable.number),
-        captainId: null,
-        amount,
-        method,
-        itemCount: existingItems.length,
-        items: existingItems.map((i) => ({ name: i.n || i.name, quantity: i.q || i.quantity, price: i.p || i.price })),
-      }).catch(() => {});
 
       settledOrderIds.add(orderId);
 

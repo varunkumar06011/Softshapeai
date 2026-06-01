@@ -82,7 +82,8 @@ export default function AdminTransactions({ onStatsRefresh }) {
         txnNumber: txn.txnNumber || null,
         displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
         kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
-        amount: Number(txn.amount || 0),
+        amount: Number(txn.grandTotal ?? txn.amount ?? 0),
+        grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : null,
         time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
         date: new Date(txn.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
         timestamp: new Date(txn.paidAt).getTime(),
@@ -132,7 +133,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
         (t.displayId || '').toLowerCase().includes(q) ||
         (t.captainName || '').toLowerCase().includes(q) ||
         String(t.tableNumber || '').includes(q) ||
-        String(t.amount || '').includes(q)
+        String(t.grandTotal ?? t.amount ?? '').includes(q)
       );
     }
     return list;
@@ -156,7 +157,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
             <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] rounded-xl p-4 flex flex-col gap-1 shadow-lg">
               <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
               <span className="text-3xl font-black text-white">
-                ₹{filtered.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(0)}
+                ₹{filtered.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
               </span>
               <span className="text-[10px] font-bold text-red-100">{filtered.length} transactions</span>
             </div>
@@ -168,7 +169,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
               { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
               { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
             ].map(({ label, method, color, bg, border }) => {
-              const total = filtered.filter(t => t.method === method).reduce((sum, t) => sum + (t.amount || 0), 0);
+              const total = filtered.filter(t => t.method === method).reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
               const count = filtered.filter(t => t.method === method).length;
               return (
                 <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
@@ -313,7 +314,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                           </span>
                         </td>
                         <td className="p-4 text-right">
-                          <span className="text-sm font-black text-gray-900">₹{txn.amount}</span>
+                          <span className="text-sm font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                           <span className="block text-xs text-gray-400 font-bold">{txn.items} items</span>
                         </td>
                         <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
@@ -357,7 +358,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                                 ))}
                                 <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
                                   <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                  <span className="text-sm font-black text-[#E53935]">₹{txn.amount}</span>
+                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                 </div>
                               </div>
                             ) : (
