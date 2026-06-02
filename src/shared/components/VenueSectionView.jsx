@@ -46,8 +46,8 @@ export default function VenueSectionView({
 
     return (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 max-w-[680px]">
-        {pdrTables.map((table, i) => (
-          <VenueTableCard key={table.id || i} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+        {pdrTables.map((table) => (
+          <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
         ))}
       </div>
     );
@@ -56,8 +56,8 @@ export default function VenueSectionView({
   // Single mode (Conference, Parcel)
   return (
     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-      {sectionTables.map((table, i) => (
-        <VenueTableCard key={table.id || i} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+      {sectionTables.map((table) => (
+        <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
       ))}
     </div>
   );

@@ -1418,7 +1418,7 @@ export default function CaptainApp({ onLogout }) {
 
                   return (
                     <button
-                      key={table.id}
+                      key={table.backendId || table.id}
                       onClick={() => openTableSession(table)}
                       className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
                         isMyTable ? `border-l-4 ${borderColor}` : ''
@@ -2556,7 +2556,7 @@ export default function CaptainApp({ onLogout }) {
                   <div className="grid grid-cols-3 gap-2">
                     {freeTables.map(t => (
                       <button
-                        key={t.id}
+                        key={t.backendId || t.id}
                         disabled={moveLoading}
                         onClick={async () => {
                           setMoveLoading(true);

@@ -1747,7 +1747,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {activeTables
                               .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
-                              .map((table, i) => {
+                              .map((table) => {
                                 const isFree = table.status === 'Free' || !table.status;
                                 const isWaitingBill = table.status === 'Waiting Bill';
                                 const isBusy = !isFree && !isWaitingBill;
@@ -1765,7 +1765,7 @@ const CashierDashboard = ({ onLogout }) => {
 
                                 return (
                                   <div
-                                    key={i}
+                                    key={table.backendId || table.id}
                                     onClick={() => handleTableSelect(table)}
                                     className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
