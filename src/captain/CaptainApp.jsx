@@ -425,7 +425,12 @@ export default function CaptainApp({ onLogout }) {
   // Derived — switch between restaurant and bar floor
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
+  // Use venue-001 for all venue sections (conference1, conference2, pdr, parcel)
+  const activeRestaurantId = useMemo(() => {
+    if (outlet === 'bar') return BAR_ID;
+    if (tableSubCategory !== 'restaurant' && outlet !== 'bar') return 'venue-001';
+    return RESTAURANT_ID;
+  }, [outlet, tableSubCategory]);
 
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
@@ -560,6 +565,13 @@ export default function CaptainApp({ onLogout }) {
   useEffect(() => {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
   }, [tableFilter]);
+
+  // Reset tableSubCategory to 'restaurant' when switching to bar outlet
+  useEffect(() => {
+    if (outlet === 'bar' && tableSubCategory !== 'restaurant') {
+      setTableSubCategory('restaurant');
+    }
+  }, [outlet, tableSubCategory]);
 
   // Clean up stale cart keys when a table is deleted from the active list
   useEffect(() => {
@@ -1369,10 +1381,13 @@ export default function CaptainApp({ onLogout }) {
               <div className="flex gap-2 flex-wrap mb-4">
                 {[
                   { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant' },
-                  { id: 'conference1', label: 'Conference Hall' },
-                  { id: 'conference2', label: 'PDR' },
-                  { id: 'pdr', label: 'Rooms' },
-                  { id: 'parcel', label: 'Parcel(vijay)' },
+                  // Only show venue tabs when outlet is 'restaurant', not when on 'bar'
+                  ...(outlet === 'restaurant' ? [
+                    { id: 'conference1', label: 'Conference Hall' },
+                    { id: 'conference2', label: 'PDR' },
+                    { id: 'pdr', label: 'Rooms' },
+                    { id: 'parcel', label: 'Parcel(vijay)' },
+                  ] : [])
                 ].map(tab => (
                   <button
                     key={tab.id}
