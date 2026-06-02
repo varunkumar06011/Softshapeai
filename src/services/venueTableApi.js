@@ -32,7 +32,7 @@ export async function fetchVenueSections() {
  * Fetch venue menu items with venue-specific price overrides.
  * @param {string} venueId - e.g. "venue-conference1", "venue-pdr", etc.
  */
-export async function fetchVenueMenu(venueId = "venue-conference1") {
+export async function fetchVenueMenu(venueId = "venue-conference1", restaurantId = "restaurant-001") {
   const res = await fetch(apiUrl(`/api/venue/menu?venueId=${encodeURIComponent(venueId)}`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },

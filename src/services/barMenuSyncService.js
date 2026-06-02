@@ -99,6 +99,7 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
     if (patch.n !== undefined) updated.n = patch.n;
     if (patch.t !== undefined) updated.t = patch.t;
     if (patch.img !== undefined) updated.img = patch.img;
+    if (patch.venuePrices !== undefined) updated.venuePrices = patch.venuePrices;
     if (patch.p !== undefined) {
       updated.p = Number(patch.p);
       if (updated.variants && updated.variants.length === 1) {
@@ -118,6 +119,7 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
   if (patch.t !== undefined) body.isVeg = patch.t === "veg";
   if (patch.p !== undefined) body.price = Number(patch.p);
   if (patch.img !== undefined) body.imageUrl = patch.img;
+  if (patch.venuePrices !== undefined) body.venuePrices = patch.venuePrices;
 
   fetch(`${apiBase}/api/bar/menu/items/${itemId}`, {
     method: "PATCH",
