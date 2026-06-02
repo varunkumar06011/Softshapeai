@@ -385,6 +385,13 @@ export default function CaptainApp({ onLogout }) {
   const setMenuItems = outlet === 'bar' ? () => { } : setRestaurantMenu;
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
 
+  // Use venue-001 for all venue sections (conference1, conference2, pdr, parcel)
+  const activeRestaurantId = useMemo(() => {
+    if (outlet === 'bar') return BAR_ID;
+    if (tableSubCategory !== 'restaurant' && outlet !== 'bar') return 'venue-001';
+    return RESTAURANT_ID;
+  }, [outlet, tableSubCategory]);
+
   const [venueSpecificMenu, setVenueSpecificMenu] = useState(null);
   useEffect(() => {
     let currentVenueId = null;
@@ -446,12 +453,6 @@ export default function CaptainApp({ onLogout }) {
   // Derived — switch between restaurant and bar floor
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  // Use venue-001 for all venue sections (conference1, conference2, pdr, parcel)
-  const activeRestaurantId = useMemo(() => {
-    if (outlet === 'bar') return BAR_ID;
-    if (tableSubCategory !== 'restaurant' && outlet !== 'bar') return 'venue-001';
-    return RESTAURANT_ID;
-  }, [outlet, tableSubCategory]);
 
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
