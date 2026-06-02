@@ -1197,9 +1197,10 @@ const CashierDashboard = ({ onLogout }) => {
     const mapped = itemsToFilter.map(item => {
       // Map price using the venue override if it exists
       const overridePrice = venueSpecificPrices[item.id];
-      const finalPrice = currentVenueId
-        ? (overridePrice !== undefined ? Number(overridePrice) : 0)
+      const finalPrice = overridePrice !== undefined 
+        ? Number(overridePrice) 
         : Number(item.p || item.price || 0);
+        
       return {
         ...item,
         p: finalPrice, // override the display price

@@ -62,6 +62,7 @@ function unwrapTableEvent(payload) {
 
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   const dbStatus = row.status;
+  const isFreeWorkflow = dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
   const mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
 
@@ -88,9 +89,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
     time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
-    kotHistory: dbStatus === 'AVAILABLE' ? [] : mergedKotHistory,
-    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
-    activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
+    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? [])),
+    currentBill: isFreeWorkflow ? 0 : (row.currentBill ?? existing?.currentBill ?? 0),
+    activeOrder: isFreeWorkflow ? null : activeOrder,
   };
 
   return base;
@@ -242,7 +243,7 @@ export function useBarTableSync() {
     const cached = readCache();
     if (cached.length > 0) {
       return cached.map(t => {
-        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
+        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE' || t.workflowStatus === 'Free') {
           return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
         }
         return t;

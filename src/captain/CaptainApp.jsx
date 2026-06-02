@@ -927,7 +927,7 @@ export default function CaptainApp({ onLogout }) {
             };
           }),
         };
-      }));
+      }), { skipPersist: true });
 
       // ✅ DB confirmed — snapshot and clear draft
       const committedSoFar = getTableItems(activeTable);
@@ -1166,7 +1166,6 @@ export default function CaptainApp({ onLogout }) {
                   if (String(t.id) === String(callTableNumber)) {
                     return {
                       ...t,
-                      status: t.status === TABLE_STATUS.FREE ? 'Occupied' : t.status,
                       captainId: currentCaptain.id,
                       captainName: currentCaptain.name
                     };
@@ -1960,11 +1959,15 @@ export default function CaptainApp({ onLogout }) {
                                     value={item.notes || ''}
                                     onChange={e => {
                                       const val = e.target.value;
-                                      setCurrentSessionItems(prev => prev.map(ci =>
-                                        (ci.menuItemId || ci.id || ci.n) === (item.menuItemId || item.id || item.n)
-                                          ? { ...ci, notes: val || null }
-                                          : ci
-                                      ));
+                                      const key = item.menuItemId || item.id || item.n;
+                                      setTableCarts(prev => ({
+                                        ...prev,
+                                        [activeTableId]: (prev[activeTableId] ?? []).map(ci =>
+                                          (ci.menuItemId || ci.id || ci.n) === key
+                                            ? { ...ci, notes: val || null }
+                                            : ci
+                                        )
+                                      }));
                                     }}
                                     placeholder="e.g. Less spicy, No onion"
                                     autoFocus
