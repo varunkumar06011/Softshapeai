@@ -53,10 +53,11 @@ import OutletToggle from '../shared/components/OutletToggle';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
+import { fetchVenueMenu } from '../services/venueTableApi';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
-import { useVenuePrices } from '../hooks/useVenuePrices';
+
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -267,7 +268,7 @@ export default function CaptainApp({ onLogout }) {
   const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
-  const venuePrices = useVenuePrices();
+
   const { activeCalls, clearCall } = useWaiterCalls();
 
 
@@ -384,30 +385,50 @@ export default function CaptainApp({ onLogout }) {
   const setMenuItems = outlet === 'bar' ? () => { } : setRestaurantMenu;
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
 
-  const outletFilteredMenuItems = useMemo(() => {
-    let baseItems = [];
-    if (outlet === 'bar') {
-      baseItems = activeMenuItems.filter(item => item.isAvailable !== false);
-    } else {
-      baseItems = tableSubCategory === 'restaurant'
-        ? activeMenuItems.filter(item => item.menuType === 'FOOD')
-        : activeMenuItems.filter(item => item.isAvailable !== false);
-    }
+  const [venueSpecificMenu, setVenueSpecificMenu] = useState(null);
+  useEffect(() => {
     let currentVenueId = null;
-    if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
+    if (tableSubCategory === 'bar') currentVenueId = 'venue-bar';
+    else if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
     else if (tableSubCategory === 'conference2') currentVenueId = 'venue-pdr';
     else if (tableSubCategory === 'pdr') currentVenueId = 'venue-rooms';
     else if (tableSubCategory === 'parcel') currentVenueId = 'venue-parcel';
 
-    if (!currentVenueId) return baseItems;
-    const venueSpecificPrices = venuePrices?.[currentVenueId] || {};
-    return baseItems
-      .map((item) => ({
-        ...item,
-        p: venueSpecificPrices[item.id] !== undefined ? Number(venueSpecificPrices[item.id]) : 0,
-      }))
-      .filter((item) => Number(item.p || 0) > 0);
-  }, [outlet, activeMenuItems, tableSubCategory, venuePrices]);
+    if (!currentVenueId) {
+      setVenueSpecificMenu(null);
+      return;
+    }
+
+    fetchVenueMenu(currentVenueId, activeRestaurantId)
+      .then(items => {
+        const mapped = items.map(serverItem => {
+          const defaultVariant = serverItem.variants?.find(v => v.isDefault) ?? serverItem.variants?.[0];
+          return {
+            id: serverItem.id,
+            n: serverItem.name,
+            p: Math.round(serverItem.price),
+            c: serverItem.category,
+            t: serverItem.isVeg ? 'veg' : 'non',
+            img: serverItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            desc: serverItem.description || '',
+            menuType: serverItem.menuType,
+            variants: serverItem.variants?.map(v => ({...v, price: Number(v.price)}))
+          };
+        });
+        setVenueSpecificMenu(mapped);
+      })
+      .catch(console.error);
+  }, [tableSubCategory, activeRestaurantId]);
+
+  const outletFilteredMenuItems = useMemo(() => {
+    if (tableSubCategory !== 'restaurant' && venueSpecificMenu) {
+      return venueSpecificMenu;
+    }
+    if (outlet === 'bar') {
+      return activeMenuItems.filter(item => item.isAvailable !== false);
+    }
+    return activeMenuItems.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
+  }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu]);
 
   const categories = useMemo(() => {
     if (outlet === 'restaurant') return restaurantCategories;
@@ -1471,11 +1492,13 @@ export default function CaptainApp({ onLogout }) {
         ) : (
           <VenueSectionView
             venueId={
+              tableSubCategory === 'bar' ? 'venue-bar' :
               tableSubCategory === 'conference1' ? 'venue-conference1' :
               tableSubCategory === 'conference2' ? 'venue-pdr' :
               tableSubCategory === 'pdr' ? 'venue-rooms' : 'venue-parcel'
             }
             sectionName={
+              tableSubCategory === 'bar' ? 'Bar' :
               tableSubCategory === 'conference1' ? 'Conference Hall' :
               tableSubCategory === 'conference2' ? 'PDR' :
               tableSubCategory === 'pdr' ? 'Rooms' : 'Parcel(vijay)'

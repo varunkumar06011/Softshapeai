@@ -1549,7 +1549,7 @@ const CashierDashboard = ({ onLogout }) => {
           {/* ── VENUE OUTLET — full self-contained dashboard ── */}
           {outlet === 'venue' ? (
             <div className="flex-grow overflow-hidden flex flex-col">
-              <VenueDashboard addNotification={addNotification} />
+              <VenueDashboard addNotification={addNotification} activeRestaurantId={activeRestaurantId} />
             </div>
           ) : (
             <>

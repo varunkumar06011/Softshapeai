@@ -5551,6 +5551,7 @@ export function BarTables() {
 export function BarMenuPage() {
   const { menuItems, loading, error, refreshMenu } = useBarMenuSync();
   const [barMenuTab, setBarMenuTab] = useState('food');
+  const [activeVenueId, setActiveVenueId] = useState(VENUE_PRICE_COLUMNS[0].id);
   const [filter, setFilter] = useState('');
 
   // Edit modal state
@@ -5665,7 +5666,8 @@ export function BarMenuPage() {
 
     const patch = { n: editName.trim(), t: editType };
     if (editPrice !== '') patch.p = Number(editPrice);
-    if (imageUrl !== undefined) patch.img = imageUrl;   // updateBarMenuItem maps patch.img → body.imageUrl
+    if (imageUrl !== undefined) patch.img = imageUrl;
+    patch.venuePrices = editItem.venuePrices || {};   // updateBarMenuItem maps patch.img → body.imageUrl
 
     updateBarMenuItem(editItem.id, patch, API_BASE);
     setEditSaving(false);
@@ -5783,6 +5785,26 @@ export function BarMenuPage() {
           >
             + Add Item
           </button>
+        </div>
+      </div>
+
+
+      <div className="mb-3 flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
+          {VENUE_PRICE_COLUMNS.map((venue) => (
+            <button
+              key={venue.id}
+              type="button"
+              onClick={() => setActiveVenueId(venue.id)}
+              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
+                activeVenueId === venue.id
+                  ? 'border-[#E53935] bg-[#E53935] text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              {venue.label}
+            </button>
+          ))}
         </div>
       </div>
 
