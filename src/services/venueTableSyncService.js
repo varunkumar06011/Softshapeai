@@ -59,7 +59,7 @@ export function getVenueTableLabel(sectionName, tableNumber) {
   }
   return `V${tableNumber}`;
 }
-function mapBackendTable(row, existing = null) {
+function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
   const sectionName = row.section?.name ?? existing?.sectionName ?? "";
@@ -77,26 +77,28 @@ function mapBackendTable(row, existing = null) {
     }
   }
 
-  return {
+  const base = {
     backendId: row.id,
     id: row.id,          // use full UUID as ID for venue (no numeric collision between sections)
     number: row.number,
     displayName: getVenueTableLabel(sectionName, row.number),
     name: getVenueTableLabel(sectionName, row.number), // Fallback alias
     dbStatus,
-    status: existing?.status ?? persistedStatus,
+    status: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.status : persistedStatus,
     capacity: row.capacity,
     sectionId: sectionId,
     sectionName: sectionName,
     section: section,
-    guests: row.guests ?? existing?.guests ?? 0,
-    time: row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : (existing?.time ?? null),
-    captainId: row.captainId ?? existing?.captainId ?? null,
+    guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
+    time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
+    captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
     kotHistory: dbStatus === 'AVAILABLE' ? [] : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? [])),
     items: activeOrder?.items || existing?.items || [],
-    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(row.currentBill ?? existing?.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
     activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
   };
+
+  return base;
 }
 
 /**
@@ -322,7 +324,27 @@ export function useVenueTableSync() {
     _lastLocalUpdate = Date.now();
 
     if (!skipPersist) {
-      persistStatusChanges(current, next).catch((e) =>
+      persistStatusChanges(current, next).then((results) => {
+        if (!results || !results.length) return;
+
+        _lastLocalUpdate = Date.now();
+        setTablesState((latest) => {
+          let updated = latest;
+          for (const result of results) {
+            if (!result.updated) continue;
+            const idx = findTableIndex(updated, result.updated.id);
+            if (idx === -1) continue;
+            const copy = [...updated];
+            copy[idx] = mapBackendTable(result.updated, copy[idx], {
+              keepWorkflowStatus: true,
+            });
+            updated = copy;
+          }
+          writeCache(updated);
+          tablesRef.current = updated;
+          return updated;
+        });
+      }).catch((e) =>
         console.error("[VenueTableSync] Persist error:", e)
       );
     }

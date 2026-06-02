@@ -360,6 +360,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
   const { menuItems: barMenuItems } = useBarMenuSync();
+  const { setTables: setVenueTables } = useVenueTableSync();
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
 
@@ -1071,7 +1072,8 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     if (tableSnap?.backendId) {
-      const terminateUrl = outlet === 'bar'
+      const isVenueTable = tableSubCategory !== 'restaurant';
+      const terminateUrl = (outlet === 'bar' && !isVenueTable)
         ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}`
         : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
 
@@ -1080,7 +1082,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (!response.ok) throw new Error('Backend sync failed');
 
         // Background cleanup
-        if (outlet === 'bar') {
+        if (outlet === 'bar' && !isVenueTable) {
           import('../services/barTableApi').then(({ updateBarTableSession }) => {
             updateBarTableSession(tableSnap.backendId, resetSessionPayload)
               .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
@@ -1202,7 +1204,10 @@ const CashierDashboard = ({ onLogout }) => {
         ...item,
         p: finalPrice, // override the display price
       };
-    }).filter((item) => !currentVenueId || Number(item.p || 0) > 0);
+    }).filter((item) => {
+      if (!selectedTable || selectedTable.section?.restaurantId !== 'venue-001') return true;
+      return !currentVenueId || Number(item.p || 0) > 0;
+    });
 
     const q = searchQuery.trim().toLowerCase();
 
@@ -1416,7 +1421,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable) {
       const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
-      setActiveTables(prev => prev.map(t => {
+      const updater = prev => prev.map(t => {
         if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
           return {
             ...t,
@@ -1426,7 +1431,13 @@ const CashierDashboard = ({ onLogout }) => {
           };
         }
         return t;
-      }));
+      });
+
+      if (selectedTable.section?.restaurantId === 'venue-001' || selectedTable.restaurantId === 'venue-001') {
+        setVenueTables(updater);
+      } else {
+        setActiveTables(updater);
+      }
     }
 
     setCart([]);
