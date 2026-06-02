@@ -231,6 +231,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState({});
   const [isKotSending, setIsKotSending] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
   const isSubmittingKotRef = useRef(false);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
@@ -241,6 +242,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const [lastPrintTime, setLastPrintTime] = useState(null);
   const [printCooldown, setPrintCooldown] = useState(false);
+  const [isReprintingBill, setIsReprintingBill] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
   const [discountMode, setDiscountMode] = useState('percent');
@@ -961,6 +963,63 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
+  const handleReprintBill = async () => {
+    if (!selectedTable || !selectedTable.backendId) {
+      addNotification('Error', 'Invalid table selected.', 'error');
+      return;
+    }
+
+    const orderId = selectedTable?.activeOrder?.id;
+    if (!orderId) {
+      addNotification('Error', 'No active order found for this table.', 'error');
+      return;
+    }
+
+    const orderItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+    if (orderItems.length === 0) {
+      addNotification('Error', 'No items on this order to reprint.', 'error');
+      return;
+    }
+
+    try {
+      setIsReprintingBill(true);
+
+      // Apply discount update if one is entered before reprinting
+      if (discountPercent > 0) {
+        await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ discount: discountPercent }),
+        });
+      }
+
+      // Call the same print-bill endpoint — backend recalculates and re-emits to printer
+      const response = await fetch(
+        `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      // Backend returns 409 if PAID — handle gracefully
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        // If 409 PAID, still allow re-emit since settlement already happened
+        if (response.status !== 409) {
+          throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
+      }
+
+      addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
+    } catch (error) {
+      console.error('[Reprint] Failed:', error.message);
+      addNotification('Re-print Failed', error.message || 'Could not send bill to printer.', 'error');
+    } finally {
+      setIsReprintingBill(false);
+    }
+  };
+
   const handlePayment = async (method) => {
     if (!selectedTable || !method) return;
 
@@ -1063,48 +1122,41 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  // INVARIANT: terminateTableSession must be atomic — local state update and DB update must either both succeed or both roll back.
   const terminateTableSession = async () => {
     if (!selectedTable) return;
+    if (isTerminating) return; // guard against double-click
 
-    const tableSnap = selectedTable;
+    const tableSnap = { ...selectedTable }; // snapshot before any state mutation
+    setIsTerminating(true);
 
-    // Step 1: Optimistically free the table in local state
-    setActiveTables(prev => prev.map(t =>
-      t.id === tableSnap.id || t.backendId === tableSnap.backendId
-        ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], items: [], captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
-        : t
-    ));
+    try {
+      // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
+      if (tableSnap?.backendId) {
+        const isVenueTable = tableSubCategory !== 'restaurant';
+        const terminateUrl = (outlet === 'bar' && !isVenueTable)
+          ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}` 
+          : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
 
-    // Clear UI selections
-    setSelectedTable(null);
-    setSelectedOrder(null);
-    setCart([]);
-    lastConfirmedItemsRef.current = [];
-    localStorage.removeItem('cashier_selected_table');
-    localStorage.setItem('cashier_cart', '[]');
-    setExpandedNoteItemId(null);
-    setRemovedItemIds([]);
+        const response = await fetch(terminateUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(10000), // 10s timeout — don't hang forever
+        });
 
-    const resetSessionPayload = {
-      status: 'Free',
-      kotHistory: [],
-      currentBill: 0,
-      captainId: null,
-      guests: 0,
-    };
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
 
-    if (tableSnap?.backendId) {
-      const isVenueTable = tableSubCategory !== 'restaurant';
-      const terminateUrl = (outlet === 'bar' && !isVenueTable)
-        ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}`
-        : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
+        // Step 2: Backend confirmed success — now safe to clear local state
+        const resetSessionPayload = {
+          status: 'Free',
+          kotHistory: [],
+          currentBill: 0,
+          captainId: null,
+          guests: 0,
+        };
 
-      try {
-        const response = await fetch(terminateUrl, { method: 'POST' });
-        if (!response.ok) throw new Error('Backend sync failed');
-
-        // Background cleanup
         if (outlet === 'bar' && !isVenueTable) {
           updateBarTableSession(tableSnap.backendId, resetSessionPayload)
             .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
@@ -1112,20 +1164,52 @@ const CashierDashboard = ({ onLogout }) => {
           updateTableSession(tableSnap.backendId, resetSessionPayload)
             .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
         }
-        
-        addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
-      } catch (err) {
-        console.warn('[Terminate] order cancel failed:', err.message);
-        addNotification('Error', 'Termination failed. Table state rolled back.', 'error');
-        // Rollback optimistic update
-        setActiveTables(prev => prev.map(t =>
-          t.id === tableSnap.id || t.backendId === tableSnap.backendId
-            ? tableSnap
-            : t
-        ));
       }
-    } else {
+
+      // Step 3: Update local state (only runs if backend succeeded or no backendId)
+      setActiveTables(prev => prev.map(t =>
+        t.id === tableSnap.id || t.backendId === tableSnap.backendId
+          ? {
+              ...t,
+              status: 'Free',
+              workflowStatus: 'Free',
+              activeOrder: null,
+              orders: [],
+              items: [],
+              captainId: null,
+              kotHistory: [],
+              currentBill: 0,
+              guests: 0,
+              time: null,
+            }
+          : t
+      ));
+
+      // Step 4: Clear UI selections
+      setSelectedTable(null);
+      setSelectedOrder(null);
+      setCart([]);
+      lastConfirmedItemsRef.current = [];
+      localStorage.removeItem('cashier_selected_table');
+      localStorage.setItem('cashier_cart', '[]');
+      setExpandedNoteItemId(null);
+      setRemovedItemIds([]);
+      setShowTableModal(false);
+
       addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
+
+    } catch (err) {
+      console.warn('[Terminate] failed:', err.message);
+      // No rollback needed — we never changed local state
+      addNotification(
+        'Terminate Failed',
+        err.message.includes('timeout') || err.message.includes('fetch')
+          ? 'Could not reach server. Please check connection and try again.'
+          : `Termination failed: ${err.message}`,
+        'error'
+      );
+    } finally {
+      setIsTerminating(false);
     }
   };
 
@@ -1275,20 +1359,8 @@ const CashierDashboard = ({ onLogout }) => {
     return filtered;
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
-  const handleTableSelect = async (table) => {
+  const handleTableSelect = (table) => {
     setSelectedTable(table);
-
-    // Fetch fresh order data if table is in billing/settlement state
-    if (table.status === 'Waiting Bill' || table.workflowStatus === 'billing_requested') {
-      const freshOrder = await fetchFreshOrderData(table.backendId);
-      if (freshOrder) {
-        setSelectedTable(prev => ({
-          ...prev,
-          activeOrder: freshOrder,
-        }));
-      }
-    }
-
     setCart([]);
     lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
@@ -1297,7 +1369,28 @@ const CashierDashboard = ({ onLogout }) => {
       setActiveTab('pos');
       localStorage.setItem('cashier_active_tab', 'pos');
     } else {
+      // Open modal immediately — don't block on network
       setShowTableModal(true);
+    }
+
+    // Background refresh: silently patch in fresh order data if table is in billing state
+    // Does NOT block the modal from opening
+    if (table.backendId && (
+      table.status === 'Waiting Bill' ||
+      table.status === 'BILLING_REQUESTED' ||
+      table.workflowStatus === 'billing_requested' ||
+      table.workflowStatus === 'Waiting Bill'
+    )) {
+      fetchFreshOrderData(table.backendId).then(freshOrder => {
+        if (freshOrder) {
+          setSelectedTable(prev => {
+            if (!prev || prev.backendId !== table.backendId) return prev; // user moved on
+            return { ...prev, activeOrder: freshOrder };
+          });
+        }
+      }).catch(() => {
+        // Silent — stale cached data is still better than nothing
+      });
     }
   };
 
@@ -2788,6 +2881,23 @@ const CashierDashboard = ({ onLogout }) => {
                   )}
                 </div>
 
+                {/* Re-print row — always visible when table has an active order with items */}
+                {selectedTable?.activeOrder?.id && getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 && (
+                  <button
+                    onClick={handleReprintBill}
+                    disabled={isReprintingBill}
+                    className={`mt-1.5 w-full py-2 rounded-lg border text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1.5 ${isReprintingBill
+                      ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'border-gray-300 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer shadow-sm'
+                    }`}
+                  >
+                    {isReprintingBill
+                      ? <><Loader2 size={10} className="animate-spin" /> Printing…</>
+                      : <>🖨️ Re-print Bill</>
+                    }
+                  </button>
+                )}
+
                 {/* Swap Table & Terminate Session buttons */}
                 {selectedTable.status && selectedTable.status !== 'Free' && (
                   <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
@@ -2811,10 +2921,11 @@ const CashierDashboard = ({ onLogout }) => {
                     </button>
                     <button
                       onClick={terminateTableSession}
-                      className="py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                      disabled={isTerminating}
+                      className={`py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
                     >
-                      <X size={10} />
-                      Terminate
+                      {isTerminating ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+                      {isTerminating ? 'Ending...' : 'Terminate'}
                     </button>
                   </div>
                 )}
@@ -3445,10 +3556,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         const handleCancelSelected = async () => {
           if (selectedCount === 0) return;
-          if (!selectedTable?.activeOrder?.id) {
-            addNotification('No active order found.', 'error');
-            return;
-          }
+
           setCancelBatchLoading(true);
 
           const cancelTimeout = setTimeout(() => {
@@ -3459,55 +3567,132 @@ const CashierDashboard = ({ onLogout }) => {
           }, 15000);
 
           try {
-            const freshItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
-            const freshItemMap = Object.fromEntries(freshItems.map(i => [i.id, i]));
+            // Always fetch fresh order data first so we use the correct live orderId and item IDs
+            const freshOrder = await fetchFreshOrderData(selectedTable.backendId);
+            const liveOrder = freshOrder || selectedTable.activeOrder;
+
+            if (!liveOrder?.id) {
+              addNotification('No active order found.', 'error');
+              return;
+            }
+
+            // Build a map of item name → fresh orderItem so we match by name if IDs are stale
+            const freshItemMap = {};
+            if (freshOrder?.items) {
+              for (const fi of freshOrder.items) {
+                if (!fi.removedFromBill) {
+                  freshItemMap[fi.id] = fi;              // by DB id
+                  freshItemMap[fi.name ?? fi.n] = fi;   // by name as fallback
+                }
+              }
+            }
+
+            // Also build from current selectedTable as secondary fallback
+            const localItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+            for (const li of localItems) {
+              if (!freshItemMap[li.id]) freshItemMap[li.id] = li;
+            }
+
             let hasError = false;
 
-            for (const [itemId, { quantity }] of Object.entries(cancelSelected)) {
-              const item = freshItemMap[itemId];
-              if (!item) continue; // item was already removed by socket update — skip silently
+            for (const [itemId, { quantity, item: cachedItem }] of Object.entries(cancelSelected)) {
+              // Resolve to the best available item — prefer fresh DB item, fall back by name
+              const freshItem = freshItemMap[itemId]
+                || (cachedItem && freshItemMap[cachedItem.n ?? cachedItem.name])
+                || (cachedItem && freshItemMap[cachedItem.name ?? cachedItem.n]);
+
+              if (!freshItem) continue; // already removed — skip silently
 
               const cancelQuantity = Math.max(
                 1,
                 Math.min(
-                  Number(item.q ?? item.quantity ?? 1),
+                  Number(freshItem.quantity ?? freshItem.q ?? 1),
                   Math.round(Number(quantity ?? 1))
                 )
               );
 
-              setCancelLoading(prev => ({ ...prev, [item.id]: true }));
+              const resolvedItemId = freshItem.id ?? itemId;
+
+              setCancelLoading(prev => ({ ...prev, [resolvedItemId]: true }));
               try {
                 await cancelOrderItem(
-                  selectedTable.activeOrder.id,
-                  item.id,
+                  liveOrder.id,
+                  resolvedItemId,
                   'Cashier',
                   selectedTable.number || selectedTable.id,
                   cancelQuantity
                 );
+
+                // Optimistically remove item from local selectedTable state immediately
+                setSelectedTable(prev => {
+                  if (!prev?.activeOrder?.items) return prev;
+                  return {
+                    ...prev,
+                    activeOrder: {
+                      ...prev.activeOrder,
+                      items: prev.activeOrder.items.map(i =>
+                        i.id === resolvedItemId
+                          ? { ...i, removedFromBill: true, quantity: 0 }
+                          : i
+                      ),
+                    },
+                  };
+                });
+
+                // Also update activeTables so the table card reflects the change
+                setActiveTables(prev => prev.map(t => {
+                  if (t.backendId !== selectedTable.backendId) return t;
+                  const updatedOrder = t.activeOrder
+                    ? {
+                        ...t.activeOrder,
+                        items: (t.activeOrder.items || []).map(i =>
+                          i.id === resolvedItemId
+                            ? { ...i, removedFromBill: true, quantity: 0 }
+                            : i
+                        ),
+                      }
+                    : t.activeOrder;
+                  return { ...t, activeOrder: updatedOrder };
+                }));
+
               } catch (err) {
                 console.error('[CancelBatch]', err.message);
                 if (err.message && err.message.toLowerCase().includes('already cancelled')) {
-                  console.log('[CancelBatch] Item already cancelled in DB, skipping error alert');
+                  // Already gone — silently remove from UI
+                  setSelectedTable(prev => {
+                    if (!prev?.activeOrder?.items) return prev;
+                    return {
+                      ...prev,
+                      activeOrder: {
+                        ...prev.activeOrder,
+                        items: prev.activeOrder.items.map(i =>
+                          i.id === resolvedItemId ? { ...i, removedFromBill: true, quantity: 0 } : i
+                        ),
+                      },
+                    };
+                  });
                 } else {
-                  addNotification(`Failed to cancel ${item.n ?? item.name ?? 'item'}`, 'error');
+                  addNotification(`Failed to cancel ${freshItem.n ?? freshItem.name ?? 'item'}`, 'error');
                   hasError = true;
                 }
               } finally {
-                setCancelLoading(prev => ({ ...prev, [item.id]: false }));
+                setCancelLoading(prev => ({ ...prev, [resolvedItemId]: false }));
               }
             }
 
             if (!hasError) {
               const entries = Object.values(cancelSelected);
-              const firstItem = entries[0]?.item;
-              const firstItemName = firstItem ? (firstItem.n ?? firstItem.name) : 'Item';
+              const firstItemName = entries[0]?.item
+                ? (entries[0].item.n ?? entries[0].item.name ?? 'Item')
+                : 'Item';
               addNotification(
                 selectedCount === 1
-                  ? `${firstItemName} x${selectedQuantityTotal} cancelled`
+                  ? `${firstItemName} x${selectedQuantityTotal} cancelled` 
                   : `${selectedQuantityTotal} qty cancelled`,
                 'success'
               );
             }
+
             setCancelSelected({});
             setShowCancelModal(false);
           } finally {
