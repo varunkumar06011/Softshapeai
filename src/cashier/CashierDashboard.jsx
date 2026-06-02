@@ -360,7 +360,6 @@ const CashierDashboard = ({ onLogout }) => {
 
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
   const { menuItems: barMenuItems } = useBarMenuSync();
-  const { setTables: setVenueTables } = useVenueTableSync();
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
 

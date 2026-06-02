@@ -3,8 +3,19 @@ import { fetchMenuFromBackend } from "./menuService";
 
 const STORAGE_KEY = "softshape_unified_menu";
 
+// Initialize global menu from localStorage to allow instant rendering
 let globalMenu = null;
-let _isLoading = true;
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    globalMenu = JSON.parse(saved);
+  }
+} catch (e) {
+  console.error("Failed to parse initial menu from local storage", e);
+}
+
+// If we already have a menu, we don't need to block UI with a loading screen
+let _isLoading = !globalMenu || globalMenu.length === 0;
 let _loadError = null;
 const subscribers = new Set();
 let loadPromise = null;
@@ -31,7 +42,8 @@ async function loadInitialMenu() {
   if (loadPromise) return loadPromise;
 
   loadPromise = (async () => {
-    _isLoading = true;
+    // Only show loading if we have no cached menu
+    _isLoading = !globalMenu || globalMenu.length === 0;
     _loadError = null;
     notifySubscribers();
 
@@ -50,11 +62,12 @@ async function loadInitialMenu() {
       console.log(`[MenuSync] Loaded ${globalMenu.length} items from backend`);
     } catch (err) {
       console.error("[MenuSync] Failed to load initial menu", err);
-      _loadError =
-        err?.message ||
-        "Could not reach backend. Check VITE_API_URL and backend deployment.";
-      const saved = localStorage.getItem(STORAGE_KEY);
-      globalMenu = saved ? JSON.parse(saved) : [];
+      // Only surface error if we have absolutely nothing to show
+      if (!globalMenu || globalMenu.length === 0) {
+        _loadError =
+          err?.message ||
+          "Could not reach backend. Check VITE_API_URL and backend deployment.";
+      }
     }
 
     _isLoading = false;
@@ -76,9 +89,20 @@ export function useGlobalMenuSync() {
   const [menu, setMenu] = useState(() => {
     if (globalMenu) return globalMenu;
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
   });
-  const [loading, setLoading] = useState(_isLoading);
+  const [loading, setLoading] = useState(() => {
+    // Determine initial loading state
+    if (globalMenu && globalMenu.length > 0) return false;
+    return _isLoading;
+  });
   const [error, setError] = useState(_loadError);
 
   useEffect(() => {
@@ -89,6 +113,7 @@ export function useGlobalMenuSync() {
     };
 
     subscribers.add(handleUpdate);
+    // Notify immediately on mount in case it changed
     handleUpdate({
       menu: globalMenu,
       loading: _isLoading,
@@ -183,3 +208,4 @@ export function useGlobalMenuSync() {
     refreshMenu,
   };
 }
+
