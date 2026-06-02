@@ -80,14 +80,25 @@ export default function VariantPicker({ item, onSelect, onClose }) {
           {item.menuType === 'LIQUOR' ? (
             <>
               <button
-                onClick={() => onSelect(item, { id: item.variants[0].id, name: '30ml', price: Number(item.variants[0].price) })}
+                onClick={() => {
+                  const variant = item.variants?.[0];
+                  if (!variant) {
+                    console.error('No variant found for liquor item:', item);
+                    return;
+                  }
+                  onSelect(item, {
+                    id: variant.id,
+                    name: variant.name || '30ml',
+                    price: Number(variant.price || 0)
+                  });
+                }}
                 className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
               >
                 <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
-                  30ml
+                  {item.variants?.[0]?.name || '30ml'}
                 </span>
                 <span className="text-sm sm:text-base font-black text-[#E53935]">
-                  ₹{item.variants[0].price}
+                  ₹{item.variants?.[0]?.price || 0}
                 </span>
               </button>
               <button

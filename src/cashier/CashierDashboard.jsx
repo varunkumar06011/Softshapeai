@@ -1306,9 +1306,11 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleVariantSelect = (item, variant) => {
+    // Build item name with variant - use actual variant name from DB
+    // Fallback to '30ml' for backwards compatibility if variant.name is missing
     const itemName = variant.id === 'full_bottle'
       ? `${item.n} Full Bottle`
-      : `${item.n} 30ml`;
+      : `${item.n} ${variant.name || '30ml'}`;
 
     addToCart({
       ...item,
