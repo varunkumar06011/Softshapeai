@@ -672,11 +672,20 @@ export function MenuPage({ onAddDish }) {
   // ── Admin items: fetched from admin endpoint (includes unavailable) ───
   const [adminItems, setAdminItems] = useState([]);
   const [adminLoading, setAdminLoading] = useState(true);
+  const [activeOutlet, setActiveOutlet] = useState('restaurant'); // 'restaurant' | 'bar' | 'venue'
 
   const fetchAdminItems = useCallback(async () => {
     try {
       setAdminLoading(true);
-      const res = await fetch(`${API_BASE}/api/menu/items/admin`);
+      let url;
+      if (activeOutlet === 'bar') {
+        url = `${API_BASE}/api/bar/menu/items?restaurantId=bar-001`;
+      } else {
+        // Both 'restaurant' and 'venue' use restaurant-001
+        url = `${API_BASE}/api/menu/items/admin?restaurantId=restaurant-001`;
+      }
+
+      const res = await fetch(url);
       if (!res.ok) throw new Error('Admin fetch failed');
       const data = await res.json();
       // Map to POS shape, preserving isAvailable
@@ -700,15 +709,29 @@ export function MenuPage({ onAddDish }) {
     } finally {
       setAdminLoading(false);
     }
-  }, [allMenuItems]);
+  }, [allMenuItems, activeOutlet]);
 
   useEffect(() => { fetchAdminItems(); }, []);
 
+  // Reset venue tab when switching outlets and refetch
+  useEffect(() => {
+    if (activeOutlet !== 'venue') {
+      setActiveVenueId(VENUE_PRICE_COLUMNS[0].id); // Reset to default
+    }
+    fetchAdminItems(); // Refetch when outlet changes
+  }, [activeOutlet, fetchAdminItems]);
+
   const items = useMemo(() => {
     return adminItems
-      .filter((x) => showHiddenVenueItems || Number(x.venuePrices?.[activeVenueId] || 0) > 0)
+      .filter((x) => {
+        // Only apply venue filtering when in venue mode
+        if (activeOutlet === 'venue') {
+          return showHiddenVenueItems || Number(x.venuePrices?.[activeVenueId] || 0) > 0;
+        }
+        return true; // Show all items for restaurant/bar
+      })
       .filter((x) => menuItemMatchesSearch(x, filter));
-  }, [filter, adminItems, activeVenueId, showHiddenVenueItems]);
+  }, [filter, adminItems, activeVenueId, showHiddenVenueItems, activeOutlet]);
 
   const activeVenue = VENUE_PRICE_COLUMNS.find((venue) => venue.id === activeVenueId) || VENUE_PRICE_COLUMNS[0];
 
@@ -1033,6 +1056,43 @@ export function MenuPage({ onAddDish }) {
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
       {filter ? ` matching "${filter}"` : ""} · synced from backend
     </p>
+
+    {/* Outlet Selector */}
+    <div className="mb-4 flex gap-2">
+      <button
+        onClick={() => setActiveOutlet('restaurant')}
+        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+          activeOutlet === 'restaurant'
+            ? 'bg-blue-500 text-white'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        }`}
+      >
+        🍽️ Restaurant
+      </button>
+      <button
+        onClick={() => setActiveOutlet('bar')}
+        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+          activeOutlet === 'bar'
+            ? 'bg-purple-500 text-white'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        }`}
+      >
+        🍺 Bar
+      </button>
+      <button
+        onClick={() => setActiveOutlet('venue')}
+        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+          activeOutlet === 'venue'
+            ? 'bg-green-500 text-white'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        }`}
+      >
+        🏢 Venue
+      </button>
+    </div>
+
+    {/* Venue-specific tabs - only show when outlet is 'venue' */}
+    {activeOutlet === 'venue' && (
     <div className="mb-3 flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {VENUE_PRICE_COLUMNS.map((venue) => (
@@ -1060,6 +1120,8 @@ export function MenuPage({ onAddDish }) {
         Show items hidden from {activeVenue.label}
       </label>
     </div>
+    )}
+
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
       <table className="w-full text-left text-sm whitespace-nowrap">
         <thead className="sticky top-0 bg-white z-10">
@@ -1067,7 +1129,11 @@ export function MenuPage({ onAddDish }) {
             <th className="px-4 py-2">Image</th>
             <th className="px-4 py-2">Name</th>
             <th className="px-4 py-2">Category</th>
-            <th className="px-4 py-2">{activeVenue.label} Price</th>
+            <th className="px-4 py-2">
+              {activeOutlet === 'venue'
+                ? `${activeVenue.label} Price`
+                : "Price"}
+            </th>
             <th className="px-4 py-2">Veg/Non</th>
             <th className="px-4 py-2 text-left text-xs font-black uppercase text-gray-500">KOT Type</th>
             <th className="px-4 py-2">Available</th>
@@ -1102,9 +1168,13 @@ export function MenuPage({ onAddDish }) {
               <td className="px-4 py-2 font-medium">{item.n}</td>
               <td className="px-4 py-2">{item.c}</td>
               <td className="px-4 py-2">
-                {Number(item.venuePrices?.[activeVenueId] || 0) > 0
-                  ? `₹${Number(item.venuePrices?.[activeVenueId] || 0)}`
-                  : <span className="text-gray-400 font-bold">Hidden</span>}
+                {activeOutlet === 'venue' ? (
+                  Number(item.venuePrices?.[activeVenueId] || 0) > 0
+                    ? `₹${Number(item.venuePrices?.[activeVenueId] || 0)}`
+                    : <span className="text-gray-400 font-bold">Hidden</span>
+                ) : (
+                  `₹${item.p || 0}`
+                )}
               </td>
               <td className="px-4 py-2">
                 <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
