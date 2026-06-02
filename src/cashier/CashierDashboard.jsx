@@ -32,6 +32,7 @@ import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useVenueTableSync } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
+import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -1769,6 +1770,13 @@ const CashierDashboard = ({ onLogout }) => {
                                     onClick={() => handleTableSelect(table)}
                                     className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
+                                    {/* Section Badge - Top Left */}
+                                    {(table.sectionName || table.section?.name) && (
+                                      <div className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] md:text-[9px] font-black uppercase tracking-wider shadow-sm ${getSectionBadgeColor(table)}`}>
+                                        {getTableSectionLabel(table)}
+                                      </div>
+                                    )}
+                                    {/* Captain Name Badge - Top Right */}
                                     {table.captainName && (
                                       <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
                                         {table.captainName.split(' ')[0]}

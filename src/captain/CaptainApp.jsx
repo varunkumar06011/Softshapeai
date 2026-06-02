@@ -57,6 +57,7 @@ import { fetchVenueMenu } from '../services/venueTableApi';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
+import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
@@ -1428,6 +1429,13 @@ export default function CaptainApp({ onLogout }) {
                             'bg-red-50 border-red-100 text-red-600'
                         }`}
                     >
+                      {/* Section Badge - Top Left */}
+                      {(table.sectionName || table.section?.name) && (
+                        <div className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shadow-sm z-10 ${getSectionBadgeColor(table)}`}>
+                          {getTableSectionLabel(table)}
+                        </div>
+                      )}
+
                       <div className="w-full flex justify-between items-start">
                         <div className="flex flex-col items-start gap-0.5">
                           <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{outlet === 'bar' ? 'B' : 'T'}{table.number ?? table.id}</span>
@@ -1438,9 +1446,9 @@ export default function CaptainApp({ onLogout }) {
                           )}
                         </div>
 
-                        {/* Captain Initials Badge */}
+                        {/* Captain Initials Badge - Top Right */}
                         {isMyTable && assignedCaptain && (
-                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg ${assignedCaptain.color} flex items-center justify-center text-[8px] font-black shadow-sm`}>
+                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg ${assignedCaptain.color} flex items-center justify-center text-[8px] font-black shadow-sm z-10`}>
                             {assignedCaptain.initials}
                           </div>
                         )}
