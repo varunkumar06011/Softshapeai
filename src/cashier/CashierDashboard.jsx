@@ -15,7 +15,7 @@ import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTable
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
-import { RESTAURANT_ID } from '../services/tableApi';
+import { RESTAURANT_ID, updateTableSession } from '../services/tableApi';
 import { useOutlet } from '../context/OutletContext';
 import OutletToggle from '../shared/components/OutletToggle';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
@@ -23,6 +23,7 @@ import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
+import { updateBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
 import VenueDashboard from './VenueDashboard';
 import VenueSectionView from '../shared/components/VenueSectionView';
@@ -1083,15 +1084,11 @@ const CashierDashboard = ({ onLogout }) => {
 
         // Background cleanup
         if (outlet === 'bar' && !isVenueTable) {
-          import('../services/barTableApi').then(({ updateBarTableSession }) => {
-            updateBarTableSession(tableSnap.backendId, resetSessionPayload)
-              .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
-          });
+          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
         } else {
-          import('../services/tableApi').then(({ updateTableSession }) => {
-            updateTableSession(tableSnap.backendId, resetSessionPayload)
-              .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
-          });
+          updateTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
         }
         
         addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');

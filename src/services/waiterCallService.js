@@ -1,87 +1,38 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getSocket } from "../hooks/useSocket";
 
-// Using PieSocket relay for distributed frontend communication
-// Re-using the same API key as menuSyncService but connecting to a separate room for isolation.
-const PIESOCKET_API_KEY = "VCXCEuvhGcBDP7XhiJJUDvR1e1PNwgvPAY2ZeMyB";
-const WAITER_CALL_ROOM = "softshape_waiter_calls_demo";
-const WS_URL = `wss://free.blr2.piesocket.com/v3/${WAITER_CALL_ROOM}?api_key=${PIESOCKET_API_KEY}`;
-
-let globalSocket = null;
-let isConnecting = false;
-let reconnectAttempts = 0;
-let pingInterval = null;
-const MAX_RECONNECT_DELAY = 30000; // cap at 30s
 const subscribers = new Set();
-
-function getReconnectDelay() {
-  // Exponential backoff: 3s, 6s, 12s, 24s, 30s max
-  return Math.min(3000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
-}
-
-function startPing() {
-  stopPing();
-  pingInterval = setInterval(() => {
-    if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
-      try { globalSocket.send(JSON.stringify({ type: 'ping' })); } catch (_) {}
-    }
-  }, 25000); // every 25s — keeps connection alive
-}
-
-function stopPing() {
-  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-}
+let isListenerAttached = false;
 
 export function initSocket() {
-  if (globalSocket || isConnecting) return;
-  isConnecting = true;
+  const socket = getSocket();
 
-  try {
-    globalSocket = new WebSocket(WS_URL);
+  // Make sure the socket joins the restaurant room so it receives relayed events
+  const joinRoom = () => {
+    socket.emit("join", "softshape-restaurant");
+  };
 
-    globalSocket.onopen = () => {
-      console.log('[WaiterCallSync] Connected to Realtime Relay');
-      isConnecting = false;
-      reconnectAttempts = 0; // reset backoff on success
-      startPing();
-    };
+  if (socket.connected) {
+    joinRoom();
+  }
+  socket.on("connect", joinRoom);
 
-    globalSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ping' || data.type === 'pong') return; // ignore keepalives
-        subscribers.forEach(callback => callback(data));
-      } catch (err) {
-        console.error("Failed to parse socket message", err);
-      }
-    };
-
-    globalSocket.onclose = () => {
-      const delay = getReconnectDelay();
-      console.log(`[WaiterCallSync] Disconnected. Reconnecting in ${delay / 1000}s... (attempt ${reconnectAttempts + 1})`);
-      globalSocket = null;
-      isConnecting = false;
-      stopPing();
-      reconnectAttempts++;
-      setTimeout(initSocket, delay);
-    };
-
-    globalSocket.onerror = () => {
-      globalSocket?.close();
-    };
-  } catch (err) {
-    isConnecting = false;
-    console.error('[WaiterCallSync] Connection failed', err);
+  if (!isListenerAttached) {
+    socket.on("waiter:event", (data) => {
+      console.log("[WaiterCallSync] Received waiter:event via Socket.io", data);
+      subscribers.forEach(callback => callback(data));
+    });
+    isListenerAttached = true;
   }
 }
 
 // Function to broadcast an event globally
 export function broadcastWaiterEvent(type, payload) {
-  if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
-    globalSocket.send(JSON.stringify({ type, payload }));
-  } else if (!globalSocket || globalSocket.readyState !== WebSocket.OPEN) {
-    // If socket isn't open yet, we can try to initialize it or just rely on the fallback below
-    initSocket();
-  }
+  const socket = getSocket();
+  const restaurantId = "softshape-restaurant"; // Match global config
+
+  console.log("[WaiterCallSync] Broadcasting waiter:event via Socket.io", { type, payload });
+  socket.emit("waiter:event", { restaurantId, type, payload });
 
   // Notify all components in the CURRENT tab immediately
   try {

@@ -28,16 +28,41 @@ export async function fetchVenueSections() {
   return parseResponse(res);
 }
 
-/**
- * Fetch venue menu items with venue-specific price overrides.
- * @param {string} venueId - e.g. "venue-conference1", "venue-pdr", etc.
- */
 export async function fetchVenueMenu(venueId = "venue-conference1", restaurantId = "restaurant-001") {
-  const res = await fetch(apiUrl(`/api/venue/menu?venueId=${encodeURIComponent(venueId)}`), {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-  });
-  return parseResponse(res);
+  const cacheKey = `softshape_venue_menu_${venueId}`;
+
+  // Try to load from localStorage first for instant return
+  let cachedData = null;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      cachedData = JSON.parse(cached);
+    }
+  } catch (e) {
+    console.error("Error reading venue menu from cache:", e);
+  }
+
+  const networkFetch = async () => {
+    const res = await fetch(apiUrl(`/api/venue/menu?venueId=${encodeURIComponent(venueId)}`), {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
+    const data = await parseResponse(res);
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+    } catch (e) {
+      console.error("Error saving venue menu to cache:", e);
+    }
+    return data;
+  };
+
+  if (cachedData) {
+    // Silently refresh in the background so next load has the latest items
+    networkFetch().catch(err => console.error("Background venue menu sync failed:", err));
+    return cachedData;
+  }
+
+  return networkFetch();
 }
 
 /**
