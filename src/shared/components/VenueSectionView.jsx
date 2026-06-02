@@ -1,5 +1,5 @@
 import React from 'react';
-import { useVenueTableSync } from '../../services/venueTableSyncService';
+import { getTableSectionLabel } from '../../utils/tableHelpers';
 
 export default function VenueSectionView({
   venueId,
@@ -10,13 +10,9 @@ export default function VenueSectionView({
   onSelectRoom,
   onTableSelect,
   captainId,
-  onOrderPlaced
+  onOrderPlaced,
+  venueTables = []
 }) {
-  const { tables: venueTables, isSyncing: loading } = useVenueTableSync();
-
-  if (loading && (!venueTables || venueTables.length === 0)) {
-    return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest animate-pulse">Loading {sectionName}...</div>;
-  }
 
   const sectionIdByVenueId = {
     'venue-bar': 'section-venue-bar',
@@ -37,7 +33,11 @@ export default function VenueSectionView({
   });
 
   if (!sectionTables || sectionTables.length === 0) {
-    return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">No tables found for {sectionName}</div>;
+    return (
+      <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">
+        No tables found for {sectionName}
+      </div>
+    );
   }
 
   // If PDR 4-room mode, show the four rooms directly as table cards.
@@ -46,8 +46,8 @@ export default function VenueSectionView({
 
     return (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 max-w-[680px]">
-        {pdrTables.map((table, i) => (
-          <VenueTableCard key={table.id || i} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+        {pdrTables.map((table) => (
+          <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
         ))}
       </div>
     );
@@ -56,33 +56,21 @@ export default function VenueSectionView({
   // Single mode (Conference, Parcel)
   return (
     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-      {sectionTables.map((table, i) => (
-        <VenueTableCard key={table.id || i} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+      {sectionTables.map((table) => (
+        <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
       ))}
     </div>
   );
-}
-
-function getDynamicVenueLabel(table, activeSectionName) {
-  const sectionName = (activeSectionName || table.sectionName || table.section?.name || '').toLowerCase();
-  const num = table.number || 1;
-  if (sectionName.includes('bar')) return `B${num}`;
-  if (sectionName.includes('conference hall') || sectionName.includes('conf1')) return 'C1';
-  if (sectionName.includes('pdr')) return 'PDR';
-  if (sectionName.includes('rooms')) return `R${num}`;
-  if (sectionName.includes('parcel')) return 'P1';
-  if (table.displayName) return table.displayName;
-  return table.name || `T${num}`;
 }
 
 function VenueTableCard({ table, sectionName, onClick }) {
   const isFree = table.status === 'Free' || table.status === 'AVAILABLE' || !table.status;
   const isWaitingBill = table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED';
   const isBusy = !isFree && !isWaitingBill;
-  
+
   let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-md';
   let statusText = 'Open';
-  
+
   if (isWaitingBill) {
     containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-xl shadow-amber-50 animate-pulse';
     statusText = 'Billing Requested';
@@ -90,8 +78,8 @@ function VenueTableCard({ table, sectionName, onClick }) {
     containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-xl shadow-red-55';
     statusText = 'Busy';
   }
-  
-  const displayLabel = getDynamicVenueLabel(table, sectionName);
+
+  const displayLabel = getTableSectionLabel(table);
   
   return (
     <div

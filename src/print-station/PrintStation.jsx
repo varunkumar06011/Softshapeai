@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { io } from 'socket.io-client';
 import { QZ_CERT } from '../services/certificate.js';
 import { API_BASE } from '../services/apiConfig.js';
 
@@ -295,7 +296,6 @@ export default function PrintStation() {
   useEffect(() => {
     let socket;
     (async () => {
-      const { io } = await import('socket.io-client');
       socket = io(API_BASE, {
         path: '/socket.io',
         transports: ['polling', 'websocket'],

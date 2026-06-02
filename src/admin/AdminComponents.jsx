@@ -526,11 +526,11 @@ export function Tables({ onOpen }) {
         const label = isFree ? "Available" : isReserved ? `Reserved — ${details}` : `${t.status} — ${details}`;
         
         return (
-          <button 
-             key={t.id} 
+          <button
+             key={t.backendId || t.id}
              onClick={() => {
                if (!isFree && !isReserved) {
-                 setActivePopupTableId(t.id);
+                 setActivePopupTableId(t.backendId || t.id);
                }
              }}
              className={`${cardBase} ${bgClass} min-h-[100px] p-3 text-left transition-all active:scale-95 flex flex-col justify-between`}

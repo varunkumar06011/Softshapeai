@@ -1,119 +1,165 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getSocket } from "../hooks/useSocket";
 
-// Using PieSocket relay for distributed frontend communication
-// Re-using the same API key as menuSyncService but connecting to a separate room for isolation.
-const PIESOCKET_API_KEY = "VCXCEuvhGcBDP7XhiJJUDvR1e1PNwgvPAY2ZeMyB";
-const WAITER_CALL_ROOM = "softshape_waiter_calls_demo";
-const WS_URL = `wss://free.blr2.piesocket.com/v3/${WAITER_CALL_ROOM}?api_key=${PIESOCKET_API_KEY}`;
-
-let globalSocket = null;
-let isConnecting = false;
-let reconnectAttempts = 0;
-let pingInterval = null;
-const MAX_RECONNECT_DELAY = 30000; // cap at 30s
 const subscribers = new Set();
+let isListenerAttached = false;
 
-function getReconnectDelay() {
-  // Exponential backoff: 3s, 6s, 12s, 24s, 30s max
-  return Math.min(3000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
-}
-
-function startPing() {
-  stopPing();
-  pingInterval = setInterval(() => {
-    if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
-      try { globalSocket.send(JSON.stringify({ type: 'ping' })); } catch (_) {}
-    }
-  }, 25000); // every 25s — keeps connection alive
-}
-
-function stopPing() {
-  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-}
-
+/**
+ * Ensures the socket is connected to the restaurant room and
+ * the global `waiter:event` listener is registered exactly once.
+ *
+ * Safe to call multiple times — idempotent.
+ */
 export function initSocket() {
-  if (globalSocket || isConnecting) return;
-  isConnecting = true;
+  const socket = getSocket();
 
-  try {
-    globalSocket = new WebSocket(WS_URL);
+  // ── Room join logic ──────────────────────────────────────────
+  const joinRoom = () => {
+    if (!socket.connected) {
+      console.log("[WaiterCallSync] joinRoom called but socket not connected — will join on connect");
+      return;
+    }
+    socket.emit("join", "softshape-restaurant");
+    console.log("[WaiterCallSync] Joined room softshape-restaurant (id:", socket.id, ")");
+  };
 
-    globalSocket.onopen = () => {
-      console.log('[WaiterCallSync] Connected to Realtime Relay');
-      isConnecting = false;
-      reconnectAttempts = 0; // reset backoff on success
-      startPing();
-    };
+  // Join immediately if already connected
+  if (socket.connected) {
+    joinRoom();
+  }
 
-    globalSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ping' || data.type === 'pong') return; // ignore keepalives
-        subscribers.forEach(callback => callback(data));
-      } catch (err) {
-        console.error("Failed to parse socket message", err);
-      }
-    };
+  // ── Global event listeners (exactly once) ─────────────────────
+  if (!isListenerAttached) {
+    // Re-join on every connect/reconnect — this is the CRITICAL handler
+    // that ensures room membership survives network drops.
+    socket.on("connect", () => {
+      console.log("[WaiterCallSync] Socket connected/reconnected — joining room");
+      joinRoom();
+    });
 
-    globalSocket.onclose = () => {
-      const delay = getReconnectDelay();
-      console.log(`[WaiterCallSync] Disconnected. Reconnecting in ${delay / 1000}s... (attempt ${reconnectAttempts + 1})`);
-      globalSocket = null;
-      isConnecting = false;
-      stopPing();
-      reconnectAttempts++;
-      setTimeout(initSocket, delay);
-    };
+    // Listen for waiter events relayed by the server
+    socket.on("waiter:event", (data) => {
+      console.log("[WaiterCallSync] Received waiter:event via Socket.io", data);
+      subscribers.forEach(callback => {
+        try { callback(data); } catch (e) { console.error("[WaiterCallSync] Subscriber error", e); }
+      });
+    });
 
-    globalSocket.onerror = () => {
-      globalSocket?.close();
-    };
-  } catch (err) {
-    isConnecting = false;
-    console.error('[WaiterCallSync] Connection failed', err);
+    // Also listen on the manager-level reconnect event as a safety net
+    socket.io.on("reconnect", (attempt) => {
+      console.log(`[WaiterCallSync] Socket.io manager reconnected after ${attempt} attempt(s)`);
+      // The "connect" handler above will fire automatically, but log here for visibility
+    });
+
+    isListenerAttached = true;
+    console.log("[WaiterCallSync] Global listeners registered");
   }
 }
 
-// Function to broadcast an event globally
+/**
+ * Broadcast a waiter call event to all captain panels via Socket.io.
+ *
+ * Flow:
+ *   1. Emit over Socket.io (primary — real-time across devices)
+ *   2. localStorage event (cross-tab fallback on same device)
+ *
+ * NOTE: We do NOT notify in-process subscribers here — the server
+ * relay (socket.to(room).emit) handles delivery to captain tabs.
+ * Calling subscribers locally would cause double-delivery if the
+ * captain panel runs in the same JS context.
+ *
+ * Returns `true` if the socket was connected at emit time.
+ */
 export function broadcastWaiterEvent(type, payload) {
-  if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
-    globalSocket.send(JSON.stringify({ type, payload }));
-  } else if (!globalSocket || globalSocket.readyState !== WebSocket.OPEN) {
-    // If socket isn't open yet, we can try to initialize it or just rely on the fallback below
-    initSocket();
+  const socket = getSocket();
+  const restaurantId = "softshape-restaurant";
+
+  // Ensure socket is ready
+  if (!socket.connected) {
+    console.warn("[WaiterCallSync] Socket not connected — calling connect() before emit");
+    socket.connect();
+    // socket.io will buffer the emit and send once connected
   }
 
-  // Notify all components in the CURRENT tab immediately
-  try {
-    const data = { type, payload };
-    subscribers.forEach(callback => callback(data));
-  } catch (err) {}
+  console.log(
+    "[WaiterCallSync] Broadcasting waiter:event",
+    { type, payload, connected: socket.connected, id: socket.id }
+  );
 
-  // Local fallback for cross-tab testing (works perfectly on localhost)
+  // Primary: emit to server which relays to all room members (excluding sender)
+  socket.emit("waiter:event", { restaurantId, type, payload });
+
+  // Cross-tab fallback via localStorage (same browser, different tab)
   try {
     const eventKey = `softshape_local_event_${Date.now()}_${Math.random()}`;
     localStorage.setItem(eventKey, JSON.stringify({ type, payload }));
     setTimeout(() => localStorage.removeItem(eventKey), 1000);
   } catch (e) {
-    console.error("Local fallback failed", e);
+    console.error("[WaiterCallSync] Local storage fallback failed", e);
   }
+
+  return socket.connected;
 }
 
+/**
+ * React hook that tracks active waiter calls in real time.
+ *
+ * Listens for:
+ *  - Socket.io `waiter:event` (cross-device, primary)
+ *  - localStorage `storage` events (cross-tab fallback)
+ *  - localStorage DB on mount (survive page refresh)
+ */
 export function useWaiterCalls() {
   const [activeCalls, setActiveCalls] = useState([]);
 
   useEffect(() => {
+    // Ensure socket is connected and listening
     initSocket();
 
     const handleMessage = (data) => {
+      if (!data || !data.type) {
+        console.warn("[WaiterCallSync] Received malformed waiter event", data);
+        return;
+      }
+
       if (data.type === 'customer:call_waiter') {
-        const { tableId, callId, timestamp, source } = data.payload;
+        const { tableId, callId, timestamp, source } = data.payload || {};
+
+        if (!tableId || !callId) {
+          console.warn("[WaiterCallSync] call_waiter missing tableId or callId", data.payload);
+          return;
+        }
+
+        console.log("[WaiterCallSync] Processing call_waiter:", { tableId, callId, source });
+
         setActiveCalls(prev => {
-          if (prev.find(c => c.callId === callId)) return prev;
-          return [...prev, { tableId, callId, timestamp, localTimestamp: Date.now(), status: 'pending', source }];
+          // Prevent duplicate by callId
+          if (prev.find(c => c.callId === callId)) {
+            console.log("[WaiterCallSync] Duplicate callId ignored:", callId);
+            return prev;
+          }
+          const newCall = {
+            tableId,
+            callId,
+            timestamp,
+            localTimestamp: Date.now(),
+            status: 'pending',
+            source: source || 'restaurant'
+          };
+          console.log("[WaiterCallSync] Adding new call to activeCalls:", newCall);
+          return [...prev, newCall];
         });
+
       } else if (data.type === 'captain:accept_waiter_call') {
-        const { callId, captainId, captainName } = data.payload;
+        const { callId, captainId, captainName } = data.payload || {};
+
+        if (!callId) {
+          console.warn("[WaiterCallSync] accept_waiter_call missing callId", data.payload);
+          return;
+        }
+
+        console.log("[WaiterCallSync] Processing accept_waiter_call:", { callId, captainId, captainName });
+
         setActiveCalls(prev => {
           const callExists = prev.find(c => c.callId === callId);
           if (!callExists) return prev;
@@ -125,19 +171,22 @@ export function useWaiterCalls() {
           );
         });
         
+        // Auto-remove accepted calls after 12 seconds
         setTimeout(() => {
           setActiveCalls(prev => prev.filter(c => c.callId !== callId));
         }, 12000);
       }
     };
 
-    // Listen to local storage events for instant cross-tab sync
+    // ── Cross-tab sync via localStorage ───────────────────────────
     const handleStorage = (e) => {
       if (e.key && e.key.startsWith('softshape_local_event_') && e.newValue) {
         try {
           const data = JSON.parse(e.newValue);
           handleMessage(data);
-        } catch (err) {}
+        } catch (err) {
+          console.error("[WaiterCallSync] Failed to parse localStorage event", err);
+        }
       } else if (e.key === 'softshape_waiter_calls' && e.newValue) {
         try {
           const db = JSON.parse(e.newValue);
@@ -153,15 +202,21 @@ export function useWaiterCalls() {
             });
             return changed ? newCalls : prev;
           });
-        } catch (err) {}
+        } catch (err) {
+          console.error("[WaiterCallSync] Failed to parse waiter_calls DB", err);
+        }
       }
     };
     window.addEventListener('storage', handleStorage);
 
-    // Load initial state from local DB to survive Captain Panel refreshes
+    // ── Load persisted calls from localStorage (survive refresh) ──
     try {
       const db = JSON.parse(localStorage.getItem('softshape_waiter_calls') || '{}');
-      const pending = Object.values(db).filter(c => c.status === 'pending');
+      const now = Date.now();
+      const STALE_MS = 5 * 60 * 1000; // 5 min
+      const pending = Object.values(db).filter(c =>
+        c.status === 'pending' && (now - (c.timestamp || 0)) < STALE_MS
+      );
       if (pending.length > 0) {
         setActiveCalls(prev => {
           const newCalls = [...prev];
@@ -174,8 +229,11 @@ export function useWaiterCalls() {
           return newCalls;
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("[WaiterCallSync] Failed to load persisted calls", e);
+    }
 
+    // Register this component's handler
     subscribers.add(handleMessage);
 
     return () => {
@@ -185,6 +243,7 @@ export function useWaiterCalls() {
   }, []);
 
   const clearCall = useCallback((callId) => {
+    console.log("[WaiterCallSync] Clearing call:", callId);
     setActiveCalls(prev => prev.filter(c => c.callId !== callId));
     try {
       const db = JSON.parse(localStorage.getItem('softshape_waiter_calls') || '{}');
@@ -193,7 +252,9 @@ export function useWaiterCalls() {
         delete db[tableKey];
         localStorage.setItem('softshape_waiter_calls', JSON.stringify(db));
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("[WaiterCallSync] Failed to clear call from localStorage", e);
+    }
   }, []);
 
   return { activeCalls, clearCall };

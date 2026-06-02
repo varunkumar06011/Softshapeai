@@ -13,6 +13,7 @@ import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cance
 import { calculateSessionBill, calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
+import { isBeerItem } from '../utils/itemHelpers';
 
 const getLiquorDescription = (name, category) => {
   const n = (name || '').toLowerCase();
@@ -57,9 +58,11 @@ import { fetchVenueMenu } from '../services/venueTableApi';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
+import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
+import { playChimeTone, unlockAudioContext } from '../services/audioService';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -78,49 +81,11 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
   const [timeLeft, setTimeLeft] = useState(12);
 
   useEffect(() => {
-    let audioCtx = null;
     let alarmInterval = null;
 
     const startAlarm = () => {
-      try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-        const playBeep = () => {
-          if (!audioCtx || audioCtx.state === 'suspended') return;
-          const now = audioCtx.currentTime;
-
-          // Chime tone 1 (A5 note)
-          const osc1 = audioCtx.createOscillator();
-          const gain1 = audioCtx.createGain();
-          osc1.connect(gain1);
-          gain1.connect(audioCtx.destination);
-          osc1.type = 'sine';
-          osc1.frequency.setValueAtTime(880, now);
-          gain1.gain.setValueAtTime(0, now);
-          gain1.gain.linearRampToValueAtTime(0.2, now + 0.05);
-          gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-          osc1.start(now);
-          osc1.stop(now + 0.3);
-
-          // Chime tone 2 (C6 note)
-          const osc2 = audioCtx.createOscillator();
-          const gain2 = audioCtx.createGain();
-          osc2.connect(gain2);
-          gain2.connect(audioCtx.destination);
-          osc2.type = 'sine';
-          osc2.frequency.setValueAtTime(1046.5, now + 0.08);
-          gain2.gain.setValueAtTime(0, now + 0.08);
-          gain2.gain.linearRampToValueAtTime(0.2, now + 0.13);
-          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
-          osc2.start(now + 0.08);
-          osc2.stop(now + 0.38);
-        };
-
-        playBeep();
-        alarmInterval = setInterval(playBeep, 800);
-      } catch (e) {
-        console.warn("Web Audio API not supported or blocked:", e);
-      }
+      playChimeTone();
+      alarmInterval = setInterval(playChimeTone, 800);
     };
 
     // Calculate initial time left based on when it was actually received locally
@@ -149,9 +114,6 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
       clearInterval(timer);
       if (alarmInterval) {
         clearInterval(alarmInterval);
-      }
-      if (audioCtx) {
-        audioCtx.close().catch(() => { });
       }
     };
   }, [call]);
@@ -588,12 +550,11 @@ export default function CaptainApp({ onLogout }) {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
   }, [tableFilter]);
 
-  // Reset tableSubCategory to 'restaurant' when switching to bar outlet
+  // Reset tableSubCategory to 'restaurant' when switching outlets
   useEffect(() => {
-    if (outlet === 'bar' && tableSubCategory !== 'restaurant') {
-      setTableSubCategory('restaurant');
-    }
-  }, [outlet, tableSubCategory]);
+    setTableSubCategory('restaurant');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlet]);
 
   // Clean up stale cart keys when a table is deleted from the active list
   useEffect(() => {
@@ -659,6 +620,7 @@ export default function CaptainApp({ onLogout }) {
   const handleProfileSelect = (profile) => {
     setSelectedProfile(profile);
     setPin('');
+    unlockAudioContext();
   };
 
   const handlePinInput = (num) => {
@@ -668,12 +630,14 @@ export default function CaptainApp({ onLogout }) {
       setPin(newPin);
       if (newPin.length === 4) {
         setIsAuthenticating(true);
+        unlockAudioContext();
         setTimeout(() => {
           if (newPin === selectedProfile.pin) {
             setCurrentCaptain(selectedProfile);
             setIsLoginView(false);
             localStorage.setItem('captain_auth_v2', 'true');
             localStorage.setItem('active_captain', JSON.stringify(selectedProfile));
+            unlockAudioContext();
           } else {
             setPin('');
             setPinError(true);
@@ -721,6 +685,14 @@ export default function CaptainApp({ onLogout }) {
 
   const handleItemClick = (e, item) => {
     e.stopPropagation();
+
+    // Beer items should be added directly as 650ml bottles
+    if (outlet === 'bar' && isBeerItem(item)) {
+      addItemToSession(item, { name: '650ml Bottle', price: item.p || item.price });
+      return;
+    }
+
+    // Other liquor items (spirits) should show variant picker
     if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setActiveVariantItem(item);
     } else {
@@ -1402,13 +1374,10 @@ export default function CaptainApp({ onLogout }) {
               <div className="flex gap-2 flex-wrap mb-4">
                 {[
                   { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant' },
-                  // Only show venue tabs when outlet is 'restaurant', not when on 'bar'
-                  ...(outlet === 'restaurant' ? [
-                    { id: 'conference1', label: 'Conference Hall' },
-                    { id: 'conference2', label: 'PDR' },
-                    { id: 'pdr', label: 'Rooms' },
-                    { id: 'parcel', label: 'Parcel(vijay)' },
-                  ] : [])
+                  { id: 'conference1', label: 'Conference Hall' },
+                  { id: 'conference2', label: 'PDR' },
+                  { id: 'pdr', label: 'Rooms' },
+                  { id: 'parcel', label: 'Parcel(vijay)' },
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -1458,7 +1427,7 @@ export default function CaptainApp({ onLogout }) {
 
                   return (
                     <button
-                      key={table.id}
+                      key={table.backendId || table.id}
                       onClick={() => openTableSession(table)}
                       className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
                         isMyTable ? `border-l-4 ${borderColor}` : ''
@@ -1468,6 +1437,13 @@ export default function CaptainApp({ onLogout }) {
                             'bg-red-50 border-red-100 text-red-600'
                         }`}
                     >
+                      {/* Section Badge - Top Left */}
+                      {(table.sectionName || table.section?.name) && (
+                        <div className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shadow-sm z-10 ${getSectionBadgeColor(table)}`}>
+                          {getTableSectionLabel(table)}
+                        </div>
+                      )}
+
                       <div className="w-full flex justify-between items-start">
                         <div className="flex flex-col items-start gap-0.5">
                           <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{outlet === 'bar' ? 'B' : 'T'}{table.number ?? table.id}</span>
@@ -1478,9 +1454,9 @@ export default function CaptainApp({ onLogout }) {
                           )}
                         </div>
 
-                        {/* Captain Initials Badge */}
+                        {/* Captain Initials Badge - Top Right */}
                         {isMyTable && assignedCaptain && (
-                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg ${assignedCaptain.color} flex items-center justify-center text-[8px] font-black shadow-sm`}>
+                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg ${assignedCaptain.color} flex items-center justify-center text-[8px] font-black shadow-sm z-10`}>
                             {assignedCaptain.initials}
                           </div>
                         )}
@@ -2596,7 +2572,7 @@ export default function CaptainApp({ onLogout }) {
                   <div className="grid grid-cols-3 gap-2">
                     {freeTables.map(t => (
                       <button
-                        key={t.id}
+                        key={t.backendId || t.id}
                         disabled={moveLoading}
                         onClick={async () => {
                           setMoveLoading(true);

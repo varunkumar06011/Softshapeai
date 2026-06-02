@@ -329,17 +329,25 @@ export default function BarMenu({ tableId }) {
   // Call Waiter handler
   const handleCallWaiter = () => {
     if (callCooldown > 0) return;
+
+    console.log(`[BarMenu] Call Waiter clicked for table ${tableId}`);
     const validation = validateAndCreateWaiterCall(tableId, 'bar');
 
     if (validation.success) {
-      broadcastWaiterEvent('customer:call_waiter', {
+      const payload = {
         tableId,
         callId: validation.callId,
         timestamp: Date.now(),
         source: 'bar'
-      });
+      };
+      console.log('[BarMenu] Broadcasting waiter call:', payload);
+      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload);
+      if (!wasConnected) {
+        console.warn('[BarMenu] Socket was disconnected during emit — event queued');
+      }
       setCallCooldown(15);
     } else {
+      console.log(`[BarMenu] Call blocked — cooldown: ${validation.retryAfter}s remaining`);
       setCallCooldown(validation.retryAfter);
     }
   };

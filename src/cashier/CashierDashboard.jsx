@@ -15,7 +15,7 @@ import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTable
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
-import { RESTAURANT_ID } from '../services/tableApi';
+import { RESTAURANT_ID, updateTableSession } from '../services/tableApi';
 import { useOutlet } from '../context/OutletContext';
 import OutletToggle from '../shared/components/OutletToggle';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
@@ -23,14 +23,17 @@ import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
+import { updateBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
 import VenueDashboard from './VenueDashboard';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
+import { isBeerItem } from '../utils/itemHelpers';
 import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useVenueTableSync } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
+import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -229,6 +232,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cancelLoading, setCancelLoading] = useState({});
   const [isKotSending, setIsKotSending] = useState(false);
   const isSubmittingKotRef = useRef(false);
+  const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
@@ -247,7 +251,11 @@ const CashierDashboard = ({ onLogout }) => {
     if (activeTab === 'pos' && !selectedTable) {
       items = cart;
     } else if (selectedTable) {
-      items = [...getTableItems(selectedTable), ...cart];
+      const committedItems = getTableItems(selectedTable);
+      const itemsForTotal = committedItems.length > 0
+        ? committedItems
+        : lastConfirmedItemsRef.current;
+      items = [...itemsForTotal, ...cart];
     }
     return items.filter(i => !i.removedFromBill).reduce((acc, item) => acc + (Number(item.p || 0) * Number(item.q || 1)), 0);
   }, [selectedTable, activeTab, cart]);
@@ -611,6 +619,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
+        lastConfirmedItemsRef.current = [];
         localStorage.removeItem('cashier_selected_table');
         localStorage.setItem('cashier_cart', '[]');
         setExpandedNoteItemId(null);
@@ -712,6 +721,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (hasStaleGhostData) {
       setSelectedTable(null);
       setCart([]);
+      lastConfirmedItemsRef.current = [];
       localStorage.removeItem('cashier_selected_table');
       localStorage.setItem('cashier_cart', '[]');
       return;
@@ -731,6 +741,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
+        lastConfirmedItemsRef.current = [];
         localStorage.removeItem('cashier_selected_table');
         localStorage.setItem('cashier_cart', '[]');
         setExpandedNoteItemId(null);
@@ -844,7 +855,11 @@ const CashierDashboard = ({ onLogout }) => {
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
-    const items = getTableItems(selectedTable).map(i =>
+    const committedItems = getTableItems(selectedTable);
+    const itemsForTotal = committedItems.length > 0
+      ? committedItems
+      : lastConfirmedItemsRef.current;
+    const items = itemsForTotal.map(i =>
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
     return calculateOrderTotal([...items, ...cart], discountPercent);
@@ -1027,6 +1042,7 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedTable(null);
       setSelectedOrder(null);
       setCart([]);
+      lastConfirmedItemsRef.current = [];
       localStorage.removeItem('cashier_selected_table');
       localStorage.setItem('cashier_cart', '[]');
       setRawDiscountInput('');
@@ -1064,6 +1080,7 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedTable(null);
     setSelectedOrder(null);
     setCart([]);
+    lastConfirmedItemsRef.current = [];
     localStorage.removeItem('cashier_selected_table');
     localStorage.setItem('cashier_cart', '[]');
     setExpandedNoteItemId(null);
@@ -1089,15 +1106,11 @@ const CashierDashboard = ({ onLogout }) => {
 
         // Background cleanup
         if (outlet === 'bar' && !isVenueTable) {
-          import('../services/barTableApi').then(({ updateBarTableSession }) => {
-            updateBarTableSession(tableSnap.backendId, resetSessionPayload)
-              .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
-          });
+          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
         } else {
-          import('../services/tableApi').then(({ updateTableSession }) => {
-            updateTableSession(tableSnap.backendId, resetSessionPayload)
-              .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
-          });
+          updateTableSession(tableSnap.backendId, resetSessionPayload)
+            .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
         }
         
         addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
@@ -1277,6 +1290,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     setCart([]);
+    lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
 
     if (!table.status || table.status === 'Free') {
@@ -1288,6 +1302,21 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (item) => {
+    // Beer items should be added directly as 650ml bottles
+    if (outlet === 'bar' && isBeerItem(item)) {
+      const beerItem = {
+        ...item,
+        n: `${item.n} 650ml Bottle`,
+        p: item.p || item.price
+      };
+      addToCart(beerItem);
+      setSearchQuery('');
+      setSelectedCategory('All');
+      setActiveDiet('All');
+      return;
+    }
+
+    // Other liquor items (spirits) should show variant picker
     if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setVariantPickerItem(item);
     } else {
@@ -1461,6 +1490,12 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         setActiveTables(updater);
       }
+    }
+
+    // Snapshot items before clearing cart to prevent UI flicker
+    if (selectedTable) {
+      const committedSoFar = getTableItems(selectedTable);
+      lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
     }
 
     setCart([]);
@@ -1771,8 +1806,22 @@ const CashierDashboard = ({ onLogout }) => {
                         {tableSubCategory === 'restaurant' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {activeTables
+                              .filter((table) => {
+                                // Only show bar/main hall section tables
+                                const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
+                                const sectionId = table.sectionId || table.section?.id || '';
+
+                                // Bar section includes "bar" or "main hall" in the name
+                                // or has sectionId of "main-hall" or "bar"
+                                return (
+                                  sectionName.includes('bar') ||
+                                  sectionName.includes('main hall') ||
+                                  sectionId === 'main-hall' ||
+                                  sectionId === 'bar'
+                                );
+                              })
                               .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
-                              .map((table, i) => {
+                              .map((table) => {
                                 const isFree = table.status === 'Free' || !table.status;
                                 const isWaitingBill = table.status === 'Waiting Bill';
                                 const isBusy = !isFree && !isWaitingBill;
@@ -1790,10 +1839,11 @@ const CashierDashboard = ({ onLogout }) => {
 
                                 return (
                                   <div
-                                    key={i}
+                                    key={table.backendId || table.id}
                                     onClick={() => handleTableSelect(table)}
                                     className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
+                                    {/* Captain Name Badge - Top Right */}
                                     {table.captainName && (
                                       <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
                                         {table.captainName.split(' ')[0]}
@@ -1816,6 +1866,7 @@ const CashierDashboard = ({ onLogout }) => {
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
 
@@ -1828,6 +1879,7 @@ const CashierDashboard = ({ onLogout }) => {
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
 
@@ -1842,6 +1894,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onSelectRoom={setSelectedPDRRoom}
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
 
@@ -1854,6 +1907,7 @@ const CashierDashboard = ({ onLogout }) => {
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
                       </div>

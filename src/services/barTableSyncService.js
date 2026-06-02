@@ -29,7 +29,11 @@ function toFrontendStatus(backendStatus) {
 function readCache() {
   try {
     const raw = localStorage.getItem(TABLES_CACHE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    // Deduplicate cached tables to prevent duplicate cards on load
+    return parsed.filter((table, index, self) =>
+      index === self.findIndex(t => t.backendId === table.backendId)
+    );
   } catch {
     return [];
   }
@@ -99,6 +103,15 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
 
 function mergeTablesFromApi(apiTables, currentTables) {
   let flat = flattenSections(apiTables);
+  
+  // Deduplicate API tables by backendId or number to prevent duplicate cards
+  const seen = new Map();
+  flat = flat.filter(table => {
+    const key = table.id || table.number;
+    if (seen.has(key)) return false;
+    seen.set(key, true);
+    return true;
+  });
   
   // Strictly enforce 30 tables capacity locally
   const existingNumbers = new Set(flat.map((t) => Number(t.number)));
@@ -276,8 +289,12 @@ export function useBarTableSync() {
       setTablesState((current) => {
         const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
         const merged = useFallback ? getFallbackTables(current) : mergeTablesFromApi(apiTables, current);
-        writeCache(merged);
-        return merged;
+        // Deduplicate by backendId to prevent duplicate cards
+        const deduped = merged.filter((table, index, self) =>
+          index === self.findIndex(t => t.backendId === table.backendId)
+        );
+        writeCache(deduped);
+        return deduped;
       });
 
       setIsSyncing(false);
@@ -307,8 +324,12 @@ export function useBarTableSync() {
         setTablesState((prev) => {
           if (findTableIndex(prev, newTable.id) !== -1) return prev;
           const next = [...prev, mapBackendTable(newTable)];
-          writeCache(next);
-          return next;
+          // Deduplicate by backendId to prevent duplicate cards
+          const deduped = next.filter((table, index, self) =>
+            index === self.findIndex(t => t.backendId === table.backendId)
+          );
+          writeCache(deduped);
+          return deduped;
         });
       },
       onDeleted: ({ id, restaurantId }) => {
@@ -352,8 +373,12 @@ export function useBarTableSync() {
 
         setTablesState((current) => {
           const merged = mergeTablesFromApi(apiTables, current);
-          writeCache(merged);
-          return merged;
+          // Deduplicate by backendId to prevent duplicate cards
+          const deduped = merged.filter((table, index, self) =>
+            index === self.findIndex(t => t.backendId === table.backendId)
+          );
+          writeCache(deduped);
+          return deduped;
         });
       } catch {
         /* polling is a fallback, keep quiet */
@@ -371,14 +396,19 @@ export function useBarTableSync() {
     const current = tablesRef.current ?? [];
     const next = typeof updater === "function" ? updater(current) : updater;
 
-    writeCache(next);
-    tablesRef.current = next;
-    setTablesState(next);
+    // Deduplicate by backendId to prevent duplicate cards
+    const deduped = next.filter((table, index, self) =>
+      index === self.findIndex(t => t.backendId === table.backendId)
+    );
+
+    writeCache(deduped);
+    tablesRef.current = deduped;
+    setTablesState(deduped);
 
     _lastLocalUpdate = Date.now();
 
     if (!skipPersist) {
-      persistStatusChanges(current, next).then((results) => {
+      persistStatusChanges(current, deduped).then((results) => {
         if (!results || !results.length) return;
 
         _lastLocalUpdate = Date.now();
@@ -394,9 +424,13 @@ export function useBarTableSync() {
             });
             updated = copy;
           }
-          writeCache(updated);
-          tablesRef.current = updated;
-          return updated;
+          // Deduplicate after persisting changes
+          const finalDeduped = updated.filter((table, index, self) =>
+            index === self.findIndex(t => t.backendId === table.backendId)
+          );
+          writeCache(finalDeduped);
+          tablesRef.current = finalDeduped;
+          return finalDeduped;
         });
       });
     }
