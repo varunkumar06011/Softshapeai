@@ -355,11 +355,12 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
 
-  const { menuItems, categories, loading: menuLoading } = useMenu();
+  const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
 
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
-  const { menuItems: barMenuItems } = useBarMenuSync();
+  const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
+  const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
 
