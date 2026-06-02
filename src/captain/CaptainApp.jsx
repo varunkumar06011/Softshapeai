@@ -13,6 +13,7 @@ import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cance
 import { calculateSessionBill, calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
+import { isBeerItem } from '../utils/itemHelpers';
 
 const getLiquorDescription = (name, category) => {
   const n = (name || '').toLowerCase();
@@ -685,6 +686,14 @@ export default function CaptainApp({ onLogout }) {
 
   const handleItemClick = (e, item) => {
     e.stopPropagation();
+
+    // Beer items should be added directly as 650ml bottles
+    if (outlet === 'bar' && isBeerItem(item)) {
+      addItemToSession(item, { name: '650ml Bottle', price: item.p || item.price });
+      return;
+    }
+
+    // Other liquor items (spirits) should show variant picker
     if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setActiveVariantItem(item);
     } else {

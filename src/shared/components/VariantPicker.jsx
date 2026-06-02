@@ -1,7 +1,9 @@
 import { X } from 'lucide-react';
+import { isBeerItem } from '../../utils/itemHelpers';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
+const BEER_BOTTLE_ML = 650;
 
 export default function VariantPicker({ item, onSelect, onClose }) {
   if (!item) return null;
@@ -9,6 +11,51 @@ export default function VariantPicker({ item, onSelect, onClose }) {
   // TYPE B bottle items should not use this picker - added directly to cart
   if (item.menuType === 'LIQUOR' && item.isBottleItem) {
     return null;
+  }
+
+  // Check if item is beer
+  const isBeer = isBeerItem(item);
+
+  // Beer items should only show 650ml bottle option
+  if (isBeer) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4">
+          <div className="flex items-start justify-between mb-5">
+            <div>
+              <h3 className="text-lg sm:text-xl font-black text-gray-900">{item.n || item.name}</h3>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
+                Select variant
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={() => onSelect(item, {
+                id: 'beer_bottle',
+                name: '650ml Bottle',
+                price: Number(item.p || item.price || item.variants?.[0]?.price || 0)
+              })}
+              className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
+            >
+              <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
+                650ml Bottle
+              </span>
+              <span className="text-sm sm:text-base font-black text-[#E53935]">
+                ₹{item.p || item.price || item.variants?.[0]?.price || 0}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -28,6 +28,7 @@ import ItemAnalytics from './ItemAnalytics';
 import VenueDashboard from './VenueDashboard';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
+import { isBeerItem } from '../utils/itemHelpers';
 import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useVenueTableSync } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
@@ -1279,6 +1280,21 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (item) => {
+    // Beer items should be added directly as 650ml bottles
+    if (outlet === 'bar' && isBeerItem(item)) {
+      const beerItem = {
+        ...item,
+        n: `${item.n} 650ml Bottle`,
+        p: item.p || item.price
+      };
+      addToCart(beerItem);
+      setSearchQuery('');
+      setSelectedCategory('All');
+      setActiveDiet('All');
+      return;
+    }
+
+    // Other liquor items (spirits) should show variant picker
     if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setVariantPickerItem(item);
     } else {
