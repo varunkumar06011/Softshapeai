@@ -60,6 +60,7 @@ import VenueSectionView from '../shared/components/VenueSectionView';
 
 import { CAPTAINS } from '../config/captains';
 import { fetchCaptainTarget } from '../services/captainTargetService';
+import { playChimeTone, unlockAudioContext } from '../services/audioService';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -78,49 +79,11 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
   const [timeLeft, setTimeLeft] = useState(12);
 
   useEffect(() => {
-    let audioCtx = null;
     let alarmInterval = null;
 
     const startAlarm = () => {
-      try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-        const playBeep = () => {
-          if (!audioCtx || audioCtx.state === 'suspended') return;
-          const now = audioCtx.currentTime;
-
-          // Chime tone 1 (A5 note)
-          const osc1 = audioCtx.createOscillator();
-          const gain1 = audioCtx.createGain();
-          osc1.connect(gain1);
-          gain1.connect(audioCtx.destination);
-          osc1.type = 'sine';
-          osc1.frequency.setValueAtTime(880, now);
-          gain1.gain.setValueAtTime(0, now);
-          gain1.gain.linearRampToValueAtTime(0.2, now + 0.05);
-          gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-          osc1.start(now);
-          osc1.stop(now + 0.3);
-
-          // Chime tone 2 (C6 note)
-          const osc2 = audioCtx.createOscillator();
-          const gain2 = audioCtx.createGain();
-          osc2.connect(gain2);
-          gain2.connect(audioCtx.destination);
-          osc2.type = 'sine';
-          osc2.frequency.setValueAtTime(1046.5, now + 0.08);
-          gain2.gain.setValueAtTime(0, now + 0.08);
-          gain2.gain.linearRampToValueAtTime(0.2, now + 0.13);
-          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
-          osc2.start(now + 0.08);
-          osc2.stop(now + 0.38);
-        };
-
-        playBeep();
-        alarmInterval = setInterval(playBeep, 800);
-      } catch (e) {
-        console.warn("Web Audio API not supported or blocked:", e);
-      }
+      playChimeTone();
+      alarmInterval = setInterval(playChimeTone, 800);
     };
 
     // Calculate initial time left based on when it was actually received locally
@@ -149,9 +112,6 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
       clearInterval(timer);
       if (alarmInterval) {
         clearInterval(alarmInterval);
-      }
-      if (audioCtx) {
-        audioCtx.close().catch(() => { });
       }
     };
   }, [call]);
@@ -659,6 +619,7 @@ export default function CaptainApp({ onLogout }) {
   const handleProfileSelect = (profile) => {
     setSelectedProfile(profile);
     setPin('');
+    unlockAudioContext();
   };
 
   const handlePinInput = (num) => {
@@ -668,12 +629,14 @@ export default function CaptainApp({ onLogout }) {
       setPin(newPin);
       if (newPin.length === 4) {
         setIsAuthenticating(true);
+        unlockAudioContext();
         setTimeout(() => {
           if (newPin === selectedProfile.pin) {
             setCurrentCaptain(selectedProfile);
             setIsLoginView(false);
             localStorage.setItem('captain_auth_v2', 'true');
             localStorage.setItem('active_captain', JSON.stringify(selectedProfile));
+            unlockAudioContext();
           } else {
             setPin('');
             setPinError(true);
