@@ -19,6 +19,7 @@ export default function VenueSectionView({
   }
 
   const sectionIdByVenueId = {
+    'venue-bar': 'section-venue-bar',
     'venue-conference1': 'section-venue-conf1',
     'venue-pdr': 'section-venue-conf2',
     'venue-rooms': 'section-venue-pdr',
@@ -65,6 +66,7 @@ export default function VenueSectionView({
 function getDynamicVenueLabel(table, activeSectionName) {
   const sectionName = (activeSectionName || table.sectionName || table.section?.name || '').toLowerCase();
   const num = table.number || 1;
+  if (sectionName.includes('bar')) return `B${num}`;
   if (sectionName.includes('conference hall') || sectionName.includes('conf1')) return 'C1';
   if (sectionName.includes('pdr')) return 'PDR';
   if (sectionName.includes('rooms')) return `R${num}`;

@@ -49,7 +49,7 @@ function getTableLabel(sectionName, tableNumber) {
 
 // ─── VenueDashboard ──────────────────────────────────────────────────────────
 
-export default function VenueDashboard({ addNotification }) {
+export default function VenueDashboard({ addNotification, activeRestaurantId }) {
   const { tables: venueTables, setTables: setVenueTables, isSyncing } = useVenueTableSync();
 
   // ── Section / table selection ──
@@ -106,14 +106,14 @@ export default function VenueDashboard({ addNotification }) {
     setMenuLoading(true);
     setMenuItems([]);
     setMenuCategory('All');
-    fetchVenueMenu(venueId)
+    fetchVenueMenu(venueId, activeRestaurantId)
       .then((items) => setMenuItems(Array.isArray(items) ? items : []))
       .catch((err) => {
         console.error('[VenueDashboard] Menu load failed:', err);
         setMenuItems([]);
       })
       .finally(() => setMenuLoading(false));
-  }, [activeSection]);
+  }, [activeSection, activeRestaurantId]);
 
   // ── Menu categories ──
   const categories = useMemo(() => {
