@@ -1844,6 +1844,7 @@ const CashierDashboard = ({ onLogout }) => {
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
 
@@ -1856,6 +1857,7 @@ const CashierDashboard = ({ onLogout }) => {
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
 
@@ -1870,6 +1872,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onSelectRoom={setSelectedPDRRoom}
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
 
@@ -1882,6 +1885,7 @@ const CashierDashboard = ({ onLogout }) => {
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
+                            venueTables={venueTables}
                           />
                         )}
                       </div>

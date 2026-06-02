@@ -1,5 +1,4 @@
 import React from 'react';
-import { useVenueTableSync } from '../../services/venueTableSyncService';
 import { getTableSectionLabel } from '../../utils/tableHelpers';
 
 export default function VenueSectionView({
@@ -11,13 +10,9 @@ export default function VenueSectionView({
   onSelectRoom,
   onTableSelect,
   captainId,
-  onOrderPlaced
+  onOrderPlaced,
+  venueTables = []
 }) {
-  const { tables: venueTables, isSyncing: loading } = useVenueTableSync();
-
-  if (loading && (!venueTables || venueTables.length === 0)) {
-    return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest animate-pulse">Loading {sectionName}...</div>;
-  }
 
   const sectionIdByVenueId = {
     'venue-bar': 'section-venue-bar',
@@ -38,7 +33,11 @@ export default function VenueSectionView({
   });
 
   if (!sectionTables || sectionTables.length === 0) {
-    return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">No tables found for {sectionName}</div>;
+    return (
+      <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">
+        No tables found for {sectionName}
+      </div>
+    );
   }
 
   // If PDR 4-room mode, show the four rooms directly as table cards.
