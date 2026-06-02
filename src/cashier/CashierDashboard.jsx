@@ -1784,6 +1784,20 @@ const CashierDashboard = ({ onLogout }) => {
                         {tableSubCategory === 'restaurant' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {activeTables
+                              .filter((table) => {
+                                // Only show bar/main hall section tables
+                                const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
+                                const sectionId = table.sectionId || table.section?.id || '';
+
+                                // Bar section includes "bar" or "main hall" in the name
+                                // or has sectionId of "main-hall" or "bar"
+                                return (
+                                  sectionName.includes('bar') ||
+                                  sectionName.includes('main hall') ||
+                                  sectionId === 'main-hall' ||
+                                  sectionId === 'bar'
+                                );
+                              })
                               .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
                               .map((table) => {
                                 const isFree = table.status === 'Free' || !table.status;
@@ -1807,12 +1821,6 @@ const CashierDashboard = ({ onLogout }) => {
                                     onClick={() => handleTableSelect(table)}
                                     className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
-                                    {/* Section Badge - Top Left */}
-                                    {(table.sectionName || table.section?.name) && (
-                                      <div className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] md:text-[9px] font-black uppercase tracking-wider shadow-sm ${getSectionBadgeColor(table)}`}>
-                                        {getTableSectionLabel(table)}
-                                      </div>
-                                    )}
                                     {/* Captain Name Badge - Top Right */}
                                     {table.captainName && (
                                       <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
