@@ -226,6 +226,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cancelLoading, setCancelLoading] = useState({});
   const [isKotSending, setIsKotSending] = useState(false);
   const isSubmittingKotRef = useRef(false);
+  const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
@@ -244,7 +245,11 @@ const CashierDashboard = ({ onLogout }) => {
     if (activeTab === 'pos' && !selectedTable) {
       items = cart;
     } else if (selectedTable) {
-      items = [...getTableItems(selectedTable), ...cart];
+      const committedItems = getTableItems(selectedTable);
+      const itemsForTotal = committedItems.length > 0
+        ? committedItems
+        : lastConfirmedItemsRef.current;
+      items = [...itemsForTotal, ...cart];
     }
     return items.filter(i => !i.removedFromBill).reduce((acc, item) => acc + (Number(item.p || 0) * Number(item.q || 1)), 0);
   }, [selectedTable, activeTab, cart]);
@@ -608,6 +613,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
+        lastConfirmedItemsRef.current = [];
         localStorage.removeItem('cashier_selected_table');
         localStorage.setItem('cashier_cart', '[]');
         setExpandedNoteItemId(null);
@@ -709,6 +715,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (hasStaleGhostData) {
       setSelectedTable(null);
       setCart([]);
+      lastConfirmedItemsRef.current = [];
       localStorage.removeItem('cashier_selected_table');
       localStorage.setItem('cashier_cart', '[]');
       return;
@@ -728,6 +735,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
+        lastConfirmedItemsRef.current = [];
         localStorage.removeItem('cashier_selected_table');
         localStorage.setItem('cashier_cart', '[]');
         setExpandedNoteItemId(null);
@@ -840,7 +848,11 @@ const CashierDashboard = ({ onLogout }) => {
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
-    const items = getTableItems(selectedTable).map(i =>
+    const committedItems = getTableItems(selectedTable);
+    const itemsForTotal = committedItems.length > 0
+      ? committedItems
+      : lastConfirmedItemsRef.current;
+    const items = itemsForTotal.map(i =>
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
     return calculateOrderTotal([...items, ...cart], discountPercent);
@@ -1023,6 +1035,7 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedTable(null);
       setSelectedOrder(null);
       setCart([]);
+      lastConfirmedItemsRef.current = [];
       localStorage.removeItem('cashier_selected_table');
       localStorage.setItem('cashier_cart', '[]');
       setRawDiscountInput('');
@@ -1060,6 +1073,7 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedTable(null);
     setSelectedOrder(null);
     setCart([]);
+    lastConfirmedItemsRef.current = [];
     localStorage.removeItem('cashier_selected_table');
     localStorage.setItem('cashier_cart', '[]');
     setExpandedNoteItemId(null);
@@ -1253,6 +1267,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     setCart([]);
+    lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
 
     if (!table.status || table.status === 'Free') {
@@ -1437,6 +1452,12 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         setActiveTables(updater);
       }
+    }
+
+    // Snapshot items before clearing cart to prevent UI flicker
+    if (selectedTable) {
+      const committedSoFar = getTableItems(selectedTable);
+      lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
     }
 
     setCart([]);
