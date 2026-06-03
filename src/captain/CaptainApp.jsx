@@ -233,6 +233,10 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
 
+  // Socket hooks must be called at top level, not conditionally
+  const barSocket = useSocket(BAR_ID);
+  const restaurantSocket = useSocket(RESTAURANT_ID);
+
   // State for unified menu
   const [unifiedMenu, setUnifiedMenu] = useState(null);
   const [unifiedMenuLoading, setUnifiedMenuLoading] = useState(false);
@@ -616,8 +620,8 @@ export default function CaptainApp({ onLogout }) {
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
     };
 
-    // Get socket instance for the active restaurant
-    const socket = outlet === 'bar' ? useSocket(BAR_ID) : useSocket(RESTAURANT_ID);
+    // Use the pre-called socket hooks based on outlet
+    const socket = outlet === 'bar' ? barSocket : restaurantSocket;
     if (socket) {
       socket.on('menu-item-updated', onMenuItemUpdated);
     }
@@ -628,7 +632,7 @@ export default function CaptainApp({ onLogout }) {
         socket.off('menu-item-updated', onMenuItemUpdated);
       }
     };
-  }, [outlet]);
+  }, [outlet, barSocket, restaurantSocket]);
 
   // Realtime assignment + revenue sync
   useEffect(() => {

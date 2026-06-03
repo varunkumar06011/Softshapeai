@@ -13,13 +13,14 @@ export async function fetchUnifiedMenu(venue = "restaurant") {
     });
     
     if (!res.ok) {
-      throw new Error(`Unified menu fetch failed: ${res.status}`);
+      console.warn(`[unifiedMenuService] unified menu not available (${res.status}), returning empty menu`);
+      return { success: false, venue, restaurantId: venue === 'bar' ? 'bar-001' : 'restaurant-001', categories: [] };
     }
     
     const data = await res.json();
     return data;
   } catch (error) {
     console.error("[unifiedMenuService] Failed to fetch unified menu:", error);
-    throw error;
+    return { success: false, venue, restaurantId: venue === 'bar' ? 'bar-001' : 'restaurant-001', categories: [] };
   }
 }
