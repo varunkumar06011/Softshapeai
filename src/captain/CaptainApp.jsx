@@ -522,7 +522,7 @@ export default function CaptainApp({ onLogout }) {
   }, [tableSubCategory, activeRestaurantId]);
 
   const outletFilteredMenuItems = useMemo(() => {
-    if (tableSubCategory !== 'restaurant' && venueSpecificMenu) {
+    if (tableSubCategory !== 'restaurant' && venueSpecificMenu && outlet !== 'bar') {
       return venueSpecificMenu;
     }
     // Use unified menu if available, otherwise fall back to old menu
@@ -1721,13 +1721,6 @@ export default function CaptainApp({ onLogout }) {
                 >
                   <ArrowRightLeft size={18} />
                 </button>
-                <button
-                  onClick={requestFinalBill}
-                  disabled={activeTable?.status === TABLE_STATUS.BILLING}
-                  className="flex-grow sm:flex-grow-0 px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all text-center disabled:opacity-50 disabled:hover:scale-100"
-                >
-                  {activeTable?.status === TABLE_STATUS.BILLING ? 'Billing Requested' : 'Request Billing'}
-                </button>
                 <button className="p-2.5 bg-red-50 text-[#E53935] rounded-xl border border-red-100 shrink-0"><Bell size={18} /></button>
               </div>
             </div>
@@ -1849,7 +1842,7 @@ export default function CaptainApp({ onLogout }) {
                         return (
                           <div
                             key={idx}
-                            onClick={() => setPreviewItem(item)}
+                            onClick={(e) => handleItemClick(e, item)}
                             className="cursor-pointer bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden"
                           >
                             {/* Chef Special Badge */}
@@ -1859,19 +1852,10 @@ export default function CaptainApp({ onLogout }) {
                               </div>
                             )}
 
-                            {/* Image container */}
-                            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl sm:rounded-[20px] overflow-hidden shrink-0 relative shadow-inner bg-gray-50 border border-gray-100/50">
-                              <img
-                                src={item.img}
-                                alt={item.n}
-                                className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-700 ease-out"
-                              />
-
-                              {/* Premium Veg/Non-veg indicator square overlay */}
-                              <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm p-0.5 rounded-[4px] shadow-sm border border-gray-100 flex items-center justify-center">
-                                <div className={`w-3.5 h-3.5 rounded-[3px] border-[1.5px] flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
-                                  <div className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
-                                </div>
+                            {/* Veg/Non-veg indicator — no image */}
+                            <div className="w-8 h-8 shrink-0 flex items-center justify-center">
+                              <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
+                                <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
                               </div>
                             </div>
 
@@ -1943,7 +1927,7 @@ export default function CaptainApp({ onLogout }) {
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setPreviewItem(item);
+                                            handleItemClick(e, item);
                                           }}
                                           className="px-3 py-1 text-[9px] font-black text-[#E53935] uppercase tracking-wider"
                                         >
@@ -2181,7 +2165,7 @@ export default function CaptainApp({ onLogout }) {
                         {displaySpecials.map((item, idx) => (
                           <div
                             key={idx}
-                            onClick={() => setPreviewItem(item)}
+                            onClick={(e) => handleItemClick(e, item)}
                             className="min-w-[150px] w-[150px] bg-amber-50/30 border border-amber-100 rounded-2xl p-3 shadow-sm shrink-0 snap-start flex flex-col relative overflow-hidden group cursor-pointer hover:border-amber-300 transition-colors"
                           >
                             <p className="text-[11px] font-bold text-gray-900 leading-tight mb-3 pr-2">{item.n}</p>
@@ -2272,77 +2256,7 @@ export default function CaptainApp({ onLogout }) {
         </div>
       )}
 
-      {/* CUSTOMER ITEM PREVIEW MODAL */}
-      {previewItem && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-black/40 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl rounded-3xl sm:rounded-[48px] overflow-hidden shadow-[0_100px_150px_rgba(0,0,0,0.3)] flex flex-col md:flex-row animate-in zoom-in-95 duration-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="w-full md:w-1/2 h-[200px] sm:h-[300px] md:h-auto relative shrink-0">
-              <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
-              <button onClick={() => setPreviewItem(null)} className="absolute top-4 left-4 sm:top-6 sm:left-6 w-10 h-10 sm:w-12 sm:h-12 bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-2xl flex items-center justify-center text-white transition-all"><X size={24} /></button>
-              <div className="absolute bottom-8 left-8 flex gap-3">
-                {previewItem.menuType !== 'LIQUOR' && (
-                  <div className={`px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest ${previewItem.t === 'veg' ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
-                    {previewItem.t === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
-                  </div>
-                )}
-                {previewItem.spice > 0 && (
-                  <div className="px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest bg-orange-500/80 flex items-center gap-2">
-                    <Flame size={14} /> Spicy Lvl {previewItem.spice}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="w-full md:w-1/2 p-6 sm:p-12 flex flex-col justify-between">
-              <div>
-                <h3 className="text-2xl sm:text-4xl font-black tracking-tight text-gray-900 mb-2 sm:mb-4 leading-tight">{previewItem.n}</h3>
-                <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed mb-6 sm:mb-8">
-                  {previewItem.menuType === 'LIQUOR' ? getLiquorDescription(previewItem.n, previewItem.c) : previewItem.desc}
-                </p>
 
-                <div className="space-y-4 sm:space-y-6">
-                  {previewItem.menuType === 'LIQUOR' ? (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center text-amber-500"><Wine size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Bar Selection</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500"><GlassWater size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Served perfectly chilled</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><CheckCircle2 size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Chef Special Recommendation</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><ChefHat size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Freshly prepared in our high-speed kitchen</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-100 flex items-center justify-between gap-4">
-                <div className="flex flex-col shrink-0">
-                  <span className="text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">A-la-Carte Price</span>
-                  <span className="text-2xl sm:text-3xl font-black text-gray-900">₹{previewItem.p}</span>
-                </div>
-                <button
-                  onClick={() => { addItemToSession(previewItem); setPreviewItem(null); }}
-                  className="px-6 py-4 sm:px-10 sm:py-5 w-full bg-[#E53935] text-white rounded-2xl sm:rounded-3xl font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] shadow-xl shadow-red-100 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 sm:gap-3"
-                >
-                  <Plus size={20} strokeWidth={3} />
-                  Add to Session
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* UNDO NOTIFICATION */}
       {removedItem && (
