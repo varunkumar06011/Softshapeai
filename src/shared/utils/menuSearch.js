@@ -70,6 +70,46 @@ function initialsWithPrefixMatch(token, words) {
   return match(0, 0);
 }
 
+/**
+ * Pure-JS Levenshtein distance using 2D DP array.
+ * Used for fuzzy word matching to handle typos like "biryani"→"biriyani".
+ */
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Fuzzy word match using Levenshtein distance with token-length-based thresholds.
+ * - 3-5 chars: allow 1 edit
+ * - 6-8 chars: allow 2 edits
+ * - 9+ chars: allow 3 edits
+ * This fixes typed typos like "biryani"→"biriyani".
+ */
+function fuzzyWordMatch(token, nameWords) {
+  const tokenLen = token.length;
+  let maxEdits;
+  if (tokenLen >= 3 && tokenLen <= 5) maxEdits = 1;
+  else if (tokenLen >= 6 && tokenLen <= 8) maxEdits = 2;
+  else if (tokenLen >= 9) maxEdits = 3;
+  else return false;
+
+  for (const word of nameWords) {
+    const dist = levenshtein(token, word);
+    if (dist <= maxEdits) return true;
+  }
+  return false;
+}
+
 /** True if every whitespace-separated token matches the item in some way. */
 export function menuItemMatchesSearch(item, query) {
   const q = normalizeSearchQuery(query);
@@ -141,6 +181,10 @@ export function menuItemMatchesSearch(item, query) {
     // 8. Word prefix matching (any word starts with the token)
     if (nameWords.some(word => word.startsWith(token))) return true;
     if (catWords.some(word => word.startsWith(token))) return true;
+
+    // 9. Fuzzy word match using Levenshtein distance (fixes typos like "biryani"→"biriyani")
+    if (fuzzyWordMatch(token, nameWords)) return true;
+    if (fuzzyWordMatch(token, catWords)) return true;
 
     return false;
   });

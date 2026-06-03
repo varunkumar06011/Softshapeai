@@ -284,13 +284,33 @@ export default function CaptainApp({ onLogout }) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const cartMinimizedBeforeSearchRef = useRef(null);
+
+  const handleSearchFocus = () => {
+    if (window.innerWidth < 1024) {
+      cartMinimizedBeforeSearchRef.current = isCartMinimized;
+      setIsCartMinimized(true);
+      setIsSearchFocused(true);
+    }
+  };
+
+  const handleSearchBlur = () => {
+    if (window.innerWidth < 1024) {
+      setIsSearchFocused(false);
+      if (!searchQuery && cartMinimizedBeforeSearchRef.current !== null) {
+        setIsCartMinimized(cartMinimizedBeforeSearchRef.current);
+      }
+    }
+  };
+
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
   const startVoiceSearch = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Voice search is not supported. Use Chrome on Android.');
+      addNotification('Voice search is not supported. Use Chrome on Android.', 'error');
       return;
     }
     if (isListening) {
@@ -302,16 +322,82 @@ export default function CaptainApp({ onLogout }) {
     recognitionRef.current = recognition;
     recognition.lang = 'en-IN';
     recognition.interimResults = false;
-    recognition.maxAlternatives = 3;
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript) setSearchInput(transcript.trim());
+    recognition.maxAlternatives = 5;
+
+    // Pure-JS Levenshtein distance using 2D DP array
+    const levenshtein = (a, b) => {
+      const m = a.length, n = b.length;
+      const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        }
+      }
+      return dp[m][n];
     };
-    recognition.onerror = () => setIsListening(false);
+
+    // Score transcript against menu name using word-level fuzzy matching
+    const scoreTranscriptAgainstName = (transcript, menuName) => {
+      const spokenWords = transcript.toLowerCase().split(/\s+/).filter(Boolean);
+      const menuWords = menuName.toLowerCase().split(/\s+/).filter(Boolean);
+      if (spokenWords.length === 0 || menuWords.length === 0) return 0;
+      let totalScore = 0;
+      for (const spoken of spokenWords) {
+        let bestWordScore = 0;
+        for (const menuWord of menuWords) {
+          const maxLen = Math.max(spoken.length, menuWord.length);
+          if (maxLen === 0) continue;
+          const dist = levenshtein(spoken, menuWord);
+          const score = 1 - dist / maxLen;
+          if (score > bestWordScore) bestWordScore = score;
+        }
+        totalScore += bestWordScore;
+      }
+      return totalScore / spokenWords.length;
+    };
+
+    recognition.onresult = (event) => {
+      const results = event.results[0];
+      const candidates = [];
+      for (let i = 0; i < Math.min(results.length, 5); i++) {
+        candidates.push(results[i].transcript.trim());
+      }
+      let bestMatch = null;
+      let bestScore = 0;
+      for (const candidate of candidates) {
+        for (const item of outletFilteredMenuItems) {
+          const score = scoreTranscriptAgainstName(candidate, item.n || item.name || '');
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = item.n || item.name || '';
+          }
+        }
+      }
+      if (bestScore >= 0.45 && bestMatch) {
+        setSearchInput(bestMatch);
+      } else {
+        setSearchInput(candidates[0] || '');
+      }
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        addNotification('Microphone access denied. Please allow microphone access.', 'error');
+      }
+      setIsListening(false);
+    };
     recognition.onend = () => setIsListening(false);
     setIsListening(true);
-    recognition.start();
-  }, [isListening]);
+    try {
+      recognition.start();
+    } catch (err) {
+      addNotification('Voice search failed to start. Please try again.', 'error');
+      setIsListening(false);
+    }
+  }, [isListening, outletFilteredMenuItems]);
 
   const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('captain_activeCategory') || 'All');
   const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem('captain_activeDiet') || 'All');
@@ -1810,7 +1896,7 @@ export default function CaptainApp({ onLogout }) {
 
             <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
               {/* MENU INTERFACE */}
-              <div className={`flex-grow flex flex-col overflow-hidden bg-gray-50/30 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} border-b lg:border-b-0 lg:border-r border-gray-100 transition-all duration-300`}>
+              <div className={`flex-grow flex flex-col overflow-hidden bg-gray-50/30 ${(isCartMinimized || isSearchFocused) ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} border-b lg:border-b-0 lg:border-r border-gray-100 transition-all duration-300`}>
                 {/* STICKY MENU BAR */}
                 {outlet === 'bar' ? (
                   <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300">
@@ -1826,10 +1912,12 @@ export default function CaptainApp({ onLogout }) {
                           autoComplete="off"
                           style={{ fontSize: '16px' }}
                           onFocus={(e) => {
+                            handleSearchFocus();
                             setTimeout(() => {
                               e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }, 300);
                           }}
+                          onBlur={handleSearchBlur}
                         />
                         <button
                           type="button"
@@ -1886,10 +1974,12 @@ export default function CaptainApp({ onLogout }) {
                         autoComplete="off"
                         style={{ fontSize: '16px' }}
                         onFocus={(e) => {
+                          handleSearchFocus();
                           setTimeout(() => {
                             e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
                           }, 300);
                         }}
+                        onBlur={handleSearchBlur}
                       />
                       <button
                         type="button"
