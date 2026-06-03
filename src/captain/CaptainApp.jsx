@@ -273,16 +273,16 @@ export default function CaptainApp({ onLogout }) {
   const [pinError, setPinError] = useState(false);
   const [pin, setPin] = useState('');
   const [selectedProfile, setSelectedProfile] = useState(null);
-  const [view, setView] = useState('tables'); // tables, session
-  const [activeTableId, setActiveTableId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [activeDiet, setActiveDiet] = useState('All');
+  const [view, setView] = useState(() => localStorage.getItem('captain_view') || 'tables'); // tables, session
+  const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem('captain_activeTableId') || null);
+  const [searchQuery, setSearchQuery] = useState(() => localStorage.getItem('captain_searchQuery') || '');
+  const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('captain_activeCategory') || 'All');
+  const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem('captain_activeDiet') || 'All');
   const [notifications, setNotifications] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
-  const [isCartMinimized, setIsCartMinimized] = useState(true);
+  const [isCartMinimized, setIsCartMinimized] = useState(() => localStorage.getItem('captain_isCartMinimized') !== 'false');
   const [removedItem, setRemovedItem] = useState(null);
   const removeTimeoutRef = useRef(null);
   // Tracks the confirmed DB order ID for the current table session.
@@ -294,13 +294,23 @@ export default function CaptainApp({ onLogout }) {
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
-  const [tableSubCategory, setTableSubCategory] = useState('restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
-  const [selectedPDRRoom, setSelectedPDRRoom] = useState(null); // 1-4
+  const [tableSubCategory, setTableSubCategory] = useState(() => localStorage.getItem('captain_tableSubCategory') || 'restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
+    const saved = localStorage.getItem('captain_selectedPDRRoom');
+    return saved ? Number(saved) : null;
+  }); // 1-4
   const [assignment, setAssignment] = useState(null);
   const [todayRevenue, setTodayRevenue] = useState(0);
 
-  const [activeBarMenu, setActiveBarMenu] = useState('food');
-  const [tableCarts, setTableCarts] = useState({});
+  const [activeBarMenu, setActiveBarMenu] = useState(() => localStorage.getItem('captain_activeBarMenu') || 'food');
+  const [tableCarts, setTableCarts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('captain_tableCarts');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
   const lastConfirmedItemsRef = useRef([]);
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
@@ -329,6 +339,30 @@ export default function CaptainApp({ onLogout }) {
   const [tableFilter, setTableFilter] = useState(() => {
     return localStorage.getItem('softshape_captain_table_filter') || 'my';
   });
+
+  // Sync state to localStorage
+  useEffect(() => {
+    localStorage.setItem('captain_view', view);
+    if (activeTableId) {
+      localStorage.setItem('captain_activeTableId', activeTableId);
+    } else {
+      localStorage.removeItem('captain_activeTableId');
+    }
+    localStorage.setItem('captain_searchQuery', searchQuery);
+    localStorage.setItem('captain_activeCategory', activeCategory);
+    localStorage.setItem('captain_activeDiet', activeDiet);
+    localStorage.setItem('captain_isCartMinimized', isCartMinimized);
+    localStorage.setItem('captain_tableSubCategory', tableSubCategory);
+    if (selectedPDRRoom) {
+      localStorage.setItem('captain_selectedPDRRoom', selectedPDRRoom);
+    } else {
+      localStorage.removeItem('captain_selectedPDRRoom');
+    }
+    localStorage.setItem('captain_activeBarMenu', activeBarMenu);
+    localStorage.setItem('captain_tableCarts', JSON.stringify(tableCarts));
+    localStorage.setItem('captain_active_tab', activeView);
+    localStorage.setItem('softshape_captain_table_filter', tableFilter);
+  }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter]);
 
   // ── Derived / memoised values (safe now that all state is declared above) ──
   const totalActiveTablesCount = useMemo(() => {
