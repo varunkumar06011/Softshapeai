@@ -1871,6 +1871,12 @@ export default function CaptainApp({ onLogout }) {
                                   {item.n}
                                 </h3>
 
+                                {/* ML sub-label for LIQUOR items */}
+                                {item.menuType === 'LIQUOR' && !item.isBottleItem && (
+                                  <p className="text-[10px] font-bold text-gray-500 mb-0.5">
+                                    {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${totalQty} × ${BAR_UNIT_ML}ml = ${totalQty * BAR_UNIT_ML}ml`}
+                                  </p>
+                                )}
 
                                 {/* Item Short Description */}
                                 {item.desc && (
