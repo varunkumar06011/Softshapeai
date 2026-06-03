@@ -20,7 +20,7 @@ import {
   ArrowRight, Loader2, Tag
 } from 'lucide-react';
 import { useVenueTableSync } from '../services/venueTableSyncService';
-import { fetchVenueMenu } from '../services/venueTableApi';
+import { fetchVenueMenu, updateVenueTableSession } from '../services/venueTableApi';
 import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
 import { createOrder, updateOrderItems } from '../services/orderApi';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
@@ -312,6 +312,58 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
     }
   };
 
+  // ─── Terminate ───────────────────────────────────────────────────────────────
+  const terminateTableSession = async () => {
+    if (!selectedTable) return;
+
+    const tableSnap = selectedTable;
+
+    // Step 1: Optimistically free the table in local state
+    setVenueTables(prev => prev.map(t =>
+      t.id === tableSnap.id || t.backendId === tableSnap.backendId
+        ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], items: [], captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
+        : t
+    ));
+
+    setSelectedTable(null);
+    setCart([]);
+
+    const resetSessionPayload = {
+      status: 'Free',
+      kotHistory: [],
+      currentBill: 0,
+      captainId: null,
+      guests: 0,
+    };
+
+    if (tableSnap?.backendId) {
+      // Use the venue/restaurant terminate endpoint
+      const terminateUrl = `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
+
+      try {
+        const response = await fetch(terminateUrl, { method: 'POST' });
+        if (!response.ok) throw new Error('Backend sync failed');
+
+        // Background cleanup - use the venue table API
+        updateVenueTableSession(tableSnap.backendId, resetSessionPayload)
+          .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
+
+        addNotification('Session Terminated', `Table ${getTableLabel(activeSection, tableSnap.number)} freed`, 'info');
+      } catch (err) {
+        console.warn('[Terminate] order cancel failed:', err.message);
+        addNotification('Error', 'Termination failed. Table state rolled back.', 'error');
+        // Rollback optimistic update
+        setVenueTables(prev => prev.map(t =>
+          t.id === tableSnap.id || t.backendId === tableSnap.backendId
+            ? tableSnap
+            : t
+        ));
+      }
+    } else {
+      addNotification('Session Terminated', `Table ${getTableLabel(activeSection, tableSnap.number)} freed`, 'info');
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   const colors = SECTION_COLORS[activeSection] || SECTION_COLORS['Conference Hall'];
@@ -570,6 +622,15 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
                   >
                     <CreditCard size={12} />
                     Settle Bill · ₹{(orderTotal > 0 ? orderTotal : selectedTable.currentBill || 0).toFixed(0)}
+                  </button>
+                )}
+                {selectedTable.status && selectedTable.status !== 'Free' && (
+                  <button
+                    onClick={terminateTableSession}
+                    className="w-full py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <X size={10} />
+                    Terminate
                   </button>
                 )}
               </div>

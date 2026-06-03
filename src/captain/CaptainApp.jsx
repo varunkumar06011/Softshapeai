@@ -369,8 +369,8 @@ export default function CaptainApp({ onLogout }) {
 
   // Use venue-001 for all venue sections (conference1, conference2, pdr, parcel)
   const activeRestaurantId = useMemo(() => {
-    if (tableSubCategory !== 'restaurant') return 'venue-001';
     if (outlet === 'bar') return BAR_ID;
+    if (tableSubCategory !== 'restaurant' && outlet !== 'bar') return 'venue-001';
     return RESTAURANT_ID;
   }, [outlet, tableSubCategory]);
 
@@ -505,7 +505,6 @@ export default function CaptainApp({ onLogout }) {
   // Derived — switch between restaurant and bar floor
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-
 
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
