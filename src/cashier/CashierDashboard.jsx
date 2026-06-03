@@ -603,6 +603,19 @@ const CashierDashboard = ({ onLogout }) => {
       }
     };
 
+    const mergeOrder = (incoming, existing) => {
+      if (!existing) return incoming;
+      // FIX #4: Always use the version with MORE items to prevent data loss
+      const incomingItemCount = (incoming?.items?.length ?? 0);
+      const existingItemCount = (existing?.items?.length ?? 0);
+      if (incomingItemCount > existingItemCount) return incoming;
+      if (existingItemCount > incomingItemCount) return existing;
+      // Equal items — fall back to timestamp
+      const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
+      const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      return incomingTime >= existingTime ? incoming : existing;
+    };
+
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
@@ -616,6 +629,38 @@ const CashierDashboard = ({ onLogout }) => {
         setVenueTables(prev => prev.map(t =>
           t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
         ), { skipPersist: true });
+      }
+    };
+
+    const onTableUpdated = ({ table } = {}) => {
+      if (!table?.id) return;
+      setActiveTables(prev => prev.map(t => {
+        if (t.backendId !== table.id) return t;
+        // FIX #4: Merge kotHistory — never lose KOTs already in local state
+        const mergedKotHistory = (() => {
+          const existing = t.kotHistory || [];
+          const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
+          if (incoming.length >= existing.length) return incoming;
+          return existing;
+        })();
+        return {
+          ...t,
+          kotHistory: mergedKotHistory,
+          currentBill: table.currentBill ?? t.currentBill,
+          status: table.status ?? t.status,
+          workflowStatus: table.workflowStatus ?? t.workflowStatus,
+        };
+      }));
+      if (selectedTable?.backendId === table.id) {
+        setSelectedTable(prev => {
+          if (!prev) return prev;
+          const mergedKotHistory = (() => {
+            const existing = prev.kotHistory || [];
+            const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
+            return incoming.length >= existing.length ? incoming : existing;
+          })();
+          return { ...prev, kotHistory: mergedKotHistory, currentBill: table.currentBill ?? prev.currentBill };
+        });
       }
     };
 
@@ -682,6 +727,7 @@ const CashierDashboard = ({ onLogout }) => {
     socket.on('order:paid', onOrderPaid);
     socket.on('table:swapped', onTableSwapped);
     socket.on('table:items-transferred', onTableItemsTransferred);
+    socket.on('table:updated', onTableUpdated);
 
     // Listen for menu update events from admin panel
     const onMenuItemUpdated = (payload) => {
@@ -700,6 +746,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:swapped', onTableSwapped);
       socket.off('table:items-transferred', onTableItemsTransferred);
       socket.off('menu-item-updated', onMenuItemUpdated);
+      socket.off('table:updated', onTableUpdated);
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
 

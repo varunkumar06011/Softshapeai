@@ -4,7 +4,7 @@ import {
   Send, CheckCircle2, Search, ArrowLeft, ChefHat, Timer,
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
-  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater
+  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
@@ -275,7 +275,44 @@ export default function CaptainApp({ onLogout }) {
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [view, setView] = useState(() => localStorage.getItem('captain_view') || 'tables'); // tables, session
   const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem('captain_activeTableId') || null);
-  const [searchQuery, setSearchQuery] = useState(() => localStorage.getItem('captain_searchQuery') || '');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+
+  // Debounce: only update actual searchQuery 300ms after typing stops
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const startVoiceSearch = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Voice search is not supported. Use Chrome on Android.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = 'en-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 3;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      if (transcript) setSearchInput(transcript.trim());
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    setIsListening(true);
+    recognition.start();
+  }, [isListening]);
+
   const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('captain_activeCategory') || 'All');
   const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem('captain_activeDiet') || 'All');
   const [notifications, setNotifications] = useState([]);
@@ -312,6 +349,23 @@ export default function CaptainApp({ onLogout }) {
     }
   });
   const lastConfirmedItemsRef = useRef([]);
+
+  // FIX #1: Keep layout height synced to actual visible viewport
+  useEffect(() => {
+    const setVh = () => {
+      const vh = (window.visualViewport?.height ?? window.innerHeight) * 0.01;
+      document.documentElement.style.setProperty('--captain-vh', `${vh}px`);
+    };
+    setVh();
+    window.visualViewport?.addEventListener('resize', setVh);
+    window.visualViewport?.addEventListener('scroll', setVh);
+    window.addEventListener('resize', setVh);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', setVh);
+      window.visualViewport?.removeEventListener('scroll', setVh);
+      window.removeEventListener('resize', setVh);
+    };
+  }, []);
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
   const [activeVariantItem, setActiveVariantItem] = useState(null);
@@ -522,7 +576,7 @@ export default function CaptainApp({ onLogout }) {
   }, [tableSubCategory, activeRestaurantId]);
 
   const outletFilteredMenuItems = useMemo(() => {
-    if (tableSubCategory !== 'restaurant' && venueSpecificMenu) {
+    if (tableSubCategory !== 'restaurant' && venueSpecificMenu && outlet !== 'bar') {
       return venueSpecificMenu;
     }
     // Use unified menu if available, otherwise fall back to old menu
@@ -583,17 +637,32 @@ export default function CaptainApp({ onLogout }) {
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
   const sessionBill = useMemo(() => {
-    if (!activeTable) return { subtotal: 0, taxes: 0, total: 0 };
-    // Fresh/free table — only count the current draft items
-    const isFreshSession = activeTable.status === TABLE_STATUS.FREE
-      || (!activeTable.kotHistory?.length && !activeTable.currentBill && !activeTable.activeOrder);
+    if (!activeTable) return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0 };
+
+    const isFreshSession =
+      activeTable.status === TABLE_STATUS.FREE ||
+      (
+        !activeTable.kotHistory?.length &&
+        !activeTable.currentBill &&
+        !activeTable.activeOrder &&
+        !lastConfirmedItemsRef.current.length   // FIX #5: also check ref
+      );
+
     if (isFreshSession) {
       return calculateOrderTotal(currentSessionItems);
     }
+
     const committedItems = getTableItems(activeTable);
-    const itemsForTotal = committedItems.length > 0
-      ? committedItems
-      : lastConfirmedItemsRef.current;
+
+    // FIX #5: Use whichever is larger — DB items or lastConfirmedRef items
+    // This prevents the total from dropping when a socket update arrives with
+    // an empty activeOrder before the DB items are fetched
+    const refItems = lastConfirmedItemsRef.current;
+    const itemsForTotal =
+      committedItems.length >= refItems.length
+        ? committedItems
+        : refItems;
+
     return calculateOrderTotal([...itemsForTotal, ...currentSessionItems]);
   }, [activeTable, currentSessionItems]);
 
@@ -635,15 +704,26 @@ export default function CaptainApp({ onLogout }) {
 
   const allTablesCount = useMemo(() => activeTables.length, [activeTables]);
 
-  const filteredMenu = useMemo(
-    () =>
-      filterMenuItems(outletFilteredMenuItems, {
-        query: searchQuery,
-        category: activeCategory,
-        diet: activeDiet,
-      }),
-    [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]
-  );
+  const filteredMenu = useMemo(() => {
+    const q = (searchQuery || '').trim().toLowerCase();
+    const base = filterMenuItems(outletFilteredMenuItems, {
+      query: searchQuery,
+      category: activeCategory,
+      diet: activeDiet,
+    });
+    if (!q) return base;
+    // Sort: name-starts-with > word-starts-with > contains > other
+    return base.slice().sort((a, b) => {
+      const an = (a.n || '').toLowerCase();
+      const bn = (b.n || '').toLowerCase();
+      const tier = (name) =>
+        name.startsWith(q) ? 0
+        : name.split(/\s+/).some(w => w.startsWith(q)) ? 1
+        : name.includes(q) ? 2
+        : 3;
+      return tier(an) - tier(bn);
+    });
+  }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]);
 
   const suggestedSpecials = useMemo(() => {
     if (currentSessionItems.length === 0) return [];
@@ -1299,7 +1379,10 @@ export default function CaptainApp({ onLogout }) {
   }
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
+    <div
+      className="flex flex-col bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]"
+      style={{ height: 'calc(var(--captain-vh, 1dvh) * 100)' }}
+    >
 
       {/* WAITER CALL EMERGENCY OVERLAY */}
       {pendingCalls.length > 0 && (
@@ -1721,13 +1804,6 @@ export default function CaptainApp({ onLogout }) {
                 >
                   <ArrowRightLeft size={18} />
                 </button>
-                <button
-                  onClick={requestFinalBill}
-                  disabled={activeTable?.status === TABLE_STATUS.BILLING}
-                  className="flex-grow sm:flex-grow-0 px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all text-center disabled:opacity-50 disabled:hover:scale-100"
-                >
-                  {activeTable?.status === TABLE_STATUS.BILLING ? 'Billing Requested' : 'Request Billing'}
-                </button>
                 <button className="p-2.5 bg-red-50 text-[#E53935] rounded-xl border border-red-100 shrink-0"><Bell size={18} /></button>
               </div>
             </div>
@@ -1739,16 +1815,31 @@ export default function CaptainApp({ onLogout }) {
                 {outlet === 'bar' ? (
                   <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300">
                     <div className="px-4 py-3 flex flex-col gap-3">
-                      <div className="relative group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#E53935]" size={22} />
+                      <div className="relative group flex items-center">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#E53935]" size={20} />
                         <input
                           type="search"
                           placeholder="Search fine spirits, drinks & food..."
-                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-12 pr-5 py-3.5 text-base font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-12 pr-12 py-3.5 text-base font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
                           autoComplete="off"
+                          style={{ fontSize: '16px' }}
+                          onFocus={(e) => {
+                            setTimeout(() => {
+                              e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 300);
+                          }}
                         />
+                        <button
+                          type="button"
+                          onClick={startVoiceSearch}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors ${
+                            isListening ? 'bg-red-100 text-[#E53935] animate-pulse' : 'text-gray-400 hover:text-[#E53935]'
+                          }`}
+                        >
+                          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                        </button>
                       </div>
                       <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide scroll-smooth flex-grow">
@@ -1784,16 +1875,31 @@ export default function CaptainApp({ onLogout }) {
                   </div>
                 ) : (
                   <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
-                    <div className="relative group">
+                    <div className="relative group flex items-center">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={20} />
                       <input
                         type="search"
                         placeholder="Search by name, category, price, or ID..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-5 py-3.5 text-[15px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-12 py-3.5 text-[15px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
                         autoComplete="off"
+                        style={{ fontSize: '16px' }}
+                        onFocus={(e) => {
+                          setTimeout(() => {
+                            e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }, 300);
+                        }}
                       />
+                      <button
+                        type="button"
+                        onClick={startVoiceSearch}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors ${
+                          isListening ? 'bg-red-100 text-[#E53935] animate-pulse' : 'text-gray-400 hover:text-[#E53935]'
+                        }`}
+                      >
+                        {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                      </button>
                     </div>
                     <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
                       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
@@ -1849,7 +1955,7 @@ export default function CaptainApp({ onLogout }) {
                         return (
                           <div
                             key={idx}
-                            onClick={() => setPreviewItem(item)}
+                            onClick={(e) => handleItemClick(e, item)}
                             className="cursor-pointer bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden"
                           >
                             {/* Chef Special Badge */}
@@ -1859,19 +1965,10 @@ export default function CaptainApp({ onLogout }) {
                               </div>
                             )}
 
-                            {/* Image container */}
-                            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl sm:rounded-[20px] overflow-hidden shrink-0 relative shadow-inner bg-gray-50 border border-gray-100/50">
-                              <img
-                                src={item.img}
-                                alt={item.n}
-                                className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-700 ease-out"
-                              />
-
-                              {/* Premium Veg/Non-veg indicator square overlay */}
-                              <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm p-0.5 rounded-[4px] shadow-sm border border-gray-100 flex items-center justify-center">
-                                <div className={`w-3.5 h-3.5 rounded-[3px] border-[1.5px] flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
-                                  <div className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
-                                </div>
+                            {/* Veg/Non-veg indicator — no image */}
+                            <div className="w-8 h-8 shrink-0 flex items-center justify-center">
+                              <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
+                                <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
                               </div>
                             </div>
 
@@ -1943,7 +2040,7 @@ export default function CaptainApp({ onLogout }) {
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setPreviewItem(item);
+                                            handleItemClick(e, item);
                                           }}
                                           className="px-3 py-1 text-[9px] font-black text-[#E53935] uppercase tracking-wider"
                                         >
@@ -2181,7 +2278,7 @@ export default function CaptainApp({ onLogout }) {
                         {displaySpecials.map((item, idx) => (
                           <div
                             key={idx}
-                            onClick={() => setPreviewItem(item)}
+                            onClick={(e) => handleItemClick(e, item)}
                             className="min-w-[150px] w-[150px] bg-amber-50/30 border border-amber-100 rounded-2xl p-3 shadow-sm shrink-0 snap-start flex flex-col relative overflow-hidden group cursor-pointer hover:border-amber-300 transition-colors"
                           >
                             <p className="text-[11px] font-bold text-gray-900 leading-tight mb-3 pr-2">{item.n}</p>
@@ -2272,77 +2369,7 @@ export default function CaptainApp({ onLogout }) {
         </div>
       )}
 
-      {/* CUSTOMER ITEM PREVIEW MODAL */}
-      {previewItem && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-black/40 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl rounded-3xl sm:rounded-[48px] overflow-hidden shadow-[0_100px_150px_rgba(0,0,0,0.3)] flex flex-col md:flex-row animate-in zoom-in-95 duration-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="w-full md:w-1/2 h-[200px] sm:h-[300px] md:h-auto relative shrink-0">
-              <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
-              <button onClick={() => setPreviewItem(null)} className="absolute top-4 left-4 sm:top-6 sm:left-6 w-10 h-10 sm:w-12 sm:h-12 bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-2xl flex items-center justify-center text-white transition-all"><X size={24} /></button>
-              <div className="absolute bottom-8 left-8 flex gap-3">
-                {previewItem.menuType !== 'LIQUOR' && (
-                  <div className={`px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest ${previewItem.t === 'veg' ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
-                    {previewItem.t === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
-                  </div>
-                )}
-                {previewItem.spice > 0 && (
-                  <div className="px-4 py-2 rounded-xl backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest bg-orange-500/80 flex items-center gap-2">
-                    <Flame size={14} /> Spicy Lvl {previewItem.spice}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="w-full md:w-1/2 p-6 sm:p-12 flex flex-col justify-between">
-              <div>
-                <h3 className="text-2xl sm:text-4xl font-black tracking-tight text-gray-900 mb-2 sm:mb-4 leading-tight">{previewItem.n}</h3>
-                <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed mb-6 sm:mb-8">
-                  {previewItem.menuType === 'LIQUOR' ? getLiquorDescription(previewItem.n, previewItem.c) : previewItem.desc}
-                </p>
 
-                <div className="space-y-4 sm:space-y-6">
-                  {previewItem.menuType === 'LIQUOR' ? (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center text-amber-500"><Wine size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Bar Selection</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500"><GlassWater size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Served perfectly chilled</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><CheckCircle2 size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Premium Chef Special Recommendation</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#E53935]"><ChefHat size={20} /></div>
-                        <p className="text-sm font-black uppercase tracking-tight text-gray-700">Freshly prepared in our high-speed kitchen</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-100 flex items-center justify-between gap-4">
-                <div className="flex flex-col shrink-0">
-                  <span className="text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">A-la-Carte Price</span>
-                  <span className="text-2xl sm:text-3xl font-black text-gray-900">₹{previewItem.p}</span>
-                </div>
-                <button
-                  onClick={() => { addItemToSession(previewItem); setPreviewItem(null); }}
-                  className="px-6 py-4 sm:px-10 sm:py-5 w-full bg-[#E53935] text-white rounded-2xl sm:rounded-3xl font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] shadow-xl shadow-red-100 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 sm:gap-3"
-                >
-                  <Plus size={20} strokeWidth={3} />
-                  Add to Session
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* UNDO NOTIFICATION */}
       {removedItem && (

@@ -2,11 +2,12 @@
 export function getMenuSearchText(item) {
   if (!item) return "";
   return [
-    item.n,
-    item.c,
+    item.n, item.name,
+    item.c, item.category,
     item.id,
-    item.desc,
+    item.desc, item.description,
     item.p != null ? String(item.p) : "",
+    item.alias || "",
     item.t === "veg" ? "veg vegetarian" : "non non-veg nonveg",
   ]
     .filter(Boolean)
