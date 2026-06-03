@@ -580,13 +580,6 @@ const CashierDashboard = ({ onLogout }) => {
       );
     };
 
-    const mergeOrder = (incoming, existing) => {
-      if (!existing) return incoming;
-      const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
-      const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-      return incomingTime >= existingTime ? incoming : existing;
-    };
-
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
