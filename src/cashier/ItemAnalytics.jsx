@@ -21,11 +21,13 @@ function getRestaurantIdForSource(source) {
 }
 
 function getSectionNameForSource(source) {
-  if (source === 'conference1') return 'conference hall 1';
-  if (source === 'conference2') return 'conference hall 2';
-  if (source === 'pdr') return 'pdr';
-  if (source === 'parcel') return 'parcel';
-  if (source === 'rooms') return 'rooms';
+  if (source === 'bar-ac-hall') return 'ac hall';
+  if (source === 'bar-conference') return 'conference hall';
+  if (source === 'bar-pdr') return 'pdr';
+  if (source === 'bar-rooms') return 'rooms';
+  if (source === 'bar-parcel') return 'parcel';
+  if (source === 'family-restaurant') return 'family restaurant';
+  if (source === 'restaurant-parcel') return 'parcel';
   return null;
 }
 
@@ -151,9 +153,11 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const sourcePills = [
     { id: 'bar', label: 'Bar' },
     { id: 'restaurant', label: 'Restaurant' },
-    { id: 'conference1', label: 'Conf 1' },
-    { id: 'conference2', label: 'Conf 2' },
-    { id: 'pdr', label: 'PDR' },
+    { id: 'bar-ac-hall', label: 'AC Hall' },
+    { id: 'bar-conference', label: 'Conference' },
+    { id: 'bar-pdr', label: 'PDR' },
+    { id: 'bar-rooms', label: 'Rooms' },
+    { id: 'family-restaurant', label: 'Family Restaurant' },
     { id: 'parcel', label: 'Parcel' },
   ];
 
