@@ -77,9 +77,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
   (items || []).forEach(item => {
     const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_HEIGHT,
+      BOLD_ON,
+      SIZE_2X,
       itemLine + "\n",
       SIZE_NORMAL,
+      BOLD_OFF,
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(
