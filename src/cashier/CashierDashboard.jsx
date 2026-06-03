@@ -183,9 +183,14 @@ const CashierDashboard = ({ onLogout }) => {
   }); // 1-4
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedMenuType, setSelectedMenuType] = useState('ALL');
   const [activeDiet, setActiveDiet] = useState('All');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    setSelectedCategory('All');
+  }, [selectedMenuType]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
@@ -226,6 +231,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState({});
   const [isKotSending, setIsKotSending] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
   const isSubmittingKotRef = useRef(false);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
@@ -236,6 +242,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const [lastPrintTime, setLastPrintTime] = useState(null);
   const [printCooldown, setPrintCooldown] = useState(false);
+  const [isReprintingBill, setIsReprintingBill] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
   const [discountMode, setDiscountMode] = useState('percent');
@@ -755,6 +762,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     setSelectedCategory('All');
+    setSelectedMenuType('ALL');
     setSearchQuery('');
   }, [outlet]);
 
@@ -955,6 +963,63 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
+  const handleReprintBill = async () => {
+    if (!selectedTable || !selectedTable.backendId) {
+      addNotification('Error', 'Invalid table selected.', 'error');
+      return;
+    }
+
+    const orderId = selectedTable?.activeOrder?.id;
+    if (!orderId) {
+      addNotification('Error', 'No active order found for this table.', 'error');
+      return;
+    }
+
+    const orderItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+    if (orderItems.length === 0) {
+      addNotification('Error', 'No items on this order to reprint.', 'error');
+      return;
+    }
+
+    try {
+      setIsReprintingBill(true);
+
+      // Apply discount update if one is entered before reprinting
+      if (discountPercent > 0) {
+        await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ discount: discountPercent }),
+        });
+      }
+
+      // Call the same print-bill endpoint — backend recalculates and re-emits to printer
+      const response = await fetch(
+        `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      // Backend returns 409 if PAID — handle gracefully
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        // If 409 PAID, still allow re-emit since settlement already happened
+        if (response.status !== 409) {
+          throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
+      }
+
+      addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
+    } catch (error) {
+      console.error('[Reprint] Failed:', error.message);
+      addNotification('Re-print Failed', error.message || 'Could not send bill to printer.', 'error');
+    } finally {
+      setIsReprintingBill(false);
+    }
+  };
+
   const handlePayment = async (method) => {
     if (!selectedTable || !method) return;
 
@@ -1057,48 +1122,41 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  // INVARIANT: terminateTableSession must be atomic — local state update and DB update must either both succeed or both roll back.
   const terminateTableSession = async () => {
     if (!selectedTable) return;
+    if (isTerminating) return; // guard against double-click
 
-    const tableSnap = selectedTable;
+    const tableSnap = { ...selectedTable }; // snapshot before any state mutation
+    setIsTerminating(true);
 
-    // Step 1: Optimistically free the table in local state
-    setActiveTables(prev => prev.map(t =>
-      t.id === tableSnap.id || t.backendId === tableSnap.backendId
-        ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], items: [], captainId: null, kotHistory: [], currentBill: 0, guests: 0, time: null }
-        : t
-    ));
+    try {
+      // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
+      if (tableSnap?.backendId) {
+        const isVenueTable = tableSubCategory !== 'restaurant';
+        const terminateUrl = (outlet === 'bar' && !isVenueTable)
+          ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}` 
+          : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
 
-    // Clear UI selections
-    setSelectedTable(null);
-    setSelectedOrder(null);
-    setCart([]);
-    lastConfirmedItemsRef.current = [];
-    localStorage.removeItem('cashier_selected_table');
-    localStorage.setItem('cashier_cart', '[]');
-    setExpandedNoteItemId(null);
-    setRemovedItemIds([]);
+        const response = await fetch(terminateUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(10000), // 10s timeout — don't hang forever
+        });
 
-    const resetSessionPayload = {
-      status: 'Free',
-      kotHistory: [],
-      currentBill: 0,
-      captainId: null,
-      guests: 0,
-    };
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
 
-    if (tableSnap?.backendId) {
-      const isVenueTable = tableSubCategory !== 'restaurant';
-      const terminateUrl = (outlet === 'bar' && !isVenueTable)
-        ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}`
-        : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
+        // Step 2: Backend confirmed success — now safe to clear local state
+        const resetSessionPayload = {
+          status: 'Free',
+          kotHistory: [],
+          currentBill: 0,
+          captainId: null,
+          guests: 0,
+        };
 
-      try {
-        const response = await fetch(terminateUrl, { method: 'POST' });
-        if (!response.ok) throw new Error('Backend sync failed');
-
-        // Background cleanup
         if (outlet === 'bar' && !isVenueTable) {
           updateBarTableSession(tableSnap.backendId, resetSessionPayload)
             .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
@@ -1106,20 +1164,52 @@ const CashierDashboard = ({ onLogout }) => {
           updateTableSession(tableSnap.backendId, resetSessionPayload)
             .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
         }
-        
-        addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
-      } catch (err) {
-        console.warn('[Terminate] order cancel failed:', err.message);
-        addNotification('Error', 'Termination failed. Table state rolled back.', 'error');
-        // Rollback optimistic update
-        setActiveTables(prev => prev.map(t =>
-          t.id === tableSnap.id || t.backendId === tableSnap.backendId
-            ? tableSnap
-            : t
-        ));
       }
-    } else {
+
+      // Step 3: Update local state (only runs if backend succeeded or no backendId)
+      setActiveTables(prev => prev.map(t =>
+        t.id === tableSnap.id || t.backendId === tableSnap.backendId
+          ? {
+              ...t,
+              status: 'Free',
+              workflowStatus: 'Free',
+              activeOrder: null,
+              orders: [],
+              items: [],
+              captainId: null,
+              kotHistory: [],
+              currentBill: 0,
+              guests: 0,
+              time: null,
+            }
+          : t
+      ));
+
+      // Step 4: Clear UI selections
+      setSelectedTable(null);
+      setSelectedOrder(null);
+      setCart([]);
+      lastConfirmedItemsRef.current = [];
+      localStorage.removeItem('cashier_selected_table');
+      localStorage.setItem('cashier_cart', '[]');
+      setExpandedNoteItemId(null);
+      setRemovedItemIds([]);
+      setShowTableModal(false);
+
       addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
+
+    } catch (err) {
+      console.warn('[Terminate] failed:', err.message);
+      // No rollback needed — we never changed local state
+      addNotification(
+        'Terminate Failed',
+        err.message.includes('timeout') || err.message.includes('fetch')
+          ? 'Could not reach server. Please check connection and try again.'
+          : `Termination failed: ${err.message}`,
+        'error'
+      );
+    } finally {
+      setIsTerminating(false);
     }
   };
 
@@ -1169,6 +1259,18 @@ const CashierDashboard = ({ onLogout }) => {
     const cats = items.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
   }, [outlet, categories, barMenuItems]);
+
+  const menuTypeSubcategories = useMemo(() => {
+    if (selectedMenuType === 'ALL') return [];
+    const items = outlet === 'restaurant'
+      ? menuItems.filter(i => i.isAvailable !== false)
+      : barMenuItems.filter(i => i.isAvailable !== false);
+    const filtered = selectedMenuType === 'FOOD'
+      ? items.filter(i => i.menuType !== 'LIQUOR')
+      : items.filter(i => i.menuType === 'LIQUOR');
+    const cats = filtered.map(i => i.category || i.c).filter(Boolean);
+    return ['All', ...new Set(cats)];
+  }, [selectedMenuType, outlet, menuItems, barMenuItems]);
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
@@ -1226,6 +1328,10 @@ const CashierDashboard = ({ onLogout }) => {
     const q = searchQuery.trim().toLowerCase();
 
     const filtered = mapped.filter((item) => {
+      // 0. Menu type filter (FOOD / LIQUOR / ALL)
+      if (selectedMenuType === 'FOOD' && item.menuType === 'LIQUOR') return false;
+      if (selectedMenuType === 'LIQUOR' && item.menuType !== 'LIQUOR') return false;
+
       // 1. Diet filter
       if (activeDiet !== 'All' && item.t !== activeDiet) return false;
 
@@ -1251,22 +1357,10 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return filtered;
-  }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, activeDiet, selectedTable, venuePrices, tableSubCategory]);
+  }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
-  const handleTableSelect = async (table) => {
+  const handleTableSelect = (table) => {
     setSelectedTable(table);
-
-    // Fetch fresh order data if table is in billing/settlement state
-    if (table.status === 'Waiting Bill' || table.workflowStatus === 'billing_requested') {
-      const freshOrder = await fetchFreshOrderData(table.backendId);
-      if (freshOrder) {
-        setSelectedTable(prev => ({
-          ...prev,
-          activeOrder: freshOrder,
-        }));
-      }
-    }
-
     setCart([]);
     lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
@@ -1275,7 +1369,28 @@ const CashierDashboard = ({ onLogout }) => {
       setActiveTab('pos');
       localStorage.setItem('cashier_active_tab', 'pos');
     } else {
+      // Open modal immediately — don't block on network
       setShowTableModal(true);
+    }
+
+    // Background refresh: silently patch in fresh order data if table is in billing state
+    // Does NOT block the modal from opening
+    if (table.backendId && (
+      table.status === 'Waiting Bill' ||
+      table.status === 'BILLING_REQUESTED' ||
+      table.workflowStatus === 'billing_requested' ||
+      table.workflowStatus === 'Waiting Bill'
+    )) {
+      fetchFreshOrderData(table.backendId).then(freshOrder => {
+        if (freshOrder) {
+          setSelectedTable(prev => {
+            if (!prev || prev.backendId !== table.backendId) return prev; // user moved on
+            return { ...prev, activeOrder: freshOrder };
+          });
+        }
+      }).catch(() => {
+        // Silent — stale cached data is still better than nothing
+      });
     }
   };
 
@@ -2334,35 +2449,62 @@ const CashierDashboard = ({ onLogout }) => {
                           )}
                         </AnimatePresence>
                       </div>
-                      <div className="flex items-center justify-between gap-4 py-1">
-                        <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
-                          {activeCategories.map(cat => (
-                            <button
-                              key={cat}
-                              onClick={() => setSelectedCategory(cat)}
-                              className={`px-7 py-3.5 rounded-xl text-sm md:text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
-                                ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
-                                : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
-                                }`}
-                            >
-                              {cat}
-                            </button>
-                          ))}
+                      <div className="flex flex-col gap-2 py-1">
+                        {/* Row 1 — Large Menu Type Tabs + Diet Filter */}
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3 flex-grow">
+                            {[
+                              { value: 'ALL', label: 'ALL' },
+                              { value: 'FOOD', label: 'FOOD 🍽️' },
+                              { value: 'LIQUOR', label: 'LIQUOR 🥃' },
+                            ].map(tab => (
+                              <button
+                                key={tab.value}
+                                onClick={() => {
+                                  setSelectedMenuType(tab.value);
+                                  setSelectedCategory('All');
+                                }}
+                                className={`px-8 min-h-[56px] rounded-xl font-black text-lg uppercase tracking-widest transition-all duration-200 border-2 shrink-0 hover:scale-[1.03] active:scale-95 flex-1 ${selectedMenuType === tab.value
+                                  ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#E53935] hover:text-[#E53935]'
+                                  }`}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shrink-0 shadow-sm">
+                            {['All', 'veg', 'non'].map(diet => (
+                              <button
+                                key={diet}
+                                onClick={() => setActiveDiet(diet)}
+                                className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${activeDiet === diet
+                                  ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
+                                  : 'text-gray-500 hover:text-gray-850 bg-transparent'
+                                  }`}
+                              >
+                                {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shrink-0 shadow-sm">
-                          {['All', 'veg', 'non'].map(diet => (
-                            <button
-                              key={diet}
-                              onClick={() => setActiveDiet(diet)}
-                              className={`px-5 py-3 rounded-xl text-xs md:text-sm font-black uppercase transition-all duration-200 hover:scale-[1.02] active:scale-95 ${activeDiet === diet
-                                ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
-                                : 'text-gray-500 hover:text-gray-850 bg-transparent'
-                                }`}
-                            >
-                              {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
-                            </button>
-                          ))}
-                        </div>
+                        {/* Row 2 — Subcategory Pills (only shown when a menu type is selected) */}
+                        {selectedMenuType !== 'ALL' && menuTypeSubcategories.length > 1 && (
+                          <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
+                            {menuTypeSubcategories.map(cat => (
+                              <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-6 py-4 rounded-xl text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
+                                  ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
+                                  }`}
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -2391,36 +2533,36 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       ) : (
                         <div
-                          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6"
+                          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
                         >
                           {activeMenuItems.map((item) => (
                             <div
                               key={item.id || item.n}
                               onClick={() => handleAddItem(item)}
-                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-250 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md"
+                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between"
                             >
-                              <div className="h-32 sm:h-36 lg:h-40 w-full overflow-hidden relative shrink-0">
-                                <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                                {outlet === 'bar' && item.menuType && (
-                                  <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50 text-[9px] font-black uppercase tracking-wider text-gray-700 select-none">
-                                    {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
-                                  </div>
-                                )}
-                                <div className="absolute top-2.5 right-2.5 p-1 rounded-md backdrop-blur-md shadow-sm bg-white/80 border border-white/50">
-                                  <div className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
-                                  </div>
+                              {/* Top row: veg/non dot + menuType badge */}
+                              <div className="flex items-center justify-between">
+                                <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
+                                  <div className={`w-2 h-2 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
                                 </div>
+                                {outlet === 'bar' && item.menuType && (
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg">
+                                    {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
+                                  </span>
+                                )}
                               </div>
-                              <div className="p-4 sm:p-5 flex flex-col flex-grow gap-2 sm:gap-3">
-                                <h4 className="cashier-item-title text-gray-900 line-clamp-2 h-[2.5rem] sm:h-[2.75rem] md:h-[3.25rem] flex items-center tracking-tight">
-                                  <HighlightedText text={item.n} highlight={searchQuery} />
-                                </h4>
-                                <div className="flex items-center justify-between mt-auto">
-                                  <p className="text-base md:text-lg lg:text-xl font-black text-[#E53935]">₹{item.p}</p>
-                                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
-                                    <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
-                                  </div>
+
+                              {/* Item name — large and readable */}
+                              <h4 className="text-sm md:text-base font-black text-gray-900 leading-snug line-clamp-3">
+                                <HighlightedText text={item.n} highlight={searchQuery} />
+                              </h4>
+
+                              {/* Price + Add button */}
+                              <div className="flex items-center justify-between mt-auto">
+                                <p className="text-lg md:text-xl font-black text-[#E53935]">₹{item.p}</p>
+                                <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
+                                  <Plus className="w-5 h-5" />
                                 </div>
                               </div>
                             </div>
@@ -2431,7 +2573,7 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
 
                   {/* COMPACT CART */}
-                  <div className={`w-full lg:w-[440px] flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-1/2 lg:h-auto'}`}>
+                  <div className={`w-full lg:w-[440px] flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`}>
                     <div
                       className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
                       onClick={() => setIsCartMinimized(!isCartMinimized)}
@@ -2578,7 +2720,7 @@ const CashierDashboard = ({ onLogout }) => {
           onClick={() => { setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
         >
           <div
-            className="w-full max-w-lg h-[85vh] min-h-[500px] max-h-[95vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
+            className="w-full max-w-lg h-auto max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
@@ -2603,23 +2745,23 @@ const CashierDashboard = ({ onLogout }) => {
 
             <div className="p-3 sm:p-4 bg-white flex flex-col flex-1 min-h-[100px] overflow-hidden">
               {/* ── Order Summary (read-only view) ─────────────────── */}
-              <div className="flex flex-col flex-1 min-h-[50px] mb-2 sm:mb-3 overflow-hidden">
+              <div className="flex flex-col min-h-0 flex-1 mb-3 overflow-hidden">
                 <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
-                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-1 mt-2 min-h-[50px]">
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
                   {getTableItems(selectedTable)
                     .filter(i => !i.removedFromBill)
                     .map((item, idx) => (
-                      <div key={item.id || idx} className="flex justify-between items-start py-1.5 border-b border-gray-50 last:border-0">
+                      <div key={item.id || idx} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
                         <div className="flex items-start gap-3">
                           <span className="min-w-[32px] h-7 rounded-lg bg-red-50 text-red-600 border border-red-100 shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5">
                             {item.q}×
                           </span>
-                          <span className="text-sm font-bold text-gray-900 leading-tight pt-1">{item.n}</span>
+                          <span className="text-sm font-bold text-gray-900 leading-snug">{item.n}</span>
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3">
-                          <span className="text-sm font-black text-gray-900 pt-1">₹{Number(item.p * item.q).toFixed(0)}</span>
+                          <span className="text-sm font-black text-gray-900 whitespace-nowrap">₹{Number(item.p * item.q).toFixed(0)}</span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2665,32 +2807,32 @@ const CashierDashboard = ({ onLogout }) => {
                       step={discountMode === 'percent' ? "0.01" : "1"}
                       value={rawDiscountInput}
                       onChange={(e) => setRawDiscountInput(e.target.value)}
-                      className="w-full px-2 py-1.5 sm:py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-xs font-bold text-center transition-colors"
+                      className="w-full px-3 py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-sm font-bold text-center transition-colors"
                       placeholder="0"
                     />
                   </div>
 
                   {/* Totals */}
-                  <div className="flex-1 bg-gray-50/90 rounded-lg p-1.5 sm:p-2 border border-gray-200 shadow-sm flex flex-col justify-center gap-0.5">
-                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
+                  <div className="flex-1 bg-gray-50 rounded-xl p-2.5 border border-gray-200 shadow-sm flex flex-col justify-center gap-1">
+                    <div className="flex justify-between text-xs font-black text-gray-500 uppercase">
                       <span>Subtotal</span>
                       <span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span>
                     </div>
-                    <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-gray-500 uppercase">
+                    <div className="flex justify-between text-xs font-black text-gray-500 uppercase">
                       <span>GST</span>
                       <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span>
                     </div>
                     {discountPercent > 0 && (
-                      <div className="flex justify-between text-[9px] sm:text-[10px] font-black text-[#E53935] uppercase">
+                      <div className="flex justify-between text-xs font-black text-[#E53935] uppercase">
                         <span>Discount {discountMode === 'percent' ? `(${discountPercent}%)` : ''}</span>
                         <span>-₹{activeDiscountAmount.toFixed(0)}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-0.5">
-                      <span className="text-[9px] sm:text-[10px] font-black text-gray-900 uppercase tracking-widest">
+                      <span className="text-xs font-black text-gray-900 uppercase tracking-widest">
                         {discountPercent > 0 ? 'Final' : 'Total'}
                       </span>
-                      <span className="text-lg sm:text-xl font-black text-[#E53935] tracking-tight leading-none">
+                      <span className="text-xl sm:text-2xl font-black text-[#E53935] tracking-tight leading-none">
                         ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
                       </span>
                     </div>
@@ -2701,20 +2843,20 @@ const CashierDashboard = ({ onLogout }) => {
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
-                    className="py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
+                    className="py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
                   >
                     Add Items
                   </button>
                   <button
                     onClick={() => setShowBillEditor(true)}
-                    className="py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
+                    className="py-2.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-amber-100/70 transition-all duration-150 shadow-sm cursor-pointer"
                   >
                     Edit Bill
                   </button>
                   {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
                     <button
                       onClick={() => setShowMethodPicker(true)}
-                      className="py-2 rounded-lg bg-[#E53935] border border-red-750 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
+                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
                     >
                       Settlement
                     </button>
@@ -2723,7 +2865,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <button
                         onClick={handleFinalBill}
                         disabled={isPrintingBill || printCooldown}
-                        className={`py-2 rounded-lg border text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                        className={`py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
                           ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                           : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
                           }`}
@@ -2732,19 +2874,36 @@ const CashierDashboard = ({ onLogout }) => {
                         {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
                       </button>
                     ) : (
-                      <div className="py-2 rounded-lg border border-gray-300 bg-gray-200 text-gray-500 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
+                      <div className="py-2.5 rounded-lg border border-gray-300 bg-gray-200 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
                         No Items
                       </div>
                     )
                   )}
                 </div>
 
+                {/* Re-print row — always visible when table has an active order with items */}
+                {selectedTable?.activeOrder?.id && getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 && (
+                  <button
+                    onClick={handleReprintBill}
+                    disabled={isReprintingBill}
+                    className={`mt-1.5 w-full py-2 rounded-lg border text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1.5 ${isReprintingBill
+                      ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'border-gray-300 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer shadow-sm'
+                    }`}
+                  >
+                    {isReprintingBill
+                      ? <><Loader2 size={10} className="animate-spin" /> Printing…</>
+                      : <>🖨️ Re-print Bill</>
+                    }
+                  </button>
+                )}
+
                 {/* Swap Table & Terminate Session buttons */}
                 {selectedTable.status && selectedTable.status !== 'Free' && (
                   <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
                     <button
                       onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
-                      className="py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                      className="py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <ArrowRightLeft size={10} />
                       Swap Table
@@ -2755,17 +2914,18 @@ const CashierDashboard = ({ onLogout }) => {
                         setItemSwapTargetId(null);
                         setShowItemSwapModal(true);
                       }}
-                      className="py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                      className="py-2.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-indigo-100/60 flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <ArrowRightLeft size={10} />
                       Swap Items
                     </button>
                     <button
                       onClick={terminateTableSession}
-                      className="py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                      disabled={isTerminating}
+                      className={`py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
                     >
-                      <X size={10} />
-                      Terminate
+                      {isTerminating ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+                      {isTerminating ? 'Ending...' : 'Terminate'}
                     </button>
                   </div>
                 )}
@@ -3396,10 +3556,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         const handleCancelSelected = async () => {
           if (selectedCount === 0) return;
-          if (!selectedTable?.activeOrder?.id) {
-            addNotification('No active order found.', 'error');
-            return;
-          }
+
           setCancelBatchLoading(true);
 
           const cancelTimeout = setTimeout(() => {
@@ -3410,55 +3567,132 @@ const CashierDashboard = ({ onLogout }) => {
           }, 15000);
 
           try {
-            const freshItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
-            const freshItemMap = Object.fromEntries(freshItems.map(i => [i.id, i]));
+            // Always fetch fresh order data first so we use the correct live orderId and item IDs
+            const freshOrder = await fetchFreshOrderData(selectedTable.backendId);
+            const liveOrder = freshOrder || selectedTable.activeOrder;
+
+            if (!liveOrder?.id) {
+              addNotification('No active order found.', 'error');
+              return;
+            }
+
+            // Build a map of item name → fresh orderItem so we match by name if IDs are stale
+            const freshItemMap = {};
+            if (freshOrder?.items) {
+              for (const fi of freshOrder.items) {
+                if (!fi.removedFromBill) {
+                  freshItemMap[fi.id] = fi;              // by DB id
+                  freshItemMap[fi.name ?? fi.n] = fi;   // by name as fallback
+                }
+              }
+            }
+
+            // Also build from current selectedTable as secondary fallback
+            const localItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+            for (const li of localItems) {
+              if (!freshItemMap[li.id]) freshItemMap[li.id] = li;
+            }
+
             let hasError = false;
 
-            for (const [itemId, { quantity }] of Object.entries(cancelSelected)) {
-              const item = freshItemMap[itemId];
-              if (!item) continue; // item was already removed by socket update — skip silently
+            for (const [itemId, { quantity, item: cachedItem }] of Object.entries(cancelSelected)) {
+              // Resolve to the best available item — prefer fresh DB item, fall back by name
+              const freshItem = freshItemMap[itemId]
+                || (cachedItem && freshItemMap[cachedItem.n ?? cachedItem.name])
+                || (cachedItem && freshItemMap[cachedItem.name ?? cachedItem.n]);
+
+              if (!freshItem) continue; // already removed — skip silently
 
               const cancelQuantity = Math.max(
                 1,
                 Math.min(
-                  Number(item.q ?? item.quantity ?? 1),
+                  Number(freshItem.quantity ?? freshItem.q ?? 1),
                   Math.round(Number(quantity ?? 1))
                 )
               );
 
-              setCancelLoading(prev => ({ ...prev, [item.id]: true }));
+              const resolvedItemId = freshItem.id ?? itemId;
+
+              setCancelLoading(prev => ({ ...prev, [resolvedItemId]: true }));
               try {
                 await cancelOrderItem(
-                  selectedTable.activeOrder.id,
-                  item.id,
+                  liveOrder.id,
+                  resolvedItemId,
                   'Cashier',
                   selectedTable.number || selectedTable.id,
                   cancelQuantity
                 );
+
+                // Optimistically remove item from local selectedTable state immediately
+                setSelectedTable(prev => {
+                  if (!prev?.activeOrder?.items) return prev;
+                  return {
+                    ...prev,
+                    activeOrder: {
+                      ...prev.activeOrder,
+                      items: prev.activeOrder.items.map(i =>
+                        i.id === resolvedItemId
+                          ? { ...i, removedFromBill: true, quantity: 0 }
+                          : i
+                      ),
+                    },
+                  };
+                });
+
+                // Also update activeTables so the table card reflects the change
+                setActiveTables(prev => prev.map(t => {
+                  if (t.backendId !== selectedTable.backendId) return t;
+                  const updatedOrder = t.activeOrder
+                    ? {
+                        ...t.activeOrder,
+                        items: (t.activeOrder.items || []).map(i =>
+                          i.id === resolvedItemId
+                            ? { ...i, removedFromBill: true, quantity: 0 }
+                            : i
+                        ),
+                      }
+                    : t.activeOrder;
+                  return { ...t, activeOrder: updatedOrder };
+                }));
+
               } catch (err) {
                 console.error('[CancelBatch]', err.message);
                 if (err.message && err.message.toLowerCase().includes('already cancelled')) {
-                  console.log('[CancelBatch] Item already cancelled in DB, skipping error alert');
+                  // Already gone — silently remove from UI
+                  setSelectedTable(prev => {
+                    if (!prev?.activeOrder?.items) return prev;
+                    return {
+                      ...prev,
+                      activeOrder: {
+                        ...prev.activeOrder,
+                        items: prev.activeOrder.items.map(i =>
+                          i.id === resolvedItemId ? { ...i, removedFromBill: true, quantity: 0 } : i
+                        ),
+                      },
+                    };
+                  });
                 } else {
-                  addNotification(`Failed to cancel ${item.n ?? item.name ?? 'item'}`, 'error');
+                  addNotification(`Failed to cancel ${freshItem.n ?? freshItem.name ?? 'item'}`, 'error');
                   hasError = true;
                 }
               } finally {
-                setCancelLoading(prev => ({ ...prev, [item.id]: false }));
+                setCancelLoading(prev => ({ ...prev, [resolvedItemId]: false }));
               }
             }
 
             if (!hasError) {
               const entries = Object.values(cancelSelected);
-              const firstItem = entries[0]?.item;
-              const firstItemName = firstItem ? (firstItem.n ?? firstItem.name) : 'Item';
+              const firstItemName = entries[0]?.item
+                ? (entries[0].item.n ?? entries[0].item.name ?? 'Item')
+                : 'Item';
               addNotification(
                 selectedCount === 1
-                  ? `${firstItemName} x${selectedQuantityTotal} cancelled`
+                  ? `${firstItemName} x${selectedQuantityTotal} cancelled` 
                   : `${selectedQuantityTotal} qty cancelled`,
                 'success'
               );
             }
+
             setCancelSelected({});
             setShowCancelModal(false);
           } finally {
