@@ -42,7 +42,7 @@ function CctvCanvas({ camId, zoneStatus, isAlert }) {
 
   // Stable bounding boxes per camera
   const boxes = useRef(
-    Array.from({ length: Math.floor(Math.random() * 2) + 1 }, (_, i) => ({
+    Array.from({ length: Math.floor(Math.random() * 2) + 1 }, (element, i) => ({
       x: 0.1 + i * 0.3 + Math.random() * 0.1,
       y: 0.2 + Math.random() * 0.2,
       w: 0.12 + Math.random() * 0.06,

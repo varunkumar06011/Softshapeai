@@ -338,7 +338,8 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
 
     if (tableSnap?.backendId) {
       // Use the venue/restaurant terminate endpoint
-      const terminateUrl = `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
+      const resId = tableSnap.section?.restaurantId || activeRestaurantId;
+      const terminateUrl = `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
       try {
         const response = await fetch(terminateUrl, { method: 'POST' });

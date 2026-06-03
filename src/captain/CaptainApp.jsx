@@ -2065,7 +2065,16 @@ export default function CaptainApp({ onLogout }) {
                             return (
                               <div key={iIdx} className={`flex justify-between items-center transition-opacity ${isCancelled ? 'opacity-40' : ''}`}>
                                 <div className="flex items-center gap-3">
-                                  <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
+                                  <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">
+                                    {Number(item.cancelledQuantity ?? 0) > 0 && !isCancelled ? (
+                                      <span>
+                                        <span className="line-through text-gray-400">{Number(item.q) + Number(item.cancelledQuantity ?? 0)}x</span>
+                                        <span className="text-green-600 ml-1">{item.q}x</span>
+                                      </span>
+                                    ) : (
+                                      <span>{item.q}x</span>
+                                    )}
+                                  </div>
                                   <p className={`text-[11px] font-bold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.n}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
