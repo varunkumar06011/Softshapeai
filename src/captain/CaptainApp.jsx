@@ -16,6 +16,41 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { isBeerItem } from '../utils/itemHelpers';
 
+// Pure-JS Levenshtein distance using 2D DP array (module-level to avoid temporal dead zone)
+const levenshtein = (a, b) => {
+  const m = a.length, n = b.length;
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+};
+
+// Score transcript against menu name using word-level fuzzy matching (module-level)
+const scoreTranscriptAgainstName = (transcript, menuName) => {
+  const spokenWords = transcript.toLowerCase().split(/\s+/).filter(Boolean);
+  const menuWords = menuName.toLowerCase().split(/\s+/).filter(Boolean);
+  if (spokenWords.length === 0 || menuWords.length === 0) return 0;
+  let totalScore = 0;
+  for (const spoken of spokenWords) {
+    let bestWordScore = 0;
+    for (const menuWord of menuWords) {
+      const maxLen = Math.max(spoken.length, menuWord.length);
+      if (maxLen === 0) continue;
+      const dist = levenshtein(spoken, menuWord);
+      const score = 1 - dist / maxLen;
+      if (score > bestWordScore) bestWordScore = score;
+    }
+    totalScore += bestWordScore;
+  }
+  return totalScore / spokenWords.length;
+};
+
 const getLiquorDescription = (name, category) => {
   const n = (name || '').toLowerCase();
   const c = (category || '').toLowerCase();
@@ -306,41 +341,6 @@ export default function CaptainApp({ onLogout }) {
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
-
-  // Pure-JS Levenshtein distance using 2D DP array
-  const levenshtein = (a, b) => {
-    const m = a.length, n = b.length;
-    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-      }
-    }
-    return dp[m][n];
-  };
-
-  // Score transcript against menu name using word-level fuzzy matching
-  const scoreTranscriptAgainstName = (transcript, menuName) => {
-    const spokenWords = transcript.toLowerCase().split(/\s+/).filter(Boolean);
-    const menuWords = menuName.toLowerCase().split(/\s+/).filter(Boolean);
-    if (spokenWords.length === 0 || menuWords.length === 0) return 0;
-    let totalScore = 0;
-    for (const spoken of spokenWords) {
-      let bestWordScore = 0;
-      for (const menuWord of menuWords) {
-        const maxLen = Math.max(spoken.length, menuWord.length);
-        if (maxLen === 0) continue;
-        const dist = levenshtein(spoken, menuWord);
-        const score = 1 - dist / maxLen;
-        if (score > bestWordScore) bestWordScore = score;
-      }
-      totalScore += bestWordScore;
-    }
-    return totalScore / spokenWords.length;
-  };
 
   const startVoiceSearch = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
