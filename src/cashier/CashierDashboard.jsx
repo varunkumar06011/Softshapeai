@@ -5,7 +5,7 @@ import {
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
-  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3
+  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -216,6 +216,8 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
+  const [activeNoteItemId, setActiveNoteItemId] = useState(null);
+  const [noteInputValue, setNoteInputValue] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(() => {
     try {
@@ -1517,6 +1519,12 @@ const CashierDashboard = ({ onLogout }) => {
     });
   };
 
+  const updateItemNote = (itemId, note) => {
+    setCart(prev =>
+      prev.map(i => i.id === itemId ? { ...i, notes: note.trim() || null } : i)
+    );
+  };
+
   const onlineOrders = [
     { id: 'SW-9812', platform: 'Swiggy', items: ['Chicken Biryani x2', 'Coke x2'], amount: 960, status: 'Preparing', time: '4m ago' },
     { id: 'ZM-4521', platform: 'Zomato', items: ['Paneer Tikka x1', 'Butter Naan x3'], amount: 540, status: 'Ready', time: '12m ago' },
@@ -2669,6 +2677,74 @@ const CashierDashboard = ({ onLogout }) => {
                                   </>
                                 )}
                               </div>
+                              {/* Instruction Note */}
+                              {item.isKotSent ? (
+                                item.notes && (
+                                  <div className="flex items-center gap-1 mt-1.5">
+                                    <MessageSquare size={11} className="text-amber-500 shrink-0" />
+                                    <span className="text-xs text-amber-700 font-semibold italic truncate">{item.notes}</span>
+                                  </div>
+                                )
+                              ) : (
+                                <div className="mt-1.5">
+                                  {activeNoteItemId === item.id ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        placeholder="e.g. Spicy, No onion, Deep fry…"
+                                        value={noteInputValue}
+                                        onChange={e => setNoteInputValue(e.target.value)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') {
+                                            updateItemNote(item.id, noteInputValue);
+                                            setActiveNoteItemId(null);
+                                          }
+                                          if (e.key === 'Escape') {
+                                            setActiveNoteItemId(null);
+                                          }
+                                        }}
+                                        className="flex-1 text-xs border border-amber-300 rounded-lg px-2 py-1 bg-amber-50 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-300"
+                                        maxLength={60}
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          updateItemNote(item.id, noteInputValue);
+                                          setActiveNoteItemId(null);
+                                        }}
+                                        className="text-xs font-black text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded-lg transition-colors"
+                                      >✓</button>
+                                      <button
+                                        onClick={() => setActiveNoteItemId(null)}
+                                        className="text-xs text-gray-400 hover:text-red-500 px-1 py-1 rounded transition-colors"
+                                      >✕</button>
+                                    </div>
+                                  ) : item.notes ? (
+                                    <div className="flex items-center gap-1">
+                                      <MessageSquare size={11} className="text-amber-500 shrink-0" />
+                                      <span className="text-xs text-amber-700 font-semibold italic truncate flex-1">{item.notes}</span>
+                                      <button
+                                        onClick={() => {
+                                          setActiveNoteItemId(item.id);
+                                          setNoteInputValue(item.notes || '');
+                                        }}
+                                        className="text-xs text-gray-400 hover:text-amber-600 ml-1 shrink-0 transition-colors"
+                                      >Edit</button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setActiveNoteItemId(item.id);
+                                        setNoteInputValue('');
+                                      }}
+                                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-amber-600 transition-colors"
+                                    >
+                                      <Plus size={11} />
+                                      <span>Note</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         ));

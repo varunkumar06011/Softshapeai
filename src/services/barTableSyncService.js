@@ -4,7 +4,7 @@ import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
-const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v3";
+const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v4";
 const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const TABLE_STATUS = {
@@ -28,10 +28,13 @@ function toFrontendStatus(backendStatus) {
 
 function readCache() {
   try {
+    // Evict stale caches that may contain local-N fake IDs
+    ['softshape_bar_tables_cache_v1', 'softshape_bar_tables_cache_v2', 'softshape_bar_tables_cache_v3'].forEach(k => localStorage.removeItem(k));
     const raw = localStorage.getItem(TABLES_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    // Deduplicate cached tables to prevent duplicate cards on load
-    return parsed.filter((table, index, self) =>
+    // Drop any local-N entries that slipped through, then deduplicate by backendId
+    const clean = parsed.filter(t => t.backendId && !String(t.backendId).startsWith('local-'));
+    return clean.filter((table, index, self) =>
       index === self.findIndex(t => t.backendId === table.backendId)
     );
   } catch {
@@ -103,55 +106,27 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
 
 function mergeTablesFromApi(apiTables, currentTables) {
   let flat = flattenSections(apiTables);
-  
-  // Deduplicate API tables by backendId or number to prevent duplicate cards
-  const seen = new Map();
+
+  // Deduplicate by real DB id (not by number — numbers repeat across sections)
+  const seen = new Set();
   flat = flat.filter(table => {
-    const key = table.id || table.number;
-    if (seen.has(key)) return false;
-    seen.set(key, true);
+    if (!table.id || seen.has(table.id)) return false;
+    seen.add(table.id);
     return true;
   });
-  
-  // Strictly enforce 30 tables capacity locally
-  const existingNumbers = new Set(flat.map((t) => Number(t.number)));
-  const missing = [];
-  for (let i = 1; i <= 30; i++) {
-    if (!existingNumbers.has(i)) {
-      missing.push({
-        id: `local-${i}`,
-        number: i,
-        status: "AVAILABLE",
-        capacity: 4,
-        sectionId: "main-hall",
-        section: { id: "main-hall", name: "Main Hall" },
-      });
-    }
-  }
-  
-  // Combine API tables with any missing local tables, sorted by table number
-  flat = [...flat, ...missing].sort((a, b) => Number(a.number) - Number(b.number));
+
+  // Sort by section then number for stable display order
+  flat.sort((a, b) => {
+    const sA = a.sectionId || '';
+    const sB = b.sectionId || '';
+    if (sA !== sB) return sA.localeCompare(sB);
+    return Number(a.number) - Number(b.number);
+  });
 
   return flat.map((row) => {
-    const existing = currentTables.find((t) => t.backendId === row.id || (row.id.startsWith("local-") && t.number === row.number));
+    const existing = currentTables.find((t) => t.backendId === row.id);
     return mapBackendTable(row, existing);
   });
-}
-
-function createFallbackApiTables() {
-  return Array.from({ length: 30 }, (_, i) => ({
-    id: `local-${i + 1}`,
-    number: i + 1,
-    status: "AVAILABLE",
-    capacity: 4,
-    sectionId: "main-hall",
-    section: { id: "main-hall", name: "Main Hall" },
-  }));
-}
-
-function getFallbackTables(currentTables = []) {
-  console.warn("[TableSync] Using fallback tables (fetch failed or empty)");
-  return mergeTablesFromApi(createFallbackApiTables(), currentTables);
 }
 
 function findTableIndex(tables, backendId) {
@@ -262,7 +237,7 @@ export function useBarTableSync() {
         return t;
       });
     }
-    return getFallbackTables([]);
+    return []; // No local fakes — wait for real API data
   });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
@@ -286,9 +261,14 @@ export function useBarTableSync() {
 
       if (cancelled) return;
 
+      if (!apiTables || !Array.isArray(apiTables) || apiTables.length === 0) {
+        console.warn('[BarTableSync] API returned no tables — keeping current state, not injecting local fakes');
+        setIsSyncing(false);
+        return;
+      }
+
       setTablesState((current) => {
-        const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-        const merged = useFallback ? getFallbackTables(current) : mergeTablesFromApi(apiTables, current);
+        const merged = mergeTablesFromApi(apiTables, current);
         // Deduplicate by backendId to prevent duplicate cards
         const deduped = merged.filter((table, index, self) =>
           index === self.findIndex(t => t.backendId === table.backendId)
