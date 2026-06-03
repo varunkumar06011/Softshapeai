@@ -4,7 +4,7 @@ import {
   Send, CheckCircle2, Search, ArrowLeft, ChefHat, Timer,
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
-  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater
+  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
@@ -251,6 +251,43 @@ export default function CaptainApp({ onLogout }) {
   const [view, setView] = useState('tables'); // tables, session
   const [activeTableId, setActiveTableId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+
+  // Debounce: only update actual searchQuery 300ms after typing stops
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const startVoiceSearch = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Voice search is not supported. Use Chrome on Android.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = 'en-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 3;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      if (transcript) setSearchInput(transcript.trim());
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    setIsListening(true);
+    recognition.start();
+  }, [isListening]);
+
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeDiet, setActiveDiet] = useState('All');
   const [notifications, setNotifications] = useState([]);
@@ -277,6 +314,23 @@ export default function CaptainApp({ onLogout }) {
   const [activeBarMenu, setActiveBarMenu] = useState('food');
   const [tableCarts, setTableCarts] = useState({});
   const lastConfirmedItemsRef = useRef([]);
+
+  // FIX #1: Keep layout height synced to actual visible viewport
+  useEffect(() => {
+    const setVh = () => {
+      const vh = (window.visualViewport?.height ?? window.innerHeight) * 0.01;
+      document.documentElement.style.setProperty('--captain-vh', `${vh}px`);
+    };
+    setVh();
+    window.visualViewport?.addEventListener('resize', setVh);
+    window.visualViewport?.addEventListener('scroll', setVh);
+    window.addEventListener('resize', setVh);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', setVh);
+      window.visualViewport?.removeEventListener('scroll', setVh);
+      window.removeEventListener('resize', setVh);
+    };
+  }, []);
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
   const [activeVariantItem, setActiveVariantItem] = useState(null);
@@ -419,17 +473,32 @@ export default function CaptainApp({ onLogout }) {
   const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
 
   const sessionBill = useMemo(() => {
-    if (!activeTable) return { subtotal: 0, taxes: 0, total: 0 };
-    // Fresh/free table — only count the current draft items
-    const isFreshSession = activeTable.status === TABLE_STATUS.FREE
-      || (!activeTable.kotHistory?.length && !activeTable.currentBill && !activeTable.activeOrder);
+    if (!activeTable) return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0 };
+
+    const isFreshSession =
+      activeTable.status === TABLE_STATUS.FREE ||
+      (
+        !activeTable.kotHistory?.length &&
+        !activeTable.currentBill &&
+        !activeTable.activeOrder &&
+        !lastConfirmedItemsRef.current.length   // FIX #5: also check ref
+      );
+
     if (isFreshSession) {
       return calculateOrderTotal(currentSessionItems);
     }
+
     const committedItems = getTableItems(activeTable);
-    const itemsForTotal = committedItems.length > 0
-      ? committedItems
-      : lastConfirmedItemsRef.current;
+
+    // FIX #5: Use whichever is larger — DB items or lastConfirmedRef items
+    // This prevents the total from dropping when a socket update arrives with
+    // an empty activeOrder before the DB items are fetched
+    const refItems = lastConfirmedItemsRef.current;
+    const itemsForTotal =
+      committedItems.length >= refItems.length
+        ? committedItems
+        : refItems;
+
     return calculateOrderTotal([...itemsForTotal, ...currentSessionItems]);
   }, [activeTable, currentSessionItems]);
 
@@ -464,15 +533,26 @@ export default function CaptainApp({ onLogout }) {
 
   const allTablesCount = useMemo(() => activeTables.length, [activeTables]);
 
-  const filteredMenu = useMemo(
-    () =>
-      filterMenuItems(outletFilteredMenuItems, {
-        query: searchQuery,
-        category: activeCategory,
-        diet: activeDiet,
-      }),
-    [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]
-  );
+  const filteredMenu = useMemo(() => {
+    const q = (searchQuery || '').trim().toLowerCase();
+    const base = filterMenuItems(outletFilteredMenuItems, {
+      query: searchQuery,
+      category: activeCategory,
+      diet: activeDiet,
+    });
+    if (!q) return base;
+    // Sort: name-starts-with > word-starts-with > contains > other
+    return base.slice().sort((a, b) => {
+      const an = (a.n || '').toLowerCase();
+      const bn = (b.n || '').toLowerCase();
+      const tier = (name) =>
+        name.startsWith(q) ? 0
+        : name.split(/\s+/).some(w => w.startsWith(q)) ? 1
+        : name.includes(q) ? 2
+        : 3;
+      return tier(an) - tier(bn);
+    });
+  }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]);
 
   const suggestedSpecials = useMemo(() => {
     if (currentSessionItems.length === 0) return [];
@@ -1111,7 +1191,10 @@ export default function CaptainApp({ onLogout }) {
   }
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]">
+    <div
+      className="flex flex-col bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]"
+      style={{ height: 'calc(var(--captain-vh, 1dvh) * 100)' }}
+    >
 
       {/* WAITER CALL EMERGENCY OVERLAY */}
       {pendingCalls.length > 0 && (
@@ -1543,16 +1626,31 @@ export default function CaptainApp({ onLogout }) {
                 {outlet === 'bar' ? (
                   <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300">
                     <div className="px-4 py-3 flex flex-col gap-3">
-                      <div className="relative group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#E53935]" size={22} />
+                      <div className="relative group flex items-center">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#E53935]" size={20} />
                         <input
                           type="search"
                           placeholder="Search fine spirits, drinks & food..."
-                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-12 pr-5 py-3.5 text-base font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-12 pr-12 py-3.5 text-base font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
                           autoComplete="off"
+                          style={{ fontSize: '16px' }}
+                          onFocus={(e) => {
+                            setTimeout(() => {
+                              e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 300);
+                          }}
                         />
+                        <button
+                          type="button"
+                          onClick={startVoiceSearch}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors ${
+                            isListening ? 'bg-red-100 text-[#E53935] animate-pulse' : 'text-gray-400 hover:text-[#E53935]'
+                          }`}
+                        >
+                          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                        </button>
                       </div>
                       <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide scroll-smooth flex-grow">
@@ -1588,16 +1686,31 @@ export default function CaptainApp({ onLogout }) {
                   </div>
                 ) : (
                   <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
-                    <div className="relative group">
+                    <div className="relative group flex items-center">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E53935] transition-colors" size={20} />
                       <input
                         type="search"
                         placeholder="Search by name, category, price, or ID..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-5 py-3.5 text-[15px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-12 py-3.5 text-[15px] font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
                         autoComplete="off"
+                        style={{ fontSize: '16px' }}
+                        onFocus={(e) => {
+                          setTimeout(() => {
+                            e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }, 300);
+                        }}
                       />
+                      <button
+                        type="button"
+                        onClick={startVoiceSearch}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors ${
+                          isListening ? 'bg-red-100 text-[#E53935] animate-pulse' : 'text-gray-400 hover:text-[#E53935]'
+                        }`}
+                      >
+                        {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                      </button>
                     </div>
                     <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
                       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">

@@ -10,10 +10,10 @@ export function getSocket() {
       path: "/socket.io",
       transports: ["polling", "websocket"],
       reconnection: true,
-      reconnectionAttempts: 15,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 15000,
-      timeout: 10000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
+      timeout: 20000,
       addTrailingSlash: false,
     });
   }
