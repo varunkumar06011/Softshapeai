@@ -20,6 +20,15 @@ function getRestaurantIdForSource(source) {
   return VENUE_ID;
 }
 
+function getSectionNameForSource(source) {
+  if (source === 'conference1') return 'conference hall 1';
+  if (source === 'conference2') return 'conference hall 2';
+  if (source === 'pdr') return 'pdr';
+  if (source === 'parcel') return 'parcel';
+  if (source === 'rooms') return 'rooms';
+  return null;
+}
+
 export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const defaultSource = outlet === 'bar' ? 'bar' : 'restaurant';
   const [source, setSource] = useState(defaultSource);
@@ -67,7 +76,11 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     try {
       const { startDate, endDate } = getDateRange();
       const restaurantId = getRestaurantIdForSource(source);
-      const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
+      const sectionName = getSectionNameForSource(source);
+      let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
+      if (sectionName) {
+        url += `&sectionName=${encodeURIComponent(sectionName)}`;
+      }
       const response = await fetch(url);
       const data = await response.json();
       if (data.items) {

@@ -5,7 +5,7 @@ import {
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
-  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare
+  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -454,15 +454,17 @@ const CashierDashboard = ({ onLogout }) => {
             : 0;
         const source = txn._sourceRestaurantId === 'venue-001'
           ? (
-            String(txn.sectionTag || '').toLowerCase().includes('conference hall 1') || String(txn.sectionTag || '').toLowerCase().includes('conf1')
+            String(txn.sectionName || '').toLowerCase().includes('conference hall 1') || String(txn.sectionName || '').toLowerCase().includes('conf1')
               ? 'conference1'
-              : String(txn.sectionTag || '').toLowerCase().includes('conference hall 2') || String(txn.sectionTag || '').toLowerCase().includes('conf2')
+              : String(txn.sectionName || '').toLowerCase().includes('conference hall 2') || String(txn.sectionName || '').toLowerCase().includes('conf2')
                 ? 'conference2'
-                : String(txn.sectionTag || '').toLowerCase().includes('pdr')
+                : String(txn.sectionName || '').toLowerCase().includes('pdr')
                   ? 'pdr'
-                  : String(txn.sectionTag || '').toLowerCase().includes('parcel')
+                  : String(txn.sectionName || '').toLowerCase().includes('parcel')
                     ? 'parcel'
-                    : 'venue'
+                    : String(txn.sectionName || '').toLowerCase().includes('rooms')
+                      ? 'rooms'
+                      : 'venue'
           )
           : txn._sourceRestaurantId === 'restaurant-001'
             ? 'restaurant'
@@ -909,6 +911,23 @@ const CashierDashboard = ({ onLogout }) => {
   const todaysSales = useMemo(() => {
     return pastTransactions.reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [pastTransactions]);
+
+  const todaysDiscount = useMemo(() => {
+    return pastTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+  }, [pastTransactions]);
+
+  const [dashboardDate, setDashboardDate] = useState(null);
+
+  const handleDashboardDateChange = (date) => {
+    if (date) {
+      setDashboardDate(date);
+      setTxnDateFilter('custom');
+      setTxnCustomDate(date);
+    } else {
+      setDashboardDate(null);
+      setTxnDateFilter('today');
+    }
+  };
 
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
@@ -1693,10 +1712,10 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Today's Sale", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${pastTransactions.length} txns`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${pastTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${pastTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
+    { label: "Net", value: `₹${Number(todaysSales - todaysDiscount).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${activeTableOrders.length}/${activeTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Pending KOTs", value: String(liveKotQueue.length).padStart(2, '0'), change: `${activeTableOrders.filter(o => o.status === 'Waiting Bill').length} billing`, icon: ChefHat, color: "text-orange-600", bg: "bg-orange-50" },
-    { label: "Online Orders", value: "26", change: "12 Swiggy, 14 Zomato", icon: Monitor, color: "text-purple-600", bg: "bg-purple-50" },
   ];
 
   return (
@@ -1820,6 +1839,27 @@ const CashierDashboard = ({ onLogout }) => {
               {activeTab === 'dashboard' && (
                 <div className="flex flex-col lg:flex-row flex-grow overflow-hidden w-full">
                   <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
+                    {/* Calendar Bar */}
+                    <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                      <Calendar size={18} className="text-gray-500" />
+                      <span className="text-sm font-bold text-gray-700">
+                        {dashboardDate ? dashboardDate : "Today's Overview"}
+                      </span>
+                      <input
+                        type="date"
+                        value={dashboardDate || ''}
+                        onChange={(e) => handleDashboardDateChange(e.target.value)}
+                        className="ml-auto text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+                      />
+                      {dashboardDate && (
+                        <button
+                          onClick={() => handleDashboardDateChange(null)}
+                          className="text-sm font-bold text-blue-600 hover:text-blue-700"
+                        >
+                          Today
+                        </button>
+                      )}
+                    </div>
                     {/* Stats Row */}
                     <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
                       {stats.map((stat, i) => (
