@@ -542,13 +542,20 @@ export default function CaptainApp({ onLogout }) {
 
   // Filtered tables based on filter selection
   const filteredTables = useMemo(() => {
-    const baseTables = activeTables;
-    if (tableFilter === 'all') {
-      return baseTables;
+    let baseTables = activeTables;
+
+    // When in bar outlet, the 'restaurant' sub-tab = Bar Hall only
+    // Filter out Conference/PDR/Rooms/Parcel tables from bar main tab
+    if (outlet === 'bar' && tableSubCategory === 'restaurant') {
+      baseTables = activeTables.filter(t => {
+        const sec = (t.sectionName || t.section?.name || '').toLowerCase();
+        return sec.includes('bar hall') || sec.includes('bar ac') || sec === 'bar';
+      });
     }
-    // "My Tables" - show only tables assigned to this captain
+
+    if (tableFilter === 'all') return baseTables;
     return baseTables.filter(t => t.captainId === currentCaptain?.id);
-  }, [activeTables, tableFilter, currentCaptain?.id]);
+  }, [activeTables, tableFilter, currentCaptain?.id, outlet, tableSubCategory]);
 
   const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
   const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
@@ -1613,6 +1620,7 @@ export default function CaptainApp({ onLogout }) {
             captainId={currentCaptain?.id}
             onTableSelect={openTableSession}
             onOrderPlaced={() => {}}
+            venueTables={barTables}
           />
         )}
             </div>
