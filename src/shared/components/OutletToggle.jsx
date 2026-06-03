@@ -78,7 +78,7 @@ export default function OutletToggle({ className = '', requireAuth = false }) {
             
             <p className="text-sm font-bold text-gray-600 mb-6">
               Enter password to switch to{' '}
-              {pendingOutlet === 'bar' ? 'Bar' : pendingOutlet === 'venue' ? 'Venue' : 'Restaurant'} mode.
+              {pendingOutlet === 'bar' ? 'Bar' : 'Restaurant'} mode.
             </p>
             
             <div className="space-y-4">

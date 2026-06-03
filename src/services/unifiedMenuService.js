@@ -2,7 +2,7 @@ import { apiUrl } from "./apiConfig";
 
 /**
  * Fetch unified menu from the shared endpoint
- * @param {string} venue - venue name: 'bar', 'restaurant', 'conference1', 'conference2', 'pdr', 'rooms', 'parcel'
+ * @param {string} venue - venue name: 'bar', 'restaurant', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'family-restaurant', 'restaurant-parcel'
  * @returns {Promise<{success: boolean, venue: string, restaurantId: string, categories: Array}>}
  */
 export async function fetchUnifiedMenu(venue = "restaurant") {

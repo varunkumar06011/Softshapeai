@@ -28,7 +28,7 @@ export async function fetchVenueSections() {
   return parseResponse(res);
 }
 
-export async function fetchVenueMenu(venueId = "venue-conference1", restaurantId = "restaurant-001") {
+export async function fetchVenueMenu(venueId = "venue-family-restaurant", restaurantId = "restaurant-001") {
   const cacheKey = `softshape_venue_menu_${venueId}`;
 
   // Try to load from localStorage first for instant return

@@ -25,7 +25,6 @@ import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import { updateBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
-import VenueDashboard from './VenueDashboard';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
@@ -176,7 +175,11 @@ const HighlightedText = ({ text, highlight }) => {
 
 const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
-  const [tableSubCategory, setTableSubCategory] = useState(() => localStorage.getItem('cashier_table_subcategory') || 'restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [tableSubCategory, setTableSubCategory] = useState(() => {
+    const saved = localStorage.getItem('softshape_selected_subcategory');
+    if (saved) return saved;
+    return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
+  }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel', restaurant: 'family-restaurant' | 'parcel'
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
     const saved = localStorage.getItem('cashier_selected_pdr_room');
     return saved ? Number(saved) : null;
@@ -294,7 +297,18 @@ const CashierDashboard = ({ onLogout }) => {
   }, [selectedTable]);
 
   useEffect(() => {
-    localStorage.setItem('cashier_table_subcategory', tableSubCategory);
+    localStorage.setItem('softshape_selected_subcategory', tableSubCategory);
+  }, [tableSubCategory]);
+
+  // Cross-tab sync: update venue selection when changed in another tab (Captain / Cashier)
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'softshape_selected_subcategory' && e.newValue && e.newValue !== tableSubCategory) {
+        setTableSubCategory(e.newValue);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [tableSubCategory]);
 
   useEffect(() => {
@@ -454,15 +468,11 @@ const CashierDashboard = ({ onLogout }) => {
             : 0;
         const source = txn._sourceRestaurantId === 'venue-001'
           ? (
-            String(txn.sectionTag || '').toLowerCase().includes('conference hall 1') || String(txn.sectionTag || '').toLowerCase().includes('conf1')
-              ? 'conference1'
-              : String(txn.sectionTag || '').toLowerCase().includes('conference hall 2') || String(txn.sectionTag || '').toLowerCase().includes('conf2')
-                ? 'conference2'
-                : String(txn.sectionTag || '').toLowerCase().includes('pdr')
-                  ? 'pdr'
-                  : String(txn.sectionTag || '').toLowerCase().includes('parcel')
-                    ? 'parcel'
-                    : 'venue'
+            String(txn.sectionTag || '').toLowerCase().includes('family restaurant')
+              ? 'family-restaurant'
+              : String(txn.sectionTag || '').toLowerCase().includes('parcel')
+                ? 'parcel'
+                : 'venue'
           )
           : txn._sourceRestaurantId === 'restaurant-001'
             ? 'restaurant'
@@ -1148,7 +1158,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
       if (tableSnap?.backendId) {
-        const isVenueTable = tableSubCategory !== 'restaurant';
+        const isVenueTable = tableSnap.section?.restaurantId === 'venue-001' || tableSnap.restaurantId === 'venue-001';
         const resId = tableSnap.section?.restaurantId || activeRestaurantId;
         const terminateUrl = (outlet === 'bar' && !isVenueTable)
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
@@ -1291,7 +1301,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
-    const isVenueContext = tableSubCategory !== 'restaurant' || Boolean(selectedTable?.restaurantId === 'venue-001');
+    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === 'venue-001');
 
     if (outlet === 'restaurant') {
       itemsToFilter = isVenueContext
@@ -1301,27 +1311,28 @@ const CashierDashboard = ({ onLogout }) => {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
 
-    // Determine current venue ID from selected table
+    // Determine current venue ID from selected table or sub-category
     let currentVenueId = null;
     if (selectedTable) {
       const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
-      if (sectionName.includes('conference hall') || sectionName.includes('conf1')) {
-        currentVenueId = 'venue-conference1';
-      } else if (sectionName.includes('pdr')) {
-        currentVenueId = 'venue-pdr';
-      } else if (sectionName.includes('rooms')) {
-        currentVenueId = 'venue-rooms';
+      if (sectionName.includes('family restaurant')) {
+        currentVenueId = 'venue-family-restaurant';
       } else if (sectionName.includes('parcel')) {
-        currentVenueId = 'venue-parcel';
+        currentVenueId = outlet === 'bar' ? 'venue-bar-parcel' : 'venue-restaurant-parcel';
       } else if (outlet === 'bar') {
-        currentVenueId = 'venue-bar';
+        currentVenueId = 'venue-bar-ac-hall';
       }
     } else {
-      if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
-      else if (tableSubCategory === 'conference2') currentVenueId = 'venue-pdr';
-      else if (tableSubCategory === 'pdr') currentVenueId = 'venue-rooms';
-      else if (tableSubCategory === 'parcel') currentVenueId = 'venue-parcel';
-      else if (outlet === 'bar') currentVenueId = 'venue-bar';
+      if (outlet === 'bar') {
+        if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
+        else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
+        else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
+        else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
+        else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
+      } else {
+        if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
+        else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
+      }
     }
 
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
@@ -1733,14 +1744,9 @@ const CashierDashboard = ({ onLogout }) => {
 
         {/* CONTENT AREA */}
         <main className="flex-grow overflow-hidden flex flex-col">
-          {/* ── VENUE OUTLET — full self-contained dashboard ── */}
-          {outlet === 'venue' ? (
-            <div className="flex-grow overflow-hidden flex flex-col">
-              <VenueDashboard addNotification={addNotification} activeRestaurantId={activeRestaurantId} />
-            </div>
-          ) : (
-            <>
-              {/* Billing Alert Banner */}
+          {/* ── MAIN CONTENT ── */}
+          <>
+            {/* Billing Alert Banner */}
               {billingAlerts.length > 0 && (
                 <div className="mx-4 mt-3 flex flex-col gap-2">
                   {billingAlerts.map(alert => (
@@ -1891,7 +1897,9 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="flex items-center justify-between">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
-                          ? (tableSubCategory === 'restaurant' ? 'Tables Feed' : tableSubCategory === 'conference1' ? 'Conference Hall' : tableSubCategory === 'conference2' ? 'PDR' : tableSubCategory === 'pdr' ? 'Rooms' : 'Parcel(vijay)')
+                          ? (outlet === 'bar'
+                            ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'Parcel')
+                            : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'Parcel'))
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
                     </div>
@@ -1901,11 +1909,18 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* ── SUBCATEGORY PILLS — sit inside Tables screen, not a separate toggle ── */}
                         <div className="flex gap-2 flex-wrap">
                           {[
-                            { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant', emoji: '' },
-                            { id: 'conference1', label: 'Conference Hall', emoji: '' },
-                            { id: 'conference2', label: 'PDR', emoji: '' },
-                            { id: 'pdr', label: 'Rooms', emoji: '' },
-                            { id: 'parcel', label: 'Parcel(vijay)', emoji: '' },
+                            ...(outlet === 'bar'
+                              ? [
+                                  { id: 'bar-ac-hall', label: 'Bar AC Hall', emoji: '' },
+                                  { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
+                                  { id: 'bar-pdr', label: 'PDR', emoji: '' },
+                                  { id: 'bar-rooms', label: 'Rooms', emoji: '' },
+                                  { id: 'bar-parcel', label: 'Parcel', emoji: '' },
+                                ]
+                              : [
+                                  { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
+                                  { id: 'parcel', label: 'Parcel', emoji: '' },
+                                ]),
                           ].map(tab => (
                             <button
                               key={tab.id}
@@ -1920,23 +1935,16 @@ const CashierDashboard = ({ onLogout }) => {
                           ))}
                         </div>
 
-                        {/* ── RESTAURANT / BAR TABLES (existing grid — completely unchanged) ── */}
-                        {tableSubCategory === 'restaurant' && (
+                        {/* ── MAIN TABLES ── */}
+                        {(tableSubCategory === 'family-restaurant' || tableSubCategory === 'bar-ac-hall') && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {activeTables
                               .filter((table) => {
-                                // Only show bar/main hall section tables
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                const sectionId = table.sectionId || table.section?.id || '';
-
-                                // Bar section includes "bar" or "main hall" in the name
-                                // or has sectionId of "main-hall" or "bar"
-                                return (
-                                  sectionName.includes('bar') ||
-                                  sectionName.includes('main hall') ||
-                                  sectionId === 'main-hall' ||
-                                  sectionId === 'bar'
-                                );
+                                if (outlet === 'bar') {
+                                  return sectionName.includes('bar');
+                                }
+                                return sectionName.includes('family restaurant');
                               })
                               .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
                               .map((table) => {
@@ -1975,10 +1983,10 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                         )}
 
-                        {/* ── CONFERENCE HALL 1 ── */}
-                        {tableSubCategory === 'conference1' && (
+                        {/* ── BAR VENUE VIEWS ── */}
+                        {outlet === 'bar' && tableSubCategory === 'bar-conference' && (
                           <VenueSectionView
-                            venueId="venue-conference1"
+                            venueId="venue-bar-conference"
                             sectionName="Conference Hall"
                             restaurantId="venue-001"
                             roomMode="single"
@@ -1987,11 +1995,9 @@ const CashierDashboard = ({ onLogout }) => {
                             venueTables={venueTables}
                           />
                         )}
-
-                        {/* ── CONFERENCE HALL 2 ── */}
-                        {tableSubCategory === 'conference2' && (
+                        {outlet === 'bar' && tableSubCategory === 'bar-pdr' && (
                           <VenueSectionView
-                            venueId="venue-pdr"
+                            venueId="venue-bar-pdr"
                             sectionName="PDR"
                             restaurantId="venue-001"
                             roomMode="single"
@@ -2000,27 +2006,34 @@ const CashierDashboard = ({ onLogout }) => {
                             venueTables={venueTables}
                           />
                         )}
-
-                        {/* ── PDR — show 4 room buttons first ── */}
-                        {tableSubCategory === 'pdr' && (
+                        {outlet === 'bar' && tableSubCategory === 'bar-rooms' && (
                           <VenueSectionView
-                            venueId="venue-rooms"
+                            venueId="venue-bar-rooms"
                             sectionName="Rooms"
                             restaurantId="venue-001"
-                            roomMode="pdr4"
-                            selectedRoom={selectedPDRRoom}
-                            onSelectRoom={setSelectedPDRRoom}
+                            roomMode="single"
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                            venueTables={venueTables}
+                          />
+                        )}
+                        {outlet === 'bar' && tableSubCategory === 'bar-parcel' && (
+                          <VenueSectionView
+                            venueId="venue-bar-parcel"
+                            sectionName="Parcel"
+                            restaurantId="venue-001"
+                            roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                           />
                         )}
 
-                        {/* ── PARCEL ── */}
-                        {tableSubCategory === 'parcel' && (
+                        {/* ── RESTAURANT VENUE VIEWS ── */}
+                        {outlet === 'restaurant' && tableSubCategory === 'parcel' && (
                           <VenueSectionView
-                            venueId="venue-parcel"
-                            sectionName="Parcel(vijay)"
+                            venueId="venue-restaurant-parcel"
+                            sectionName="Parcel"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}
@@ -2069,10 +2082,8 @@ const CashierDashboard = ({ onLogout }) => {
                           {[
                             { key: 'all', label: 'All' },
                             { key: 'bar', label: 'Bar' },
-                            { key: 'conference1', label: 'Conference Hall' },
-                            { key: 'conference2', label: 'PDR' },
-                            { key: 'pdr', label: 'Rooms' },
-                            { key: 'parcel', label: 'Parcel(vijay)' },
+                            { key: 'restaurant', label: 'Restaurant' },
+                            { key: 'parcel', label: 'Parcel' },
                           ].map(f => (
                             <button
                               key={f.key}
@@ -2802,7 +2813,6 @@ const CashierDashboard = ({ onLogout }) => {
 
 
             </>
-          )}
         </main>
       </div>
 

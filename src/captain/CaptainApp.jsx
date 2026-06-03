@@ -294,7 +294,11 @@ export default function CaptainApp({ onLogout }) {
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
-  const [tableSubCategory, setTableSubCategory] = useState('restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [tableSubCategory, setTableSubCategory] = useState(() => {
+    const saved = localStorage.getItem('softshape_selected_subcategory');
+    if (saved) return saved;
+    return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
+  }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-parcel', restaurant: 'family-restaurant'|'parcel'
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(null); // 1-4
   const [assignment, setAssignment] = useState(null);
   const [todayRevenue, setTodayRevenue] = useState(0);
@@ -372,10 +376,9 @@ export default function CaptainApp({ onLogout }) {
   const setMenuItems = outlet === 'bar' ? () => { } : setRestaurantMenu;
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
 
-  // Use venue-001 for all venue sections (conference1, conference2, pdr, parcel)
   const activeRestaurantId = useMemo(() => {
     if (outlet === 'bar') return BAR_ID;
-    if (tableSubCategory !== 'restaurant' && outlet !== 'bar') return 'venue-001';
+    if (tableSubCategory === 'parcel' && outlet !== 'bar') return 'venue-001';
     return RESTAURANT_ID;
   }, [outlet, tableSubCategory]);
 
@@ -417,26 +420,23 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
     let currentVenueId = null;
-    if (tableSubCategory === 'bar') currentVenueId = 'venue-bar';
-    else if (tableSubCategory === 'conference1') currentVenueId = 'venue-conference1';
-    else if (tableSubCategory === 'conference2') currentVenueId = 'venue-pdr';
-    else if (tableSubCategory === 'pdr') currentVenueId = 'venue-rooms';
-    else if (tableSubCategory === 'parcel') currentVenueId = 'venue-parcel';
+    if (outlet === 'bar') {
+      if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
+      else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
+      else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
+      else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
+      else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
+    } else {
+      if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
+      else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
+    }
 
     if (!currentVenueId) {
       setVenueSpecificMenu(null);
       return;
     }
 
-    // Map venue IDs to unified endpoint venue parameter
-    const venueMap = {
-      'venue-bar': 'bar',
-      'venue-conference1': 'conference1',
-      'venue-pdr': 'conference2',
-      'venue-rooms': 'rooms',
-      'venue-parcel': 'parcel'
-    };
-    const venueParam = venueMap[currentVenueId] || 'restaurant';
+    const venueParam = currentVenueId;
 
     fetchUnifiedMenu(venueParam)
       .then(data => {
@@ -579,12 +579,11 @@ export default function CaptainApp({ onLogout }) {
   const filteredTables = useMemo(() => {
     let baseTables = activeTables;
 
-    // When in bar outlet, the 'restaurant' sub-tab = Bar Hall only
-    // Filter out Conference/PDR/Rooms/Parcel tables from bar main tab
-    if (outlet === 'bar' && tableSubCategory === 'restaurant') {
+    // When in bar outlet, show only bar section tables
+    if (outlet === 'bar' && tableSubCategory === 'bar-ac-hall') {
       baseTables = activeTables.filter(t => {
         const sec = (t.sectionName || t.section?.name || '').toLowerCase();
-        return sec.includes('bar hall') || sec.includes('bar ac') || sec === 'bar';
+        return sec.includes('bar');
       });
     }
 
@@ -704,11 +703,35 @@ export default function CaptainApp({ onLogout }) {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
   }, [tableFilter]);
 
-  // Reset tableSubCategory to 'restaurant' when switching outlets
+  // Reset tableSubCategory when switching outlets
   useEffect(() => {
-    setTableSubCategory('restaurant');
+    setTableSubCategory(outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlet]);
+
+  // Persist venue selection to shared localStorage key
+  useEffect(() => {
+    localStorage.setItem('softshape_selected_subcategory', tableSubCategory);
+  }, [tableSubCategory]);
+
+  // Cross-tab sync: update venue selection when changed in another tab (Cashier / Captain)
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'softshape_selected_subcategory' && e.newValue && e.newValue !== tableSubCategory) {
+        setTableSubCategory(e.newValue);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [tableSubCategory]);
+
+  // Fix 3: Reset menu filters when venue changes so stale filters don't hide the new venue's menu
+  useEffect(() => {
+    setSearchQuery('');
+    setActiveCategory('All');
+    setActiveDiet('All');
+    setSelectedPDRRoom(null);
+  }, [tableSubCategory]);
 
   // Clean up stale cart keys when a table is deleted from the active list
   useEffect(() => {
@@ -1527,11 +1550,18 @@ export default function CaptainApp({ onLogout }) {
               {/* VENUE SUBCATEGORY PILLS — inside floor overview, not a separate screen */}
               <div className="flex gap-2 flex-wrap mb-4">
                 {[
-                  { id: 'restaurant', label: outlet === 'bar' ? '🍺 Bar' : '🍽 Restaurant' },
-                  { id: 'conference1', label: 'Conference Hall' },
-                  { id: 'conference2', label: 'PDR' },
-                  { id: 'pdr', label: 'Rooms' },
-                  { id: 'parcel', label: 'Parcel(vijay)' },
+                  ...(outlet === 'bar'
+                    ? [
+                        { id: 'bar-ac-hall', label: 'Bar AC Hall' },
+                        { id: 'bar-conference', label: 'Conference Hall' },
+                        { id: 'bar-pdr', label: 'PDR' },
+                        { id: 'bar-rooms', label: 'Rooms' },
+                        { id: 'bar-parcel', label: 'Parcel' },
+                      ]
+                    : [
+                        { id: 'family-restaurant', label: 'Family Restaurant' },
+                        { id: 'parcel', label: 'Parcel' },
+                      ]),
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -1547,7 +1577,7 @@ export default function CaptainApp({ onLogout }) {
                 ))}
               </div>
 
-              {tableSubCategory === 'restaurant' ? (
+              {(outlet === 'bar' && tableSubCategory === 'bar-ac-hall') || (outlet === 'restaurant' && tableSubCategory === 'family-restaurant') ? (
                 <>
                   {/* Table Filter Toggle */}
                   <div className="flex gap-2 mb-6">
@@ -1637,19 +1667,23 @@ export default function CaptainApp({ onLogout }) {
         ) : (
           <VenueSectionView
             venueId={
-              tableSubCategory === 'bar' ? 'venue-bar' :
-              tableSubCategory === 'conference1' ? 'venue-conference1' :
-              tableSubCategory === 'conference2' ? 'venue-pdr' :
-              tableSubCategory === 'pdr' ? 'venue-rooms' : 'venue-parcel'
+              outlet === 'bar'
+                ? (tableSubCategory === 'bar-conference' ? 'venue-bar-conference' :
+                   tableSubCategory === 'bar-pdr' ? 'venue-bar-pdr' :
+                   tableSubCategory === 'bar-rooms' ? 'venue-bar-rooms' :
+                   tableSubCategory === 'bar-parcel' ? 'venue-bar-parcel' : 'venue-bar-ac-hall')
+                : (tableSubCategory === 'parcel' ? 'venue-restaurant-parcel' : 'venue-family-restaurant')
             }
             sectionName={
-              tableSubCategory === 'bar' ? 'Bar' :
-              tableSubCategory === 'conference1' ? 'Conference Hall' :
-              tableSubCategory === 'conference2' ? 'PDR' :
-              tableSubCategory === 'pdr' ? 'Rooms' : 'Parcel(vijay)'
+              outlet === 'bar'
+                ? (tableSubCategory === 'bar-conference' ? 'Conference Hall' :
+                   tableSubCategory === 'bar-pdr' ? 'PDR' :
+                   tableSubCategory === 'bar-rooms' ? 'Rooms' :
+                   tableSubCategory === 'bar-parcel' ? 'Parcel' : 'Bar AC Hall')
+                : (tableSubCategory === 'parcel' ? 'Parcel' : 'Family Restaurant')
             }
             restaurantId="venue-001"
-            roomMode={tableSubCategory === 'pdr' ? 'pdr4' : 'single'}
+            roomMode="single"
             selectedRoom={selectedPDRRoom}
             onSelectRoom={setSelectedPDRRoom}
             captainId={currentCaptain?.id}

@@ -61,7 +61,7 @@ import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
-import { VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';
+import { VENUE_PRICE_COLUMNS, BAR_VENUE_PRICE_COLUMNS, RESTAURANT_VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
@@ -667,13 +667,15 @@ export function Tables({ onOpen }) {
 export function MenuPage({ onAddDish }) {
   const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu, setGlobalMenu } = useMenu();
   const [filter, setFilter] = useState("");
-  const [activeVenueId, setActiveVenueId] = useState(VENUE_PRICE_COLUMNS[0].id);
+  const [activeVenueId, setActiveVenueId] = useState(BAR_VENUE_PRICE_COLUMNS[0].id);
   const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
 
   // ── Admin items: fetched from admin endpoint (includes unavailable) ───
   const [adminItems, setAdminItems] = useState([]);
   const [adminLoading, setAdminLoading] = useState(true);
-  const [activeOutlet, setActiveOutlet] = useState('restaurant'); // 'restaurant' | 'bar' | 'venue'
+  const [activeOutlet, setActiveOutlet] = useState('restaurant'); // 'restaurant' | 'bar'
+
+  const currentVenueColumns = activeOutlet === 'bar' ? BAR_VENUE_PRICE_COLUMNS : RESTAURANT_VENUE_PRICE_COLUMNS;
 
   const fetchAdminItems = useCallback(async () => {
     try {
@@ -682,7 +684,6 @@ export function MenuPage({ onAddDish }) {
       if (activeOutlet === 'bar') {
         url = `${API_BASE}/api/bar/menu/items?restaurantId=bar-001`;
       } else {
-        // Both 'restaurant' and 'venue' use restaurant-001
         url = `${API_BASE}/api/menu/items/admin?restaurantId=restaurant-001`;
       }
 
@@ -716,25 +717,20 @@ export function MenuPage({ onAddDish }) {
 
   // Reset venue tab when switching outlets and refetch
   useEffect(() => {
-    if (activeOutlet !== 'venue') {
-      setActiveVenueId(VENUE_PRICE_COLUMNS[0].id); // Reset to default
-    }
+    setActiveVenueId(currentVenueColumns[0].id);
     fetchAdminItems(); // Refetch when outlet changes
   }, [activeOutlet, fetchAdminItems]);
 
   const items = useMemo(() => {
     return adminItems
       .filter((x) => {
-        // Only apply venue filtering when in venue mode
-        if (activeOutlet === 'venue') {
-          return showHiddenVenueItems || Number(x.venuePrices?.[activeVenueId] || 0) > 0;
-        }
-        return true; // Show all items for restaurant/bar
+        // Apply venue filtering for both bar and restaurant outlets
+        return showHiddenVenueItems || Number(x.venuePrices?.[activeVenueId] || 0) > 0;
       })
       .filter((x) => menuItemMatchesSearch(x, filter));
-  }, [filter, adminItems, activeVenueId, showHiddenVenueItems, activeOutlet]);
+  }, [filter, adminItems, activeVenueId, showHiddenVenueItems]);
 
-  const activeVenue = VENUE_PRICE_COLUMNS.find((venue) => venue.id === activeVenueId) || VENUE_PRICE_COLUMNS[0];
+  const activeVenue = currentVenueColumns.find((venue) => venue.id === activeVenueId) || currentVenueColumns[0];
 
   const [editingItem, setEditingItem] = useState(null);
   const [addingItem, setAddingItem] = useState(null);
@@ -755,7 +751,10 @@ export function MenuPage({ onAddDish }) {
     );
 
     try {
-      const res = await fetch(`${API_BASE}/api/menu/items/${item.id}/availability`, {
+      const endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${item.id}/availability`
+        : `${API_BASE}/api/menu/items/${item.id}/availability`;
+      const res = await fetch(endpoint, {
         method: 'PATCH',
       });
       if (!res.ok) throw new Error('Toggle failed');
@@ -831,7 +830,10 @@ export function MenuPage({ onAddDish }) {
     if (!deletingItem || deleteWorking) return;
     setDeleteWorking(true);
     try {
-      const res = await fetch(`${API_BASE}/api/menu/items/${deletingItem.id}`, {
+      const endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${deletingItem.id}`
+        : `${API_BASE}/api/menu/items/${deletingItem.id}`;
+      const res = await fetch(endpoint, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -871,7 +873,10 @@ export function MenuPage({ onAddDish }) {
         ...(imageUrl !== undefined ? { imageUrl } : {}),
       };
 
-      const res = await fetch(`${API_BASE}/api/menu/items/${editingItem.id}`, {
+      const endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${editingItem.id}`
+        : `${API_BASE}/api/menu/items/${editingItem.id}`;
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -952,7 +957,10 @@ export function MenuPage({ onAddDish }) {
         imageUrl = await uploadImageToCloudinary(addingItem.img, addingItem.n);
       }
 
-      const res = await fetch(`${API_BASE}/api/menu/items`, {
+      const endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items`
+        : `${API_BASE}/api/menu/items`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -962,7 +970,7 @@ export function MenuPage({ onAddDish }) {
           price: Number(addingItem.p),
           menuType: addingItem.menuType || 'FOOD',
           venuePrices: Object.fromEntries(
-            VENUE_PRICE_COLUMNS.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
+            currentVenueColumns.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
           ),
           ...(imageUrl ? { imageUrl } : {}),
         }),
@@ -983,7 +991,7 @@ export function MenuPage({ onAddDish }) {
           desc: serverItem.description || '',
           menuType: serverItem.menuType,
           venuePrices: Object.fromEntries(
-            VENUE_PRICE_COLUMNS.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
+            currentVenueColumns.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
           ),
         };
         // Append new item instantly — no loading flash
@@ -1036,7 +1044,7 @@ export function MenuPage({ onAddDish }) {
             p: '',
             t: 'veg',
             img: null,
-            venuePrices: Object.fromEntries(VENUE_PRICE_COLUMNS.map((venue) => [venue.id, venue.id === activeVenueId ? '' : 0])),
+            venuePrices: Object.fromEntries(currentVenueColumns.map((venue) => [venue.id, venue.id === activeVenueId ? '' : 0])),
           })}
         >
           <span className="text-gray-400 font-black">+</span> Add Item
@@ -1080,23 +1088,12 @@ export function MenuPage({ onAddDish }) {
       >
         🍺 Bar
       </button>
-      <button
-        onClick={() => setActiveOutlet('venue')}
-        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-          activeOutlet === 'venue'
-            ? 'bg-green-500 text-white'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-        }`}
-      >
-        🏢 Venue
-      </button>
     </div>
 
-    {/* Venue-specific tabs - only show when outlet is 'venue' */}
-    {activeOutlet === 'venue' && (
+    {/* Venue-specific tabs - shown for both bar and restaurant outlets */}
     <div className="mb-3 flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
-        {VENUE_PRICE_COLUMNS.map((venue) => (
+        {currentVenueColumns.map((venue) => (
           <button
             key={venue.id}
             type="button"
@@ -1121,7 +1118,6 @@ export function MenuPage({ onAddDish }) {
         Show items hidden from {activeVenue.label}
       </label>
     </div>
-    )}
 
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
       <table className="w-full text-left text-sm whitespace-nowrap">
@@ -1131,9 +1127,7 @@ export function MenuPage({ onAddDish }) {
             <th className="px-4 py-2">Name</th>
             <th className="px-4 py-2">Category</th>
             <th className="px-4 py-2">
-              {activeOutlet === 'venue'
-                ? `${activeVenue.label} Price`
-                : "Price"}
+              {activeVenue.label} Price
             </th>
             <th className="px-4 py-2">Veg/Non</th>
             <th className="px-4 py-2 text-left text-xs font-black uppercase text-gray-500">KOT Type</th>
@@ -1169,13 +1163,9 @@ export function MenuPage({ onAddDish }) {
               <td className="px-4 py-2 font-medium">{item.n}</td>
               <td className="px-4 py-2">{item.c}</td>
               <td className="px-4 py-2">
-                {activeOutlet === 'venue' ? (
-                  Number(item.venuePrices?.[activeVenueId] || 0) > 0
-                    ? `₹${Number(item.venuePrices?.[activeVenueId] || 0)}`
-                    : <span className="text-gray-400 font-bold">Hidden</span>
-                ) : (
-                  `₹${item.p || 0}`
-                )}
+                {Number(item.venuePrices?.[activeVenueId] || 0) > 0
+                  ? `₹${Number(item.venuePrices?.[activeVenueId] || 0)}`
+                  : <span className="text-gray-400 font-bold">Hidden</span>}
               </td>
               <td className="px-4 py-2">
                 <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
@@ -1275,7 +1265,7 @@ export function MenuPage({ onAddDish }) {
             <div>
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Venue Prices</label>
               <div className="grid grid-cols-2 gap-3">
-                {VENUE_PRICE_COLUMNS.map((venue) => (
+                {currentVenueColumns.map((venue) => (
                   <div key={venue.id}>
                     <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">{venue.label}</label>
                     <input
@@ -1394,7 +1384,7 @@ export function MenuPage({ onAddDish }) {
             <div>
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Venue Prices</label>
               <div className="grid grid-cols-2 gap-3">
-                {VENUE_PRICE_COLUMNS.map((venue) => (
+                {currentVenueColumns.map((venue) => (
                   <div key={venue.id}>
                     <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">{venue.label}</label>
                     <input
@@ -5624,7 +5614,7 @@ export function BarMenuPage() {
   const [unifiedMenu, setUnifiedMenu] = useState(null);
   const [unifiedLoading, setUnifiedLoading] = useState(true);
   const [barMenuTab, setBarMenuTab] = useState('food');
-  const [activeVenueId, setActiveVenueId] = useState(VENUE_PRICE_COLUMNS[0].id);
+  const [activeVenueId, setActiveVenueId] = useState(BAR_VENUE_PRICE_COLUMNS[0].id);
   const [filter, setFilter] = useState('');
 
   // Fetch unified menu for bar
@@ -5936,7 +5926,7 @@ export function BarMenuPage() {
 
       <div className="mb-3 flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
-          {VENUE_PRICE_COLUMNS.map((venue) => (
+          {BAR_VENUE_PRICE_COLUMNS.map((venue) => (
             <button
               key={venue.id}
               type="button"
