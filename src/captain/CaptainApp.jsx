@@ -342,63 +342,6 @@ export default function CaptainApp({ onLogout }) {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
-  const startVoiceSearch = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      addNotification('Voice search is not supported. Use Chrome on Android.', 'error');
-      return;
-    }
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = 'en-IN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 5;
-
-    recognition.onresult = (event) => {
-      const results = event.results[0];
-      const candidates = [];
-      for (let i = 0; i < Math.min(results.length, 5); i++) {
-        candidates.push(results[i].transcript.trim());
-      }
-      let bestMatch = null;
-      let bestScore = 0;
-      for (const candidate of candidates) {
-        for (const item of outletFilteredMenuItems) {
-          const score = scoreTranscriptAgainstName(candidate, item.n || item.name || '');
-          if (score > bestScore) {
-            bestScore = score;
-            bestMatch = item.n || item.name || '';
-          }
-        }
-      }
-      if (bestScore >= 0.45 && bestMatch) {
-        setSearchInput(bestMatch);
-      } else {
-        setSearchInput(candidates[0] || '');
-      }
-    };
-
-    recognition.onerror = (e) => {
-      if (e.error === 'not-allowed') {
-        addNotification('Microphone access denied. Please allow microphone access.', 'error');
-      }
-      setIsListening(false);
-    };
-    recognition.onend = () => setIsListening(false);
-    setIsListening(true);
-    try {
-      recognition.start();
-    } catch (err) {
-      addNotification('Voice search failed to start. Please try again.', 'error');
-      setIsListening(false);
-    }
-  }, [isListening, outletFilteredMenuItems]);
-
   const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('captain_activeCategory') || 'All');
   const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem('captain_activeDiet') || 'All');
   const [notifications, setNotifications] = useState([]);
@@ -928,6 +871,63 @@ export default function CaptainApp({ onLogout }) {
     setNotifications(prev => [...prev, { id, title, type }]);
     setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
   };
+
+  const startVoiceSearch = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addNotification('Voice search is not supported. Use Chrome on Android.', 'error');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = 'en-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 5;
+
+    recognition.onresult = (event) => {
+      const results = event.results[0];
+      const candidates = [];
+      for (let i = 0; i < Math.min(results.length, 5); i++) {
+        candidates.push(results[i].transcript.trim());
+      }
+      let bestMatch = null;
+      let bestScore = 0;
+      for (const candidate of candidates) {
+        for (const item of outletFilteredMenuItems) {
+          const score = scoreTranscriptAgainstName(candidate, item.n || item.name || '');
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = item.n || item.name || '';
+          }
+        }
+      }
+      if (bestScore >= 0.45 && bestMatch) {
+        setSearchInput(bestMatch);
+      } else {
+        setSearchInput(candidates[0] || '');
+      }
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        addNotification('Microphone access denied. Please allow microphone access.', 'error');
+      }
+      setIsListening(false);
+    };
+    recognition.onend = () => setIsListening(false);
+    setIsListening(true);
+    try {
+      recognition.start();
+    } catch (err) {
+      addNotification('Voice search failed to start. Please try again.', 'error');
+      setIsListening(false);
+    }
+  }, [isListening, outletFilteredMenuItems]);
 
   const handleImageUpload = (e, item) => {
     const file = e.target.files[0];
