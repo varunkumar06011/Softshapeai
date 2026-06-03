@@ -94,9 +94,10 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     cmds.push("\n");
   });
 
+  const hallName = sectionName ? sectionName.toUpperCase() : 'BAR AC HALL';
   cmds.push(
     separator("-"),
-    `Hall Name : BAR AC HALL\n`,
+    `Hall Name : ${hallName}\n`,
     "\n\n\n",
     CUT
   );

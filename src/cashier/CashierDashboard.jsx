@@ -5,13 +5,13 @@ import {
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
-  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3
+  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
 import { printBillQZ, printKOTQZ } from '../services/printService';
-import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
@@ -216,6 +216,8 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
+  const [activeNoteItemId, setActiveNoteItemId] = useState(null);
+  const [noteInputValue, setNoteInputValue] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(() => {
     try {
@@ -578,20 +580,25 @@ const CashierDashboard = ({ onLogout }) => {
       );
     };
 
+    const mergeOrder = (incoming, existing) => {
+      if (!existing) return incoming;
+      const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
+      const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      return incomingTime >= existingTime ? incoming : existing;
+    };
+
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      // useTableSync already updates table state via table:updated event.
-      // Here we ensure the activeOrder reference stays fresh.
       if (selectedTable?.backendId === order.tableId) {
-        setSelectedTable(prev => prev ? { ...prev, activeOrder: order } : prev);
+        setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
       setActiveTables(prev => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+        t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
       ), { skipPersist: true });
       if (setVenueTables) {
         setVenueTables(prev => prev.map(t =>
-          t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+          t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
         ), { skipPersist: true });
       }
     };
@@ -600,14 +607,14 @@ const CashierDashboard = ({ onLogout }) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
       if (selectedTable?.backendId === order.tableId) {
-        setSelectedTable(prev => prev ? { ...prev, activeOrder: order } : prev);
+        setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
       setActiveTables(prev => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+        t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
       ), { skipPersist: true });
       if (setVenueTables) {
         setVenueTables(prev => prev.map(t =>
-          t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+          t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
         ), { skipPersist: true });
       }
     };
@@ -676,6 +683,14 @@ const CashierDashboard = ({ onLogout }) => {
     socket.on('table:swapped', onTableSwapped);
     socket.on('table:items-transferred', onTableItemsTransferred);
 
+    // Listen for menu update events from admin panel
+    const onMenuItemUpdated = (payload) => {
+      console.log('[CashierDashboard] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+    };
+    socket.on('menu-item-updated', onMenuItemUpdated);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('billing:requested', onBillingRequested);
@@ -684,6 +699,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('order:paid', onOrderPaid);
       socket.off('table:swapped', onTableSwapped);
       socket.off('table:items-transferred', onTableItemsTransferred);
+      socket.off('menu-item-updated', onMenuItemUpdated);
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
 
@@ -770,7 +786,7 @@ const CashierDashboard = ({ onLogout }) => {
     return activeTables
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
-        const items = getTableItems(table);
+        const items = getBillableItems(table);
         const bill = calculateTableBill(table);
         return {
           id: `T${table.id}`,
@@ -857,7 +873,7 @@ const CashierDashboard = ({ onLogout }) => {
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
-    const committedItems = getTableItems(selectedTable);
+    const committedItems = getBillableItems(selectedTable);
     const itemsForTotal = committedItems.length > 0
       ? committedItems
       : lastConfirmedItemsRef.current;
@@ -911,7 +927,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     // Validate that the order has items (use proper getTableItems function)
-    const orderItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+    const orderItems = getBillableItems(selectedTable);
     if (orderItems.length === 0) {
       addNotification('Error', 'Cannot print bill with no items. Please add items to the order first.', 'error');
       return;
@@ -975,7 +991,7 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    const orderItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+    const orderItems = getBillableItems(selectedTable);
     if (orderItems.length === 0) {
       addNotification('Error', 'No items on this order to reprint.', 'error');
       return;
@@ -1133,9 +1149,10 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
       if (tableSnap?.backendId) {
         const isVenueTable = tableSubCategory !== 'restaurant';
+        const resId = tableSnap.section?.restaurantId || activeRestaurantId;
         const terminateUrl = (outlet === 'bar' && !isVenueTable)
-          ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}` 
-          : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}`;
+          ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
+          : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
         const response = await fetch(terminateUrl, {
           method: 'POST',
@@ -1421,9 +1438,11 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleVariantSelect = (item, variant) => {
+    // Build item name with variant - use actual variant name from DB
+    // Fallback to '30ml' for backwards compatibility if variant.name is missing
     const itemName = variant.id === 'full_bottle'
       ? `${item.n} Full Bottle`
-      : `${item.n} 30ml`;
+      : `${item.n} ${variant.name || '30ml'}`;
 
     addToCart({
       ...item,
@@ -1504,6 +1523,12 @@ const CashierDashboard = ({ onLogout }) => {
       });
       return updated.filter(item => item.q > 0);
     });
+  };
+
+  const updateItemNote = (itemId, note) => {
+    setCart(prev =>
+      prev.map(i => i.id === itemId ? { ...i, notes: note.trim() || null } : i)
+    );
   };
 
   const onlineOrders = [
@@ -1587,7 +1612,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Snapshot items before clearing cart to prevent UI flicker
     if (selectedTable) {
-      const committedSoFar = getTableItems(selectedTable);
+      const committedSoFar = getBillableItems(selectedTable);
       lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
     }
 
@@ -2658,6 +2683,74 @@ const CashierDashboard = ({ onLogout }) => {
                                   </>
                                 )}
                               </div>
+                              {/* Instruction Note */}
+                              {item.isKotSent ? (
+                                item.notes && (
+                                  <div className="flex items-center gap-1 mt-1.5">
+                                    <MessageSquare size={11} className="text-amber-500 shrink-0" />
+                                    <span className="text-xs text-amber-700 font-semibold italic truncate">{item.notes}</span>
+                                  </div>
+                                )
+                              ) : (
+                                <div className="mt-1.5">
+                                  {activeNoteItemId === item.id ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        placeholder="e.g. Spicy, No onion, Deep fry…"
+                                        value={noteInputValue}
+                                        onChange={e => setNoteInputValue(e.target.value)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') {
+                                            updateItemNote(item.id, noteInputValue);
+                                            setActiveNoteItemId(null);
+                                          }
+                                          if (e.key === 'Escape') {
+                                            setActiveNoteItemId(null);
+                                          }
+                                        }}
+                                        className="flex-1 text-xs border border-amber-300 rounded-lg px-2 py-1 bg-amber-50 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-300"
+                                        maxLength={60}
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          updateItemNote(item.id, noteInputValue);
+                                          setActiveNoteItemId(null);
+                                        }}
+                                        className="text-xs font-black text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded-lg transition-colors"
+                                      >✓</button>
+                                      <button
+                                        onClick={() => setActiveNoteItemId(null)}
+                                        className="text-xs text-gray-400 hover:text-red-500 px-1 py-1 rounded transition-colors"
+                                      >✕</button>
+                                    </div>
+                                  ) : item.notes ? (
+                                    <div className="flex items-center gap-1">
+                                      <MessageSquare size={11} className="text-amber-500 shrink-0" />
+                                      <span className="text-xs text-amber-700 font-semibold italic truncate flex-1">{item.notes}</span>
+                                      <button
+                                        onClick={() => {
+                                          setActiveNoteItemId(item.id);
+                                          setNoteInputValue(item.notes || '');
+                                        }}
+                                        className="text-xs text-gray-400 hover:text-amber-600 ml-1 shrink-0 transition-colors"
+                                      >Edit</button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setActiveNoteItemId(item.id);
+                                        setNoteInputValue('');
+                                      }}
+                                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-amber-600 transition-colors"
+                                    >
+                                      <Plus size={11} />
+                                      <span>Note</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         ));
@@ -2750,32 +2843,41 @@ const CashierDashboard = ({ onLogout }) => {
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
-                  {getTableItems(selectedTable)
-                    .filter(i => !i.removedFromBill)
-                    .map((item, idx) => (
-                      <div key={item.id || idx} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
-                        <div className="flex items-start gap-3">
-                          <span className="min-w-[32px] h-7 rounded-lg bg-red-50 text-red-600 border border-red-100 shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5">
-                            {item.q}×
-                          </span>
-                          <span className="text-sm font-bold text-gray-900 leading-snug">{item.n}</span>
+                  {getAllOrderItems(selectedTable)
+                    .filter(i => i.id)
+                    .map((item, idx) => {
+                      const isCancelled = item.removedFromBill || item.quantity === 0;
+                      return (
+                        <div key={item.id || idx} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
+                          <div className="flex items-start gap-3">
+                            <span className={`min-w-[32px] h-7 rounded-lg border shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                              {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
+                            </span>
+                            <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
+                          </div>
+                          <div className="flex items-center gap-2 sm:gap-3">
+                            <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                              ₹{Number(item.p * item.q).toFixed(0)}
+                            </span>
+                            {isCancelled ? (
+                              <span className="text-[9px] font-black text-red-400 uppercase tracking-widest">Cancelled</span>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowCancelModal(true);
+                                  setCancelSelected({ [item.id]: 1 });
+                                }}
+                                className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
+                                title="Cancel Item"
+                              >
+                                <X size={16} strokeWidth={3} />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 sm:gap-3">
-                          <span className="text-sm font-black text-gray-900 whitespace-nowrap">₹{Number(item.p * item.q).toFixed(0)}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowCancelModal(true);
-                              setCancelSelected({ [item.id]: 1 });
-                            }}
-                            className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
-                            title="Cancel Item"
-                          >
-                            <X size={16} strokeWidth={3} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               </div>
 
@@ -2861,7 +2963,7 @@ const CashierDashboard = ({ onLogout }) => {
                       Settlement
                     </button>
                   ) : (
-                    getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 ? (
+                    getBillableItems(selectedTable).length > 0 ? (
                       <button
                         onClick={handleFinalBill}
                         disabled={isPrintingBill || printCooldown}
@@ -2882,7 +2984,7 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
 
                 {/* Re-print row — always visible when table has an active order with items */}
-                {selectedTable?.activeOrder?.id && getTableItems(selectedTable).filter(i => !i.removedFromBill).length > 0 && (
+                {selectedTable?.activeOrder?.id && getBillableItems(selectedTable).length > 0 && (
                   <button
                     onClick={handleReprintBill}
                     disabled={isReprintingBill}
@@ -2937,7 +3039,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       {/* BILL EDITOR MODAL */}
       {showBillEditor && selectedTable && (() => {
-        const committedItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+        const committedItems = getBillableItems(selectedTable);
         const allMenuItems = outlet === 'bar' ? barMenuItems : menuItems;
         const searchResults = billEditSearch.trim().length > 1
           ? allMenuItems.filter(m =>
@@ -3547,7 +3649,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       {/* CANCEL ITEMS MODAL */}
       {showCancelModal && selectedTable && (() => {
-        const cancellableItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+        const cancellableItems = getBillableItems(selectedTable);
         const selectedCount = Object.keys(cancelSelected).length;
         const selectedQuantityTotal = Object.values(cancelSelected).reduce(
           (sum, entry) => sum + Math.max(1, Math.round(Number(entry.quantity ?? 1))),
@@ -3588,7 +3690,7 @@ const CashierDashboard = ({ onLogout }) => {
             }
 
             // Also build from current selectedTable as secondary fallback
-            const localItems = getTableItems(selectedTable).filter(i => !i.removedFromBill);
+            const localItems = getBillableItems(selectedTable);
             for (const li of localItems) {
               if (!freshItemMap[li.id]) freshItemMap[li.id] = li;
             }

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
+import { useSocket } from '../hooks/useSocket';
 import { useTableSync } from '../services/tableSyncService';
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
 import { calculateSessionBill, calculateOrderTotal, getTableItems } from '../shared/utils/billing';
@@ -54,7 +55,8 @@ import OutletToggle from '../shared/components/OutletToggle';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
-import { fetchVenueMenu } from '../services/venueTableApi';
+import { fetchVenueMenu, fetchVenueSections } from '../services/venueTableApi';
+import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
@@ -231,6 +233,29 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
 
+  // Socket hooks must be called at top level, not conditionally
+  const barSocket = useSocket(BAR_ID);
+  const restaurantSocket = useSocket(RESTAURANT_ID);
+
+  // State for unified menu
+  const [unifiedMenu, setUnifiedMenu] = useState(null);
+  const [unifiedMenuLoading, setUnifiedMenuLoading] = useState(false);
+
+  // Fetch unified menu based on outlet
+  useEffect(() => {
+    const venue = outlet === 'bar' ? 'bar' : 'restaurant';
+    setUnifiedMenuLoading(true);
+    fetchUnifiedMenu(venue)
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedMenuLoading(false);
+      })
+      .catch(err => {
+        console.error('[CaptainApp] Failed to fetch unified menu:', err);
+        setUnifiedMenuLoading(false);
+      });
+  }, [outlet]);
+
   const { activeCalls, clearCall } = useWaiterCalls();
 
 
@@ -248,16 +273,16 @@ export default function CaptainApp({ onLogout }) {
   const [pinError, setPinError] = useState(false);
   const [pin, setPin] = useState('');
   const [selectedProfile, setSelectedProfile] = useState(null);
-  const [view, setView] = useState('tables'); // tables, session
-  const [activeTableId, setActiveTableId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [activeDiet, setActiveDiet] = useState('All');
+  const [view, setView] = useState(() => localStorage.getItem('captain_view') || 'tables'); // tables, session
+  const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem('captain_activeTableId') || null);
+  const [searchQuery, setSearchQuery] = useState(() => localStorage.getItem('captain_searchQuery') || '');
+  const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('captain_activeCategory') || 'All');
+  const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem('captain_activeDiet') || 'All');
   const [notifications, setNotifications] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
-  const [isCartMinimized, setIsCartMinimized] = useState(true);
+  const [isCartMinimized, setIsCartMinimized] = useState(() => localStorage.getItem('captain_isCartMinimized') !== 'false');
   const [removedItem, setRemovedItem] = useState(null);
   const removeTimeoutRef = useRef(null);
   // Tracks the confirmed DB order ID for the current table session.
@@ -269,13 +294,23 @@ export default function CaptainApp({ onLogout }) {
 
   // Assignment tracking state
   const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
-  const [tableSubCategory, setTableSubCategory] = useState('restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
-  const [selectedPDRRoom, setSelectedPDRRoom] = useState(null); // 1-4
+  const [tableSubCategory, setTableSubCategory] = useState(() => localStorage.getItem('captain_tableSubCategory') || 'restaurant'); // 'restaurant' | 'conference1' | 'conference2' | 'pdr' | 'parcel'
+  const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
+    const saved = localStorage.getItem('captain_selectedPDRRoom');
+    return saved ? Number(saved) : null;
+  }); // 1-4
   const [assignment, setAssignment] = useState(null);
   const [todayRevenue, setTodayRevenue] = useState(0);
 
-  const [activeBarMenu, setActiveBarMenu] = useState('food');
-  const [tableCarts, setTableCarts] = useState({});
+  const [activeBarMenu, setActiveBarMenu] = useState(() => localStorage.getItem('captain_activeBarMenu') || 'food');
+  const [tableCarts, setTableCarts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('captain_tableCarts');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
   const lastConfirmedItemsRef = useRef([]);
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
@@ -304,6 +339,30 @@ export default function CaptainApp({ onLogout }) {
   const [tableFilter, setTableFilter] = useState(() => {
     return localStorage.getItem('softshape_captain_table_filter') || 'my';
   });
+
+  // Sync state to localStorage
+  useEffect(() => {
+    localStorage.setItem('captain_view', view);
+    if (activeTableId) {
+      localStorage.setItem('captain_activeTableId', activeTableId);
+    } else {
+      localStorage.removeItem('captain_activeTableId');
+    }
+    localStorage.setItem('captain_searchQuery', searchQuery);
+    localStorage.setItem('captain_activeCategory', activeCategory);
+    localStorage.setItem('captain_activeDiet', activeDiet);
+    localStorage.setItem('captain_isCartMinimized', isCartMinimized);
+    localStorage.setItem('captain_tableSubCategory', tableSubCategory);
+    if (selectedPDRRoom) {
+      localStorage.setItem('captain_selectedPDRRoom', selectedPDRRoom);
+    } else {
+      localStorage.removeItem('captain_selectedPDRRoom');
+    }
+    localStorage.setItem('captain_activeBarMenu', activeBarMenu);
+    localStorage.setItem('captain_tableCarts', JSON.stringify(tableCarts));
+    localStorage.setItem('captain_active_tab', activeView);
+    localStorage.setItem('softshape_captain_table_filter', tableFilter);
+  }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter]);
 
   // ── Derived / memoised values (safe now that all state is declared above) ──
   const totalActiveTablesCount = useMemo(() => {
@@ -355,6 +414,41 @@ export default function CaptainApp({ onLogout }) {
   }, [outlet, tableSubCategory]);
 
   const [venueSpecificMenu, setVenueSpecificMenu] = useState(null);
+  const [venueTables, setVenueTables] = useState([]);
+
+  // Fetch venue sections (Conference, PDR, Rooms, Parcel tables)
+  useEffect(() => {
+    fetchVenueSections()
+      .then(sections => {
+        // Flatten sections into tables array
+        const tables = [];
+        if (Array.isArray(sections)) {
+          sections.forEach(section => {
+            if (section.tables && Array.isArray(section.tables)) {
+              section.tables.forEach(table => {
+                tables.push({
+                  ...table,
+                  sectionId: section.id,
+                  sectionName: section.name,
+                  section: { id: section.id, name: section.name },
+                  backendId: table.id,
+                  id: table.number,
+                  number: table.number,
+                  status: table.status || 'AVAILABLE',
+                  capacity: table.capacity || 4,
+                });
+              });
+            }
+          });
+        }
+        setVenueTables(tables);
+      })
+      .catch(err => {
+        console.error('[CaptainApp] Failed to fetch venue sections:', err);
+        setVenueTables([]);
+      });
+  }, []);
+
   useEffect(() => {
     let currentVenueId = null;
     if (tableSubCategory === 'bar') currentVenueId = 'venue-bar';
@@ -368,42 +462,112 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
-    fetchVenueMenu(currentVenueId, activeRestaurantId)
-      .then(items => {
-        const mapped = items.map(serverItem => {
-          const defaultVariant = serverItem.variants?.find(v => v.isDefault) ?? serverItem.variants?.[0];
-          return {
-            id: serverItem.id,
-            n: serverItem.name,
-            p: Math.round(serverItem.price),
-            c: serverItem.category,
-            t: serverItem.isVeg ? 'veg' : 'non',
-            img: serverItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
-            desc: serverItem.description || '',
-            menuType: serverItem.menuType,
-            variants: serverItem.variants?.map(v => ({...v, price: Number(v.price)}))
-          };
+    // Map venue IDs to unified endpoint venue parameter
+    const venueMap = {
+      'venue-bar': 'bar',
+      'venue-conference1': 'conference1',
+      'venue-pdr': 'conference2',
+      'venue-rooms': 'rooms',
+      'venue-parcel': 'parcel'
+    };
+    const venueParam = venueMap[currentVenueId] || 'restaurant';
+
+    fetchUnifiedMenu(venueParam)
+      .then(data => {
+        // Flatten categories into items list for captain panel
+        const items = [];
+        data.categories.forEach(cat => {
+          cat.items.forEach(item => {
+            items.push({
+              id: item.id,
+              n: item.name,
+              p: Math.round(item.price),
+              c: item.category,
+              t: item.isVeg ? 'veg' : 'non',
+              img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+              desc: item.description || '',
+              menuType: item.menuType,
+              printerTarget: item.printerTarget,
+              unit: item.unit,
+              mlPerUnit: item.mlPerUnit,
+              variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
+            });
+          });
         });
-        setVenueSpecificMenu(mapped);
+        setVenueSpecificMenu(items);
       })
-      .catch(console.error);
+      .catch(err => {
+        console.error('[CaptainApp] Failed to fetch unified menu:', err);
+        // Fallback to old endpoint
+        fetchVenueMenu(currentVenueId, activeRestaurantId)
+          .then(items => {
+            const mapped = items.map(serverItem => {
+              const defaultVariant = serverItem.variants?.find(v => v.isDefault) ?? serverItem.variants?.[0];
+              return {
+                id: serverItem.id,
+                n: serverItem.name,
+                p: Math.round(serverItem.price),
+                c: serverItem.category,
+                t: serverItem.isVeg ? 'veg' : 'non',
+                img: serverItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+                desc: serverItem.description || '',
+                menuType: serverItem.menuType,
+                variants: serverItem.variants?.map(v => ({...v, price: Number(v.price)}))
+              };
+            });
+            setVenueSpecificMenu(mapped);
+          })
+          .catch(console.error);
+      });
   }, [tableSubCategory, activeRestaurantId]);
 
   const outletFilteredMenuItems = useMemo(() => {
     if (tableSubCategory !== 'restaurant' && venueSpecificMenu && outlet !== 'bar') {
       return venueSpecificMenu;
     }
+    // Use unified menu if available, otherwise fall back to old menu
+    if (unifiedMenu && unifiedMenu.categories) {
+      const items = [];
+      unifiedMenu.categories.forEach(cat => {
+        cat.items.forEach(item => {
+          items.push({
+            id: item.id,
+            n: item.name,
+            p: Math.round(item.price),
+            c: item.category,
+            t: item.isVeg ? 'veg' : 'non',
+            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            desc: item.description || '',
+            menuType: item.menuType,
+            printerTarget: item.printerTarget,
+            unit: item.unit,
+            mlPerUnit: item.mlPerUnit,
+            isAvailable: item.isActive,
+            variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
+          });
+        });
+      });
+      if (outlet === 'bar') {
+        return items.filter(item => item.isAvailable !== false);
+      }
+      return items.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
+    }
+    // Fallback to old menu
     if (outlet === 'bar') {
       return activeMenuItems.filter(item => item.isAvailable !== false);
     }
     return activeMenuItems.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
-  }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu]);
+  }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu, unifiedMenu]);
 
   const categories = useMemo(() => {
+    // Use unified menu categories if available
+    if (unifiedMenu && unifiedMenu.categories) {
+      return ['All', ...unifiedMenu.categories.map(cat => cat.name)].filter(Boolean);
+    }
     if (outlet === 'restaurant') return restaurantCategories;
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
     return ['All', ...Array.from(cats)].filter(Boolean);
-  }, [outlet, restaurantCategories, outletFilteredMenuItems]);
+  }, [outlet, restaurantCategories, outletFilteredMenuItems, unifiedMenu]);
 
   const todaySpecials = useMemo(() => {
     const now = Date.now();
@@ -447,13 +611,20 @@ export default function CaptainApp({ onLogout }) {
 
   // Filtered tables based on filter selection
   const filteredTables = useMemo(() => {
-    const baseTables = activeTables;
-    if (tableFilter === 'all') {
-      return baseTables;
+    let baseTables = activeTables;
+
+    // When in bar outlet, the 'restaurant' sub-tab = Bar Hall only
+    // Filter out Conference/PDR/Rooms/Parcel tables from bar main tab
+    if (outlet === 'bar' && tableSubCategory === 'restaurant') {
+      baseTables = activeTables.filter(t => {
+        const sec = (t.sectionName || t.section?.name || '').toLowerCase();
+        return sec.includes('bar hall') || sec.includes('bar ac') || sec === 'bar';
+      });
     }
-    // "My Tables" - show only tables assigned to this captain
+
+    if (tableFilter === 'all') return baseTables;
     return baseTables.filter(t => t.captainId === currentCaptain?.id);
-  }, [activeTables, tableFilter, currentCaptain?.id]);
+  }, [activeTables, tableFilter, currentCaptain?.id, outlet, tableSubCategory]);
 
   const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
   const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
@@ -517,10 +688,27 @@ export default function CaptainApp({ onLogout }) {
       setTimeout(() => setIsSyncing(false), 800);
     };
     window.addEventListener('softshape_menu_updated', onMenuUpdated);
+
+    // Listen for socket menu update events from admin panel
+    const onMenuItemUpdated = (payload) => {
+      console.log('[CaptainApp] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+    };
+
+    // Use the pre-called socket hooks based on outlet
+    const socket = outlet === 'bar' ? barSocket : restaurantSocket;
+    if (socket) {
+      socket.on('menu-item-updated', onMenuItemUpdated);
+    }
+
     return () => {
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
+      if (socket) {
+        socket.off('menu-item-updated', onMenuItemUpdated);
+      }
     };
-  }, []);
+  }, [outlet, barSocket, restaurantSocket]);
 
   // Realtime assignment + revenue sync
   useEffect(() => {
@@ -1501,6 +1689,7 @@ export default function CaptainApp({ onLogout }) {
             captainId={currentCaptain?.id}
             onTableSelect={openTableSession}
             onOrderPlaced={() => {}}
+            venueTables={venueTables}
           />
         )}
             </div>
@@ -1860,7 +2049,16 @@ export default function CaptainApp({ onLogout }) {
                             return (
                               <div key={iIdx} className={`flex justify-between items-center transition-opacity ${isCancelled ? 'opacity-40' : ''}`}>
                                 <div className="flex items-center gap-3">
-                                  <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">{item.q}x</div>
+                                  <div className="w-6 h-6 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-600">
+                                    {Number(item.cancelledQuantity ?? 0) > 0 && !isCancelled ? (
+                                      <span>
+                                        <span className="line-through text-gray-400">{Number(item.q) + Number(item.cancelledQuantity ?? 0)}x</span>
+                                        <span className="text-green-600 ml-1">{item.q}x</span>
+                                      </span>
+                                    ) : (
+                                      <span>{item.q}x</span>
+                                    )}
+                                  </div>
                                   <p className={`text-[11px] font-bold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.n}</p>
                                 </div>
                                 <div className="flex items-center gap-2">

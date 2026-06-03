@@ -110,11 +110,12 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const handleExport = () => {
     const { startDate } = getDateRange();
     const csv = [
-      ['Item Name', 'Type', 'Quantity Sold', 'ML Poured', 'Revenue (Rs)'],
+      ['Item Name', 'Type', 'Quantity Sold', 'Orders', 'ML Poured', 'Revenue (Rs)'],
       ...filteredAndSortedData.map(item => [
         item.name,
         item.type === 'liquor' ? 'Liquor' : 'Food',
         item.quantity,
+        item.orderCount ?? 0,
         getLiquorMlPoured(item.name, item.quantity) ?? '',
         item.revenue.toFixed(2),
       ]),
@@ -303,6 +304,12 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                   <div className="flex items-center justify-end gap-1">Quantity <SortIcon field="quantity" /></div>
                 </th>
                 <th
+                  onClick={() => handleSort('orderCount')}
+                  className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600 cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center justify-end gap-1">Orders <SortIcon field="orderCount" /></div>
+                </th>
+                <th
                   onClick={() => handleSort('revenue')}
                   className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600 cursor-pointer hover:bg-gray-100 transition-colors"
                 >
@@ -313,7 +320,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center">
+                  <td colSpan={5} className="px-4 py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-gray-400">
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#E53935]"></div>
                       <span className="text-xs font-bold uppercase">Loading...</span>
@@ -322,7 +329,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                 </tr>
               ) : filteredAndSortedData.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center text-xs font-bold uppercase text-gray-400">
+                  <td colSpan={5} className="px-4 py-12 text-center text-xs font-bold uppercase text-gray-400">
                     No items sold in this period
                   </td>
                 </tr>
@@ -348,6 +355,9 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                         );
                       })()}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="text-sm font-black text-gray-600">{item.orderCount ?? '—'}</div>
+                    </td>
                     <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">Rs{item.revenue.toFixed(2)}</td>
                   </tr>
                 ))
@@ -361,6 +371,9 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-black text-gray-900">
                     {filteredAndSortedData.reduce((sum, item) => sum + item.quantity, 0)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-black text-gray-500">
+                    —
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">
                     Rs{filteredAndSortedData.reduce((sum, item) => sum + item.revenue, 0).toFixed(2)}

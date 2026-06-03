@@ -57,6 +57,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 import { API_BASE, apiUrl } from '../services/apiConfig';
+import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
@@ -1587,7 +1588,7 @@ export function Reports() {
     // Trend calculation
     let trend = [];
     if (timeRange === 'Today') {
-      const hourly = Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, rev: 0 }));
+      const hourly = Array.from({ length: 24 }).map((element, i) => ({ time: `${i}:00`, rev: 0 }));
       filtered.forEach(t => {
         const hour = new Date(t.paidAt || t.createdAt).getHours();
         hourly[hour].rev += t.amount || 0;
@@ -1607,7 +1608,7 @@ export function Reports() {
       });
     } else {
       const maxDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      const daily = Array.from({ length: maxDays }).map((_, i) => ({ time: i + 1, rev: 0 }));
+      const daily = Array.from({ length: maxDays }).map((element, i) => ({ time: i + 1, rev: 0 }));
       filtered.forEach(t => {
         const date = new Date(t.paidAt || t.createdAt).getDate();
         if (date <= maxDays) {
@@ -1753,7 +1754,7 @@ export function Reports() {
                     paddingAngle={8}
                     stroke="none"
                   >
-                    {data.sources.map((_, i) => <Cell key={i} fill={["#B71C1C", "#E53935", "#EF9A9A"][i]} />)}
+                    {data.sources.map((element, i) => <Cell key={i} fill={["#B71C1C", "#E53935", "#EF9A9A"][i]} />)}
                   </Pie>
                   <Tooltip />
                 </PieChart>
@@ -5619,10 +5620,84 @@ export function BarTables() {
 }
 
 export function BarMenuPage() {
-  const { menuItems, loading, error, refreshMenu } = useBarMenuSync();
+  const { menuItems: legacyMenuItems, loading: legacyLoading, error: legacyError, refreshMenu: legacyRefreshMenu } = useBarMenuSync();
+  const [unifiedMenu, setUnifiedMenu] = useState(null);
+  const [unifiedLoading, setUnifiedLoading] = useState(true);
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [activeVenueId, setActiveVenueId] = useState(VENUE_PRICE_COLUMNS[0].id);
   const [filter, setFilter] = useState('');
+
+  // Fetch unified menu for bar
+  useEffect(() => {
+    setUnifiedLoading(true);
+    fetchUnifiedMenu('bar')
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedLoading(false);
+      })
+      .catch(err => {
+        console.error('[BarMenuPage] Failed to fetch unified menu:', err);
+        setUnifiedLoading(false);
+      });
+  }, []);
+
+  const refreshMenu = () => {
+    setUnifiedLoading(true);
+    fetchUnifiedMenu('bar')
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedLoading(false);
+      })
+      .catch(err => {
+        console.error('[BarMenuPage] Failed to refresh unified menu:', err);
+        setUnifiedLoading(false);
+        legacyRefreshMenu();
+      });
+  };
+
+  // Listen for menu update events to refresh admin panel
+  useEffect(() => {
+    const handleMenuUpdate = (event) => {
+      console.log('[BarMenuPage] Received menu-item-updated, refreshing...');
+      refreshMenu();
+    };
+
+    window.addEventListener('menu-item-updated', handleMenuUpdate);
+    return () => {
+      window.removeEventListener('menu-item-updated', handleMenuUpdate);
+    };
+  }, [refreshMenu]);
+
+  // Derive menu items from unified menu
+  const menuItems = useMemo(() => {
+    if (unifiedMenu && unifiedMenu.categories) {
+      const items = [];
+      unifiedMenu.categories.forEach(cat => {
+        cat.items.forEach(item => {
+          items.push({
+            id: item.id,
+            n: item.name,
+            p: Math.round(item.price),
+            c: item.category,
+            t: item.isVeg ? 'veg' : 'non',
+            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            desc: item.description || '',
+            menuType: item.menuType,
+            isAvailable: item.isActive,
+            variants: item.variants?.map(v => ({...v, price: Number(v.price)})),
+            printerTarget: item.printerTarget,
+            unit: item.unit,
+            mlPerUnit: item.mlPerUnit
+          });
+        });
+      });
+      return items;
+    }
+    return legacyMenuItems;
+  }, [unifiedMenu, legacyMenuItems]);
+
+  const loading = unifiedLoading || legacyLoading;
+  const error = legacyError;
 
   // Edit modal state
   const [editItem, setEditItem] = useState(null);

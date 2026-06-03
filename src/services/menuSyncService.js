@@ -200,6 +200,24 @@ export function useGlobalMenuSync() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
+  // Listen for socket menu update events from admin panel
+  useEffect(() => {
+    const handleMenuUpdate = (event) => {
+      console.log("[MenuSync] Received menu-item-updated event:", event);
+      // Refresh menu from backend to get latest data
+      refreshMenu().catch(err => {
+        console.error("[MenuSync] Failed to refresh menu after socket event:", err);
+      });
+    };
+
+    // Listen for custom event from socket wrapper
+    window.addEventListener("menu-item-updated", handleMenuUpdate);
+
+    return () => {
+      window.removeEventListener("menu-item-updated", handleMenuUpdate);
+    };
+  }, [refreshMenu]);
+
   return {
     globalMenu: menu || [],
     isLoadingMenu: loading,
