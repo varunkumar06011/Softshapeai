@@ -1532,13 +1532,14 @@ export default function CaptainApp({ onLogout }) {
                 >
                   <ArrowRightLeft size={18} />
                 </button>
-                <button
+                {/* Billing request button hidden */}
+                {/* <button
                   onClick={requestFinalBill}
                   disabled={activeTable?.status === TABLE_STATUS.BILLING}
                   className="flex-grow sm:flex-grow-0 px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all text-center disabled:opacity-50 disabled:hover:scale-100"
                 >
                   {activeTable?.status === TABLE_STATUS.BILLING ? 'Billing Requested' : 'Request Billing'}
-                </button>
+                </button> */}
                 <button className="p-2.5 bg-red-50 text-[#E53935] rounded-xl border border-red-100 shrink-0"><Bell size={18} /></button>
               </div>
             </div>
