@@ -40,7 +40,7 @@ const LINE_NORMAL = 42;
 function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
-function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', sectionName }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', sectionName, captainName }) {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
@@ -48,7 +48,9 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
   const displayKotId = kotId || "N/A";
   // Left-right justified: KOT No on left, Table No on right, full 42-char line
   const kotLeft = `KOT No : ${displayKotId}`;
-  const tableRight = `Table  : ${tableNumber}`;
+  const rawLabel = (tableNumber || 'N/A').toString();
+  const tableDisplay = /^[BT]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel;
+  const tableRight = `Table  : ${tableDisplay}`;
   const gap = Math.max(1, LINE_NORMAL - kotLeft.length - tableRight.length);
   const kotTableLine = kotLeft + ' '.repeat(gap) + tableRight;
 
@@ -66,7 +68,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     BOLD_OFF,
     SIZE_NORMAL,
     separator("-"),
-    "Waiter : Waiter\n",
+    `Captain: ${captainName && captainName !== 'N/A' ? captainName : '—'}\n`,
     `Ordered Date : ${dateStr}  Time : ${timeStr}\n`,
     separator("-"),
     BOLD_ON,

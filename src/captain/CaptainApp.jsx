@@ -395,6 +395,7 @@ export default function CaptainApp({ onLogout }) {
       window.removeEventListener('resize', setVh);
     };
   }, []);
+
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
   const [activeVariantItem, setActiveVariantItem] = useState(null);
@@ -1913,9 +1914,10 @@ export default function CaptainApp({ onLogout }) {
                           style={{ fontSize: '16px' }}
                           onFocus={(e) => {
                             handleSearchFocus();
+                            const el = e.currentTarget;
                             setTimeout(() => {
-                              e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }, 300);
+                              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 350);
                           }}
                           onBlur={handleSearchBlur}
                         />
@@ -1975,9 +1977,10 @@ export default function CaptainApp({ onLogout }) {
                         style={{ fontSize: '16px' }}
                         onFocus={(e) => {
                           handleSearchFocus();
+                          const el = e.currentTarget;
                           setTimeout(() => {
-                            e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                          }, 300);
+                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }, 350);
                         }}
                         onBlur={handleSearchBlur}
                       />

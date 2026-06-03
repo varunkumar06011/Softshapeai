@@ -392,7 +392,7 @@ const CashierDashboard = ({ onLogout }) => {
     return formatTxnDisplayId(txnDate, txnNumber);
   }
 
-  const loadTransactions = useCallback(async (filter = 'today') => {
+  const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
     setTxnsLoading(true);
     setPastTransactions([]);
     try {
@@ -400,7 +400,9 @@ const CashierDashboard = ({ onLogout }) => {
       let monthParam = null;
       let limitParam = 200;
 
-      if (filter === 'custom' && txnCustomDate) {
+      if (dateOverride) {
+        dateParam = dateOverride;
+      } else if (filter === 'custom' && txnCustomDate) {
         dateParam = txnCustomDate;
       } else if (filter === 'today') {
         dateParam = getKolkataDateString();
@@ -923,9 +925,11 @@ const CashierDashboard = ({ onLogout }) => {
       setDashboardDate(date);
       setTxnDateFilter('custom');
       setTxnCustomDate(date);
+      loadTransactions('custom', date);
     } else {
       setDashboardDate(null);
       setTxnDateFilter('today');
+      loadTransactions('today');
     }
   };
 
