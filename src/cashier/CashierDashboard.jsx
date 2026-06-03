@@ -669,6 +669,14 @@ const CashierDashboard = ({ onLogout }) => {
     socket.on('table:swapped', onTableSwapped);
     socket.on('table:items-transferred', onTableItemsTransferred);
 
+    // Listen for menu update events from admin panel
+    const onMenuItemUpdated = (payload) => {
+      console.log('[CashierDashboard] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+    };
+    socket.on('menu-item-updated', onMenuItemUpdated);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('billing:requested', onBillingRequested);
@@ -677,6 +685,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('order:paid', onOrderPaid);
       socket.off('table:swapped', onTableSwapped);
       socket.off('table:items-transferred', onTableItemsTransferred);
+      socket.off('menu-item-updated', onMenuItemUpdated);
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
 

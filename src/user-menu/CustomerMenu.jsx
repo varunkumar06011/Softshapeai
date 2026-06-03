@@ -1,16 +1,67 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
+import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
 import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
 
 export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
-  const { menuItems, categories, loading } = useMenuSync();
+  const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
+  const [unifiedMenu, setUnifiedMenu] = useState(null);
+  const [unifiedLoading, setUnifiedLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [dietFilter, setDietFilter] = useState('All'); // All, Veg, Non-Veg
   const [cart, setCart] = useState([]);
+
+  // Fetch unified menu
+  useEffect(() => {
+    setUnifiedLoading(true);
+    fetchUnifiedMenu('restaurant')
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedLoading(false);
+      })
+      .catch(err => {
+        console.error('[CustomerMenu] Failed to fetch unified menu:', err);
+        setUnifiedLoading(false);
+      });
+  }, []);
+
+  // Derive menu items and categories from unified menu
+  const menuItems = useMemo(() => {
+    if (unifiedMenu && unifiedMenu.categories) {
+      const items = [];
+      unifiedMenu.categories.forEach(cat => {
+        cat.items.forEach(item => {
+          items.push({
+            id: item.id,
+            n: item.name,
+            p: Math.round(item.price),
+            c: item.category,
+            t: item.isVeg ? 'veg' : 'non',
+            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            desc: item.description || '',
+            menuType: item.menuType,
+            isAvailable: item.isActive,
+            variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
+          });
+        });
+      });
+      return items;
+    }
+    return legacyMenuItems;
+  }, [unifiedMenu, legacyMenuItems]);
+
+  const categories = useMemo(() => {
+    if (unifiedMenu && unifiedMenu.categories) {
+      return ['All', ...unifiedMenu.categories.map(cat => cat.name)].filter(Boolean);
+    }
+    return legacyCategories;
+  }, [unifiedMenu, legacyCategories]);
+
+  const loading = unifiedLoading || legacyLoading;
 
   const [isScrolledDown, setIsScrolledDown] = useState(false);
   const lastScrollTop = useRef(0);
@@ -71,6 +122,25 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
   useEffect(() => {
     initSocket();
+
+    // Listen for socket menu update events from admin panel
+    const onMenuItemUpdated = (payload) => {
+      console.log('[CustomerMenu] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+    };
+
+    // Get socket from waiterCallService
+    const socket = window.__softshape_socket;
+    if (socket) {
+      socket.on('menu-item-updated', onMenuItemUpdated);
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('menu-item-updated', onMenuItemUpdated);
+      }
+    };
   }, []);
 
   const filteredMenu = useMemo(() => {

@@ -5,6 +5,7 @@ import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/wa
 import { fetchBarTables } from '../services/barTableApi';
 import { createOrder, updateOrderItems } from '../services/orderApi';
 import { apiUrl } from '../services/apiConfig';
+import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import VariantPicker from '../shared/components/VariantPicker';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -130,6 +131,50 @@ export default function BarMenu({ tableId }) {
 
   useEffect(() => {
     initSocket();
+
+    // Listen for socket menu update events from admin panel
+    const onMenuItemUpdated = (payload) => {
+      console.log('[BarMenu] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+      // Also refresh bar menu directly
+      setLoading(true);
+      Promise.all([
+        fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store" }),
+        fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
+      ])
+        .then(([posViewRes, itemsRes]) => {
+          if (!posViewRes.ok) throw new Error(`POS-view failed: ${posViewRes.status}`);
+          if (!itemsRes.ok) throw new Error(`Items failed: ${itemsRes.status}`);
+          return Promise.all([posViewRes.json(), itemsRes.json()]);
+        })
+        .then(([posViewData, itemsData]) => {
+          const filteredPosView = (posViewData || []).map(cat => ({
+            ...cat,
+            items: (cat.items || []).filter(item => item.isAvailable !== false)
+          })).filter(cat => cat.items.length > 0);
+          const filteredItems = (itemsData || []).filter(item => item.isAvailable !== false);
+          setCategoriesData(filteredPosView);
+          setFlatItems(filteredItems);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error("Bar menu refresh error:", err);
+          setLoading(false);
+        });
+    };
+
+    // Get socket from waiterCallService
+    const socket = window.__softshape_socket;
+    if (socket) {
+      socket.on('menu-item-updated', onMenuItemUpdated);
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('menu-item-updated', onMenuItemUpdated);
+      }
+    };
   }, []);
 
   // Fetch menu data and resolve table details
@@ -138,6 +183,15 @@ export default function BarMenu({ tableId }) {
     async function loadData() {
       try {
         setLoading(true);
+        
+        // Try to use unified endpoint first
+        let unifiedData = null;
+        try {
+          unifiedData = await fetchUnifiedMenu('bar');
+        } catch (e) {
+          console.warn('[BarMenu] Unified endpoint failed, falling back to old endpoints:', e);
+        }
+
         const [posViewRes, itemsRes, tablesRes, restaurantRes] = await Promise.all([
           fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store" }),
           fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
@@ -155,16 +209,52 @@ export default function BarMenu({ tableId }) {
 
         if (active) {
           setRestaurantItems(Array.isArray(restaurantData) ? restaurantData : []);
-          // Filter out unavailable items from both data sources
-          const filteredPosView = (posViewData || []).map(cat => ({
-            ...cat,
-            items: (cat.items || []).filter(item => item.isAvailable !== false)
-          })).filter(cat => cat.items.length > 0);
+          
+          // Use unified menu if available, otherwise fall back to old endpoints
+          if (unifiedData && unifiedData.categories) {
+            // Convert unified menu format to the format expected by BarMenu
+            const filteredPosView = unifiedData.categories.map(cat => ({
+              name: cat.name,
+              items: cat.items.filter(item => item.isActive !== false)
+            })).filter(cat => cat.items.length > 0);
+            
+            const filteredItems = [];
+            unifiedData.categories.forEach(cat => {
+              cat.items.forEach(item => {
+                if (item.isActive !== false) {
+                  filteredItems.push({
+                    id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    category: item.category,
+                    isVeg: item.isVeg,
+                    imageUrl: item.image,
+                    description: item.description,
+                    menuType: item.menuType,
+                    isAvailable: item.isActive,
+                    variants: item.variants,
+                    printerTarget: item.printerTarget,
+                    unit: item.unit,
+                    mlPerUnit: item.mlPerUnit
+                  });
+                }
+              });
+            });
 
-          const filteredItems = (itemsData || []).filter(item => item.isAvailable !== false);
+            setCategoriesData(filteredPosView);
+            setFlatItems(filteredItems);
+          } else {
+            // Filter out unavailable items from both data sources
+            const filteredPosView = (posViewData || []).map(cat => ({
+              ...cat,
+              items: (cat.items || []).filter(item => item.isAvailable !== false)
+            })).filter(cat => cat.items.length > 0);
 
-          setCategoriesData(filteredPosView);
-          setFlatItems(filteredItems);
+            const filteredItems = (itemsData || []).filter(item => item.isAvailable !== false);
+
+            setCategoriesData(filteredPosView);
+            setFlatItems(filteredItems);
+          }
 
           // Resolve backend table ID
           const matchNumber = String(tableId).match(/(\d+)/)?.[1] || tableId;

@@ -77,6 +77,22 @@ export function useBarMenuSync() {
     loadBarMenu();
   };
 
+  // Listen for socket menu update events from admin panel
+  useEffect(() => {
+    const handleMenuUpdate = (event) => {
+      console.log("[BarMenuSync] Received menu-item-updated event:", event);
+      // Refresh menu from backend to get latest data
+      refreshMenu();
+    };
+
+    // Listen for custom event from socket wrapper
+    window.addEventListener("menu-item-updated", handleMenuUpdate);
+
+    return () => {
+      window.removeEventListener("menu-item-updated", handleMenuUpdate);
+    };
+  }, []);
+
   return { ...state, refreshMenu };
 }
 

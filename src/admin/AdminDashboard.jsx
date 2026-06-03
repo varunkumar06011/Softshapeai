@@ -137,12 +137,21 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     socket.on("order:paid", onOrderPaid);
     socket.on("table:updated", onTableUpdated);
 
+    // Listen for menu update events (from other admin sessions or other panels)
+    const onMenuItemUpdated = (payload) => {
+      console.log('[AdminDashboard] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService/barMenuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+    };
+    socket.on('menu-item-updated', onMenuItemUpdated);
+
     return () => {
       socket.off("order:created", onOrderCreated);
       socket.off("order:updated", onOrderUpdated);
       socket.off("billing:requested", onBillingRequested);
       socket.off("order:paid", onOrderPaid);
       socket.off("table:updated", onTableUpdated);
+      socket.off('menu-item-updated', onMenuItemUpdated);
     };
   }, [socket, setTables]);
 

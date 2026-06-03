@@ -57,6 +57,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 import { API_BASE, apiUrl } from '../services/apiConfig';
+import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { RESTAURANT_ID } from '../services/tableApi';
 import { BAR_ID } from '../services/barApiConfig';
@@ -5619,10 +5620,83 @@ export function BarTables() {
 }
 
 export function BarMenuPage() {
-  const { menuItems, loading, error, refreshMenu } = useBarMenuSync();
+  const { menuItems: legacyMenuItems, loading: legacyLoading, error: legacyError, refreshMenu: legacyRefreshMenu } = useBarMenuSync();
+  const [unifiedMenu, setUnifiedMenu] = useState(null);
+  const [unifiedLoading, setUnifiedLoading] = useState(true);
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [activeVenueId, setActiveVenueId] = useState(VENUE_PRICE_COLUMNS[0].id);
   const [filter, setFilter] = useState('');
+
+  // Fetch unified menu for bar
+  useEffect(() => {
+    setUnifiedLoading(true);
+    fetchUnifiedMenu('bar')
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedLoading(false);
+      })
+      .catch(err => {
+        console.error('[BarMenuPage] Failed to fetch unified menu:', err);
+        setUnifiedLoading(false);
+      });
+  }, []);
+
+  // Listen for menu update events to refresh admin panel
+  useEffect(() => {
+    const handleMenuUpdate = (event) => {
+      console.log('[BarMenuPage] Received menu-item-updated, refreshing...');
+      refreshMenu();
+    };
+
+    window.addEventListener('menu-item-updated', handleMenuUpdate);
+    return () => {
+      window.removeEventListener('menu-item-updated', handleMenuUpdate);
+    };
+  }, [refreshMenu]);
+
+  // Derive menu items from unified menu
+  const menuItems = useMemo(() => {
+    if (unifiedMenu && unifiedMenu.categories) {
+      const items = [];
+      unifiedMenu.categories.forEach(cat => {
+        cat.items.forEach(item => {
+          items.push({
+            id: item.id,
+            n: item.name,
+            p: Math.round(item.price),
+            c: item.category,
+            t: item.isVeg ? 'veg' : 'non',
+            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            desc: item.description || '',
+            menuType: item.menuType,
+            isAvailable: item.isActive,
+            variants: item.variants?.map(v => ({...v, price: Number(v.price)})),
+            printerTarget: item.printerTarget,
+            unit: item.unit,
+            mlPerUnit: item.mlPerUnit
+          });
+        });
+      });
+      return items;
+    }
+    return legacyMenuItems;
+  }, [unifiedMenu, legacyMenuItems]);
+
+  const loading = unifiedLoading || legacyLoading;
+  const error = legacyError;
+  const refreshMenu = () => {
+    setUnifiedLoading(true);
+    fetchUnifiedMenu('bar')
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedLoading(false);
+      })
+      .catch(err => {
+        console.error('[BarMenuPage] Failed to refresh unified menu:', err);
+        setUnifiedLoading(false);
+        legacyRefreshMenu();
+      });
+  };
 
   // Edit modal state
   const [editItem, setEditItem] = useState(null);

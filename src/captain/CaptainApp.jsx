@@ -55,6 +55,7 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchVenueMenu } from '../services/venueTableApi';
+import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
 import VenueSectionView from '../shared/components/VenueSectionView';
@@ -231,6 +232,25 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
 
+  // State for unified menu
+  const [unifiedMenu, setUnifiedMenu] = useState(null);
+  const [unifiedMenuLoading, setUnifiedMenuLoading] = useState(false);
+
+  // Fetch unified menu based on outlet
+  useEffect(() => {
+    const venue = outlet === 'bar' ? 'bar' : 'restaurant';
+    setUnifiedMenuLoading(true);
+    fetchUnifiedMenu(venue)
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedMenuLoading(false);
+      })
+      .catch(err => {
+        console.error('[CaptainApp] Failed to fetch unified menu:', err);
+        setUnifiedMenuLoading(false);
+      });
+  }, [outlet]);
+
   const { activeCalls, clearCall } = useWaiterCalls();
 
 
@@ -368,42 +388,112 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
-    fetchVenueMenu(currentVenueId, activeRestaurantId)
-      .then(items => {
-        const mapped = items.map(serverItem => {
-          const defaultVariant = serverItem.variants?.find(v => v.isDefault) ?? serverItem.variants?.[0];
-          return {
-            id: serverItem.id,
-            n: serverItem.name,
-            p: Math.round(serverItem.price),
-            c: serverItem.category,
-            t: serverItem.isVeg ? 'veg' : 'non',
-            img: serverItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
-            desc: serverItem.description || '',
-            menuType: serverItem.menuType,
-            variants: serverItem.variants?.map(v => ({...v, price: Number(v.price)}))
-          };
+    // Map venue IDs to unified endpoint venue parameter
+    const venueMap = {
+      'venue-bar': 'bar',
+      'venue-conference1': 'conference1',
+      'venue-pdr': 'conference2',
+      'venue-rooms': 'rooms',
+      'venue-parcel': 'parcel'
+    };
+    const venueParam = venueMap[currentVenueId] || 'restaurant';
+
+    fetchUnifiedMenu(venueParam)
+      .then(data => {
+        // Flatten categories into items list for captain panel
+        const items = [];
+        data.categories.forEach(cat => {
+          cat.items.forEach(item => {
+            items.push({
+              id: item.id,
+              n: item.name,
+              p: Math.round(item.price),
+              c: item.category,
+              t: item.isVeg ? 'veg' : 'non',
+              img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+              desc: item.description || '',
+              menuType: item.menuType,
+              printerTarget: item.printerTarget,
+              unit: item.unit,
+              mlPerUnit: item.mlPerUnit,
+              variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
+            });
+          });
         });
-        setVenueSpecificMenu(mapped);
+        setVenueSpecificMenu(items);
       })
-      .catch(console.error);
+      .catch(err => {
+        console.error('[CaptainApp] Failed to fetch unified menu:', err);
+        // Fallback to old endpoint
+        fetchVenueMenu(currentVenueId, activeRestaurantId)
+          .then(items => {
+            const mapped = items.map(serverItem => {
+              const defaultVariant = serverItem.variants?.find(v => v.isDefault) ?? serverItem.variants?.[0];
+              return {
+                id: serverItem.id,
+                n: serverItem.name,
+                p: Math.round(serverItem.price),
+                c: serverItem.category,
+                t: serverItem.isVeg ? 'veg' : 'non',
+                img: serverItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+                desc: serverItem.description || '',
+                menuType: serverItem.menuType,
+                variants: serverItem.variants?.map(v => ({...v, price: Number(v.price)}))
+              };
+            });
+            setVenueSpecificMenu(mapped);
+          })
+          .catch(console.error);
+      });
   }, [tableSubCategory, activeRestaurantId]);
 
   const outletFilteredMenuItems = useMemo(() => {
     if (tableSubCategory !== 'restaurant' && venueSpecificMenu) {
       return venueSpecificMenu;
     }
+    // Use unified menu if available, otherwise fall back to old menu
+    if (unifiedMenu && unifiedMenu.categories) {
+      const items = [];
+      unifiedMenu.categories.forEach(cat => {
+        cat.items.forEach(item => {
+          items.push({
+            id: item.id,
+            n: item.name,
+            p: Math.round(item.price),
+            c: item.category,
+            t: item.isVeg ? 'veg' : 'non',
+            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            desc: item.description || '',
+            menuType: item.menuType,
+            printerTarget: item.printerTarget,
+            unit: item.unit,
+            mlPerUnit: item.mlPerUnit,
+            isAvailable: item.isActive,
+            variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
+          });
+        });
+      });
+      if (outlet === 'bar') {
+        return items.filter(item => item.isAvailable !== false);
+      }
+      return items.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
+    }
+    // Fallback to old menu
     if (outlet === 'bar') {
       return activeMenuItems.filter(item => item.isAvailable !== false);
     }
     return activeMenuItems.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
-  }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu]);
+  }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu, unifiedMenu]);
 
   const categories = useMemo(() => {
+    // Use unified menu categories if available
+    if (unifiedMenu && unifiedMenu.categories) {
+      return ['All', ...unifiedMenu.categories.map(cat => cat.name)].filter(Boolean);
+    }
     if (outlet === 'restaurant') return restaurantCategories;
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
     return ['All', ...Array.from(cats)].filter(Boolean);
-  }, [outlet, restaurantCategories, outletFilteredMenuItems]);
+  }, [outlet, restaurantCategories, outletFilteredMenuItems, unifiedMenu]);
 
   const todaySpecials = useMemo(() => {
     const now = Date.now();
@@ -518,10 +608,27 @@ export default function CaptainApp({ onLogout }) {
       setTimeout(() => setIsSyncing(false), 800);
     };
     window.addEventListener('softshape_menu_updated', onMenuUpdated);
+
+    // Listen for socket menu update events from admin panel
+    const onMenuItemUpdated = (payload) => {
+      console.log('[CaptainApp] Received menu-item-updated:', payload);
+      // Dispatch window event for menuSyncService to pick up
+      window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
+    };
+
+    // Get socket instance for the active restaurant
+    const socket = outlet === 'bar' ? useSocket(BAR_ID) : useSocket(RESTAURANT_ID);
+    if (socket) {
+      socket.on('menu-item-updated', onMenuItemUpdated);
+    }
+
     return () => {
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
+      if (socket) {
+        socket.off('menu-item-updated', onMenuItemUpdated);
+      }
     };
-  }, []);
+  }, [outlet]);
 
   // Realtime assignment + revenue sync
   useEffect(() => {
