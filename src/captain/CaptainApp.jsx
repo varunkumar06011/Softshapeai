@@ -55,7 +55,7 @@ import OutletToggle from '../shared/components/OutletToggle';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
-import { fetchVenueMenu } from '../services/venueTableApi';
+import { fetchVenueMenu, fetchVenueSections } from '../services/venueTableApi';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import VariantPicker from '../shared/components/VariantPicker';
@@ -380,6 +380,41 @@ export default function CaptainApp({ onLogout }) {
   }, [outlet, tableSubCategory]);
 
   const [venueSpecificMenu, setVenueSpecificMenu] = useState(null);
+  const [venueTables, setVenueTables] = useState([]);
+
+  // Fetch venue sections (Conference, PDR, Rooms, Parcel tables)
+  useEffect(() => {
+    fetchVenueSections()
+      .then(sections => {
+        // Flatten sections into tables array
+        const tables = [];
+        if (Array.isArray(sections)) {
+          sections.forEach(section => {
+            if (section.tables && Array.isArray(section.tables)) {
+              section.tables.forEach(table => {
+                tables.push({
+                  ...table,
+                  sectionId: section.id,
+                  sectionName: section.name,
+                  section: { id: section.id, name: section.name },
+                  backendId: table.id,
+                  id: table.number,
+                  number: table.number,
+                  status: table.status || 'AVAILABLE',
+                  capacity: table.capacity || 4,
+                });
+              });
+            }
+          });
+        }
+        setVenueTables(tables);
+      })
+      .catch(err => {
+        console.error('[CaptainApp] Failed to fetch venue sections:', err);
+        setVenueTables([]);
+      });
+  }, []);
+
   useEffect(() => {
     let currentVenueId = null;
     if (tableSubCategory === 'bar') currentVenueId = 'venue-bar';
@@ -1620,7 +1655,7 @@ export default function CaptainApp({ onLogout }) {
             captainId={currentCaptain?.id}
             onTableSelect={openTableSession}
             onOrderPlaced={() => {}}
-            venueTables={barTables}
+            venueTables={venueTables}
           />
         )}
             </div>
@@ -1836,12 +1871,6 @@ export default function CaptainApp({ onLogout }) {
                                   {item.n}
                                 </h3>
 
-                                {/* ML sub-label for LIQUOR items */}
-                                {item.menuType === 'LIQUOR' && !item.isBottleItem && (
-                                  <p className="text-[10px] font-bold text-gray-500 mb-0.5">
-                                    {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${totalQty} × ${BAR_UNIT_ML}ml = ${totalQty * BAR_UNIT_ML}ml`}
-                                  </p>
-                                )}
 
                                 {/* Item Short Description */}
                                 {item.desc && (
