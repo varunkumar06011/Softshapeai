@@ -14,7 +14,14 @@ export default function VenueSectionView({
   venueTables = []
 }) {
 
-  const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
+  const sectionIdByVenueId = {
+    'venue-bar': 'section-venue-bar',
+    'venue-conference1': 'section-venue-conf1',
+    'venue-pdr': 'section-venue-conf2',
+    'venue-rooms': 'section-venue-pdr',
+    'venue-parcel': 'section-venue-parcel',
+  };
+  const targetSectionId = sectionIdByVenueId[venueId];
   const targetName = (sectionName || '').trim().toLowerCase();
 
   const sectionTables = (venueTables || []).filter((table) => {
