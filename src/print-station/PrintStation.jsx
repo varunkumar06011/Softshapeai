@@ -32,6 +32,7 @@ const BOLD_OFF = '\x1B\x45\x00';
 const SIZE_2X = '\x1D\x21\x11';
 const SIZE_NORMAL = '\x1D\x21\x00';
 const SIZE_HEIGHT = '\x1D\x21\x01';
+const SIZE_SMALL = '\x1D\x21\x20';
 const CUT = '\x1D\x56\x42\x00';
 
 const LINE_NORMAL = 42;
@@ -78,7 +79,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`;
     cmds.push(
       BOLD_ON,
-      SIZE_2X,
+      SIZE_SMALL,
       itemLine + "\n",
       SIZE_NORMAL,
       BOLD_OFF,
