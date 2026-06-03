@@ -5,7 +5,7 @@ import {
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
-  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare
+  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -406,7 +406,7 @@ const CashierDashboard = ({ onLogout }) => {
     return formatTxnDisplayId(txnDate, txnNumber);
   }
 
-  const loadTransactions = useCallback(async (filter = 'today') => {
+  const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
     setTxnsLoading(true);
     setPastTransactions([]);
     try {
@@ -414,7 +414,9 @@ const CashierDashboard = ({ onLogout }) => {
       let monthParam = null;
       let limitParam = 200;
 
-      if (filter === 'custom' && txnCustomDate) {
+      if (dateOverride) {
+        dateParam = dateOverride;
+      } else if (filter === 'custom' && txnCustomDate) {
         dateParam = txnCustomDate;
       } else if (filter === 'today') {
         dateParam = getKolkataDateString();
@@ -590,13 +592,6 @@ const CashierDashboard = ({ onLogout }) => {
       );
     };
 
-    const mergeOrder = (incoming, existing) => {
-      if (!existing) return incoming;
-      const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
-      const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-      return incomingTime >= existingTime ? incoming : existing;
-    };
-
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
@@ -613,6 +608,19 @@ const CashierDashboard = ({ onLogout }) => {
       }
     };
 
+    const mergeOrder = (incoming, existing) => {
+      if (!existing) return incoming;
+      // FIX #4: Always use the version with MORE items to prevent data loss
+      const incomingItemCount = (incoming?.items?.length ?? 0);
+      const existingItemCount = (existing?.items?.length ?? 0);
+      if (incomingItemCount > existingItemCount) return incoming;
+      if (existingItemCount > incomingItemCount) return existing;
+      // Equal items — fall back to timestamp
+      const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
+      const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      return incomingTime >= existingTime ? incoming : existing;
+    };
+
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
@@ -626,6 +634,38 @@ const CashierDashboard = ({ onLogout }) => {
         setVenueTables(prev => prev.map(t =>
           t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
         ), { skipPersist: true });
+      }
+    };
+
+    const onTableUpdated = ({ table } = {}) => {
+      if (!table?.id) return;
+      setActiveTables(prev => prev.map(t => {
+        if (t.backendId !== table.id) return t;
+        // FIX #4: Merge kotHistory — never lose KOTs already in local state
+        const mergedKotHistory = (() => {
+          const existing = t.kotHistory || [];
+          const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
+          if (incoming.length >= existing.length) return incoming;
+          return existing;
+        })();
+        return {
+          ...t,
+          kotHistory: mergedKotHistory,
+          currentBill: table.currentBill ?? t.currentBill,
+          status: table.status ?? t.status,
+          workflowStatus: table.workflowStatus ?? t.workflowStatus,
+        };
+      }));
+      if (selectedTable?.backendId === table.id) {
+        setSelectedTable(prev => {
+          if (!prev) return prev;
+          const mergedKotHistory = (() => {
+            const existing = prev.kotHistory || [];
+            const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
+            return incoming.length >= existing.length ? incoming : existing;
+          })();
+          return { ...prev, kotHistory: mergedKotHistory, currentBill: table.currentBill ?? prev.currentBill };
+        });
       }
     };
 
@@ -692,6 +732,7 @@ const CashierDashboard = ({ onLogout }) => {
     socket.on('order:paid', onOrderPaid);
     socket.on('table:swapped', onTableSwapped);
     socket.on('table:items-transferred', onTableItemsTransferred);
+    socket.on('table:updated', onTableUpdated);
 
     // Listen for menu update events from admin panel
     const onMenuItemUpdated = (payload) => {
@@ -710,6 +751,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:swapped', onTableSwapped);
       socket.off('table:items-transferred', onTableItemsTransferred);
       socket.off('menu-item-updated', onMenuItemUpdated);
+      socket.off('table:updated', onTableUpdated);
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
 
@@ -879,6 +921,25 @@ const CashierDashboard = ({ onLogout }) => {
   const todaysSales = useMemo(() => {
     return pastTransactions.reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [pastTransactions]);
+
+  const todaysDiscount = useMemo(() => {
+    return pastTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+  }, [pastTransactions]);
+
+  const [dashboardDate, setDashboardDate] = useState(null);
+
+  const handleDashboardDateChange = (date) => {
+    if (date) {
+      setDashboardDate(date);
+      setTxnDateFilter('custom');
+      setTxnCustomDate(date);
+      loadTransactions('custom', date);
+    } else {
+      setDashboardDate(null);
+      setTxnDateFilter('today');
+      loadTransactions('today');
+    }
+  };
 
   const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
@@ -1664,10 +1725,10 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Today's Sale", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${pastTransactions.length} txns`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${pastTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${pastTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
+    { label: "Net", value: `₹${Number(todaysSales - todaysDiscount).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${activeTableOrders.length}/${activeTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Pending KOTs", value: String(liveKotQueue.length).padStart(2, '0'), change: `${activeTableOrders.filter(o => o.status === 'Waiting Bill').length} billing`, icon: ChefHat, color: "text-orange-600", bg: "bg-orange-50" },
-    { label: "Online Orders", value: "26", change: "12 Swiggy, 14 Zomato", icon: Monitor, color: "text-purple-600", bg: "bg-purple-50" },
   ];
 
   return (
@@ -1786,6 +1847,27 @@ const CashierDashboard = ({ onLogout }) => {
               {activeTab === 'dashboard' && (
                 <div className="flex flex-col lg:flex-row flex-grow overflow-hidden w-full">
                   <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
+                    {/* Calendar Bar */}
+                    <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                      <Calendar size={18} className="text-gray-500" />
+                      <span className="text-sm font-bold text-gray-700">
+                        {dashboardDate ? dashboardDate : "Today's Overview"}
+                      </span>
+                      <input
+                        type="date"
+                        value={dashboardDate || ''}
+                        onChange={(e) => handleDashboardDateChange(e.target.value)}
+                        className="ml-auto text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+                      />
+                      {dashboardDate && (
+                        <button
+                          onClick={() => handleDashboardDateChange(null)}
+                          className="text-sm font-bold text-blue-600 hover:text-blue-700"
+                        >
+                          Today
+                        </button>
+                      )}
+                    </div>
                     {/* Stats Row */}
                     <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
                       {stats.map((stat, i) => (
