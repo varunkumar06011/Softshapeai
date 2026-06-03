@@ -79,7 +79,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
     const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
     const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
-    if (existingUpdated > incomingUpdated) {
+    if (existingUpdated >= incomingUpdated) {
       activeOrder = existingOrder;
     }
   }

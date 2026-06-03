@@ -1588,7 +1588,7 @@ export function Reports() {
     // Trend calculation
     let trend = [];
     if (timeRange === 'Today') {
-      const hourly = Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, rev: 0 }));
+      const hourly = Array.from({ length: 24 }).map((element, i) => ({ time: `${i}:00`, rev: 0 }));
       filtered.forEach(t => {
         const hour = new Date(t.paidAt || t.createdAt).getHours();
         hourly[hour].rev += t.amount || 0;
@@ -1608,7 +1608,7 @@ export function Reports() {
       });
     } else {
       const maxDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      const daily = Array.from({ length: maxDays }).map((_, i) => ({ time: i + 1, rev: 0 }));
+      const daily = Array.from({ length: maxDays }).map((element, i) => ({ time: i + 1, rev: 0 }));
       filtered.forEach(t => {
         const date = new Date(t.paidAt || t.createdAt).getDate();
         if (date <= maxDays) {
@@ -1754,7 +1754,7 @@ export function Reports() {
                     paddingAngle={8}
                     stroke="none"
                   >
-                    {data.sources.map((_, i) => <Cell key={i} fill={["#B71C1C", "#E53935", "#EF9A9A"][i]} />)}
+                    {data.sources.map((element, i) => <Cell key={i} fill={["#B71C1C", "#E53935", "#EF9A9A"][i]} />)}
                   </Pie>
                   <Tooltip />
                 </PieChart>
@@ -5641,6 +5641,20 @@ export function BarMenuPage() {
       });
   }, []);
 
+  const refreshMenu = () => {
+    setUnifiedLoading(true);
+    fetchUnifiedMenu('bar')
+      .then(data => {
+        setUnifiedMenu(data);
+        setUnifiedLoading(false);
+      })
+      .catch(err => {
+        console.error('[BarMenuPage] Failed to refresh unified menu:', err);
+        setUnifiedLoading(false);
+        legacyRefreshMenu();
+      });
+  };
+
   // Listen for menu update events to refresh admin panel
   useEffect(() => {
     const handleMenuUpdate = (event) => {
@@ -5684,19 +5698,6 @@ export function BarMenuPage() {
 
   const loading = unifiedLoading || legacyLoading;
   const error = legacyError;
-  const refreshMenu = () => {
-    setUnifiedLoading(true);
-    fetchUnifiedMenu('bar')
-      .then(data => {
-        setUnifiedMenu(data);
-        setUnifiedLoading(false);
-      })
-      .catch(err => {
-        console.error('[BarMenuPage] Failed to refresh unified menu:', err);
-        setUnifiedLoading(false);
-        legacyRefreshMenu();
-      });
-  };
 
   // Edit modal state
   const [editItem, setEditItem] = useState(null);
