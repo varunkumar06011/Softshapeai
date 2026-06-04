@@ -1606,18 +1606,32 @@ const CashierDashboard = ({ onLogout }) => {
 
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
 
+    const isBarVenueContext = outlet === 'bar' && Boolean(currentVenueId);
+
     const mapped = itemsToFilter.map(item => {
-      // Map price using the venue override if it exists
       const overridePrice = venueSpecificPrices[item.id];
-      const finalPrice = overridePrice !== undefined 
-        ? Number(overridePrice) 
-        : Number(item.p || item.price || 0);
-        
+
+      let finalPrice;
+      if (isBarVenueContext) {
+        // In bar venue contexts, only use the explicit venue price — no base-price fallback.
+        // undefined means the item has no venue price record and should be excluded.
+        finalPrice = overridePrice !== undefined ? Number(overridePrice) : undefined;
+      } else {
+        // Restaurant / main floor: venue override if set and > 0, else base price
+        finalPrice = (overridePrice != null && Number(overridePrice) > 0)
+          ? Number(overridePrice)
+          : Number(item.p || item.price || 0);
+      }
+
       return {
         ...item,
-        p: finalPrice, // override the display price
+        p: finalPrice,
       };
     }).filter((item) => {
+      if (isBarVenueContext) {
+        // Exclude items with no venue price or a zero venue price
+        return item.p !== undefined && Number(item.p) > 0;
+      }
       if (!selectedTable || selectedTable.section?.restaurantId !== 'venue-001') return true;
       return !currentVenueId || Number(item.p || 0) > 0;
     });
@@ -1707,14 +1721,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (item) => {
-    // Beer items should be added directly as 650ml bottles
+    // Beer items should be added directly
     if (outlet === 'bar' && isBeerItem(item)) {
-      const beerItem = {
-        ...item,
-        n: `${item.n} 650ml Bottle`,
-        p: item.p || item.price
-      };
-      addToCart(beerItem);
+      addToCart(item);
       setSearchQuery('');
       setSelectedCategory('All');
       setActiveDiet('All');
@@ -1733,15 +1742,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleVariantSelect = (item, variant) => {
-    // Build item name with variant - use actual variant name from DB
-    // Fallback to '30ml' for backwards compatibility if variant.name is missing
-    const itemName = variant.id === 'full_bottle'
-      ? `${item.n} Full Bottle`
-      : `${item.n} ${variant.name || '30ml'}`;
-
     addToCart({
       ...item,
-      n: itemName,
+      n: item.n,
       p: Number(variant.price),
       notes: item.notes || null
     });
@@ -3237,11 +3240,6 @@ const CashierDashboard = ({ onLogout }) => {
                                     {item.n}
                                     {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
                                   </p>
-                                  {item.menuType === 'LIQUOR' && !item.isBottleItem && (
-                                    <p className="text-xs font-black text-gray-500 mt-1">
-                                      {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${item.q} × ${BAR_UNIT_ML}ml = ${item.q * BAR_UNIT_ML}ml`}
-                                    </p>
-                                  )}
                                 </div>
                                 <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
                               </div>
