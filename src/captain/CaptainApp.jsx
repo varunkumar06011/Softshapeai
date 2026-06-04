@@ -1793,17 +1793,15 @@ export default function CaptainApp({ onLogout }) {
   // INVARIANT: activeOrderIdRef.current must be null when a captain opens a free table. It must only be set to a real DB order ID when that order exists, is active (not PAID/CANCELLED), and has items.
 
   const openTableSession = (table) => {
-
+    if (!table || !table.id) {
+      console.warn('[CaptainApp] openTableSession blocked: missing table or table.id', table);
+      return;
+    }
     setActiveTableId(table.id);
-
     lastConfirmedItemsRef.current = [];
-
     activeOrderIdRef.current = null;
-
     kotRequestIdRef.current = null;
-
     setView('session');
-
   };
 
 
@@ -1815,11 +1813,10 @@ export default function CaptainApp({ onLogout }) {
   // This prevents the cashier from seeing a table as occupied before any order is confirmed.
 
   const addItemToSession = (item, variant = null) => {
-
-    if (!activeTableId) return; // no active table, do nothing
-
-
-
+    if (!activeTableId) {
+      console.warn('[CaptainApp] addItemToSession blocked: no activeTableId. Item:', item?.n, 'view:', view);
+      return; // no active table, do nothing
+    }
     const finalPrice = variant ? Number(variant.price) : item.p;
 
 
@@ -1855,35 +1852,21 @@ export default function CaptainApp({ onLogout }) {
 
 
   const handleItemClick = (e, item) => {
-
     e.stopPropagation();
-
-
+    console.log('[CaptainApp] handleItemClick:', item?.n, 'activeTableId:', activeTableId, 'view:', view);
 
     // Beer items should be added directly
-
     if (outlet === 'bar' && isBeerItem(item)) {
-
       addItemToSession(item);
-
       return;
-
     }
-
-
 
     // Other liquor items (spirits) should show variant picker
-
     if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
-
       setActiveVariantItem(item);
-
     } else {
-
       addItemToSession(item);
-
     }
-
   };
 
 
@@ -2054,7 +2037,13 @@ export default function CaptainApp({ onLogout }) {
 
   }, [activeTableId]);
 
-
+  // Stale session guard: if view is 'session' but there's no active table, reset to tables view
+  useEffect(() => {
+    if (view === 'session' && !activeTableId) {
+      console.warn('[CaptainApp] Stale session detected: view=session but no activeTableId. Resetting to tables view.');
+      setView('tables');
+    }
+  }, [view, activeTableId]);
 
   const sendIncrementalKOT = async () => {
 
