@@ -33,15 +33,42 @@ const levenshtein = (a, b) => {
 
 // Score transcript against menu name using word-level fuzzy matching (module-level)
 const scoreTranscriptAgainstName = (transcript, menuName) => {
-  const spokenWords = transcript.toLowerCase().split(/\s+/).filter(Boolean);
-  const menuWords = menuName.toLowerCase().split(/\s+/).filter(Boolean);
+  const spoken = transcript.toLowerCase();
+  const menu = menuName.toLowerCase();
+  
+  // Full-string containment check first
+  if (spoken.includes(menu) || menu.includes(spoken)) {
+    return 1.0;
+  }
+  
+  const spokenWords = spoken.split(/\s+/).filter(Boolean);
+  const menuWords = menu.split(/\s+/).filter(Boolean);
   if (spokenWords.length === 0 || menuWords.length === 0) return 0;
+  
   let totalScore = 0;
   for (const spoken of spokenWords) {
     let bestWordScore = 0;
     for (const menuWord of menuWords) {
       const maxLen = Math.max(spoken.length, menuWord.length);
       if (maxLen === 0) continue;
+      
+      // Prefix check
+      if (menuWord.startsWith(spoken) || spoken.startsWith(menuWord)) {
+        const matchLen = Math.min(spoken.length, menuWord.length);
+        const prefixScore = matchLen / maxLen;
+        if (prefixScore > bestWordScore) bestWordScore = prefixScore;
+        continue;
+      }
+      
+      // Substring check
+      if (menuWord.includes(spoken) || spoken.includes(menuWord)) {
+        const containLen = Math.min(spoken.length, menuWord.length);
+        const substringScore = (containLen / maxLen) * 0.9;
+        if (substringScore > bestWordScore) bestWordScore = substringScore;
+        continue;
+      }
+      
+      // Levenshtein fallback
       const dist = levenshtein(spoken, menuWord);
       const score = 1 - dist / maxLen;
       if (score > bestWordScore) bestWordScore = score;
@@ -943,7 +970,7 @@ export default function CaptainApp({ onLogout }) {
           }
         }
       }
-      if (bestScore >= 0.45 && bestMatch) {
+      if (bestScore >= 0.30 && bestMatch) {
         setSearchInput(bestMatch);
       } else {
         setSearchInput(candidates[0] || '');
