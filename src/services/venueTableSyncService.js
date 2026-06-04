@@ -49,12 +49,13 @@ function writeCache(tables) {
  */
 export function getVenueTableLabel(sectionName, tableNumber) {
   const name = (sectionName || '').toLowerCase();
-  if (name.includes('family restaurant')) {
-    return `T${tableNumber}`;
-  }
-  if (name.includes('parcel')) {
-    return 'P1';
-  }
+  if (name.includes('bar parcel')) return `BP${tableNumber}`;
+  if (name.includes('bar')) return `B${tableNumber}`;
+  if (name.includes('family restaurant')) return `T${tableNumber}`;
+  if (name.includes('conference')) return `C${tableNumber}`;
+  if (name.includes('pdr')) return `PDR${tableNumber}`;
+  if (name.includes('rooms')) return `R${tableNumber}`;
+  if (name.includes('parcel')) return `P${tableNumber}`;
   return `V${tableNumber}`;
 }
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
@@ -232,9 +233,12 @@ export function useVenueTableSync() {
     const loadTables = async () => {
       setIsSyncing(true);
       try {
+        console.log('[VenueTableSync] Fetching /api/venue/sections ...');
         const sections = await fetchVenueSections();
         if (cancelled) return;
+        console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
         const flat = flattenSections(sections);
+        console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
         setTablesState((current) => {
           const merged = flat.map((row) => {
             const existing = current.find((t) => t.backendId === row.id);

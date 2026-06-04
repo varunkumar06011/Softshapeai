@@ -36,6 +36,7 @@ import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelper
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
+const TXN_PAGE_SIZE = 100;
 
 const toFrontendTableStatus = (backendStatus) => {
   const map = {
@@ -305,7 +306,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const venuePrices = useVenuePrices();
-  const { tables: venueTables, setTables: setVenueTables } = useVenueTableSync();
+  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading } = useVenueTableSync();
 
   // Persist selections to localStorage
   useEffect(() => {
@@ -404,6 +405,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
+  const [txnPage, setTxnPage] = useState(1);
 
   const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
   const { tables, setTables } = useTableSync();
@@ -431,7 +433,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       let dateParam = null;
       let monthParam = null;
-      let limitParam = 200;
+      let limitParam = 2000;
 
       if (dateOverride) {
         dateParam = dateOverride;
@@ -443,15 +445,13 @@ const CashierDashboard = ({ onLogout }) => {
         dateParam = shiftKolkataDate(new Date(), -1);
       } else if (filter === 'month') {
         monthParam = getKolkataMonthString();
-        limitParam = 500;
+        limitParam = 2000;
       } else {
-        // 'all' — no date filter
-        limitParam = 500;
+        // 'all' — no date filter, no limit (0 = unlimited)
+        limitParam = 0;
       }
 
-      const restaurantIds = outlet === 'bar'
-        ? ['bar-001', 'venue-001']
-        : ['restaurant-001', 'venue-001'];
+      const restaurantIds = ['bar-001', 'restaurant-001', 'venue-001'];
 
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(() => []))
@@ -546,10 +546,19 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } catch (err) {
       console.warn('[Transactions] DB fetch failed, using cache:', err.message);
+      // Restore from localStorage cache so the UI isn't left empty
+      if (filter === 'today') {
+        try {
+          const cached = localStorage.getItem(TX_CACHE_KEY);
+          if (cached) setPastTransactions(JSON.parse(cached));
+        } catch {
+          // ignore parse errors
+        }
+      }
     } finally {
       setTxnsLoading(false);
     }
-  }, [TX_CACHE_KEY, activeRestaurantId, outlet, txnCustomDate]);
+  }, [TX_CACHE_KEY, outlet, txnCustomDate]);
 
   // FIX 2: Filtered transactions based on method and search
   const filteredTransactions = useMemo(() => {
@@ -577,6 +586,17 @@ const CashierDashboard = ({ onLogout }) => {
 
     return list;
   }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter]);
+
+  const txnTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / TXN_PAGE_SIZE));
+  const paginatedTransactions = useMemo(() => {
+    const start = (txnPage - 1) * TXN_PAGE_SIZE;
+    return filteredTransactions.slice(start, start + TXN_PAGE_SIZE);
+  }, [filteredTransactions, txnPage]);
+
+  // Reset page whenever txn filters change
+  useEffect(() => {
+    setTxnPage(1);
+  }, [txnDateFilter, txnMethodFilter, txnSourceFilter, txnSearch, txnCustomDate]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -1540,9 +1560,7 @@ const CashierDashboard = ({ onLogout }) => {
     const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === 'venue-001');
 
     if (outlet === 'restaurant') {
-      itemsToFilter = isVenueContext
-        ? menuItems.filter(item => item.isAvailable !== false)
-        : menuItems.filter(item => item.menuType === 'FOOD');
+      itemsToFilter = menuItems.filter(item => item.isAvailable !== false);
     } else {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
@@ -2204,8 +2222,21 @@ const CashierDashboard = ({ onLogout }) => {
                           ))}
                         </div>
 
+                        {/* Debug status */}
+                        {venueTablesLoading && (
+                          <div className="text-xs text-gray-400 font-mono">Loading venue tables…</div>
+                        )}
+                        {!venueTablesLoading && venueTables.length > 0 && (
+                          <div className="text-xs text-gray-400 font-mono">
+                            Venue tables loaded: {venueTables.length} &nbsp;|&nbsp; Family Restaurant: {venueTables.filter(t => (t.sectionName || t.section?.name || '').toLowerCase().includes('family restaurant')).length}
+                          </div>
+                        )}
+                        {!venueTablesLoading && venueTables.length === 0 && (
+                          <div className="text-xs text-red-500 font-mono">No venue tables loaded — check console (F12) for errors</div>
+                        )}
+
                         {/* ── MAIN TABLES ── */}
-                        {(tableSubCategory === 'family-restaurant' || tableSubCategory === 'bar-ac-hall') && (
+                        {tableSubCategory === 'bar-ac-hall' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {activeTables
                               .filter((table) => {
@@ -2287,6 +2318,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-pdr' && (
@@ -2298,6 +2330,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-rooms' && (
@@ -2309,21 +2342,35 @@ const CashierDashboard = ({ onLogout }) => {
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-parcel' && (
                           <VenueSectionView
                             venueId="venue-bar-parcel"
-                            sectionName="Parcel"
+                            sectionName="Bar Parcel"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
                           />
                         )}
 
                         {/* ── RESTAURANT VENUE VIEWS ── */}
+                        {outlet === 'restaurant' && tableSubCategory === 'family-restaurant' && (
+                          <VenueSectionView
+                            venueId="venue-family-restaurant"
+                            sectionName="Family Restaurant"
+                            restaurantId="venue-001"
+                            roomMode="single"
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                            venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
+                          />
+                        )}
                         {outlet === 'restaurant' && tableSubCategory === 'parcel' && (
                           <VenueSectionView
                             venueId="venue-restaurant-parcel"
@@ -2333,6 +2380,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
                           />
                         )}
                       </div>
@@ -2487,7 +2535,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   </td>
                                 </tr>
                               ) : (
-                                filteredTransactions.map(txn => (
+                                paginatedTransactions.map(txn => (
                                   <React.Fragment key={txn.id}>
                                     <tr
                                       onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
@@ -2584,6 +2632,34 @@ const CashierDashboard = ({ onLogout }) => {
                             </tbody>
                           </table>
                         </div>
+
+                        {/* Pagination */}
+                        {filteredTransactions.length > 0 && (
+                          <div className="flex items-center justify-between px-3 py-3 border-t border-gray-100 bg-gray-50/50">
+                            <span className="text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-wider">
+                              {filteredTransactions.length} transactions
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setTxnPage(p => Math.max(1, p - 1))}
+                                disabled={txnPage <= 1}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all ${txnPage <= 1 ? 'text-gray-300 cursor-not-allowed' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 hover:scale-[1.02] active:scale-95'}`}
+                              >
+                                ← Prev
+                              </button>
+                              <span className="text-[10px] sm:text-xs font-black text-gray-600 tabular-nums">
+                                Page {txnPage} / {txnTotalPages}
+                              </span>
+                              <button
+                                onClick={() => setTxnPage(p => Math.min(txnTotalPages, p + 1))}
+                                disabled={txnPage >= txnTotalPages}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all ${txnPage >= txnTotalPages ? 'text-gray-300 cursor-not-allowed' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 hover:scale-[1.02] active:scale-95'}`}
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {!txnsLoading && filteredTransactions.length === 0 && (
                           <div className="p-12 text-center flex flex-col items-center">

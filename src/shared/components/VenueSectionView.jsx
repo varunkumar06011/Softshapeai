@@ -11,7 +11,8 @@ export default function VenueSectionView({
   onTableSelect,
   captainId,
   onOrderPlaced,
-  venueTables = []
+  venueTables = [],
+  isSyncing = false
 }) {
 
   const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
@@ -33,10 +34,34 @@ export default function VenueSectionView({
     return true;
   });
 
+  // DEBUG logging — remove once fixed
+  React.useEffect(() => {
+    console.log(`[VenueSectionView] sectionName="${sectionName}" targetName="${targetName}" isSyncing=${isSyncing} venueTables.length=${venueTables.length} sectionTables.length=${sectionTables.length}`);
+    if (venueTables.length > 0) {
+      const sample = venueTables.slice(0, 3).map(t => ({
+        id: t.id,
+        backendId: t.backendId,
+        number: t.number,
+        sectionName: t.sectionName,
+        sectionNameFromSection: t.section?.name,
+      }));
+      console.log(`[VenueSectionView] sample tables:`, sample);
+    }
+  }, [sectionName, targetName, isSyncing, venueTables, sectionTables.length]);
+
+  if (isSyncing && (!sectionTables || sectionTables.length === 0)) {
+    return (
+      <div className="p-8 text-center">
+        <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-[#E53935] rounded-full animate-spin"></div>
+        <p className="mt-3 text-gray-500 font-bold uppercase tracking-widest text-sm">Loading {sectionName} tables...</p>
+      </div>
+    );
+  }
+
   if (!sectionTables || sectionTables.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">
-        No tables found for {sectionName}
+        No tables found for {sectionName} (check browser console for debug info)
       </div>
     );
   }

@@ -634,13 +634,13 @@ export default function CaptainApp({ onLogout }) {
       if (outlet === 'bar') {
         return items.filter(item => item.isAvailable !== false);
       }
-      return items.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
+      return items.filter(item => item.isAvailable !== false);
     }
     // Fallback to old menu
     if (outlet === 'bar') {
       return activeMenuItems.filter(item => item.isAvailable !== false);
     }
-    return activeMenuItems.filter(item => item.menuType === 'FOOD' && item.isAvailable !== false);
+    return activeMenuItems.filter(item => item.isAvailable !== false);
   }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu, unifiedMenu]);
 
   const categories = useMemo(() => {
