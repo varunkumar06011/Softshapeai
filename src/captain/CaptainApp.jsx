@@ -760,8 +760,7 @@ export default function CaptainApp({ onLogout }) {
   const [activeVariantItem, setActiveVariantItem] = useState(null);
 
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
-
-
+  const [inlineQtyItem, setInlineQtyItem] = useState(null);
 
   // Cancel-item state
 
@@ -4506,7 +4505,39 @@ export default function CaptainApp({ onLogout }) {
 
                                 <button onClick={() => updateDraftQty(item.n, -1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Minus size={14} strokeWidth={3} /></button>
 
-                                <span className="w-8 text-center text-xs font-black">{item.q}</span>
+                                {inlineQtyItem === item.n ? (
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    min="1"
+                                    autoFocus
+                                    defaultValue={item.q}
+                                    className="w-10 text-center text-xs font-black bg-white border border-red-200 rounded-md outline-none focus:ring-1 focus:ring-red-300 py-0.5"
+                                    onBlur={(e) => {
+                                      const val = parseInt(e.target.value, 10);
+                                      if (!isNaN(val) && val >= 1 && val !== item.q) {
+                                        const delta = val - item.q;
+                                        updateDraftQty(item.n, delta);
+                                      }
+                                      setInlineQtyItem(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.target.blur();
+                                      } else if (e.key === 'Escape') {
+                                        setInlineQtyItem(null);
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <span
+                                    onClick={() => setInlineQtyItem(item.n)}
+                                    className="w-8 text-center text-xs font-black cursor-pointer select-none"
+                                  >
+                                    {item.q}
+                                  </span>
+                                )}
 
                                 <button onClick={() => updateDraftQty(item.n, 1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Plus size={14} strokeWidth={3} /></button>
 
