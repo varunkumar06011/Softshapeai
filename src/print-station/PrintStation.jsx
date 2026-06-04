@@ -29,21 +29,6 @@ const KOT_FAMILY_PRINTER   = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME   || '
 const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
 const KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
 
-/** Determine whether an item is a beverage for family-restaurant KOT splitting.
- *  Priority:
- *  1. Explicit printerTarget from DB category ("BAR_PRINTER" → beverage)
- *  2. Legacy category-name heuristic for backwards compatibility
- */
-const BEVERAGE_CATEGORIES = new Set(['beverages', 'soft drinks', 'water', 'soda']);
-function isBeverageItem(item) {
-  // 1. If the backend sent an explicit printerTarget, trust it
-  if (item.printerTarget === 'BAR_PRINTER') return true;
-  if (item.printerTarget === 'KOT_PRINTER') return false;
-  // 2. Fallback: legacy category-name heuristic
-  const cat = (item.category || '').toLowerCase().trim();
-  return BEVERAGE_CATEGORIES.has(cat);
-}
-
 // ── ESC/POS constants ────────────────────────────────────────────────────────
 const INIT = '\x1B\x40';
 const CENTER = '\x1B\x61\x01';
@@ -457,31 +442,32 @@ export default function PrintStation() {
           const printTasks = []; // { printer, cmds }
 
           if (type === 'KOT') {
-            const sectionTag = data.sectionTag;
-            if (sectionTag === 'venue-family-restaurant') {
-              // Split food items vs beverages
-              const foodItems = (data.items || []).filter(i => !isBeverageItem(i));
-              const bevItems  = (data.items || []).filter(i => isBeverageItem(i));
-              if (foodItems.length > 0) {
+            if (data.restaurantId === 'venue-001') {
+              // ── Restaurant KOT split uses printerTarget per item ───────────────
+              //   BAR_PRINTER  → Dine in Bill (cashier counter printer)
+              //   KOT_PRINTER / null / undefined → KOT FAMILY (kitchen printer)
+              //   This is the source-of-truth routing for venue-001.
+              //   Do NOT remove this logic — future devs: the backend already
+              //   sends printerTarget on every item payload; no name-matching
+              //   heuristics should ever be added here.
+              // ───────────────────────────────────────────────────────────────────
+              const kitchenItems = (data.items || []).filter(i => i.printerTarget !== 'BAR_PRINTER');
+              const counterItems = (data.items || []).filter(i => i.printerTarget === 'BAR_PRINTER');
+              if (kitchenItems.length > 0) {
                 printTasks.push({
                   printer: KOT_FAMILY_PRINTER,
-                  cmds: buildKOTCommands({ ...data, items: foodItems, label: 'FOOD ORDER', sectionTag }),
+                  cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
                 });
               }
-              if (bevItems.length > 0) {
+              if (counterItems.length > 0) {
                 printTasks.push({
                   printer: DINE_IN_BILL_PRINTER,
-                  cmds: buildKOTCommands({ ...data, items: bevItems, label: 'FOOD ORDER', sectionTag }),
+                  cmds: buildKOTCommands({ ...data, items: counterItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
                 });
               }
-            } else if (sectionTag === 'venue-restaurant-parcel') {
-              // Parcel: everything goes to KOT PRINTER
-              cmds = buildKOTCommands({ ...data, label: 'PARCEL ORDER', sectionTag });
-              printer = KOT_PRINTER;
-              printTasks.push({ printer, cmds });
             } else {
-              // Default: old restaurant or bar-venue
-              cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag });
+              // Non-venue-001: old restaurant or bar-venue
+              cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag: data.sectionTag });
               printer = data.restaurantId === 'restaurant-001'
                 ? RESTAURANT_KITCHEN_PRINTER
                 : KITCHEN_PRINTER;
@@ -523,7 +509,15 @@ export default function PrintStation() {
             printTasks.push({ printer, cmds });
           } else if (type === 'CANCEL_KOT') {
             cmds = buildCancelKOTCommands(data);
-            if (data.sectionTag === 'venue-family-restaurant') {
+            if (data.restaurantId === 'venue-001') {
+              const pt = data.item?.printerTarget;
+              if (pt === 'BAR_PRINTER') {
+                printer = DINE_IN_BILL_PRINTER;
+              } else {
+                // Default to kitchen when printerTarget is missing / KOT_PRINTER / null
+                printer = KOT_FAMILY_PRINTER;
+              }
+            } else if (data.sectionTag === 'venue-family-restaurant') {
               printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
               printer = KOT_PRINTER;
@@ -533,7 +527,10 @@ export default function PrintStation() {
             printTasks.push({ printer, cmds });
           } else if (type === 'CANCEL_ORDER') {
             cmds = buildFullCancelCommands(data);
-            if (data.sectionTag === 'venue-family-restaurant') {
+            if (data.restaurantId === 'venue-001') {
+              // Cashier needs to know the order is voided; kitchen sees it stop coming
+              printer = DINE_IN_BILL_PRINTER;
+            } else if (data.sectionTag === 'venue-family-restaurant') {
               printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
               printer = KOT_PRINTER;
@@ -550,11 +547,11 @@ export default function PrintStation() {
             return;
           }
 
-          // Execute all print tasks (simultaneously if multiple)
-          for (const task of printTasks) {
+          // Execute all print tasks simultaneously
+          await Promise.all(printTasks.map(async (task) => {
             await sendToPrinter(task.printer, task.cmds);
             pushLog(`✓ Printed [${type}] → ${task.printer} (Table ${data?.tableNumber ?? '?'})`);
-          }
+          }));
         } catch (err) {
           pushLog(`✗ Print failed [${type}]: ${err.message}`, false);
           // If QZ dropped, try reconnecting
