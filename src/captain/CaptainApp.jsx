@@ -64,97 +64,6 @@ const levenshtein = (a, b) => {
 
 
 
-// Score transcript against menu name using word-level fuzzy matching (module-level)
-
-const scoreTranscriptAgainstName = (transcript, menuName) => {
-
-  const spoken = transcript.toLowerCase();
-
-  const menu = menuName.toLowerCase();
-
-  
-
-  // Full-string containment check first
-
-  if (spoken.includes(menu) || menu.includes(spoken)) {
-
-    return 1.0;
-
-  }
-
-  
-
-  const spokenWords = spoken.split(/\s+/).filter(Boolean);
-
-  const menuWords = menu.split(/\s+/).filter(Boolean);
-
-  if (spokenWords.length === 0 || menuWords.length === 0) return 0;
-
-  
-
-  let totalScore = 0;
-
-  for (const spoken of spokenWords) {
-
-    let bestWordScore = 0;
-
-    for (const menuWord of menuWords) {
-
-      const maxLen = Math.max(spoken.length, menuWord.length);
-
-      if (maxLen === 0) continue;
-
-      
-
-      // Prefix check
-
-      if (menuWord.startsWith(spoken) || spoken.startsWith(menuWord)) {
-
-        const matchLen = Math.min(spoken.length, menuWord.length);
-
-        const prefixScore = matchLen / maxLen;
-
-        if (prefixScore > bestWordScore) bestWordScore = prefixScore;
-
-        continue;
-
-      }
-
-      
-
-      // Substring check
-
-      if (menuWord.includes(spoken) || spoken.includes(menuWord)) {
-
-        const containLen = Math.min(spoken.length, menuWord.length);
-
-        const substringScore = (containLen / maxLen) * 0.9;
-
-        if (substringScore > bestWordScore) bestWordScore = substringScore;
-
-        continue;
-
-      }
-
-      
-
-      // Levenshtein fallback
-
-      const dist = levenshtein(spoken, menuWord);
-
-      const score = 1 - dist / maxLen;
-
-      if (score > bestWordScore) bestWordScore = score;
-
-    }
-
-    totalScore += bestWordScore;
-
-  }
-
-  return totalScore / spokenWords.length;
-
-};
 
 
 
@@ -1556,83 +1465,45 @@ export default function CaptainApp({ onLogout }) {
 
 
   const filteredMenu = useMemo(() => {
-
     const q = (searchQuery || '').trim().toLowerCase();
+    if (!q) {
+      // No search — apply category and diet filters normally
+      return outletFilteredMenuItems.filter(item => {
+        if (activeCategory !== 'All' && item.c !== activeCategory) return false;
+        if (activeDiet !== 'All' && item.t !== activeDiet) return false;
+        return true;
+      });
+    }
 
-    const base = filterMenuItems(outletFilteredMenuItems, {
+    const words = q.split(/\s+/).filter(w => w.length >= 2);
 
-      query: searchQuery,
-
-      category: activeCategory,
-
-      diet: activeDiet,
-
-    });
-
-    if (!q) return base;
-
-
-
-    const sorted = base.slice().sort((a, b) => {
-
-      const an = (a.n || '').toLowerCase();
-
-      const bn = (b.n || '').toLowerCase();
-
-      const tier = (name) =>
-
-        name.startsWith(q) ? 0
-
-        : name.split(/\s+/).some(w => w.startsWith(q)) ? 1
-
-        : name.includes(q) ? 2
-
-        : 3;
-
-      return tier(an) - tier(bn);
-
-    });
-
-
-
-    // Also append any items matching ANY individual word (partial match)
-
-    // that aren't already in the sorted results
-
-    const words = q.split(/\s+/).filter(w => w.length >= 3);
-
-    if (words.length >= 1) {
-
-      const resultIds = new Set(sorted.map(i => i.id || i.n));
-
-      const partialMatches = outletFilteredMenuItems.filter(item => {
-
-        if (resultIds.has(item.id || item.n)) return false;
-
+    return outletFilteredMenuItems
+      .filter(item => {
         if (activeDiet !== 'All' && item.t !== activeDiet) return false;
 
         const name = (item.n || '').toLowerCase();
-
         const cat = (item.c || '').toLowerCase();
 
-        return words.some(w =>
+        // Match if ANY spoken word appears anywhere in the item name or category
+        return words.some(w => name.includes(w) || cat.includes(w));
+      })
+      .sort((a, b) => {
+        const an = (a.n || '').toLowerCase();
+        const bn = (b.n || '').toLowerCase();
 
-          name.includes(w) || cat.includes(w) ||
+        // Exact full-name match comes first
+        if (an === q) return -1;
+        if (bn === q) return 1;
 
-          name.split(/\s+/).some(nw => nw.startsWith(w) || (w.length >= 4 && w.startsWith(nw)))
+        // Items whose name starts with the query come next
+        if (an.startsWith(q) && !bn.startsWith(q)) return -1;
+        if (bn.startsWith(q) && !an.startsWith(q)) return 1;
 
-        );
-
+        // Then items matching more words rank higher
+        const aScore = words.filter(w => an.includes(w)).length;
+        const bScore = words.filter(w => bn.includes(w)).length;
+        return bScore - aScore;
       });
-
-      return [...sorted, ...partialMatches];
-
-    }
-
-
-
-    return sorted;
-
   }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]);
 
 
@@ -1982,61 +1853,10 @@ export default function CaptainApp({ onLogout }) {
 
 
     recognition.onresult = (event) => {
-
       const results = event.results[0];
-
-      const candidates = [];
-
-      for (let i = 0; i < Math.min(results.length, 5); i++) {
-
-        candidates.push(results[i].transcript.trim());
-
-      }
-
-
-
-      // Pick the candidate that matches the most menu items by individual words
-
-      let bestCandidate = candidates[0] || '';
-
-      let bestMatchCount = 0;
-
-
-
-      for (const candidate of candidates) {
-
-        const words = candidate.toLowerCase().split(/\s+/).filter(Boolean);
-
-        const matchCount = outletFilteredMenuItems.filter(item => {
-
-          const name = (item.n || item.name || '').toLowerCase();
-
-          return words.some(w => w.length >= 3 && (
-
-            name.includes(w) ||
-
-            name.split(/\s+/).some(nw => nw.startsWith(w) || w.startsWith(nw))
-
-          ));
-
-        }).length;
-
-        if (matchCount > bestMatchCount) {
-
-          bestMatchCount = matchCount;
-
-          bestCandidate = candidate;
-
-        }
-
-      }
-
-
-
-      // Put raw spoken text into search — fuzzy engine handles the rest
-
-      setSearchInput(bestCandidate);
-
+      // Use the top transcript directly — raw spoken words as search query
+      const transcript = results[0].transcript.trim();
+      setSearchInput(transcript);
     };
 
 
