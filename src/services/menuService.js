@@ -32,6 +32,20 @@ async function fetchWithTimeout(url, options, timeoutMs = FETCH_TIMEOUT_MS) {
   }
 }
 
+/** Fetch with timeout AND retry for resilient menu loading */
+async function fetchWithRetry(url, options, { retries = 2, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
+  try {
+    return await fetchWithTimeout(url, options, timeoutMs);
+  } catch (err) {
+    if (retries > 0) {
+      console.warn(`[MenuService] Retrying ${url} after error:`, err.message);
+      await new Promise(r => setTimeout(r, 1200));
+      return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
+    }
+    throw err;
+  }
+}
+
 export function readStoredMenu() {
   try {
     const saved = localStorage.getItem(MENU_STORAGE_KEY);
@@ -115,7 +129,7 @@ async function parseMenuResponse(res, label) {
 async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
   const url = apiUrl(`/api/menu/items?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
-  const res = await fetchWithTimeout(url, fetchOpts);
+  const res = await fetchWithRetry(url, fetchOpts, { retries: 2, timeoutMs: 12000 });
   const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
@@ -123,7 +137,7 @@ async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
 async function fetchPosViewMenu(restaurantId = RESTAURANT_ID) {
   const url = apiUrl(`/api/menu/pos-view?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
-  const res = await fetchWithTimeout(url, fetchOpts);
+  const res = await fetchWithRetry(url, fetchOpts, { retries: 2, timeoutMs: 12000 });
   const categories = await parseMenuResponse(res, "Menu pos-view");
   return mapPosViewToMenuItems(categories);
 }

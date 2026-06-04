@@ -13,8 +13,26 @@ async function parseResponse(res) {
   return res.json();
 }
 
+async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 15000 } = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (retries > 0 && (err.name === 'AbortError' || err.message?.includes('fetch'))) {
+      console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
+      await new Promise(r => setTimeout(r, 1000));
+      return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
+    }
+    throw err;
+  }
+}
+
 export async function fetchBarTables() {
-  const res = await fetch(apiUrl(`/api/bar/tables?restaurantId=${BAR_ID}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/bar/tables?restaurantId=${BAR_ID}`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
   });

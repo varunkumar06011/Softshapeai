@@ -17,14 +17,36 @@ async function parseResponse(res) {
 }
 
 /**
+ * Fetch with timeout and retry logic for resilient API calls
+ */
+async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 15000 } = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (retries > 0 && (err.name === 'AbortError' || err.message?.includes('fetch'))) {
+      console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
+      await new Promise(r => setTimeout(r, 1000)); // 1s backoff
+      return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
+    }
+    throw err;
+  }
+}
+
+/**
  * Fetch all venue sections with their tables.
  * Returns the same shape as GET /api/tables?restaurantId=venue-001
  */
 export async function fetchVenueSections() {
-  const res = await fetch(apiUrl(`/api/venue/sections`), {
+  const res = await fetchWithRetry(apiUrl(`/api/venue/sections`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-  });
+  }, { retries: 2, timeoutMs: 15000 });
   return parseResponse(res);
 }
 
