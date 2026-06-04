@@ -1607,17 +1607,21 @@ const CashierDashboard = ({ onLogout }) => {
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
 
     const isBarVenueContext = outlet === 'bar' && Boolean(currentVenueId);
+    // Only apply strict venue filtering once price data has actually loaded for this venue.
+    // If venueSpecificPrices is empty it could mean the data hasn't arrived yet (race condition),
+    // so we wait until there is at least one price entry before hiding items.
+    const venuePricesReady = isBarVenueContext && Object.keys(venueSpecificPrices).length > 0;
 
     const mapped = itemsToFilter.map(item => {
       const overridePrice = venueSpecificPrices[item.id];
 
       let finalPrice;
-      if (isBarVenueContext) {
+      if (venuePricesReady) {
         // In bar venue contexts, only use the explicit venue price — no base-price fallback.
         // undefined means the item has no venue price record and should be excluded.
         finalPrice = overridePrice !== undefined ? Number(overridePrice) : undefined;
       } else {
-        // Restaurant / main floor: venue override if set and > 0, else base price
+        // Restaurant / main floor (or venue prices not yet loaded): venue override if set and > 0, else base price
         finalPrice = (overridePrice != null && Number(overridePrice) > 0)
           ? Number(overridePrice)
           : Number(item.p || item.price || 0);
@@ -1628,7 +1632,7 @@ const CashierDashboard = ({ onLogout }) => {
         p: finalPrice,
       };
     }).filter((item) => {
-      if (isBarVenueContext) {
+      if (venuePricesReady) {
         // Exclude items with no venue price or a zero venue price
         return item.p !== undefined && Number(item.p) > 0;
       }
