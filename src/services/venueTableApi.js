@@ -18,20 +18,35 @@ async function parseResponse(res) {
 
 /**
  * Fetch with timeout and retry logic for resilient API calls
+ * Note: AbortController is handled by the caller (component) to avoid conflicts
  */
 async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 15000 } = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(timeoutId);
-    return res;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      // Only retry on network errors, not on abort errors
+      if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
+        console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
+        await new Promise(r => setTimeout(r, 1000)); // 1s backoff
+        return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
+      }
+      throw err;
+    }
   } catch (err) {
-    clearTimeout(timeoutId);
-    if (retries > 0 && (err.name === 'AbortError' || err.message?.includes('fetch'))) {
+    // If it's an abort error, don't retry - it's intentional cancellation
+    if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+      throw err;
+    }
+    if (retries > 0) {
       console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
-      await new Promise(r => setTimeout(r, 1000)); // 1s backoff
+      await new Promise(r => setTimeout(r, 1000));
       return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
     }
     throw err;

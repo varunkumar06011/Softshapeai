@@ -37,7 +37,8 @@ async function fetchWithRetry(url, options, { retries = 2, timeoutMs = FETCH_TIM
   try {
     return await fetchWithTimeout(url, options, timeoutMs);
   } catch (err) {
-    if (retries > 0) {
+    // Only retry on network errors, not on abort errors
+    if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
       console.warn(`[MenuService] Retrying ${url} after error:`, err.message);
       await new Promise(r => setTimeout(r, 1200));
       return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
