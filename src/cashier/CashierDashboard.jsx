@@ -2307,51 +2307,6 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                         )}
 
-                        {/* Family Restaurant - uses venueTables from venue-001 */}
-                        {outlet === 'restaurant' && tableSubCategory === 'family-restaurant' && (
-                          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                            {venueTables
-                              .filter((table) => {
-                                const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                return sectionName.includes('family restaurant');
-                              })
-                              .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
-                              .map((table) => {
-                                const isFree = table.status === 'Free' || !table.status;
-                                const isWaitingBill = table.status === 'Waiting Bill';
-                                const isBusy = !isFree && !isWaitingBill;
-
-                                let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
-                                let statusText = 'Open';
-
-                                if (isWaitingBill) {
-                                  containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
-                                  statusText = 'Billing Requested';
-                                } else if (isBusy) {
-                                  containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
-                                  statusText = 'Busy';
-                                }
-
-                                return (
-                                  <div
-                                    key={table.backendId || table.id}
-                                    onClick={() => handleTableSelect(table)}
-                                    className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
-                                  >
-                                    {/* Captain Name Badge - Top Right */}
-                                    {table.captainName && (
-                                      <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
-                                        {table.captainName.split(' ')[0]}
-                                      </div>
-                                    )}
-                                    <span className="text-2xl font-black">{getTableSectionLabel(table)}</span>
-                                    <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        )}
-
 
                         {/* ── BAR VENUE VIEWS ── */}
                         {outlet === 'bar' && tableSubCategory === 'bar-conference' && (
@@ -2417,40 +2372,27 @@ const CashierDashboard = ({ onLogout }) => {
                           />
                         )}
                         {outlet === 'restaurant' && tableSubCategory === 'parcel' && (
-                          <>
-                            <VenueSectionView
-                              venueId="venue-restaurant-parcel"
-                              sectionName="Parcel"
-                              restaurantId="venue-001"
-                              roomMode="single"
-                              onTableSelect={handleTableSelect}
-                              onOrderPlaced={() => { }}
-                              venueTables={venueTables}
-                              isSyncing={venueTablesLoading}
-                            />
-                            {/* ── WALK-IN TABLES (Parcel Only - Direct Bill) ── */}
-                            <div className="mt-4">
-                              <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
-                              <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
-                                {WALKIN_TABLES.map((wt) => (
-                                  <div
-                                    key={wt.id}
-                                    onClick={() => {
-                                      setIsWalkinMode(true);
-                                      setSelectedTable(wt);
-                                      setCart([]);
-                                      setActiveTab('pos');
-                                      localStorage.setItem('cashier_active_tab', 'pos');
-                                    }}
-                                    className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50 hover:scale-105 active:scale-95"
-                                  >
-                                    <span className="text-lg font-black text-gray-600">{wt.id}</span>
-                                    <span className="text-[9px] font-black uppercase text-gray-400 mt-0.5">Walk-in</span>
-                                  </div>
-                                ))}
-                              </div>
+                          <div className="mt-4">
+                            <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
+                            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
+                              {WALKIN_TABLES.map((wt) => (
+                                <div
+                                  key={wt.id}
+                                  onClick={() => {
+                                    setIsWalkinMode(true);
+                                    setSelectedTable(wt);
+                                    setCart([]);
+                                    setActiveTab('pos');
+                                    localStorage.setItem('cashier_active_tab', 'pos');
+                                  }}
+                                  className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50 hover:scale-105 active:scale-95"
+                                >
+                                  <span className="text-lg font-black text-gray-600">{wt.id}</span>
+                                  <span className="text-[9px] font-black uppercase text-gray-400 mt-0.5">Walk-in</span>
+                                </div>
+                              ))}
                             </div>
-                          </>
+                          </div>
                         )}
                       </div>
                     )}
@@ -3369,7 +3311,7 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
 
                       <div className="pt-0.5">
-                        {isWalkinMode ? (
+                        {(isWalkinMode || (outlet === 'restaurant' && tableSubCategory === 'parcel')) ? (
                           <button
                             onClick={handleWalkinFinalBill}
                             disabled={cart.length === 0 || isPrintingBill}
@@ -3377,7 +3319,7 @@ const CashierDashboard = ({ onLogout }) => {
                           >
                             {isPrintingBill ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
                             <span className="text-xs sm:text-sm font-black uppercase tracking-wider">
-                              {isPrintingBill ? 'Printing...' : 'Final Bill (Walk-in)'}
+                              {isPrintingBill ? 'Printing...' : 'Final Bill (Direct)'}
                             </span>
                           </button>
                         ) : (
