@@ -44,19 +44,27 @@ export function readStoredMenu() {
 /** Flat /api/menu/items payload → POS item shape */
 export function mapFlatMenuItems(items) {
   if (!Array.isArray(items)) return [];
-  return items.map((item) => ({
-    id: item.id,
-    n: item.name,
-    p: Math.round(item.price ?? 0),
-    c: item.category,
-    t: item.isVeg ? "veg" : "non",
-    img: item.imageUrl || DEFAULT_MENU_IMAGE,
-    desc: item.description || "",
-    menuType: item.menuType,
-    // isAvailable is only present on admin endpoint items;
-    // POS /items filters to available=true so field is absent there — default true
-    isAvailable: item.isAvailable !== false,
-  }));
+  return items.map((item) => {
+    const menuType = (item.menuType || "FOOD").toUpperCase();
+    const isLiquor = menuType === "LIQUOR";
+    return {
+      id: item.id,
+      n: item.name,
+      p: Math.round(item.price ?? 0),
+      c: item.category,
+      t: item.isVeg ? "veg" : "non",
+      img: item.imageUrl || DEFAULT_MENU_IMAGE,
+      desc: item.description || "",
+      menuType,
+      // isAvailable is only present on admin endpoint items;
+      // POS /items filters to available=true so field is absent there — default true
+      isAvailable: item.isAvailable !== false,
+      variants: item.variants || [],
+      unit: item.unit ?? (isLiquor ? "ml" : null),
+      mlPerUnit: isLiquor ? 30 : null,
+      printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+    };
+  });
 }
 
 /** Legacy /api/menu/pos-view nested categories → POS items */
@@ -68,6 +76,8 @@ export function mapPosViewToMenuItems(categories) {
     for (const item of category.items || []) {
       const defaultVariant =
         item.variants?.find((v) => v.isDefault) || item.variants?.[0];
+      const menuType = (item.menuType || "FOOD").toUpperCase();
+      const isLiquor = menuType === "LIQUOR";
       items.push({
         id: item.id,
         n: item.name,
@@ -76,7 +86,12 @@ export function mapPosViewToMenuItems(categories) {
         t: item.isVeg ? "veg" : "non",
         img: item.imageUrl || DEFAULT_MENU_IMAGE,
         desc: item.description || "",
-        menuType: item.menuType,
+        menuType,
+        isAvailable: true,
+        variants: item.variants || [],
+        unit: item.unit ?? (isLiquor ? "ml" : null),
+        mlPerUnit: isLiquor ? 30 : null,
+        printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
       });
     }
   }

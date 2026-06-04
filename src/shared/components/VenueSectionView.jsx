@@ -1,5 +1,5 @@
 import React from 'react';
-import { getTableSectionLabel } from '../../utils/tableHelpers';
+import { getTableSectionLabel, getSectionBadgeColor } from '../../utils/tableHelpers';
 
 export default function VenueSectionView({
   venueId,
@@ -23,8 +23,11 @@ export default function VenueSectionView({
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
-    // Primary match: section name must match
-    if (currentName !== targetName) return false;
+    // Primary match: section name must match (case-insensitive, allowing minor differences)
+    const tableName = currentName;
+    const target = targetName;
+    const nameMatches = tableName === target || tableName.includes(target) || target.includes(tableName);
+    if (!nameMatches) return false;
     // Secondary discriminator: if venueId is provided and the table has a sectionTag,
     // use it to disambiguate same-named sections across bar/restaurant outlets.
     // sectionTag is set by the backend on venue tables to identify their sub-venue.
@@ -79,9 +82,9 @@ export default function VenueSectionView({
     );
   }
 
-  // Single mode (Conference, Parcel)
+  // Single mode (Conference, Parcel, Rooms)
   return (
-    <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {sectionTables.map((table) => (
         <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
       ))}
@@ -90,37 +93,61 @@ export default function VenueSectionView({
 }
 
 function VenueTableCard({ table, sectionName, onClick }) {
-  const isFree = table.status === 'Free' || table.status === 'AVAILABLE' || !table.status;
-  const isWaitingBill = table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED';
-  const isBusy = !isFree && !isWaitingBill;
+  const status = table.status || 'Free';
+  const isFree = status === 'Free' || status === 'AVAILABLE';
+  const isBilling = status === 'Waiting Bill' || status === 'BILLING_REQUESTED';
+  const isReady = status === 'Ready';
+  const isBusy = !isFree && !isBilling && !isReady;
 
-  let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-md';
-  let statusText = 'Open';
-
-  if (isWaitingBill) {
-    containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-xl shadow-amber-50 animate-pulse';
-    statusText = 'Billing Requested';
-  } else if (isBusy) {
-    containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-xl shadow-red-55';
-    statusText = 'Busy';
-  }
-
-  const displayLabel = getTableSectionLabel(table);
-  
   return (
-    <div
+    <button
       onClick={onClick}
-      className={`aspect-[4/3] sm:aspect-square border-[3px] rounded-3xl flex flex-col items-center justify-center text-center p-4 sm:p-5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass} min-h-[140px] sm:min-h-[160px] overflow-hidden`}
+      className={`aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
+        isFree
+          ? 'bg-white border-gray-100 hover:border-gray-300'
+          : isBilling
+            ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100'
+            : isReady
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-red-50 border-red-100 text-red-600'
+      }`}
     >
+      {/* Section Badge - Top Left */}
+      {(table.sectionName || table.section?.name) && (
+        <div className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shadow-sm z-10 ${getSectionBadgeColor(table)}`}>
+          {getTableSectionLabel(table)}
+        </div>
+      )}
+
+      {/* Captain Name Badge - Top Left below section badge, or Top Right if no section */}
       {table.captainName && (
-        <div className="absolute top-3 right-3 bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg text-xs md:text-sm font-black uppercase tracking-widest max-w-[80%] truncate shadow-md">
+        <div className={`absolute ${table.sectionName || table.section?.name ? 'top-6 left-2' : 'top-2 right-2'} text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none shadow-sm z-10 max-w-[80%] truncate`}>
           {table.captainName.split(' ')[0]}
         </div>
       )}
-      <span className="text-4xl sm:text-5xl font-black px-2 leading-none tracking-tight max-w-full truncate">
-        {displayLabel}
+
+      {/* Big centered number */}
+      <span className="text-3xl sm:text-4xl font-black leading-none mt-1">
+        {table.number ?? table.id}
       </span>
-      <span className="text-sm sm:text-base font-black uppercase tracking-widest leading-tight mt-3 opacity-90">{statusText}</span>
-    </div>
+
+      {/* Bottom status strip */}
+      <div className="w-full flex flex-col items-center gap-1">
+        <div className={`w-full py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 ${
+          isFree
+            ? 'bg-gray-100 text-gray-400'
+            : isBilling
+              ? 'bg-amber-500 text-white animate-pulse'
+              : isReady
+                ? 'bg-green-600 text-white'
+                : 'bg-red-600 text-white'
+        }`}>
+          {status}
+        </div>
+        {!isFree && (
+          <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
+        )}
+      </div>
+    </button>
   );
 }
