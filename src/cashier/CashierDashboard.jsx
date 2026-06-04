@@ -1092,6 +1092,11 @@ const CashierDashboard = ({ onLogout }) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ discount: discountPercent })
         });
+        // Persist discount so it survives modal close/reopen until settlement
+        localStorage.setItem(`cashier_table_discount_${selectedTable.backendId}`, JSON.stringify({
+          value: String(discountPercent),
+          mode: 'percent'
+        }));
       }
 
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
@@ -1268,6 +1273,10 @@ const CashierDashboard = ({ onLogout }) => {
       lastConfirmedItemsRef.current = [];
       localStorage.removeItem('cashier_selected_table');
       localStorage.setItem('cashier_cart', '[]');
+      // Clean up persisted discount now that table is settled
+      if (selectedTable?.backendId) {
+        localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
+      }
       setRawDiscountInput('');
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
@@ -1360,6 +1369,10 @@ const CashierDashboard = ({ onLogout }) => {
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
       setShowTableModal(false);
+      // Clean up persisted discount on terminate
+      if (tableSnap?.backendId) {
+        localStorage.removeItem(`cashier_table_discount_${tableSnap.backendId}`);
+      }
 
       addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
 
@@ -1537,10 +1550,16 @@ const CashierDashboard = ({ onLogout }) => {
     } else {
       // Open modal immediately — don't block on network
       setShowTableModal(true);
-      // Restore saved discount from table if one exists
-      if (table.discount && Number(table.discount) > 0) {
-        setDiscountMode('percent');
-        setRawDiscountInput(String(Number(table.discount)));
+      // Restore saved discount for this table if one exists
+      const savedDiscount = localStorage.getItem(`cashier_table_discount_${table.backendId}`);
+      if (savedDiscount) {
+        try {
+          const parsed = JSON.parse(savedDiscount);
+          setDiscountMode(parsed.mode || 'percent');
+          setRawDiscountInput(parsed.value || '');
+        } catch {
+          // ignore malformed entry
+        }
       }
     }
 
@@ -3104,8 +3123,10 @@ const CashierDashboard = ({ onLogout }) => {
           onClick={() => {
             setShowTableModal(false);
             setExpandedNoteItemId(null);
-            // Only clear discount input if the table doesn't have a saved discount
-            if (!selectedTable?.discount || Number(selectedTable.discount) === 0) {
+            // Only clear discount if no saved discount persisted for this table
+            const hasSavedDiscount = selectedTable?.backendId &&
+              localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+            if (!hasSavedDiscount) {
               setRawDiscountInput('');
             }
           }}
@@ -3130,8 +3151,10 @@ const CashierDashboard = ({ onLogout }) => {
                 onClick={() => {
                   setShowTableModal(false);
                   setExpandedNoteItemId(null);
-                  // Only clear discount input if the table doesn't have a saved discount
-                  if (!selectedTable?.discount || Number(selectedTable.discount) === 0) {
+                  // Only clear discount if no saved discount persisted for this table
+                  const hasSavedDiscount = selectedTable?.backendId &&
+                    localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+                  if (!hasSavedDiscount) {
                     setRawDiscountInput('');
                   }
                 }}
@@ -3249,7 +3272,17 @@ const CashierDashboard = ({ onLogout }) => {
                 {/* ── Action buttons ──────────────────────────────────── */}
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => { setActiveTab('pos'); localStorage.setItem('cashier_active_tab', 'pos'); setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
+                    onClick={() => {
+                      setActiveTab('pos');
+                      localStorage.setItem('cashier_active_tab', 'pos');
+                      setShowTableModal(false);
+                      setExpandedNoteItemId(null);
+                      const hasSavedDiscount = selectedTable?.backendId &&
+                        localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+                      if (!hasSavedDiscount) {
+                        setRawDiscountInput('');
+                      }
+                    }}
                     className="py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-gray-50 transition-all duration-150 shadow-sm cursor-pointer"
                   >
                     Add Items
