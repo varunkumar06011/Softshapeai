@@ -30,8 +30,6 @@ import { API_BASE } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
 import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useVenueTableSync } from '../services/venueTableSyncService';
-import { useLongPress } from '../hooks/useLongPress';
-import KotConfirmModal from '../shared/components/KotConfirmModal';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -193,15 +191,6 @@ const HighlightedText = ({ text, highlight }) => {
   return <span>{parts}</span>;
 };
 
-function ItemCard({ item, onAdd, children, className }) {
-  const lp = useLongPress(() => onAdd(item));
-  return (
-    <div {...lp.handlers} className={className} style={{ touchAction: 'pan-y', userSelect: 'none' }}>
-      {children}
-    </div>
-  );
-}
-
 const CashierDashboard = ({ onLogout }) => {
   const { outlet } = useOutlet();
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
@@ -313,7 +302,6 @@ const CashierDashboard = ({ onLogout }) => {
   const isSubmittingKotRef = useRef(false);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
-  const [showKotConfirm, setShowKotConfirm] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
@@ -3190,7 +3178,11 @@ const CashierDashboard = ({ onLogout }) => {
                           className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
                         >
                           {activeMenuItems.map((item) => (
-                            <ItemCard key={item.id || item.n} item={item} onAdd={handleAddItem} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between">
+                            <div
+                              key={item.id || item.n}
+                              onClick={() => handleAddItem(item)}
+                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between"
+                            >
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
                                 <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
@@ -3215,7 +3207,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   <Plus className="w-5 h-5" />
                                 </div>
                               </div>
-                            </ItemCard>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -3405,7 +3397,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="pt-0.5">
                         {(isWalkinMode || (outlet === 'restaurant' && tableSubCategory === 'parcel')) ? (
                           <button
-                            onClick={() => setShowKotConfirm(true)}
+                            onClick={handleWalkinFinalBill}
                             disabled={cart.length === 0 || isPrintingBill}
                             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all ${cart.length === 0 || isPrintingBill ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 border-blue-700 text-white hover:bg-blue-700 shadow-md'}`}
                           >
@@ -3416,7 +3408,7 @@ const CashierDashboard = ({ onLogout }) => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => setShowKotConfirm(true)}
+                            onClick={handleSmartKOT}
                             disabled={isKotSending || cart.length === 0}
                             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                               isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
@@ -4678,20 +4670,6 @@ const CashierDashboard = ({ onLogout }) => {
         item={variantPickerItem}
         onSelect={handleVariantSelect}
         onClose={() => setVariantPickerItem(null)}
-      />
-
-      <KotConfirmModal
-        isOpen={showKotConfirm}
-        itemCount={cart.length}
-        totalQty={cart.reduce((s, i) => s + (i.q ?? i.quantity ?? 1), 0)}
-        amount={cart.reduce((s, i) => s + (Number(i.p ?? i.price ?? 0) * (i.q ?? i.quantity ?? 1)), 0)}
-        label={outlet === 'bar' ? 'Final Bill' : 'Send KOT'}
-        onConfirm={() => {
-          setShowKotConfirm(false);
-          if (outlet === 'bar') handleWalkinFinalBill();
-          else handleSmartKOT();
-        }}
-        onCancel={() => setShowKotConfirm(false)}
       />
 
     </div>
