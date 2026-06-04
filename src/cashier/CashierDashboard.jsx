@@ -472,11 +472,10 @@ const CashierDashboard = ({ onLogout }) => {
 
   const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
     setTxnsLoading(true);
-    setPastTransactions([]);
     try {
       let dateParam = null;
       let monthParam = null;
-      let limitParam = 2000;
+      let limitParam = 3000; // Increased for safety
 
       if (dateOverride) {
         dateParam = dateOverride;
@@ -488,7 +487,7 @@ const CashierDashboard = ({ onLogout }) => {
         dateParam = shiftKolkataDate(new Date(), -1);
       } else if (filter === 'month') {
         monthParam = getKolkataMonthString();
-        limitParam = 2000;
+        limitParam = 3000;
       } else {
         // 'all' — no date filter, no limit (0 = unlimited)
         limitParam = 0;
@@ -497,22 +496,28 @@ const CashierDashboard = ({ onLogout }) => {
       const restaurantIds = ['bar-001', 'restaurant-001', 'venue-001'];
 
       const allResults = await Promise.all(
-        restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(() => []))
+        restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(e => {
+          console.warn(`[Transactions] Failed for ${rid}:`, e.message);
+          return [];
+        }))
       );
 
-      const allTxns = allResults.flatMap((txns, idx) => {
+      let allTxns = allResults.flatMap((txns, idx) => {
         const rid = restaurantIds[idx];
         return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
       });
 
+      // Better deduping by composite key
       const seen = new Set();
       const deduped = allTxns.filter(txn => {
-        if (seen.has(txn.id)) return false;
-        seen.add(txn.id);
+        const key = `${txn.id || txn.orderId}-${txn.paidAt}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
         return true;
       });
 
       deduped.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
+
       const mapped = deduped.map(txn => {
         const subtotal = txn.subtotal != null ? Number(txn.subtotal) : null;
         const cgst = txn.cgst != null ? Number(txn.cgst) : 0;
@@ -578,6 +583,7 @@ const CashierDashboard = ({ onLogout }) => {
           restaurantId: txn._sourceRestaurantId,
         };
       });
+
       // Isolate: bar outlet sees only bar/bar-venue sources; restaurant outlet sees only restaurant/restaurant-venue sources
       const isolated = mapped.filter(txn => {
         if (outlet === 'bar') {
@@ -587,25 +593,23 @@ const CashierDashboard = ({ onLogout }) => {
         // Restaurant sees ONLY restaurant-sourced transactions — never bar or unknown venue
         return RESTAURANT_SOURCES.has(txn.source);
       });
+
       setPastTransactions(isolated);
+      
+      // Only cache today's data + add version stamp
       if (filter === 'today') {
         localStorage.setItem(TX_CACHE_KEY, JSON.stringify(isolated));
+        localStorage.setItem(`${TX_CACHE_KEY}_version`, Date.now().toString());
       }
     } catch (err) {
-      console.warn('[Transactions] DB fetch failed, using cache:', err.message);
-      // Restore from localStorage cache so the UI isn't left empty
-      if (filter === 'today') {
-        try {
-          const cached = localStorage.getItem(TX_CACHE_KEY);
-          if (cached) setPastTransactions(JSON.parse(cached));
-        } catch {
-          // ignore parse errors
-        }
-      }
+      console.error('[Transactions] Critical fetch failure:', err);
+      // Fallback to cache
+      const cached = localStorage.getItem(TX_CACHE_KEY);
+      if (cached) setPastTransactions(JSON.parse(cached));
     } finally {
       setTxnsLoading(false);
     }
-  }, [TX_CACHE_KEY, outlet, txnCustomDate]);
+  }, [outlet, txnCustomDate]);
 
   // FIX 2: Filtered transactions based on method and search
   const filteredTransactions = useMemo(() => {
