@@ -22,7 +22,15 @@ export default function VenueSectionView({
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
-    return currentName === targetName;
+    // Primary match: section name must match
+    if (currentName !== targetName) return false;
+    // Secondary discriminator: if venueId is provided and the table has a sectionTag,
+    // use it to disambiguate same-named sections across bar/restaurant outlets.
+    // sectionTag is set by the backend on venue tables to identify their sub-venue.
+    if (venueId && table.sectionTag) {
+      return table.sectionTag === venueId;
+    }
+    return true;
   });
 
   if (!sectionTables || sectionTables.length === 0) {

@@ -80,6 +80,19 @@ const CAPTAINS = [
   { id: 'C3', name: 'Sagar' },
 ];
 
+const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
+  id: `W${i + 1}`,
+  number: i + 1,
+  backendId: null,
+  isWalkIn: true,
+  status: 'Free',
+  sectionId: null,
+  section: { restaurantId: 'restaurant-001', name: 'Walk-in' },
+  kotHistory: [],
+  currentBill: 0,
+  activeOrder: null,
+}));
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -470,11 +483,21 @@ const CashierDashboard = ({ onLogout }) => {
             : 0;
         const source = txn._sourceRestaurantId === 'venue-001'
           ? (
-            String(txn.sectionTag || '').toLowerCase().includes('family restaurant')
+            txn.sectionTag === 'venue-family-restaurant' || String(txn.sectionName || '').toLowerCase().includes('family restaurant')
               ? 'family-restaurant'
-              : String(txn.sectionTag || '').toLowerCase().includes('parcel')
-                ? 'parcel'
-                : 'venue'
+              : txn.sectionTag === 'venue-restaurant-parcel'
+                ? 'restaurant-parcel'
+                : txn.sectionTag === 'venue-bar-parcel'
+                  ? 'bar-parcel'
+                  : txn.sectionTag === 'venue-bar-conference'
+                    ? 'bar-conference'
+                    : txn.sectionTag === 'venue-bar-pdr'
+                      ? 'bar-pdr'
+                      : txn.sectionTag === 'venue-bar-rooms'
+                        ? 'bar-rooms'
+                        : txn.sectionTag === 'venue-bar-ac-hall'
+                          ? 'bar-ac-hall'
+                          : 'venue'
           )
           : txn._sourceRestaurantId === 'restaurant-001'
             ? 'restaurant'
