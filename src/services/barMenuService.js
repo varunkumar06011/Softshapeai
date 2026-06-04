@@ -256,30 +256,36 @@ export function mapBarMenuItems(items, restaurantItems = []) {
   if (!Array.isArray(items)) return [];
   const restaurantIndex = buildRestaurantImageIndex(restaurantItems);
 
-  return items.map((item) => ({
-    id: item.id,
-    n: item.name,
-    p: Math.round(item.price ?? 0),
-    c: item.category,
-    t: item.isVeg ? "veg" : "non",
-    menuType: item.menuType || "LIQUOR",
-    img: resolveBarItemImage(
-      {
-        name: item.name,
-        menuType: item.menuType || "LIQUOR",
-        imageUrl: item.imageUrl,
-        img: item.img,
-      },
-      restaurantIndex,
-      restaurantItems
-    ),
-    isAvailable: item.isAvailable !== false,
-    variants: item.variants || [],
-    unitMl: item.unitMl,
-    fullBottleQty: item.fullBottleQty,
-    fullBottlePrice: item.fullBottlePrice,
-    isBottleItem: item.isBottleItem,
-  }));
+  return items.map((item) => {
+    const menuType = (item.menuType || "LIQUOR").toUpperCase();
+    const isLiquor = menuType === "LIQUOR";
+    return {
+      id: item.id,
+      n: item.name,
+      p: Math.round(item.price ?? 0),
+      c: item.category,
+      t: item.isVeg ? "veg" : "non",
+      menuType,
+      img: resolveBarItemImage(
+        {
+          name: item.name,
+          menuType,
+          imageUrl: item.imageUrl,
+          img: item.img,
+        },
+        restaurantIndex,
+        restaurantItems
+      ),
+      isAvailable: item.isAvailable !== false,
+      variants: item.variants || [],
+      unit: item.unit ?? (isLiquor ? "ml" : null),
+      mlPerUnit: isLiquor ? 30 : null,
+      fullBottleQty: item.fullBottleQty,
+      fullBottlePrice: item.fullBottlePrice,
+      isBottleItem: item.isBottleItem,
+      printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+    };
+  });
 }
 
 async function fetchRestaurantItemsRaw() {
@@ -402,18 +408,25 @@ export function readBarMenuCache() {
     }
     const restaurantIndex = buildRestaurantImageIndex(restaurantItems);
 
-    return items.map((item) => ({
-      ...item,
-      img: resolveBarItemImage(
-        {
-          n: item.n,
-          menuType: item.menuType,
-          imageUrl: item.img,
-        },
-        restaurantIndex,
-        restaurantItems
-      ),
-    }));
+    return items.map((item) => {
+      const menuType = (item.menuType || "LIQUOR").toUpperCase();
+      const isLiquor = menuType === "LIQUOR";
+      return {
+        ...item,
+        img: resolveBarItemImage(
+          {
+            n: item.n,
+            menuType,
+            imageUrl: item.img,
+          },
+          restaurantIndex,
+          restaurantItems
+        ),
+        unit: item.unit ?? (isLiquor ? "ml" : null),
+        mlPerUnit: item.mlPerUnit ?? (isLiquor ? 30 : null),
+        printerTarget: item.printerTarget ?? (isLiquor ? "BAR_PRINTER" : "KOT_PRINTER"),
+      };
+    });
   } catch {
     return [];
   }

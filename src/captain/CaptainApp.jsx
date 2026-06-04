@@ -17,9 +17,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useMenuSync } from '../hooks/useMenuSync';
-
-import { useSocket } from '../hooks/useSocket';
-
+import { useSocket, getSocket } from '../hooks/useSocket';
 import { useTableSync } from '../services/tableSyncService';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
@@ -144,11 +142,8 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { BAR_ID } from '../services/barApiConfig';
 
 import BarMenuToggle from '../shared/components/BarMenuToggle';
-
-import { fetchVenueMenu, fetchVenueSections } from '../services/venueTableApi';
-
-import { fetchUnifiedMenu } from '../services/unifiedMenuService';
-
+import { useVenueTableSync } from '../services/venueTableSyncService';
+import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
 import VariantPicker from '../shared/components/VariantPicker';
@@ -507,46 +502,6 @@ export default function CaptainApp({ onLogout }) {
 
   const restaurantSocket = useSocket(RESTAURANT_ID);
 
-
-
-  // State for unified menu
-
-  const [unifiedMenu, setUnifiedMenu] = useState(null);
-
-  const [unifiedMenuLoading, setUnifiedMenuLoading] = useState(false);
-
-
-
-  // Fetch unified menu based on outlet
-
-  useEffect(() => {
-
-    const venue = outlet === 'bar' ? 'bar' : 'restaurant';
-
-    setUnifiedMenuLoading(true);
-
-    fetchUnifiedMenu(venue)
-
-      .then(data => {
-
-        setUnifiedMenu(data);
-
-        setUnifiedMenuLoading(false);
-
-      })
-
-      .catch(err => {
-
-        console.error('[CaptainApp] Failed to fetch unified menu:', err);
-
-        setUnifiedMenuLoading(false);
-
-      });
-
-  }, [outlet]);
-
-
-
   const { activeCalls, clearCall } = useWaiterCalls();
 
 
@@ -668,7 +623,7 @@ export default function CaptainApp({ onLogout }) {
   // value without needing to be in its dependency array.
 
   const activeOrderIdRef = useRef(null);
-
+  const activeTableIdRef = useRef(null);
   const kotRequestIdRef = useRef(null);
 
   const isSubmittingKotRef = useRef(false);
@@ -805,8 +760,7 @@ export default function CaptainApp({ onLogout }) {
   const [activeVariantItem, setActiveVariantItem] = useState(null);
 
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
-
-
+  const [inlineQtyItem, setInlineQtyItem] = useState(null);
 
   // Cancel-item state
 
@@ -996,81 +950,11 @@ export default function CaptainApp({ onLogout }) {
 
   }, [outlet, tableSubCategory]);
 
+  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading } = useVenueTableSync();
+  const venuePrices = useVenuePrices();
 
-
-  const [venueSpecificMenu, setVenueSpecificMenu] = useState(null);
-
-  const [venueTables, setVenueTables] = useState([]);
-
-
-
-  // Fetch venue sections (Conference, PDR, Rooms, Parcel tables)
-
-  useEffect(() => {
-
-    fetchVenueSections()
-
-      .then(sections => {
-
-        // Flatten sections into tables array
-
-        const tables = [];
-
-        if (Array.isArray(sections)) {
-
-          sections.forEach(section => {
-
-            if (section.tables && Array.isArray(section.tables)) {
-
-              section.tables.forEach(table => {
-
-                tables.push({
-
-                  ...table,
-
-                  sectionId: section.id,
-
-                  sectionName: section.name,
-
-                  section: { id: section.id, name: section.name },
-
-                  backendId: table.id,
-
-                  id: table.number,
-
-                  number: table.number,
-
-                  status: table.status || 'AVAILABLE',
-
-                  capacity: table.capacity || 4,
-
-                });
-
-              });
-
-            }
-
-          });
-
-        }
-
-        setVenueTables(tables);
-
-      })
-
-      .catch(err => {
-
-        console.error('[CaptainApp] Failed to fetch venue sections:', err);
-
-        setVenueTables([]);
-
-      });
-
-  }, []);
-
-
-
-  useEffect(() => {
+  const outletFilteredMenuItems = useMemo(() => {
+    const base = (outlet === 'bar' ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
     let currentVenueId = null;
 
@@ -1094,213 +978,43 @@ export default function CaptainApp({ onLogout }) {
 
     }
 
-
-
-    if (!currentVenueId) {
-
-      setVenueSpecificMenu(null);
-
-      return;
-
-    }
-
-
-
-    const venueParam = currentVenueId;
-
-
-
-    fetchUnifiedMenu(venueParam)
-
-      .then(data => {
-
-        // Flatten categories into items list for captain panel
-
-        const items = [];
-
-        data.categories.forEach(cat => {
-
-          cat.items.forEach(item => {
-
-            items.push({
-
-              id: item.id,
-
-              n: item.name,
-
-              p: Math.round(item.price),
-
-              c: item.category,
-
-              t: item.isVeg ? 'veg' : 'non',
-
-              img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
-
-              desc: item.description || '',
-
-              menuType: item.menuType,
-
-              printerTarget: item.printerTarget,
-
-              unit: item.unit,
-
-              mlPerUnit: item.mlPerUnit,
-
-              variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
-
-            });
-
-          });
-
-        });
-
-        setVenueSpecificMenu(items);
-
-      })
-
-      .catch(err => {
-
-        console.error('[CaptainApp] Failed to fetch unified menu:', err);
-
-        // Fallback to old endpoint
-
-        fetchVenueMenu(currentVenueId, activeRestaurantId)
-
-          .then(items => {
-
-            const mapped = items.map(serverItem => {
-
-              const defaultVariant = serverItem.variants?.find(v => v.isDefault) ?? serverItem.variants?.[0];
-
-              return {
-
-                id: serverItem.id,
-
-                n: serverItem.name,
-
-                p: Math.round(serverItem.price),
-
-                c: serverItem.category,
-
-                t: serverItem.isVeg ? 'veg' : 'non',
-
-                img: serverItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
-
-                desc: serverItem.description || '',
-
-                menuType: serverItem.menuType,
-
-                variants: serverItem.variants?.map(v => ({...v, price: Number(v.price)}))
-
-              };
-
-            });
-
-            setVenueSpecificMenu(mapped);
-
-          })
-
-          .catch(console.error);
-
-      });
-
-  }, [tableSubCategory, activeRestaurantId]);
-
-
-
-  const outletFilteredMenuItems = useMemo(() => {
-
-    if (tableSubCategory !== 'restaurant' && venueSpecificMenu) {
-
-      return venueSpecificMenu;
-
-    }
-
-    // Use unified menu if available, otherwise fall back to old menu
-
-    if (unifiedMenu && unifiedMenu.categories) {
-
-      const items = [];
-
-      unifiedMenu.categories.forEach(cat => {
-
-        cat.items.forEach(item => {
-
-          items.push({
-
-            id: item.id,
-
-            n: item.name,
-
-            p: Math.round(item.price),
-
-            c: item.category,
-
-            t: item.isVeg ? 'veg' : 'non',
-
-            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
-
-            desc: item.description || '',
-
-            menuType: item.menuType,
-
-            printerTarget: item.printerTarget,
-
-            unit: item.unit,
-
-            mlPerUnit: item.mlPerUnit,
-
-            isAvailable: item.isActive,
-
-            variants: item.variants?.map(v => ({...v, price: Number(v.price)}))
-
-          });
-
-        });
-
-      });
-
-      if (outlet === 'bar') {
-
-        return items.filter(item => item.isAvailable !== false);
-
+    const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
+    const isBarVenueContext = outlet === 'bar' && currentVenueId !== null;
+
+    return base.map(item => {
+      const overridePrice = venueSpecificPrices[item.id];
+      let finalPrice;
+      if (isBarVenueContext) {
+        // Bar venue: only show items with an explicit venue price > 0 (no base-price fallback)
+        finalPrice = overridePrice !== undefined ? Number(overridePrice) : 0;
+      } else {
+        finalPrice = overridePrice !== undefined
+          ? Number(overridePrice)
+          : Number(item.p || item.price || 0);
       }
+      const remappedVariants = item.variants?.map(v => {
+        const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
+        return variantOverride !== undefined
+          ? { ...v, price: Number(variantOverride) }
+          : v;
+      }) ?? item.variants;
 
-      return items.filter(item => item.isAvailable !== false);
-
-    }
-
-    // Fallback to old menu
-
-    if (outlet === 'bar') {
-
-      return activeMenuItems.filter(item => item.isAvailable !== false);
-
-    }
-
-    return activeMenuItems.filter(item => item.isAvailable !== false);
-
-  }, [outlet, activeMenuItems, tableSubCategory, venueSpecificMenu, unifiedMenu]);
+      return { ...item, p: finalPrice, variants: remappedVariants };
+    }).filter(item => {
+      if (isBarVenueContext) {
+        return Number(item.p) > 0;
+      }
+      return true;
+    });
+  }, [outlet, barMenu, restaurantMenu, tableSubCategory, venuePrices]);
 
 
 
   const categories = useMemo(() => {
-
-    // Use unified menu categories if available
-
-    if (unifiedMenu && unifiedMenu.categories) {
-
-      return ['All', ...unifiedMenu.categories.map(cat => cat.name)].filter(Boolean);
-
-    }
-
-    if (outlet === 'restaurant') return restaurantCategories;
-
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
 
     return ['All', ...Array.from(cats)].filter(Boolean);
-
-  }, [outlet, restaurantCategories, outletFilteredMenuItems, unifiedMenu]);
+  }, [outletFilteredMenuItems]);
 
 
 
@@ -1324,9 +1038,20 @@ export default function CaptainApp({ onLogout }) {
 
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
 
+  // Route mutations to the correct table array based on where the active table lives
+  const setActiveOrVenueTables = useCallback((updater) => {
+    const isVenueTable = venueTables.some(t => t.id === activeTableId);
+    if (isVenueTable) {
+      setVenueTables(updater);
+    } else {
+      setActiveTables(updater);
+    }
+  }, [activeTableId, venueTables, setVenueTables, setActiveTables]);
 
-
-  const activeTable = useMemo(() => activeTables.find(t => t.id === activeTableId), [activeTables, activeTableId]);
+  const activeTable = useMemo(() =>
+    activeTables.find(t => t.id === activeTableId) ||
+    venueTables.find(t => t.id === activeTableId),
+  [activeTables, venueTables, activeTableId]);
 
 
 
@@ -1620,7 +1345,33 @@ export default function CaptainApp({ onLogout }) {
 
     }
 
+    // ── Order:paid listener (critical for venue table settlement sync) ──
+    const sharedSocket = getSocket();
+    const joinRooms = () => {
+      if (activeRestaurantId) sharedSocket.emit('join', activeRestaurantId);
+      sharedSocket.emit('join', 'venue-001');
+    };
+    joinRooms();
+    sharedSocket.on('connect', joinRooms);
 
+    const onOrderPaid = (payload) => {
+      const tableId = payload?.tableId;
+      if (!tableId) return;
+      // Only react if this captain is currently viewing the settled table
+      if (activeTableIdRef.current && String(tableId) === String(activeTableIdRef.current)) {
+        const settledId = activeTableIdRef.current;
+        setTableCarts(prev => {
+          const next = { ...prev };
+          delete next[settledId];
+          return next;
+        });
+        setActiveTableId(null);
+        activeOrderIdRef.current = null;
+        lastConfirmedItemsRef.current = [];
+        addNotification('Order settled', 'success');
+      }
+    };
+    sharedSocket.on('order:paid', onOrderPaid);
 
     return () => {
 
@@ -1631,10 +1382,11 @@ export default function CaptainApp({ onLogout }) {
         socket.off('menu-item-updated', onMenuItemUpdated);
 
       }
-
+      sharedSocket.off('connect', joinRooms);
+      sharedSocket.off('order:paid', onOrderPaid);
     };
-
-  }, [outlet, barSocket, restaurantSocket]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlet, barSocket, restaurantSocket, activeRestaurantId]);
 
 
 
@@ -1783,9 +1535,7 @@ export default function CaptainApp({ onLogout }) {
   // Clean up stale cart keys when a table is deleted from the active list
 
   useEffect(() => {
-
-    const validIds = new Set(activeTables.map(t => String(t.id)));
-
+    const validIds = new Set([...activeTables, ...venueTables].map(t => String(t.id)));
     setTableCarts(prev => {
 
       const cleaned = Object.fromEntries(
@@ -1797,8 +1547,7 @@ export default function CaptainApp({ onLogout }) {
       return Object.keys(cleaned).length === Object.keys(prev).length ? prev : cleaned;
 
     });
-
-  }, [activeTables]);
+  }, [activeTables, venueTables]);
 
 
 
@@ -2160,9 +1909,7 @@ export default function CaptainApp({ onLogout }) {
     kotRequestIdRef.current = null;
 
     if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
-
-      setActiveTables(currentTables => currentTables.map(t => {
-
+      setActiveOrVenueTables(currentTables => currentTables.map(t => {
         if (t.id === activeTable.id) {
 
           return { ...t, status: TABLE_STATUS.FREE, captainId: null };
@@ -2250,7 +1997,8 @@ export default function CaptainApp({ onLogout }) {
   // INVARIANT: activeOrderIdRef.current must be null when a captain opens a free table. It must only be set to a real DB order ID when that order exists, is active (not PAID/CANCELLED), and has items.
 
   useEffect(() => {
-
+    // Sync ref so async socket handlers always read the latest active table
+    activeTableIdRef.current = activeTableId;
     // Always clear first - never carry a ref from a previous table
 
     activeOrderIdRef.current = null;
@@ -2266,7 +2014,8 @@ export default function CaptainApp({ onLogout }) {
       const liveTableEntry = activeTables.find(
 
         t => t.backendId === activeTableId || t.id === activeTableId
-
+      ) || venueTables.find(
+        t => t.backendId === activeTableId || t.id === activeTableId
       );
 
       const liveOrder = liveTableEntry?.activeOrder;
@@ -2393,7 +2142,8 @@ export default function CaptainApp({ onLogout }) {
 
       let realKotId;
 
-
+      const isVenueTable = venueTables.some(t => t.id === activeTableId);
+      const orderRestaurantId = isVenueTable ? 'venue-001' : activeRestaurantId;
 
       if (existingOrderId) {
 
@@ -2418,11 +2168,8 @@ export default function CaptainApp({ onLogout }) {
         savedOrder = await createOrder({
 
           tableId: activeTable.backendId,
-
-          tableNumber: activeTable.id,
-
-          restaurantId: activeRestaurantId,
-
+          tableNumber: activeTable.number ?? activeTable.id,
+          restaurantId: orderRestaurantId,
           items: apiItems,
 
         });
@@ -2459,10 +2206,7 @@ export default function CaptainApp({ onLogout }) {
 
       };
 
-
-
-      setActiveTables(prev => prev.map(t => {
-
+      setActiveOrVenueTables(prev => prev.map(t => {
         if (t.backendId !== activeTable.backendId) return t;
 
         return {
@@ -2503,10 +2247,7 @@ export default function CaptainApp({ onLogout }) {
 
       );
 
-
-
-      setActiveTables(prev => prev.map(t => {
-
+      setActiveOrVenueTables(prev => prev.map(t => {
         if (t.backendId !== activeTable.backendId) return t;
 
         return {
@@ -2614,9 +2355,7 @@ export default function CaptainApp({ onLogout }) {
 
 
     // Optimistic UI — mark item as CANCELLED immediately
-
-    setActiveTables(prev => prev.map(t => {
-
+    setActiveOrVenueTables(prev => prev.map(t => {
       if (t.backendId !== activeTable?.backendId) return t;
 
       return {
@@ -2676,9 +2415,7 @@ export default function CaptainApp({ onLogout }) {
       addNotification(`Cancel failed: ${err.message}`, 'error');
 
       // Revert optimistic update
-
-      setActiveTables(prev => prev.map(t => {
-
+      setActiveOrVenueTables(prev => prev.map(t => {
         if (t.backendId !== activeTable?.backendId) return t;
 
         return {
@@ -2724,9 +2461,8 @@ export default function CaptainApp({ onLogout }) {
   const requestFinalBill = async () => {
 
     // Re-fetch from live tables in case state is stale
-
-    const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
-
+    const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId)
+      || venueTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
     const orderId = liveTable?.activeOrder?.id;
 
     const previousStatus = liveTable?.status || TABLE_STATUS.PREPARING;
@@ -2734,9 +2470,7 @@ export default function CaptainApp({ onLogout }) {
 
 
     // 1. Update UI immediately
-
-    setActiveTables(prev => prev.map(t => {
-
+    setActiveOrVenueTables(prev => prev.map(t => {
       if (t.id === activeTableId || t.backendId === activeTableId) {
 
         return { ...t, status: TABLE_STATUS.BILLING };
@@ -2770,9 +2504,7 @@ export default function CaptainApp({ onLogout }) {
         addNotification('Billing request failed — please try again', 'error');
 
         // Revert table status back to previous status (e.g. PREPARING)
-
-        setActiveTables(prev => prev.map(t => {
-
+        setActiveOrVenueTables(prev => prev.map(t => {
           if (t.id === liveTable?.id || t.backendId === liveTable?.backendId) {
 
             return { ...t, status: previousStatus };
@@ -2990,8 +2722,8 @@ export default function CaptainApp({ onLogout }) {
               // 2. Collision check: Did someone else just lock this table in the live floor map?
 
               const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
-
-              const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber));
+              const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber))
+                || venueTables.find(t => String(t.id) === String(callTableNumber) || String(t.number) === String(callTableNumber));
 
 
 
@@ -3014,9 +2746,7 @@ export default function CaptainApp({ onLogout }) {
 
 
                 // Allocate table to this captain
-
-                setActiveTables(prev => prev.map(t => {
-
+                setActiveOrVenueTables(prev => prev.map(t => {
                   if (String(t.id) === String(callTableNumber)) {
 
                     return {
@@ -3616,9 +3346,7 @@ export default function CaptainApp({ onLogout }) {
                       key={table.backendId || table.id}
 
                       onClick={() => openTableSession(table)}
-
-                      className={`aspect-square p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 ${
-
+                      className={`aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
                         isMyTable ? `border-l-4 ${borderColor}` : ''
 
                       } ${table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
@@ -3681,16 +3409,12 @@ export default function CaptainApp({ onLogout }) {
 
                       </div>
 
-
-
-                      <span className="text-2xl sm:text-3xl font-black leading-none">{table.number ?? table.id}</span>
+                      <span className="text-3xl sm:text-4xl font-black leading-none">{table.number ?? table.id}</span>
 
 
 
                       <div className="w-full flex flex-col items-center gap-1.5">
-
-                        <div className={`w-full py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[7px] sm:text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-1 sm:gap-1.5 ${table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
-
+                        <div className={`w-full py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 ${table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
                           table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
 
                             table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
@@ -3770,7 +3494,7 @@ export default function CaptainApp({ onLogout }) {
             onOrderPlaced={() => {}}
 
             venueTables={venueTables}
-
+            isSyncing={venueTablesLoading}
           />
 
         )}
@@ -4781,7 +4505,39 @@ export default function CaptainApp({ onLogout }) {
 
                                 <button onClick={() => updateDraftQty(item.n, -1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Minus size={14} strokeWidth={3} /></button>
 
-                                <span className="w-8 text-center text-xs font-black">{item.q}</span>
+                                {inlineQtyItem === item.n ? (
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    min="1"
+                                    autoFocus
+                                    defaultValue={item.q}
+                                    className="w-10 text-center text-xs font-black bg-white border border-red-200 rounded-md outline-none focus:ring-1 focus:ring-red-300 py-0.5"
+                                    onBlur={(e) => {
+                                      const val = parseInt(e.target.value, 10);
+                                      if (!isNaN(val) && val >= 1 && val !== item.q) {
+                                        const delta = val - item.q;
+                                        updateDraftQty(item.n, delta);
+                                      }
+                                      setInlineQtyItem(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.target.blur();
+                                      } else if (e.key === 'Escape') {
+                                        setInlineQtyItem(null);
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <span
+                                    onClick={() => setInlineQtyItem(item.n)}
+                                    className="w-8 text-center text-xs font-black cursor-pointer select-none"
+                                  >
+                                    {item.q}
+                                  </span>
+                                )}
 
                                 <button onClick={() => updateDraftQty(item.n, 1)} className="w-8 h-8 flex items-center justify-center text-[#E53935] hover:bg-red-50 rounded-lg transition-colors"><Plus size={14} strokeWidth={3} /></button>
 
@@ -5380,9 +5136,7 @@ export default function CaptainApp({ onLogout }) {
             const isFullCancel = cancelQuantity >= Number(item.q ?? 0);
 
             // Optimistic update
-
-            setActiveTables(prev => prev.map(t => {
-
+            setActiveOrVenueTables(prev => prev.map(t => {
               if (t.backendId !== activeTable?.backendId) return t;
 
               return {
@@ -5464,9 +5218,7 @@ export default function CaptainApp({ onLogout }) {
               console.error('[CancelBatch]', err.message);
 
               // Revert this one item
-
-              setActiveTables(prev => prev.map(t => {
-
+              setActiveOrVenueTables(prev => prev.map(t => {
                 if (t.backendId !== activeTable?.backendId) return t;
 
                 return {
