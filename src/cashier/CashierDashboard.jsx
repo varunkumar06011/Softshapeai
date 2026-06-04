@@ -209,6 +209,49 @@ const CashierDashboard = ({ onLogout }) => {
   const [activeDiet, setActiveDiet] = useState('All');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [pendingTabSwitch, setPendingTabSwitch] = useState(null);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const handleTabSwitch = (tabId) => {
+    // Check if switching between family-restaurant and parcel in restaurant outlet
+    const isSwitchingProtected = outlet === 'restaurant' &&
+      ((tableSubCategory === 'family-restaurant' && tabId === 'parcel') ||
+       (tableSubCategory === 'parcel' && tabId === 'family-restaurant'));
+
+    if (isSwitchingProtected) {
+      setPendingTabSwitch(tabId);
+      setPasswordInput('');
+      setPasswordError('');
+      setPasswordModalOpen(true);
+    } else {
+      setTableSubCategory(tabId);
+      setSelectedPDRRoom(null);
+    }
+  };
+
+  const handlePasswordSubmit = () => {
+    if (passwordInput === '1001') {
+      setPasswordModalOpen(false);
+      setPasswordInput('');
+      setPasswordError('');
+      if (pendingTabSwitch) {
+        setTableSubCategory(pendingTabSwitch);
+        setSelectedPDRRoom(null);
+        setPendingTabSwitch(null);
+      }
+    } else {
+      setPasswordError('Incorrect password');
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setPasswordModalOpen(false);
+    setPasswordInput('');
+    setPasswordError('');
+    setPendingTabSwitch(null);
+  };
 
   useEffect(() => {
     setSelectedCategory('All');
@@ -2237,7 +2280,7 @@ const CashierDashboard = ({ onLogout }) => {
                           ].map(tab => (
                             <button
                               key={tab.id}
-                              onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
+                              onClick={() => handleTabSwitch(tab.id)}
                               className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === tab.id
                                   ? 'bg-[#E53935] text-white border-[#E53935]'
                                   : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
@@ -4540,6 +4583,47 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         );
       })()}
+
+      {/* Password Modal for Tab Switch */}
+      {passwordModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={handlePasswordCancel}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <h3 className="font-black text-lg text-gray-900 mb-2">Enter Password</h3>
+              <p className="text-sm text-gray-500 mb-4">Password required to switch between Family Restaurant and Parcel</p>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handlePasswordSubmit();
+                  if (e.key === 'Escape') handlePasswordCancel();
+                }}
+                placeholder="Enter password"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#E53935] focus:outline-none text-lg font-black tracking-widest text-center"
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-red-500 text-sm font-bold mt-2">{passwordError}</p>
+              )}
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={handlePasswordCancel}
+                className="flex-1 py-3 rounded-xl text-sm font-black text-gray-500 hover:bg-gray-200 transition-colors uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePasswordSubmit}
+                className="flex-1 py-3 rounded-xl text-sm font-black bg-[#E53935] text-white hover:bg-red-700 transition-colors uppercase tracking-widest"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <VariantPicker
         item={variantPickerItem}
