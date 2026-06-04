@@ -50,9 +50,14 @@ function itemNameMatchesSearch(item, query) {
   if (!q) return true;
   const tokens = q.split(/\s+/).filter(Boolean);
   const nameLower = (item.name || '').toLowerCase();
+  const typeLower = (item.type || '').toLowerCase();
   const nameWords = nameLower.split(/[\s()&,\-\/\d]+/).filter(Boolean);
   return tokens.every((token) => {
+    // Search in name
     if (nameLower.includes(token)) return true;
+    // Search in type (food/liquor)
+    if (typeLower.includes(token)) return true;
+    // Fuzzy match in name words
     for (const word of nameWords) {
       if (levenshtein(token, word) <= 1) return true;
     }
