@@ -288,16 +288,34 @@ export function mapBarMenuItems(items, restaurantItems = []) {
   });
 }
 
+async function fetchWithRetry(url, options, { retries = 2, timeoutMs = 12000 } = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (retries > 0 && (err.name === 'AbortError' || err.message?.includes('fetch'))) {
+      console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
+      await new Promise(r => setTimeout(r, 1000));
+      return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
+    }
+    throw err;
+  }
+}
+
 async function fetchRestaurantItemsRaw() {
-  const res = await fetch(apiUrl("/api/menu/items/admin"), {
+  const res = await fetchWithRetry(apiUrl("/api/menu/items/admin"), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-  });
+  }, { retries: 2, timeoutMs: 12000 });
   if (!res.ok) {
-    const fallback = await fetch(apiUrl("/api/menu/items"), {
+    const fallback = await fetchWithRetry(apiUrl("/api/menu/items"), {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-    });
+    }, { retries: 1, timeoutMs: 10000 });
     if (!fallback.ok) return [];
     return fallback.json();
   }
@@ -306,10 +324,10 @@ async function fetchRestaurantItemsRaw() {
 
 export async function fetchBarMenuFromBackend() {
   const [barRes, restaurantItems] = await Promise.all([
-    fetch(apiUrl("/api/bar/menu/items"), {
+    fetchWithRetry(apiUrl("/api/bar/menu/items"), {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-    }),
+    }, { retries: 2, timeoutMs: 12000 }),
     fetchRestaurantItemsRaw(),
   ]);
 

@@ -257,10 +257,18 @@ async function persistStatusChanges(prevTables, nextTables) {
       table.currentBill !== prev.currentBill;
 
     if (sessionChanged) {
-      const safeStatus = VALID_STATUSES.has(table.status) ? table.status : "Occupied";
+      // Ensure status is a valid workflow status string, not a backend enum
+      // Backend enum values like "OCCUPIED" need to be converted to "Occupied"
+      let statusToSend = table.status;
+      if (statusToSend === 'OCCUPIED') statusToSend = 'Occupied';
+      else if (statusToSend === 'AVAILABLE') statusToSend = 'Free';
+      else if (statusToSend === 'BILLING_REQUESTED') statusToSend = 'Waiting Bill';
+      else if (statusToSend === 'RESERVED') statusToSend = 'Reserved';
+      else if (statusToSend === 'CLEANING') statusToSend = 'Cleaning';
+
       tasks.push(
         updateTableSession(table.backendId, {
-          status: safeStatus,
+          status: statusToSend,
           captainId: table.captainId ?? null,
           guests: table.guests ?? 0,
           time: table.time ?? null,

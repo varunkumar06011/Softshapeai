@@ -1196,7 +1196,14 @@ const CashierDashboard = ({ onLogout }) => {
       total,             // Total amount
       method,            // Payment method (can be null for final bill)
       kotNumbers: (table?.kotHistory || []).map(k => k.id || k.kotNumber),
-      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A'
+      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A',
+      sectionTag: table?.sectionTag || (
+        (table?.section?.name || '').toLowerCase().includes('parcel')
+          ? 'venue-restaurant-parcel'
+          : (table?.section?.name || '').toLowerCase().includes('family')
+            ? 'venue-family-restaurant'
+            : null
+      ),
     });
   };
 
@@ -1276,6 +1283,22 @@ const CashierDashboard = ({ onLogout }) => {
     const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
     const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
     const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
+
+    // Emit print_job directly to billing printer via socket (no backend order needed)
+    // Use the same printBillQZ function already available:
+    await printBillQZ({
+      orderId: null,
+      table: { id: tableLabel, guests: 0 },
+      items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
+      subtotal: subtotalAmt,
+      taxes: 0,
+      total: grandTotalAmt,
+      method: null,
+      kotNumbers: [],
+      captainName: 'Walk-in',
+      discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+      sectionTag: 'venue-restaurant-parcel',
+    });
 
     addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
     // Show settlement picker immediately
