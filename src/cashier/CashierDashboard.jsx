@@ -30,6 +30,8 @@ import { API_BASE } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
 import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useVenueTableSync } from '../services/venueTableSyncService';
+import { useLongPress } from '../hooks/useLongPress';
+import KotConfirmModal from '../shared/components/KotConfirmModal';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -191,6 +193,15 @@ const HighlightedText = ({ text, highlight }) => {
   return <span>{parts}</span>;
 };
 
+function ItemCard({ item, onAdd, children, className }) {
+  const lp = useLongPress(() => onAdd(item));
+  return (
+    <div {...lp.handlers} className={className} style={{ touchAction: 'pan-y', userSelect: 'none' }}>
+      {children}
+    </div>
+  );
+}
+
 const CashierDashboard = ({ onLogout }) => {
   const { outlet } = useOutlet();
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
@@ -302,6 +313,7 @@ const CashierDashboard = ({ onLogout }) => {
   const isSubmittingKotRef = useRef(false);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
+  const [showKotConfirm, setShowKotConfirm] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
@@ -1126,9 +1138,13 @@ const CashierDashboard = ({ onLogout }) => {
   const handleReprintFoundBill = async (txn) => {
     setIsReprintingFoundBill(true);
     try {
-      const response = await fetch(`${API_BASE}/api/orders/${txn.orderId}/print-bill?restaurantId=${txn._sourceRestaurantId}`, {
+      const response = await fetch(`${API_BASE}/api/print/reprint-by-transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: txn.orderId,
+          restaurantId: txn._sourceRestaurantId
+        }),
       });
       if (!response.ok) throw new Error('Print request failed');
       addNotification('Re-print Sent', `Bill #${txn.displayId} sent to printer.`, 'success');
@@ -1256,36 +1272,39 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleWalkinFinalBill = async () => {
     if (cart.length === 0) return;
-    try {
-      setIsPrintingBill(true);
-      const tableLabel = selectedTable?.id || 'Walk-in';
-      const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
-      const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
-      const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
+    const tableLabel = selectedTable?.id || 'Walk-in';
+    const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
+    const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
+    const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
 
-      // Emit print_job directly to billing printer via socket (no backend order needed)
-      // Use the same printBillQZ function already available:
-      await printBillQZ({
-        orderId: null,
-        table: { id: tableLabel, guests: 0 },
-        items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
-        subtotal: subtotalAmt,
-        taxes: 0,
-        total: grandTotalAmt,
-        method: null,
-        kotNumbers: [],
-        captainName: 'Walk-in',
-        discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-      });
+    addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
+    // Show settlement picker immediately
+    setShowMethodPicker(true);
 
-      addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
-      // Show settlement picker immediately
-      setShowMethodPicker(true);
-    } catch (err) {
-      addNotification('Print Failed', err.message || 'Could not print bill', 'error');
-    } finally {
-      setIsPrintingBill(false);
-    }
+    // Reset loading state immediately after optimistic UI update
+    setIsPrintingBill(false);
+
+    // Run print in background without blocking UI
+    (async () => {
+      try {
+        // Emit print_job directly to billing printer via socket (no backend order needed)
+        // Use the same printBillQZ function already available:
+        await printBillQZ({
+          orderId: null,
+          table: { id: tableLabel, guests: 0 },
+          items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
+          subtotal: subtotalAmt,
+          taxes: 0,
+          total: grandTotalAmt,
+          method: null,
+          kotNumbers: [],
+          captainName: 'Walk-in',
+          discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+        });
+      } catch (err) {
+        addNotification('Print Failed', err.message || 'Could not print bill', 'error');
+      }
+    })();
   };
 
   const handleReprintBill = async () => {
@@ -1306,43 +1325,45 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    try {
-      setIsReprintingBill(true);
+    addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
 
-      // Apply discount update if one is entered before reprinting
-      if (discountPercent > 0) {
-        await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ discount: discountPercent }),
-        });
-      }
+    // Reset loading state immediately after optimistic UI update
+    setIsReprintingBill(false);
 
-      // Call the same print-bill endpoint — backend recalculates and re-emits to printer
-      const response = await fetch(
-        `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+    // Run reprint in background without blocking UI
+    (async () => {
+      try {
+        // Apply discount update if one is entered before reprinting
+        if (discountPercent > 0) {
+          await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ discount: discountPercent }),
+          });
         }
-      );
 
-      // Backend returns 409 if PAID — handle gracefully
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        // If 409 PAID, still allow re-emit since settlement already happened
-        if (response.status !== 409) {
-          throw new Error(errBody.error || `Server returned ${response.status}`);
+        // Call the same print-bill endpoint — backend recalculates and re-emits to printer
+        const response = await fetch(
+          `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+
+        // Backend returns 409 if PAID — handle gracefully
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          // If 409 PAID, still allow re-emit since settlement already happened
+          if (response.status !== 409) {
+            throw new Error(errBody.error || `Server returned ${response.status}`);
+          }
         }
+      } catch (error) {
+        console.error('[Reprint] Failed:', error.message);
+        addNotification('Re-print Failed', error.message || 'Could not send bill to printer.', 'error');
       }
-
-      addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
-    } catch (error) {
-      console.error('[Reprint] Failed:', error.message);
-      addNotification('Re-print Failed', error.message || 'Could not send bill to printer.', 'error');
-    } finally {
-      setIsReprintingBill(false);
-    }
+    })();
   };
 
   const handlePayment = async (method) => {
@@ -1371,35 +1392,11 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    try {
-      setIsPrintingBill(true);
-
-      // Call backend settle endpoint (creates transaction, marks paid, resets table)
-      // NO PRINTING - that already happened in handleFinalBill
-      if (orderId) {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentMethod: method, discountPercent })
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Settlement failed on server');
-        }
-
-        // Mark as settled locally to prevent retries
-        setSettledOrderIds(prev => new Set([...prev, orderId]));
-      }
-
-      // Update local state - table becomes free
-      setActiveTables((prev) =>
-        prev.map((t) =>
-          t.backendId === selectedTable.backendId
-            ? {
+    // Update local state - table becomes free (optimistic update)
+    setActiveTables((prev) =>
+      prev.map((t) =>
+        t.backendId === selectedTable.backendId
+          ? {
               ...t,
               status: 'Free',
               workflowStatus: 'Free',
@@ -1412,50 +1409,75 @@ const CashierDashboard = ({ onLogout }) => {
               guests: 0,
               time: null
             }
-            : t
-        )
-      );
+          : t
+      )
+    );
 
-      // Clear billing alerts for this table
-      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
+    // Clear billing alerts for this table
+    setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
 
-      // Close modals and clear state
-      setShowMethodPicker(false);
-      setShowTableModal(false);
-      setShowPaymentModal(false);
-      setSelectedTable(null);
-      setSelectedOrder(null);
-      setCart([]);
-      lastConfirmedItemsRef.current = [];
-      localStorage.removeItem('cashier_selected_table');
-      localStorage.setItem('cashier_cart', '[]');
-      // Clean up persisted discount now that table is settled
-      if (selectedTable?.backendId) {
-        localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
-      }
-      setRawDiscountInput('');
-      setExpandedNoteItemId(null);
-      setRemovedItemIds([]);
-
-      // Show success notification
-      addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
-
-      // Clear walk-in mode after settlement
-      if (isWalkinMode) {
-        setIsWalkinMode(false);
-        setSelectedTable(null);
-        setCart([]);
-      }
-
-      // Refresh transactions list to show the new transaction
-      loadTransactions(txnDateFilterRef.current);
-
-    } catch (err) {
-      console.error('[Settlement] Failed:', err.message);
-      addNotification('Error', 'Settlement failed: ' + err.message, 'error');
-    } finally {
-      setIsPrintingBill(false);
+    // Close modals and clear state
+    setShowMethodPicker(false);
+    setShowTableModal(false);
+    setShowPaymentModal(false);
+    setSelectedTable(null);
+    setSelectedOrder(null);
+    setCart([]);
+    lastConfirmedItemsRef.current = [];
+    localStorage.removeItem('cashier_selected_table');
+    localStorage.setItem('cashier_cart', '[]');
+    // Clean up persisted discount now that table is settled
+    if (selectedTable?.backendId) {
+      localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
     }
+    setRawDiscountInput('');
+    setExpandedNoteItemId(null);
+    setRemovedItemIds([]);
+
+    // Show success notification
+    addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
+
+    // Clear walk-in mode after settlement
+    if (isWalkinMode) {
+      setIsWalkinMode(false);
+      setSelectedTable(null);
+      setCart([]);
+    }
+
+    // Reset loading state immediately after optimistic UI update
+    setIsPrintingBill(false);
+
+    // Run settlement in background without blocking UI
+    (async () => {
+      try {
+        // Call backend settle endpoint (creates transaction, marks paid, resets table)
+        // NO PRINTING - that already happened in handleFinalBill
+        if (orderId) {
+          const response = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentMethod: method, discountPercent })
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Settlement failed on server');
+          }
+
+          // Mark as settled locally to prevent retries
+          setSettledOrderIds(prev => new Set([...prev, orderId]));
+        }
+
+        // Refresh transactions list to show the new transaction
+        loadTransactions(txnDateFilterRef.current);
+      } catch (err) {
+        console.error('[Settlement] Failed:', err.message);
+        addNotification('Error', 'Settlement failed: ' + err.message, 'error');
+      }
+    })();
   };
 
   const terminateTableSession = async () => {
@@ -1971,9 +1993,15 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
 
-    try {
-      if (selectedTable?.backendId) {
-        if (selectedTable.activeOrder?.id) {
+    // Reset loading state immediately after optimistic UI update
+    isSubmittingKotRef.current = false;
+    setIsKotSending(false);
+
+    // Run API call in background without blocking UI
+    (async () => {
+      try {
+        if (selectedTable?.backendId) {
+          if (selectedTable.activeOrder?.id) {
         // FIX: Only send the NEW cart items (apiItems) to the backend.
         // The backend PATCH /items endpoint always creates NEW orderItem rows for
         // whatever it receives — it does NOT replace old ones.
@@ -1995,10 +2023,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } catch (err) {
       console.warn('[BG] order write failed:', err.message);
-    } finally {
-      isSubmittingKotRef.current = false;
-      setIsKotSending(false);
     }
+    })();
   };
 
   const stats = [
@@ -3141,11 +3167,7 @@ const CashierDashboard = ({ onLogout }) => {
                           className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
                         >
                           {activeMenuItems.map((item) => (
-                            <div
-                              key={item.id || item.n}
-                              onClick={() => handleAddItem(item)}
-                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between"
-                            >
+                            <ItemCard key={item.id || item.n} item={item} onAdd={handleAddItem} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between">
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
                                 <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
@@ -3170,7 +3192,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   <Plus className="w-5 h-5" />
                                 </div>
                               </div>
-                            </div>
+                            </ItemCard>
                           ))}
                         </div>
                       )}
@@ -3360,7 +3382,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="pt-0.5">
                         {(isWalkinMode || (outlet === 'restaurant' && tableSubCategory === 'parcel')) ? (
                           <button
-                            onClick={handleWalkinFinalBill}
+                            onClick={() => setShowKotConfirm(true)}
                             disabled={cart.length === 0 || isPrintingBill}
                             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all ${cart.length === 0 || isPrintingBill ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 border-blue-700 text-white hover:bg-blue-700 shadow-md'}`}
                           >
@@ -3371,7 +3393,7 @@ const CashierDashboard = ({ onLogout }) => {
                           </button>
                         ) : (
                           <button
-                            onClick={handleSmartKOT}
+                            onClick={() => setShowKotConfirm(true)}
                             disabled={isKotSending || cart.length === 0}
                             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                               isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
@@ -4634,6 +4656,21 @@ const CashierDashboard = ({ onLogout }) => {
         onSelect={handleVariantSelect}
         onClose={() => setVariantPickerItem(null)}
       />
+
+      <KotConfirmModal
+        isOpen={showKotConfirm}
+        itemCount={cart.length}
+        totalQty={cart.reduce((s, i) => s + (i.q ?? i.quantity ?? 1), 0)}
+        amount={cart.reduce((s, i) => s + (Number(i.p ?? i.price ?? 0) * (i.q ?? i.quantity ?? 1)), 0)}
+        label={outlet === 'bar' ? 'Final Bill' : 'Send KOT'}
+        onConfirm={() => {
+          setShowKotConfirm(false);
+          if (outlet === 'bar') handleWalkinFinalBill();
+          else handleSmartKOT();
+        }}
+        onCancel={() => setShowKotConfirm(false)}
+      />
+
     </div>
   );
 };
