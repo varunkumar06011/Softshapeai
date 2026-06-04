@@ -1180,7 +1180,14 @@ const CashierDashboard = ({ onLogout }) => {
       total,             // Total amount
       method,            // Payment method (can be null for final bill)
       kotNumbers: (table?.kotHistory || []).map(k => k.id || k.kotNumber),
-      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A'
+      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A',
+      sectionTag: table?.sectionTag || (
+        (table?.section?.name || '').toLowerCase().includes('parcel')
+          ? 'venue-restaurant-parcel'
+          : (table?.section?.name || '').toLowerCase().includes('family')
+            ? 'venue-family-restaurant'
+            : null
+      ),
     });
   };
 
@@ -1276,6 +1283,7 @@ const CashierDashboard = ({ onLogout }) => {
         kotNumbers: [],
         captainName: 'Walk-in',
         discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+        sectionTag: 'venue-restaurant-parcel',
       });
 
       addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');

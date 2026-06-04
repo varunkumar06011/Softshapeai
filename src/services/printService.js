@@ -3,6 +3,9 @@ import { QZ_CERT } from './certificate.js';
 const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
 const BAR_PRINTER = import.meta.env.VITE_BAR_PRINTER_NAME || 'BAR_PRINTER';
 const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
+const KOT_FAMILY_PRINTER = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME || 'KOT FAMILY';
+const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
+const KOT_PRINTER = import.meta.env.VITE_KOT_PRINTER_NAME || 'KOT PRINTER';
 
 // ── ESC/POS Constants ──────────────────────────
 const INIT = '\x1B\x40';
@@ -23,17 +26,20 @@ function separator(ch = "-") {
 }
 
 // ── Bill receipt builder (Fallback) ──────────
-export function buildBillCommands({ table, items, subtotal, taxes, total, method, kotNumbers, captainName, section, discount, billNumber }) {
+export function buildBillCommands({ table, items, subtotal, taxes, total, method, kotNumbers, captainName, section, discount, billNumber, sectionTag }) {
   const lines = [];
 
   // Initialize printer
   lines.push(INIT);
 
   // Header - Restaurant Name (centered, 2x size with bold)
+  const venueName = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+    ? 'V GRAND FAMILY RESTAURANT'
+    : 'V GRAND LOUNGE';
   lines.push(CENTER);
   lines.push(SIZE_2X);
   lines.push(BOLD_ON);
-  lines.push('V GRAND LOUNGE\n');
+  lines.push(`${venueName}\n`);
   lines.push(BOLD_OFF);
   lines.push(SIZE_NORMAL);
 
@@ -192,7 +198,7 @@ async function sendToPrinter(printerName, data) {
 }
 
 // ── API Print functions ───────────────────────
-export async function printBillQZ({ table, items, subtotal, taxes, total, method, orderId, discount, kotNumbers, captainName, section, billNumber }) {
+export async function printBillQZ({ table, items, subtotal, taxes, total, method, orderId, discount, kotNumbers, captainName, section, billNumber, sectionTag }) {
   if (orderId) {
     const response = await fetch(`${import.meta.env.VITE_API_URL}/api/print/receipt`, {
       method: 'POST',
@@ -203,16 +209,30 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
     // Backend returns { data: [...], breakdown: {...} } — extract .data
     if (res && res.data) {
       const printData = Array.isArray(res.data) ? res.data : [res.data];
-      await sendToPrinter(BILLING_PRINTER, printData);
+      // Route receipt to correct printer based on venue
+      let printerName = BILLING_PRINTER;
+      if (sectionTag === 'venue-family-restaurant') {
+        printerName = DINE_IN_BILL_PRINTER;
+      } else if (sectionTag === 'venue-restaurant-parcel') {
+        printerName = KOT_PRINTER;
+      }
+      await sendToPrinter(printerName, printData);
       return { success: true };
     }
 
   }
 
   // Fallback if no orderId or data is null
-  const commands = buildBillCommands({ table, items, subtotal, taxes, total, method, discount, kotNumbers, captainName, section, billNumber });
+  const commands = buildBillCommands({ table, items, subtotal, taxes, total, method, discount, kotNumbers, captainName, section, billNumber, sectionTag });
   const formattedData = [{ type: 'raw', format: 'plain', data: commands.join('') }];
-  await sendToPrinter(BILLING_PRINTER, formattedData);
+  // Route fallback bill to correct printer based on venue
+  let printerName = BILLING_PRINTER;
+  if (sectionTag === 'venue-family-restaurant') {
+    printerName = DINE_IN_BILL_PRINTER;
+  } else if (sectionTag === 'venue-restaurant-parcel') {
+    printerName = KOT_PRINTER;
+  }
+  await sendToPrinter(printerName, formattedData);
   return { success: true };
 }
 

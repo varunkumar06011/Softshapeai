@@ -24,6 +24,18 @@ const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PR
 const RESTAURANT_KITCHEN_PRINTER = import.meta.env.VITE_RESTAURANT_KITCHEN_PRINTER_NAME || KITCHEN_PRINTER;
 const VITE_API_URL    = import.meta.env.VITE_API_URL || API_BASE;
 
+// ── Restaurant printer routing ───────────────────────────────────────────────
+const KOT_FAMILY_PRINTER   = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME   || 'KOT FAMILY';
+const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
+const KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
+
+// Categories that route beverage items to Dine in Bill printer for family restaurant
+const BEVERAGE_CATEGORIES = new Set(['beverages', 'soft drinks', 'water', 'soda']);
+function isBeverageItem(item) {
+  const cat = (item.category || '').toLowerCase().trim();
+  return BEVERAGE_CATEGORIES.has(cat);
+}
+
 // ── ESC/POS constants ────────────────────────────────────────────────────────
 const INIT = '\x1B\x40';
 const CENTER = '\x1B\x61\x01';
@@ -41,7 +53,7 @@ const LINE_NORMAL = 42;
 function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
-function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, sectionTag }) {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
@@ -50,11 +62,18 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   const rawLabel = (tableNumber || 'N/A').toString();
   const tableDisplay = /^[BT]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel;
 
+  // Determine venue label based on sectionTag
+  const venueLabel = sectionTag === 'venue-family-restaurant'
+    ? 'V GRAND FAMILY RESTAURANT'
+    : (sectionTag === 'venue-restaurant-parcel'
+        ? 'V GRAND FAMILY RESTAURANT'
+        : label);
+
   const cmds = [
     INIT,
     CENTER,
     BOLD_ON,
-    `${label}\n`,
+    `${venueLabel}\n`,
     BOLD_OFF,
     LEFT,
     separator("-"),
@@ -88,7 +107,12 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
     }
   });
 
-  const hallName = sectionName ? sectionName.toUpperCase() : 'MAIN HALL';
+  // Hall name based on sectionTag
+  const hallName = sectionTag === 'venue-family-restaurant'
+    ? 'DINE IN'
+    : (sectionTag === 'venue-restaurant-parcel'
+        ? 'PARCEL(FAMILY RESTAURANT)'
+        : (sectionName ? sectionName.toUpperCase() : 'MAIN HALL'));
   cmds.push(
     separator("-"),
     `Hall Name : ${hallName}\n`,
@@ -99,15 +123,20 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
-function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName }) {
+function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName, sectionTag }) {
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const itemType = item?.menuType === 'BAR' ? 'Bar Item' : 'Food Item';
+
+  // Venue label for restaurant side cancels
+  const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+    ? 'V GRAND FAMILY RESTAURANT'
+    : 'CANCEL ITEM';
 
   const cmds = [
     INIT,
     CENTER,
     BOLD_ON,
-    'CANCEL ITEM\n',
+    `${venueLabel}\n`,
     BOLD_OFF,
     separator("-"),
     LEFT,
@@ -129,7 +158,67 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     );
   }
 
-  const hallName = sectionName ? sectionName.toUpperCase() : 'N/A';
+  const hallName = sectionTag === 'venue-family-restaurant'
+    ? 'DINE IN'
+    : (sectionTag === 'venue-restaurant-parcel'
+        ? 'PARCEL(FAMILY RESTAURANT)'
+        : (sectionName ? sectionName.toUpperCase() : 'N/A'));
+  cmds.push(
+    separator("-"),
+    `Hall Name : ${hallName}\n`,
+    separator("-"),
+    CENTER,
+    SIZE_HEIGHT,
+    BOLD_ON,
+    '** CANCELLED **\n',
+    BOLD_OFF,
+    SIZE_NORMAL,
+    '\n\n\n',
+    CUT
+  );
+
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
+}
+
+function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, sectionName, sectionTag }) {
+  const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+  const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+    ? 'V GRAND FAMILY RESTAURANT'
+    : 'CANCEL ORDER';
+
+  const cmds = [
+    INIT,
+    CENTER,
+    BOLD_ON,
+    `${venueLabel}\n`,
+    BOLD_OFF,
+    separator("-"),
+    LEFT,
+    `Table : ${tableNumber}\n`,
+    `Time  : ${timeStr}\n`,
+    `By    : ${cancelledBy || 'Staff'}\n`,
+    separator("-"),
+    BOLD_ON,
+    "Qty  Item\n",
+    BOLD_OFF,
+    separator("-"),
+  ];
+
+  (items || []).forEach(item => {
+    const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
+    cmds.push(
+      BOLD_ON,
+      itemLine + "\n",
+      BOLD_OFF,
+    );
+  });
+
+  const hallName = sectionTag === 'venue-family-restaurant'
+    ? 'DINE IN'
+    : (sectionTag === 'venue-restaurant-parcel'
+        ? 'PARCEL(FAMILY RESTAURANT)'
+        : (sectionName ? sectionName.toUpperCase() : 'N/A'));
   cmds.push(
     separator("-"),
     `Hall Name : ${hallName}\n`,
@@ -338,18 +427,67 @@ export default function PrintStation() {
         pushLog(`Received print_job [${type}] — Table ${data?.tableNumber ?? '?'}`);
         try {
           let cmds, printer;
+          // ── Deduplication for KOT / BAR_KOT ───────────────────────────────────
+          if (type === 'KOT' || type === 'BAR_KOT') {
+            const itemCount = data.items?.length || 0;
+            const dedupKey = data.eventId
+              ? String(data.eventId)
+              : `${data.kotId}-${data.tableNumber}-${itemCount}`;
+            if (printedKotIds.current.has(dedupKey)) {
+              pushLog(`Duplicate KOT skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
+              return;
+            }
+            printedKotIds.current.add(dedupKey);
+            if (printedKotIds.current.size > 200) {
+              const entries = [...printedKotIds.current];
+              entries.splice(0, 100);
+              printedKotIds.current = new Set(entries);
+            }
+          }
+
+          // ── Routing ──────────────────────────────────────────────────────────
+          const printTasks = []; // { printer, cmds }
+
           if (type === 'KOT') {
-            cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER' });
-            // Route to restaurant kitchen printer if from restaurant-001 or family-restaurant section
-            printer = (data.restaurantId === 'restaurant-001' || data.sectionTag === 'venue-family-restaurant')
-              ? RESTAURANT_KITCHEN_PRINTER
-              : KITCHEN_PRINTER;
+            const sectionTag = data.sectionTag;
+            if (sectionTag === 'venue-family-restaurant') {
+              // Split food items vs beverages
+              const foodItems = (data.items || []).filter(i => !isBeverageItem(i));
+              const bevItems  = (data.items || []).filter(i => isBeverageItem(i));
+              if (foodItems.length > 0) {
+                printTasks.push({
+                  printer: KOT_FAMILY_PRINTER,
+                  cmds: buildKOTCommands({ ...data, items: foodItems, label: 'FOOD ORDER', sectionTag }),
+                });
+              }
+              if (bevItems.length > 0) {
+                printTasks.push({
+                  printer: DINE_IN_BILL_PRINTER,
+                  cmds: buildKOTCommands({ ...data, items: bevItems, label: 'FOOD ORDER', sectionTag }),
+                });
+              }
+            } else {
+              // Default: old restaurant or bar-venue
+              cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag });
+              printer = (data.restaurantId === 'restaurant-001' || sectionTag === 'venue-family-restaurant')
+                ? RESTAURANT_KITCHEN_PRINTER
+                : KITCHEN_PRINTER;
+              printTasks.push({ printer, cmds });
+            }
           } else if (type === 'BAR_KOT') {
-            cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER' });
+            cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER', sectionTag: data.sectionTag });
             printer = BAR_PRINTER;
+            printTasks.push({ printer, cmds });
           } else if (type === 'BILL') {
             cmds    = buildBillCommands(data);
-            printer = BILLING_PRINTER;
+            if (data.sectionTag === 'venue-family-restaurant') {
+              printer = DINE_IN_BILL_PRINTER;
+            } else if (data.sectionTag === 'venue-restaurant-parcel') {
+              printer = KOT_PRINTER;
+            } else {
+              printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
+            }
+            printTasks.push({ printer, cmds });
           } else if (type === 'FINAL_BILL') {
             // Fetch pre-built ESC/POS data from backend
             const response = await fetch(`${VITE_API_URL}/api/print/final-bill`, {
@@ -362,42 +500,48 @@ export default function PrintStation() {
               throw new Error('No ESC/POS data received from backend');
             }
             cmds = Array.isArray(res.data) ? res.data : [res.data];
-            // Route to BAR_PRINTER for bar orders, BILLING_PRINTER otherwise
-            printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
+            if (data.sectionTag === 'venue-family-restaurant') {
+              printer = DINE_IN_BILL_PRINTER;
+            } else if (data.sectionTag === 'venue-restaurant-parcel') {
+              printer = KOT_PRINTER;
+            } else {
+              printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
+            }
+            printTasks.push({ printer, cmds });
           } else if (type === 'CANCEL_KOT') {
-            cmds    = buildCancelKOTCommands(data);
-            printer = data.item?.menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
+            cmds = buildCancelKOTCommands(data);
+            if (data.sectionTag === 'venue-family-restaurant') {
+              printer = KOT_FAMILY_PRINTER;
+            } else if (data.sectionTag === 'venue-restaurant-parcel') {
+              printer = KOT_PRINTER;
+            } else {
+              printer = data.item?.menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
+            }
+            printTasks.push({ printer, cmds });
+          } else if (type === 'CANCEL_ORDER') {
+            cmds = buildFullCancelCommands(data);
+            if (data.sectionTag === 'venue-family-restaurant') {
+              printer = KOT_FAMILY_PRINTER;
+            } else if (data.sectionTag === 'venue-restaurant-parcel') {
+              printer = KOT_PRINTER;
+            } else {
+              printer = KITCHEN_PRINTER;
+            }
+            printTasks.push({ printer, cmds });
           } else if (type === 'TABLE_SWAP') {
             cmds    = buildTableSwapCommands(data);
             printer = KITCHEN_PRINTER;
+            printTasks.push({ printer, cmds });
           } else {
             pushLog(`Unknown print_job type: ${type}`, false);
             return;
           }
 
-          // Deduplication for KOT and BAR_KOT
-          // Primary key: server-stamped UUID (eventId) — immune to timing and item count.
-          // Fallback: composite key for older backend payloads without eventId.
-          if (type === 'KOT' || type === 'BAR_KOT') {
-            const itemCount = data.items?.length || 0;
-            const dedupKey = data.eventId
-              ? String(data.eventId)
-              : `${data.kotId}-${data.tableNumber}-${itemCount}`;
-            if (printedKotIds.current.has(dedupKey)) {
-              pushLog(`Duplicate KOT skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
-              return;
-            }
-            printedKotIds.current.add(dedupKey);
-            // Keep the dedup cache from growing unbounded — trim if over 200 entries
-            if (printedKotIds.current.size > 200) {
-              const entries = [...printedKotIds.current];
-              entries.splice(0, 100); // remove oldest 100
-              printedKotIds.current = new Set(entries);
-            }
+          // Execute all print tasks (simultaneously if multiple)
+          for (const task of printTasks) {
+            await sendToPrinter(task.printer, task.cmds);
+            pushLog(`✓ Printed [${type}] → ${task.printer} (Table ${data?.tableNumber ?? '?'})`);
           }
-
-          await sendToPrinter(printer, cmds);
-          pushLog(`✓ Printed [${type}] → ${printer} (Table ${data?.tableNumber ?? '?'})`);
         } catch (err) {
           pushLog(`✗ Print failed [${type}]: ${err.message}`, false);
           // If QZ dropped, try reconnecting
@@ -559,9 +703,12 @@ export default function PrintStation() {
         {/* Printer map */}
         <div style={{ padding: '12px 0 4px' }}>
           {[
-            { type: 'KOT',     label: 'Kitchen Printer', name: KITCHEN_PRINTER },
-            { type: 'BAR_KOT', label: 'Bar Printer',     name: BAR_PRINTER },
-            { type: 'BILL',    label: 'Billing Printer',  name: BILLING_PRINTER },
+            { type: 'KOT',     label: 'Kitchen Printer',    name: KITCHEN_PRINTER },
+            { type: 'BAR_KOT', label: 'Bar Printer',        name: BAR_PRINTER },
+            { type: 'BILL',    label: 'Billing Printer',     name: BILLING_PRINTER },
+            { type: 'FAMILY',  label: 'KOT Family Printer',  name: KOT_FAMILY_PRINTER },
+            { type: 'DINE',    label: 'Dine in Bill Printer', name: DINE_IN_BILL_PRINTER },
+            { type: 'PARCEL',  label: 'KOT Printer (Parcel)', name: KOT_PRINTER },
           ].map(({ type, label, name }) => (
             <div key={type} style={s.printerRow}>
               <span>{label} <span style={{ color: '#52525b' }}>({type})</span></span>
