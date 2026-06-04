@@ -144,8 +144,9 @@ export async function saveTransaction({
   return parseResponse(res);
 }
 
-export async function fetchTransactions(restaurantId, limit = 100, date = null, month = null) {
-  const qs = new URLSearchParams({ restaurantId, limit: String(limit) });
+export async function fetchTransactions(restaurantId, limit = 2000, date = null, month = null) {
+  const qs = new URLSearchParams({ restaurantId });
+  if (limit != null && limit > 0) qs.set('limit', String(limit));
   if (date)  qs.set('date',  date);   // 'YYYY-MM-DD'
   if (month) qs.set('month', month);  // 'YYYY-MM'
   const res = await fetch(apiUrl(`/api/transactions?${qs}`), {

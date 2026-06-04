@@ -863,6 +863,7 @@ export function MenuPage({ onAddDish }) {
 
       const body = {
         name: editingItem.n,
+        category: editingItem.c,
         isVeg: editingItem.t === 'veg',
         price: Number(editingItem.basePrice ?? editingItem.p ?? 0),
         menuType: editingItem.menuType || 'FOOD',

@@ -12,8 +12,12 @@ export function getTableSectionLabel(table) {
   const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
   const num = table.number || table.id || 1;
 
+  if (sectionName.includes('bar parcel')) return `BP${num}`;
   if (sectionName.includes('bar')) return `B${num}`;
   if (sectionName.includes('family restaurant')) return `T${num}`;
+  if (sectionName.includes('conference')) return `C${num}`;
+  if (sectionName.includes('pdr')) return `PDR${num}`;
+  if (sectionName.includes('rooms')) return `R${num}`;
   if (sectionName.includes('parcel')) return `P${num}`;
   if (table.displayName) return table.displayName;
 
@@ -29,8 +33,12 @@ export function getTableSectionLabel(table) {
 export function getSectionBadgeColor(table) {
   const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
 
+  if (sectionName.includes('bar parcel')) return 'bg-orange-500 text-white';
   if (sectionName.includes('bar')) return 'bg-purple-500 text-white';
   if (sectionName.includes('family restaurant')) return 'bg-indigo-500 text-white';
+  if (sectionName.includes('conference')) return 'bg-teal-500 text-white';
+  if (sectionName.includes('pdr')) return 'bg-pink-500 text-white';
+  if (sectionName.includes('rooms')) return 'bg-cyan-500 text-white';
   if (sectionName.includes('parcel')) return 'bg-amber-500 text-white';
 
   return 'bg-gray-500 text-white'; // default
