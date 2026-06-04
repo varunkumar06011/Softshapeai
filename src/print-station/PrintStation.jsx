@@ -466,10 +466,15 @@ export default function PrintStation() {
                   cmds: buildKOTCommands({ ...data, items: bevItems, label: 'FOOD ORDER', sectionTag }),
                 });
               }
+            } else if (sectionTag === 'venue-restaurant-parcel') {
+              // Parcel: everything goes to KOT PRINTER
+              cmds = buildKOTCommands({ ...data, label: 'PARCEL ORDER', sectionTag });
+              printer = KOT_PRINTER;
+              printTasks.push({ printer, cmds });
             } else {
               // Default: old restaurant or bar-venue
               cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag });
-              printer = (data.restaurantId === 'restaurant-001' || sectionTag === 'venue-family-restaurant')
+              printer = data.restaurantId === 'restaurant-001'
                 ? RESTAURANT_KITCHEN_PRINTER
                 : KITCHEN_PRINTER;
               printTasks.push({ printer, cmds });
