@@ -33,6 +33,7 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
+import { withOptimisticUpdate, logCriticalError } from '../utils/resilience';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
@@ -1407,92 +1408,113 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Update local state - table becomes free (optimistic update)
-    setActiveTables((prev) =>
-      prev.map((t) =>
-        t.backendId === selectedTable.backendId
-          ? {
-              ...t,
-              status: 'Free',
-              workflowStatus: 'Free',
-              activeOrder: null,
-              orders: [],
-              items: [],
-              captainId: null,
-              kotHistory: [],
-              currentBill: 0,
-              guests: 0,
-              time: null
-            }
-          : t
-      )
-    );
+    // Store previous table state for rollback
+    const previousTableState = selectedTable;
 
-    // Clear billing alerts for this table
-    setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
+    // Optimistic update: table becomes free
+    const optimisticFn = () => {
+      setActiveTables((prev) =>
+        prev.map((t) =>
+          t.backendId === selectedTable.backendId
+            ? {
+                ...t,
+                status: 'Free',
+                workflowStatus: 'Free',
+                activeOrder: null,
+                orders: [],
+                items: [],
+                captainId: null,
+                kotHistory: [],
+                currentBill: 0,
+                guests: 0,
+                time: null
+              }
+            : t
+        )
+      );
 
-    // Close modals and clear state
-    setShowMethodPicker(false);
-    setShowTableModal(false);
-    setShowPaymentModal(false);
-    setSelectedTable(null);
-    setSelectedOrder(null);
-    setCart([]);
-    lastConfirmedItemsRef.current = [];
-    localStorage.removeItem('cashier_selected_table');
-    localStorage.setItem('cashier_cart', '[]');
-    // Clean up persisted discount now that table is settled
-    if (selectedTable?.backendId) {
-      localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
-    }
-    setRawDiscountInput('');
-    setExpandedNoteItemId(null);
-    setRemovedItemIds([]);
+      // Clear billing alerts for this table
+      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
 
-    // Show success notification
-    addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
-
-    // Clear walk-in mode after settlement
-    if (isWalkinMode) {
-      setIsWalkinMode(false);
+      // Close modals and clear state
+      setShowMethodPicker(false);
+      setShowTableModal(false);
+      setShowPaymentModal(false);
       setSelectedTable(null);
+      setSelectedOrder(null);
       setCart([]);
-    }
+      lastConfirmedItemsRef.current = [];
+      localStorage.removeItem('cashier_selected_table');
+      localStorage.setItem('cashier_cart', '[]');
+      // Clean up persisted discount now that table is settled
+      if (selectedTable?.backendId) {
+        localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
+      }
+      setRawDiscountInput('');
+      setExpandedNoteItemId(null);
+      setRemovedItemIds([]);
 
-    // Reset loading state immediately after optimistic UI update
-    setIsPrintingBill(false);
+      // Show success notification
+      addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
 
-    // Run settlement in background without blocking UI
-    (async () => {
-      try {
-        // Call backend settle endpoint (creates transaction, marks paid, resets table)
-        // NO PRINTING - that already happened in handleFinalBill
-        if (orderId) {
-          const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentMethod: method, discountPercent })
-            }
-          );
+      // Clear walk-in mode after settlement
+      if (isWalkinMode) {
+        setIsWalkinMode(false);
+        setSelectedTable(null);
+        setCart([]);
+      }
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Settlement failed on server');
+      // Reset loading state immediately after optimistic UI update
+      setIsPrintingBill(false);
+    };
+
+    // Rollback function: restore previous table state
+    const rollbackFn = () => {
+      setActiveTables((prev) =>
+        prev.map((t) =>
+          t.backendId === previousTableState.backendId ? previousTableState : t
+        )
+      );
+      setSelectedTable(previousTableState);
+      addNotification('Settlement Failed', 'Please try again', 'error');
+    };
+
+    // Commit function: call backend settle endpoint
+    const commitFn = async () => {
+      // Call backend settle endpoint (creates transaction, marks paid, resets table)
+      // NO PRINTING - that already happened in handleFinalBill
+      if (orderId) {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentMethod: method, discountPercent })
           }
+        );
 
-          // Mark as settled locally to prevent retries
-          setSettledOrderIds(prev => new Set([...prev, orderId]));
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Settlement failed on server');
         }
 
-        // Refresh transactions list to show the new transaction
-        loadTransactions(txnDateFilterRef.current);
-      } catch (err) {
-        console.error('[Settlement] Failed:', err.message);
-        addNotification('Error', 'Settlement failed: ' + err.message, 'error');
+        // Mark as settled locally to prevent retries
+        setSettledOrderIds(prev => new Set([...prev, orderId]));
       }
-    })();
+
+      // Refresh transactions list to show the new transaction
+      loadTransactions(txnDateFilterRef.current);
+    };
+
+    // Use optimistic update with rollback
+    await withOptimisticUpdate({
+      optimisticFn,
+      rollbackFn,
+      commitFn,
+      onError: (error) => {
+        logCriticalError('handlePayment', error, { orderId, method, txnAmount });
+      }
+    });
   };
 
   const terminateTableSession = async () => {
