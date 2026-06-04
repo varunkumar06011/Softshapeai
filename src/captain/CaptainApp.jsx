@@ -850,6 +850,19 @@ export default function CaptainApp({ onLogout }) {
   // Reset tableSubCategory when switching outlets
   useEffect(() => {
     setTableSubCategory(outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant');
+
+    // Clear the active session so restaurant cart items don't bleed into bar (and vice versa)
+    setActiveView('tables');
+    setActiveTableId(null);
+    setTableCarts({});
+    lastConfirmedItemsRef.current = [];
+    activeOrderIdRef.current = null;
+    kotRequestIdRef.current = null;
+    setSearchInput('');
+    setSearchQuery('');
+    setActiveCategory('All');
+    setActiveDiet('All');
+    setKotError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlet]);
 
