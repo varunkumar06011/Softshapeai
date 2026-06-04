@@ -174,6 +174,7 @@ const HighlightedText = ({ text, highlight }) => {
 };
 
 const CashierDashboard = ({ onLogout }) => {
+  const { outlet } = useOutlet();
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
   const [tableSubCategory, setTableSubCategory] = useState(() => {
     const saved = localStorage.getItem('softshape_selected_subcategory');
@@ -365,7 +366,6 @@ const CashierDashboard = ({ onLogout }) => {
     setIsSwappingItems(false);
   }, [selectedTable?.backendId]);
 
-  const { outlet } = useOutlet();
   const TX_CACHE_KEY = `softshape_transactions_${outlet}_${getKolkataDateString()}`;
 
   const [pastTransactions, setPastTransactions] = useState(() => {
