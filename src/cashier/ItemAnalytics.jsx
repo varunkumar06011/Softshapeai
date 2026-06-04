@@ -150,16 +150,20 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
 
-  const sourcePills = [
-    { id: 'bar', label: 'Bar' },
-    { id: 'restaurant', label: 'Restaurant' },
-    { id: 'bar-ac-hall', label: 'AC Hall' },
-    { id: 'bar-conference', label: 'Conference' },
-    { id: 'bar-pdr', label: 'PDR' },
-    { id: 'bar-rooms', label: 'Rooms' },
-    { id: 'family-restaurant', label: 'Family Restaurant' },
-    { id: 'parcel', label: 'Parcel' },
-  ];
+  const sourcePills = outlet === 'bar'
+    ? [
+        { id: 'bar', label: 'Bar AC Hall' },
+        { id: 'bar-ac-hall', label: 'AC Hall' },
+        { id: 'bar-conference', label: 'Conference' },
+        { id: 'bar-pdr', label: 'PDR' },
+        { id: 'bar-rooms', label: 'Rooms' },
+        { id: 'bar-parcel', label: 'Parcel' },
+      ]
+    : [
+        { id: 'restaurant', label: 'Restaurant' },
+        { id: 'family-restaurant', label: 'Family Restaurant' },
+        { id: 'restaurant-parcel', label: 'Parcel' },
+      ];
 
   return (
     <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50">

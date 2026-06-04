@@ -21,6 +21,7 @@ import { API_BASE } from '../services/apiConfig.js';
 const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
 const BAR_PRINTER     = import.meta.env.VITE_BAR_PRINTER_NAME     || 'BAR_PRINTER';
 const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
+const RESTAURANT_KITCHEN_PRINTER = import.meta.env.VITE_RESTAURANT_KITCHEN_PRINTER_NAME || KITCHEN_PRINTER;
 const VITE_API_URL    = import.meta.env.VITE_API_URL || API_BASE;
 
 // ── ESC/POS constants ────────────────────────────────────────────────────────
@@ -344,8 +345,11 @@ export default function PrintStation() {
         try {
           let cmds, printer;
           if (type === 'KOT') {
-            cmds    = buildKOTCommands({ ...data, label: 'KOT (Kitchen)' });
-            printer = KITCHEN_PRINTER;
+            cmds = buildKOTCommands({ ...data, label: 'KOT (Kitchen)' });
+            // Route to restaurant kitchen printer if from restaurant-001 or family-restaurant section
+            printer = (data.restaurantId === 'restaurant-001' || data.sectionTag === 'venue-family-restaurant')
+              ? RESTAURANT_KITCHEN_PRINTER
+              : KITCHEN_PRINTER;
           } else if (type === 'BAR_KOT') {
             cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER' });
             printer = BAR_PRINTER;

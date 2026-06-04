@@ -93,6 +93,10 @@ const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
   activeOrder: null,
 }));
 
+// Source sets for outlet-level data isolation
+const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel']);
+const RESTAURANT_SOURCES = new Set(['restaurant', 'family-restaurant', 'restaurant-parcel']);
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -266,6 +270,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
   const [discountMode, setDiscountMode] = useState('percent');
   const [rawDiscountInput, setRawDiscountInput] = useState('');
+  const [walkinTableNumber, setWalkinTableNumber] = useState(null); // 1-20 when active
+  const [isWalkinMode, setIsWalkinMode] = useState(false);
   
   const rawSubtotal = useMemo(() => {
     let items = [];
@@ -529,9 +535,14 @@ const CashierDashboard = ({ onLogout }) => {
           restaurantId: txn._sourceRestaurantId,
         };
       });
-      setPastTransactions(mapped);
+      // Isolate: bar outlet sees only bar/bar-venue sources; restaurant outlet sees only restaurant/restaurant-venue sources
+      const isolated = mapped.filter(txn => {
+        if (outlet === 'bar') return BAR_SOURCES.has(txn.source) || txn.restaurantId === 'bar-001';
+        return RESTAURANT_SOURCES.has(txn.source) || txn.restaurantId === 'restaurant-001';
+      });
+      setPastTransactions(isolated);
       if (filter === 'today') {
-        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(mapped));
+        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(isolated));
       }
     } catch (err) {
       console.warn('[Transactions] DB fetch failed, using cache:', err.message);
@@ -869,6 +880,8 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedCategory('All');
     setSelectedMenuType('ALL');
     setSearchQuery('');
+    setIsWalkinMode(false);
+    setWalkinTableNumber(null);
   }, [outlet]);
 
   const activeTableOrders = useMemo(() => {
@@ -990,7 +1003,9 @@ const CashierDashboard = ({ onLogout }) => {
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
-      const restaurantIds = ['restaurant-001', 'venue-001'];
+      const restaurantIds = outlet === 'bar'
+        ? ['bar-001', 'venue-001']
+        : ['restaurant-001', 'venue-001'];
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactions(rid, 500, billFinderDate).catch(() => []))
       );
@@ -1015,7 +1030,13 @@ const CashierDashboard = ({ onLogout }) => {
         return matches;
       });
 
-      setBillFinderResults(filtered);
+      // Apply outlet-level isolation filter
+      const isolated = filtered.filter(txn => {
+        if (outlet === 'bar') return BAR_SOURCES.has(txn.source) || txn.restaurantId === 'bar-001';
+        return RESTAURANT_SOURCES.has(txn.source) || txn.restaurantId === 'restaurant-001';
+      });
+
+      setBillFinderResults(isolated);
     } catch (error) {
       console.error('[Bill Finder] Search error:', error);
       addNotification('Search Failed', 'Failed to search for bills', 'error');
@@ -1150,6 +1171,40 @@ const CashierDashboard = ({ onLogout }) => {
     } catch (error) {
       console.error('Final bill error:', error);
       addNotification('Error', error.message || 'Failed to print bill.', 'error');
+    } finally {
+      setIsPrintingBill(false);
+    }
+  };
+
+  const handleWalkinFinalBill = async () => {
+    if (cart.length === 0) return;
+    try {
+      setIsPrintingBill(true);
+      const tableLabel = selectedTable?.id || 'Walk-in';
+      const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
+      const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
+      const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
+
+      // Emit print_job directly to billing printer via socket (no backend order needed)
+      // Use the same printBillQZ function already available:
+      await printBillQZ({
+        orderId: null,
+        table: { id: tableLabel, guests: 0 },
+        items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
+        subtotal: subtotalAmt,
+        taxes: 0,
+        total: grandTotalAmt,
+        method: null,
+        kotNumbers: [],
+        captainName: 'Walk-in',
+        discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+      });
+
+      addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
+      // Show settlement picker immediately
+      setShowMethodPicker(true);
+    } catch (err) {
+      addNotification('Print Failed', err.message || 'Could not print bill', 'error');
     } finally {
       setIsPrintingBill(false);
     }
@@ -1306,6 +1361,13 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Show success notification
       addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
+
+      // Clear walk-in mode after settlement
+      if (isWalkinMode) {
+        setIsWalkinMode(false);
+        setSelectedTable(null);
+        setCart([]);
+      }
 
       // Refresh transactions list to show the new transaction
       loadTransactions(txnDateFilterRef.current);
@@ -2190,6 +2252,31 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                         )}
 
+                        {/* ── WALK-IN TABLES (Restaurant Only) ── */}
+                        {outlet === 'restaurant' && (
+                          <div className="mt-4">
+                            <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
+                            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
+                              {WALKIN_TABLES.map((wt) => (
+                                <div
+                                  key={wt.id}
+                                  onClick={() => {
+                                    setIsWalkinMode(true);
+                                    setSelectedTable(wt);
+                                    setCart([]);
+                                    setActiveTab('pos');
+                                    localStorage.setItem('cashier_active_tab', 'pos');
+                                  }}
+                                  className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50 hover:scale-105 active:scale-95"
+                                >
+                                  <span className="text-lg font-black text-gray-600">{wt.id}</span>
+                                  <span className="text-[9px] font-black uppercase text-gray-400 mt-0.5">Walk-in</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* ── BAR VENUE VIEWS ── */}
                         {outlet === 'bar' && tableSubCategory === 'bar-conference' && (
                           <VenueSectionView
@@ -2287,10 +2374,22 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Source filter */}
                         <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
                           {[
-                            { key: 'all', label: 'All' },
-                            { key: 'bar', label: 'Bar' },
-                            { key: 'restaurant', label: 'Restaurant' },
-                            { key: 'parcel', label: 'Parcel' },
+                            ...(outlet === 'bar'
+                              ? [
+                                  { key: 'all', label: 'All' },
+                                  { key: 'bar', label: 'Bar AC Hall' },
+                                  { key: 'bar-conference', label: 'Conference' },
+                                  { key: 'bar-pdr', label: 'PDR' },
+                                  { key: 'bar-rooms', label: 'Rooms' },
+                                  { key: 'bar-parcel', label: 'Parcel' },
+                                ]
+                              : [
+                                  { key: 'all', label: 'All' },
+                                  { key: 'restaurant', label: 'Restaurant' },
+                                  { key: 'family-restaurant', label: 'Family Restaurant' },
+                                  { key: 'restaurant-parcel', label: 'Parcel' },
+                                ]
+                            ),
                           ].map(f => (
                             <button
                               key={f.key}
@@ -3117,17 +3216,30 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
 
                       <div className="pt-0.5">
-                        <button
-                          onClick={handleSmartKOT}
-                          disabled={isKotSending || cart.length === 0}
-                          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
-                            isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
-                              'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
-                            }`}
-                        >
-                          {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
-                          <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
-                        </button>
+                        {isWalkinMode ? (
+                          <button
+                            onClick={handleWalkinFinalBill}
+                            disabled={cart.length === 0 || isPrintingBill}
+                            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all ${cart.length === 0 || isPrintingBill ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 border-blue-700 text-white hover:bg-blue-700 shadow-md'}`}
+                          >
+                            {isPrintingBill ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
+                            <span className="text-xs sm:text-sm font-black uppercase tracking-wider">
+                              {isPrintingBill ? 'Printing...' : 'Final Bill (Walk-in)'}
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleSmartKOT}
+                            disabled={isKotSending || cart.length === 0}
+                            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
+                              isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
+                                'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
+                              }`}
+                          >
+                            {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
+                            <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
