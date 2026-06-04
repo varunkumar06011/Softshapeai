@@ -104,6 +104,42 @@ export const getBillableItems = (table) => {
 export const getTableItems = getAllOrderItems;
 
 /**
+ * Groups items by normalized name, summing quantities and prices.
+ * Preserves original IDs for cancellation workflows.
+ * Items with removedFromBill=true are skipped.
+ */
+export const groupOrderItems = (items) => {
+  if (!items || !Array.isArray(items)) return [];
+
+  const map = {};
+  items.forEach((item) => {
+    if (item.removedFromBill) return;
+    const name = (item.n ?? item.name ?? '').trim();
+    const price = Number(item.p ?? item.price ?? 0);
+    const qty = Number(item.q ?? item.quantity ?? 1);
+    const key = `${name}::${price}`;
+
+    if (!map[key]) {
+      map[key] = {
+        id: item.id,
+        n: name,
+        p: price,
+        q: 0,
+        quantity: 0,
+        notes: item.notes || null,
+        menuType: item.menuType || null,
+        originalIds: [],
+      };
+    }
+    map[key].q += qty;
+    map[key].quantity += qty;
+    if (item.id) map[key].originalIds.push(item.id);
+  });
+
+  return Object.values(map);
+};
+
+/**
  * Calculates the total bill dynamically from the table's order data.
  * Prefers DB Order items over kotHistory via getBillableItems().
  */

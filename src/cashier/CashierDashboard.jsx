@@ -11,7 +11,7 @@ import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
 import { printBillQZ, printKOTQZ } from '../services/printService';
-import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
@@ -3453,12 +3453,11 @@ const CashierDashboard = ({ onLogout }) => {
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
-                  {getAllOrderItems(selectedTable)
-                    .filter(i => i.id)
+                  {groupOrderItems(getAllOrderItems(selectedTable))
                     .map((item, idx) => {
-                      const isCancelled = item.removedFromBill || item.quantity === 0;
+                      const isCancelled = item.quantity === 0;
                       return (
-                        <div key={item.id || idx} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
+                        <div key={`${item.n}-${idx}`} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
                           <div className="flex items-start gap-3">
                             <span className={`min-w-[32px] h-7 rounded-lg border shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
                               {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
@@ -3476,7 +3475,13 @@ const CashierDashboard = ({ onLogout }) => {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setShowCancelModal(true);
-                                  setCancelSelected({ [item.id]: 1 });
+                                  if (item.originalIds.length === 1) {
+                                    setCancelSelected({ [item.originalIds[0]]: 1 });
+                                  } else {
+                                    const selection = {};
+                                    item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
+                                    setCancelSelected(selection);
+                                  }
                                 }}
                                 className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
                                 title="Cancel Item"

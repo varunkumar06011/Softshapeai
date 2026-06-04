@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download } from 'lucide-react';
+import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE } from '../services/apiConfig';
 
 const RESTAURANT_ID = 'restaurant-001';
@@ -31,6 +31,35 @@ function getSectionNameForSource(source) {
   return null;
 }
 
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+function itemNameMatchesSearch(item, query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return true;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const nameLower = (item.name || '').toLowerCase();
+  const nameWords = nameLower.split(/[\s()&,\-\/\d]+/).filter(Boolean);
+  return tokens.every((token) => {
+    if (nameLower.includes(token)) return true;
+    for (const word of nameWords) {
+      if (levenshtein(token, word) <= 1) return true;
+    }
+    return false;
+  });
+}
+
 export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const defaultSource = outlet === 'bar' ? 'bar' : 'family-restaurant';
   const [source, setSource] = useState(defaultSource);
@@ -43,6 +72,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const [sortField, setSortField] = useState('revenue');
   const [sortDirection, setSortDirection] = useState('desc');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     setSource(outlet === 'bar' ? 'bar' : 'family-restaurant');
@@ -99,6 +129,9 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
 
   const filteredAndSortedData = useMemo(() => {
     let filtered = itemsData;
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(item => itemNameMatchesSearch(item, searchQuery));
+    }
     if (typeFilter !== 'all') {
       filtered = filtered.filter(item => item.type === typeFilter);
     }
@@ -112,7 +145,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
       return sortDirection === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
     });
     return sorted;
-  }, [itemsData, sortField, sortDirection, typeFilter]);
+  }, [itemsData, sortField, sortDirection, typeFilter, searchQuery]);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -282,6 +315,20 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
 
       <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
         <div className="flex items-center gap-3">
+          <Search size={14} className="text-[#E53935]" />
+          <span className="text-xs font-black uppercase text-gray-700">Search Items:</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Type item name..."
+            className="flex-1 min-w-0 px-3 py-1.5 rounded-lg text-xs font-bold border-2 border-gray-200 outline-none focus:border-[#E53935] transition-colors bg-gray-50"
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+        <div className="flex items-center gap-3">
           <Filter size={14} className="text-[#E53935]" />
           <span className="text-xs font-black uppercase text-gray-700">Filter by Type:</span>
           <div className="flex gap-2">
@@ -351,7 +398,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
               ) : filteredAndSortedData.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-12 text-center text-xs font-bold uppercase text-gray-400">
-                    No items sold in this period
+                    {searchQuery.trim() ? 'No items match your search' : 'No items sold in this period'}
                   </td>
                 </tr>
               ) : (
