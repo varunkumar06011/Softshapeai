@@ -482,6 +482,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         return {
           id: txn.id,
+          orderId: txn.orderId || null,
           txnNumber: txn.txnNumber || null,
           displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
           kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
@@ -829,6 +830,19 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeTables, venueTables, selectedTable]);
 
   useEffect(() => {
+    if (selectedTable?.discount && Number(selectedTable.discount) > 0) {
+      // Only auto-fill if cashier hasn't already typed something
+      setRawDiscountInput(prev => {
+        if (!prev || prev === '0' || prev === '') {
+          setDiscountMode('percent');
+          return String(Number(selectedTable.discount));
+        }
+        return prev;
+      });
+    }
+  }, [selectedTable?.discount]);
+
+  useEffect(() => {
     setSelectedCategory('All');
     setSelectedMenuType('ALL');
     setSearchQuery('');
@@ -928,6 +942,14 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
+  // Bill Finder state
+  const [billFinderDate, setBillFinderDate] = useState(getKolkataDateString());
+  const [billFinderBillNo, setBillFinderBillNo] = useState('');
+  const [billFinderTableNo, setBillFinderTableNo] = useState('');
+  const [billFinderResults, setBillFinderResults] = useState([]);
+  const [billFinderLoading, setBillFinderLoading] = useState(false);
+  const [isReprintingFoundBill, setIsReprintingFoundBill] = useState(false);
+
   const handleDashboardDateChange = (date) => {
     if (date) {
       setDashboardDate(date);
@@ -938,6 +960,61 @@ const CashierDashboard = ({ onLogout }) => {
       setDashboardDate(null);
       setTxnDateFilter('today');
       loadTransactions('today');
+    }
+  };
+
+  const handleBillSearch = async () => {
+    setBillFinderLoading(true);
+    setBillFinderResults([]);
+    try {
+      const restaurantIds = ['restaurant-001', 'venue-001'];
+      const allResults = await Promise.all(
+        restaurantIds.map(rid => fetchTransactions(rid, 500, billFinderDate).catch(() => []))
+      );
+
+      const allTxns = allResults.flatMap((txns, idx) => {
+        const rid = restaurantIds[idx];
+        return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
+      });
+
+      const filtered = allTxns.filter(txn => {
+        let matches = true;
+        if (billFinderBillNo.trim()) {
+          const search = billFinderBillNo.trim().toLowerCase();
+          matches = matches && (
+            String(txn.displayId || '').toLowerCase().includes(search) ||
+            String(txn.txnNumber || '').toLowerCase().includes(search)
+          );
+        }
+        if (billFinderTableNo.trim()) {
+          matches = matches && String(txn.tableNumber) === billFinderTableNo.trim();
+        }
+        return matches;
+      });
+
+      setBillFinderResults(filtered);
+    } catch (error) {
+      console.error('[Bill Finder] Search error:', error);
+      addNotification('Search Failed', 'Failed to search for bills', 'error');
+    } finally {
+      setBillFinderLoading(false);
+    }
+  };
+
+  const handleReprintFoundBill = async (txn) => {
+    setIsReprintingFoundBill(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/orders/${txn.orderId}/print-bill?restaurantId=${txn._sourceRestaurantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error('Print request failed');
+      addNotification('Re-print Sent', `Bill #${txn.displayId} sent to printer.`, 'success');
+    } catch (error) {
+      console.error('[Bill Finder] Re-print error:', error);
+      addNotification('Re-print Failed', error.message || 'Failed to re-print bill', 'error');
+    } finally {
+      setIsReprintingFoundBill(false);
     }
   };
 
@@ -1460,6 +1537,11 @@ const CashierDashboard = ({ onLogout }) => {
     } else {
       // Open modal immediately — don't block on network
       setShowTableModal(true);
+      // Restore saved discount from table if one exists
+      if (table.discount && Number(table.discount) > 0) {
+        setDiscountMode('percent');
+        setRawDiscountInput(String(Number(table.discount)));
+      }
     }
 
     // Background refresh: silently patch in fresh order data if table is in billing state
@@ -1752,6 +1834,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'tables', label: 'Tables', icon: Table2 },
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
+            { id: 'billfinder', label: 'Bill Finder', icon: Search },
             { id: 'online', label: 'Online Orders', icon: Monitor },
 
           ].map((item) => (
@@ -2374,6 +2457,122 @@ const CashierDashboard = ({ onLogout }) => {
                       <ItemAnalytics outlet={outlet} />
                     )}
 
+                    {activeTab === 'billfinder' && (
+                      <div className="flex flex-col gap-4 h-full">
+                        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                          <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider mb-4">Bill Finder</h2>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                            <div>
+                              <label className="text-xs font-black uppercase text-gray-400 mb-1 block">Date</label>
+                              <input
+                                type="date"
+                                value={billFinderDate}
+                                onChange={(e) => setBillFinderDate(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-black uppercase text-gray-400 mb-1 block">Bill Number</label>
+                              <input
+                                type="text"
+                                placeholder="Enter bill number..."
+                                value={billFinderBillNo}
+                                onChange={(e) => setBillFinderBillNo(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-black uppercase text-gray-400 mb-1 block">Table Number</label>
+                              <input
+                                type="text"
+                                placeholder="Enter table number..."
+                                value={billFinderTableNo}
+                                onChange={(e) => setBillFinderTableNo(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                              />
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleBillSearch}
+                            disabled={billFinderLoading}
+                            className="w-full bg-[#E53935] text-white rounded-xl px-4 py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {billFinderLoading ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Searching...
+                              </>
+                            ) : (
+                              <>
+                                <Search size={16} />
+                                Search Bills
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {billFinderResults.length === 0 && !billFinderLoading && (
+                          <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm text-center">
+                            <Search size={32} className="text-gray-300 mx-auto mb-2" />
+                            <p className="text-sm font-black text-gray-400 uppercase tracking-widest">No bills found</p>
+                          </div>
+                        )}
+
+                        {billFinderResults.length > 0 && (
+                          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="overflow-x-auto">
+                              <table className="w-full">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Bill #</th>
+                                    <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Date/Time</th>
+                                    <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Table</th>
+                                    <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Method</th>
+                                    <th className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600">Total</th>
+                                    <th className="px-4 py-3 text-center text-xs font-black uppercase text-gray-600">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {billFinderResults.map((txn) => (
+                                    <tr key={txn.id} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.displayId || '—'}</td>
+                                      <td className="px-4 py-3 text-xs font-bold text-gray-600">
+                                        {new Date(txn.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        {' '}
+                                        {new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableNumber || '—'}</td>
+                                      <td className="px-4 py-3">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
+                                          txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
+                                          txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
+                                          txn.method === 'CARD' ? 'bg-purple-100 text-purple-700' :
+                                          'bg-gray-100 text-gray-700'
+                                        }`}>
+                                          {txn.method || '—'}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</td>
+                                      <td className="px-4 py-3 text-center">
+                                        <button
+                                          onClick={() => handleReprintFoundBill(txn)}
+                                          disabled={isReprintingFoundBill}
+                                          className="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-xs font-bold uppercase hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1 mx-auto"
+                                        >
+                                          <Printer size={12} />
+                                          Reprint
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {false && (
                       <div className="flex flex-col gap-4 h-full">
                         {/* Smart Summary Header */}
@@ -2902,7 +3101,14 @@ const CashierDashboard = ({ onLogout }) => {
       {showTableModal && selectedTable && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-          onClick={() => { setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
+          onClick={() => {
+            setShowTableModal(false);
+            setExpandedNoteItemId(null);
+            // Only clear discount input if the table doesn't have a saved discount
+            if (!selectedTable?.discount || Number(selectedTable.discount) === 0) {
+              setRawDiscountInput('');
+            }
+          }}
         >
           <div
             className="w-full max-w-lg h-auto max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col"
@@ -2921,7 +3127,14 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               </div>
               <button
-                onClick={() => { setShowTableModal(false); setRawDiscountInput(''); setExpandedNoteItemId(null); }}
+                onClick={() => {
+                  setShowTableModal(false);
+                  setExpandedNoteItemId(null);
+                  // Only clear discount input if the table doesn't have a saved discount
+                  if (!selectedTable?.discount || Number(selectedTable.discount) === 0) {
+                    setRawDiscountInput('');
+                  }
+                }}
                 className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-900 hover:bg-gray-50 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-150 active:scale-95"
               >
                 <X size={20} />
@@ -3082,12 +3295,14 @@ const CashierDashboard = ({ onLogout }) => {
                     disabled={isReprintingBill}
                     className={`mt-1.5 w-full py-2 rounded-lg border text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1.5 ${isReprintingBill
                       ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'border-gray-300 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer shadow-sm'
+                      : printCooldown
+                        ? 'bg-blue-50 border-blue-300 text-blue-700 cursor-pointer shadow-sm'
+                        : 'border-gray-300 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer shadow-sm'
                     }`}
                   >
                     {isReprintingBill
-                      ? <><Loader2 size={10} className="animate-spin" /> Printing…</>
-                      : <>🖨️ Re-print Bill</>
+                      ? <><Loader2 size={10} className="animate-spin" /> Sending…</>
+                      : <>🖨️ RE-PRINT SAME BILL #</>
                     }
                   </button>
                 )}
