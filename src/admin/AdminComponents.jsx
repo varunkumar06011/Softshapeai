@@ -703,6 +703,7 @@ export function MenuPage({ onAddDish }) {
         menuType: item.menuType,
         isAvailable: item.isAvailable,
         venuePrices: item.venuePrices || {},
+        categoryPrinterTarget: item.categoryPrinterTarget,
       })));
     } catch (err) {
       console.error('[MenuPage] Failed to load admin items:', err);
@@ -798,6 +799,7 @@ export function MenuPage({ onAddDish }) {
     ...item,
     basePrice: item.p,
     venuePrice: Number(item.venuePrices?.[activeVenueId] || 0),
+    categoryPrinterTarget: item.categoryPrinterTarget,
   });
   const handleDeleteClick = (item) => setDeletingItem(item);
 
@@ -871,6 +873,9 @@ export function MenuPage({ onAddDish }) {
           ...(editingItem.venuePrices || {}),
           [activeVenueId]: Number(editingItem.venuePrice ?? 0),
         },
+        ...(activeOutlet === 'restaurant' && editingItem.categoryPrinterTarget !== undefined
+          ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
+          : {}),
         ...(imageUrl !== undefined ? { imageUrl } : {}),
       };
 
@@ -973,6 +978,9 @@ export function MenuPage({ onAddDish }) {
           venuePrices: Object.fromEntries(
             currentVenueColumns.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
           ),
+          ...(activeOutlet === 'restaurant' && addingItem.categoryPrinterTarget !== undefined
+            ? { categoryPrinterTarget: addingItem.categoryPrinterTarget }
+            : {}),
           ...(imageUrl ? { imageUrl } : {}),
         }),
       });
@@ -1039,14 +1047,25 @@ export function MenuPage({ onAddDish }) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto justify-end">
         <button 
           className="rounded-lg bg-white border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md hover:border-gray-300 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap w-full sm:w-auto" 
-          onClick={() => setAddingItem({
-            n: '',
-            c: dbCategories[0]?.name ?? '',
-            p: '',
-            t: 'veg',
-            img: null,
-            venuePrices: Object.fromEntries(currentVenueColumns.map((venue) => [venue.id, venue.id === activeVenueId ? '' : 0])),
-          })}
+          onClick={() => {
+            const firstCat = dbCategories[0];
+            const defaultPrinterTarget = firstCat?.printerTarget || (
+              activeOutlet === 'restaurant' &&
+              /water|drinks|beverages|soft drinks|soda|juice|liquor|beer/i.test(firstCat?.name || '')
+                ? 'BAR_PRINTER'
+                : 'KOT_PRINTER'
+            );
+            setAddingItem({
+              n: '',
+              c: firstCat?.name ?? '',
+              p: '',
+              t: 'veg',
+              img: null,
+              venuePrices: Object.fromEntries(currentVenueColumns.map((venue) => [venue.id, venue.id === activeVenueId ? '' : 0])),
+              categoryPrinterTarget: activeOutlet === 'restaurant' ? defaultPrinterTarget : undefined,
+              menuType: 'FOOD',
+            });
+          }}
         >
           <span className="text-gray-400 font-black">+</span> Add Item
         </button>
@@ -1300,26 +1319,47 @@ export function MenuPage({ onAddDish }) {
             <div>
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
               <div className="flex gap-2">
-                {[
-                  { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
-                  { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
-                    className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
-                      (editingItem.menuType || 'FOOD') === opt.value
-                        ? opt.value === 'FOOD'
-                          ? 'border-green-500 bg-green-50 text-green-700'
-                          : 'border-purple-500 bg-purple-50 text-purple-700'
-                        : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-                    }`}
-                  >
-                    <div>{opt.label}</div>
-                    <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-                  </button>
-                ))}
+                {activeOutlet === 'restaurant'
+                  ? [
+                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'Prints to KOT Family' },
+                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Prints to Dine in Bill' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setEditingItem({ ...editingItem, categoryPrinterTarget: opt.value })}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                          (editingItem.categoryPrinterTarget || 'KOT_PRINTER') === opt.value
+                            ? opt.value === 'KOT_PRINTER'
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        <div>{opt.label}</div>
+                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                      </button>
+                    ))
+                  : [
+                      { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                          (editingItem.menuType || 'FOOD') === opt.value
+                            ? opt.value === 'FOOD'
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        <div>{opt.label}</div>
+                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                      </button>
+                    ))}
               </div>
             </div>
           </div>
@@ -1360,7 +1400,18 @@ export function MenuPage({ onAddDish }) {
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
                   <select
                     value={addingItem.c}
-                    onChange={e => setAddingItem({...addingItem, c: e.target.value})}
+                    onChange={e => {
+                      const newCatName = e.target.value;
+                      const cat = dbCategories.find(c => c.name === newCatName);
+                      const derivedTarget = activeOutlet === 'restaurant'
+                        ? (cat?.printerTarget || (
+                            /water|drinks|beverages|soft drinks|soda|juice|liquor|beer/i.test(newCatName || '')
+                              ? 'BAR_PRINTER'
+                              : 'KOT_PRINTER'
+                          ))
+                        : addingItem.categoryPrinterTarget;
+                      setAddingItem({...addingItem, c: newCatName, categoryPrinterTarget: derivedTarget});
+                    }}
                     className={input + " w-full bg-gray-50"}
                     disabled={categoriesLoading}
                   >
@@ -1419,26 +1470,47 @@ export function MenuPage({ onAddDish }) {
             <div>
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
               <div className="flex gap-2">
-                {[
-                  { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
-                  { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setAddingItem({ ...addingItem, menuType: opt.value })}
-                    className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
-                      (addingItem.menuType || 'FOOD') === opt.value
-                        ? opt.value === 'FOOD'
-                          ? 'border-green-500 bg-green-50 text-green-700'
-                          : 'border-purple-500 bg-purple-50 text-purple-700'
-                        : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-                    }`}
-                  >
-                    <div>{opt.label}</div>
-                    <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-                  </button>
-                ))}
+                {activeOutlet === 'restaurant'
+                  ? [
+                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'Prints to KOT Family' },
+                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Prints to Dine in Bill' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setAddingItem({ ...addingItem, categoryPrinterTarget: opt.value })}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                          (addingItem.categoryPrinterTarget || 'KOT_PRINTER') === opt.value
+                            ? opt.value === 'KOT_PRINTER'
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        <div>{opt.label}</div>
+                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                      </button>
+                    ))
+                  : [
+                      { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setAddingItem({ ...addingItem, menuType: opt.value })}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                          (addingItem.menuType || 'FOOD') === opt.value
+                            ? opt.value === 'FOOD'
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        <div>{opt.label}</div>
+                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                      </button>
+                    ))}
               </div>
             </div>
           </div>

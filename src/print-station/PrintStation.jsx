@@ -29,9 +29,17 @@ const KOT_FAMILY_PRINTER   = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME   || '
 const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
 const KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
 
-// Categories that route beverage items to Dine in Bill printer for family restaurant
+/** Determine whether an item is a beverage for family-restaurant KOT splitting.
+ *  Priority:
+ *  1. Explicit printerTarget from DB category ("BAR_PRINTER" → beverage)
+ *  2. Legacy category-name heuristic for backwards compatibility
+ */
 const BEVERAGE_CATEGORIES = new Set(['beverages', 'soft drinks', 'water', 'soda']);
 function isBeverageItem(item) {
+  // 1. If the backend sent an explicit printerTarget, trust it
+  if (item.printerTarget === 'BAR_PRINTER') return true;
+  if (item.printerTarget === 'KOT_PRINTER') return false;
+  // 2. Fallback: legacy category-name heuristic
   const cat = (item.category || '').toLowerCase().trim();
   return BEVERAGE_CATEGORIES.has(cat);
 }
