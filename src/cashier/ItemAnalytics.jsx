@@ -32,7 +32,7 @@ function getSectionNameForSource(source) {
 }
 
 export default function ItemAnalytics({ outlet = 'restaurant' }) {
-  const defaultSource = outlet === 'bar' ? 'bar' : 'restaurant';
+  const defaultSource = outlet === 'bar' ? 'bar' : 'family-restaurant';
   const [source, setSource] = useState(defaultSource);
 
   const [timeFilter, setTimeFilter] = useState('today');
@@ -45,7 +45,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const [typeFilter, setTypeFilter] = useState('all');
 
   useEffect(() => {
-    setSource(outlet === 'bar' ? 'bar' : 'restaurant');
+    setSource(outlet === 'bar' ? 'bar' : 'family-restaurant');
   }, [outlet]);
 
   useEffect(() => {
@@ -83,6 +83,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
       if (sectionName) {
         url += `&sectionName=${encodeURIComponent(sectionName)}`;
       }
+      url += `&outletType=${outlet === 'bar' ? 'bar' : 'restaurant'}`;
       const response = await fetch(url);
       const data = await response.json();
       if (data.items) {
@@ -160,7 +161,6 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         { id: 'bar-parcel', label: 'Parcel' },
       ]
     : [
-        { id: 'restaurant', label: 'Restaurant' },
         { id: 'family-restaurant', label: 'Family Restaurant' },
         { id: 'restaurant-parcel', label: 'Parcel' },
       ];
