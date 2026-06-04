@@ -427,6 +427,21 @@ export default function CaptainApp({ onLogout }) {
     };
   }, []);
 
+  useEffect(() => {
+    const handleViewportResize = () => {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const screenHeight = window.screen.height;
+      const screenWidth = window.innerWidth;
+      if (viewportHeight < screenHeight * 0.7 && screenWidth < 1024) {
+        setIsCartMinimized(true);
+      }
+    };
+    window.visualViewport?.addEventListener('resize', handleViewportResize);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleViewportResize);
+    };
+  }, []);
+
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
   const [activeVariantItem, setActiveVariantItem] = useState(null);

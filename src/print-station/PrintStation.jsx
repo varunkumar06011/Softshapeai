@@ -41,19 +41,14 @@ const LINE_NORMAL = 42;
 function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
-function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', sectionName, captainName }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName }) {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
   const displayKotId = kotId || "N/A";
-  // Left-right justified: KOT No on left, Table No on right, full 42-char line
-  const kotLeft = `KOT No : ${displayKotId}`;
   const rawLabel = (tableNumber || 'N/A').toString();
   const tableDisplay = /^[BT]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel;
-  const tableRight = `Table  : ${tableDisplay}`;
-  const gap = Math.max(1, LINE_NORMAL - kotLeft.length - tableRight.length);
-  const kotTableLine = kotLeft + ' '.repeat(gap) + tableRight;
 
   const cmds = [
     INIT,
@@ -65,11 +60,12 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
     separator("-"),
     SIZE_HEIGHT,
     BOLD_ON,
-    kotTableLine + "\n",
+    `KOT No : ${displayKotId}\n`,
+    `Table  : ${tableDisplay}\n`,
     BOLD_OFF,
     SIZE_NORMAL,
     separator("-"),
-    `Captain: ${captainName && captainName !== 'N/A' ? captainName : '—'}\n`,
+    `Waiter : ${captainName && captainName !== 'N/A' ? captainName : 'Waiter'}\n`,
     `Ordered Date : ${dateStr}  Time : ${timeStr}\n`,
     separator("-"),
     BOLD_ON,
@@ -79,25 +75,20 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'KITCHEN ORDER', 
   ];
 
   (items || []).forEach(item => {
-    const itemLine = `${item.quantity}  ${item.name.toUpperCase()}`;
+    const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       BOLD_ON,
-      SIZE_SMALL,
       itemLine + "\n",
-      SIZE_NORMAL,
       BOLD_OFF,
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(
-        BOLD_ON,
-        `** ${item.notes.trim()}\n`,
-        BOLD_OFF,
+        `     * ${item.notes.trim()}\n`,
       );
     }
-    cmds.push("\n");
   });
 
-  const hallName = sectionName ? sectionName.toUpperCase() : 'BAR AC HALL';
+  const hallName = sectionName ? sectionName.toUpperCase() : 'MAIN HALL';
   cmds.push(
     separator("-"),
     `Hall Name : ${hallName}\n`,
@@ -345,7 +336,7 @@ export default function PrintStation() {
         try {
           let cmds, printer;
           if (type === 'KOT') {
-            cmds = buildKOTCommands({ ...data, label: 'KOT (Kitchen)' });
+            cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER' });
             // Route to restaurant kitchen printer if from restaurant-001 or family-restaurant section
             printer = (data.restaurantId === 'restaurant-001' || data.sectionTag === 'venue-family-restaurant')
               ? RESTAURANT_KITCHEN_PRINTER
