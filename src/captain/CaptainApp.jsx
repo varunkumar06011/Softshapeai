@@ -648,7 +648,7 @@ export default function CaptainApp({ onLogout }) {
   }, [tableSubCategory, activeRestaurantId]);
 
   const outletFilteredMenuItems = useMemo(() => {
-    if (tableSubCategory !== 'restaurant' && venueSpecificMenu && outlet !== 'bar') {
+    if (tableSubCategory !== 'restaurant' && venueSpecificMenu) {
       return venueSpecificMenu;
     }
     // Use unified menu if available, otherwise fall back to old menu
@@ -1097,31 +1097,29 @@ export default function CaptainApp({ onLogout }) {
   const addItemToSession = (item, variant = null) => {
     if (!activeTableId) return; // no active table, do nothing
 
-    const variantSuffix = variant ? ` ${variant.name}` : '';
-    const finalName = `${item.n}${variantSuffix}`;
     const finalPrice = variant ? Number(variant.price) : item.p;
 
     setTableCarts(prev => {
       const currentCart = prev[activeTableId] ?? [];
-      const existing = currentCart.find(i => i.n === finalName);
+      const existing = currentCart.find(i => i.n === item.n);
       let updatedCart;
       if (existing) {
-        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
+        updatedCart = currentCart.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
       } else {
-        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
+        updatedCart = [...currentCart, { ...item, n: item.n, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
       }
       return { ...prev, [activeTableId]: updatedCart };
     });
-    addNotification(`${finalName} added`, 'success');
+    addNotification(`${item.n} added`, 'success');
     setSearchQuery('');
   };
 
   const handleItemClick = (e, item) => {
     e.stopPropagation();
 
-    // Beer items should be added directly as 650ml bottles
+    // Beer items should be added directly
     if (outlet === 'bar' && isBeerItem(item)) {
-      addItemToSession(item, { name: '650ml Bottle', price: item.p || item.price });
+      addItemToSession(item);
       return;
     }
 
@@ -2184,12 +2182,6 @@ export default function CaptainApp({ onLogout }) {
                                   {item.n}
                                 </h3>
 
-                                {/* ML sub-label for LIQUOR items */}
-                                {item.menuType === 'LIQUOR' && !item.isBottleItem && (
-                                  <p className="text-[10px] font-bold text-gray-500 mb-0.5">
-                                    {item.n.endsWith('Full Bottle') ? `${FULL_BOTTLE_ML}ml (Full Bottle)` : `${totalQty} × ${BAR_UNIT_ML}ml = ${totalQty * BAR_UNIT_ML}ml`}
-                                  </p>
-                                )}
 
                                 {/* Item Short Description */}
                                 {item.desc && (

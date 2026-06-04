@@ -99,7 +99,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
-function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
+function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName }) {
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const itemType = item?.menuType === 'BAR' ? 'Bar Item' : 'Food Item';
 
@@ -129,7 +129,10 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item }) {
     );
   }
 
+  const hallName = sectionName ? sectionName.toUpperCase() : 'N/A';
   cmds.push(
+    separator("-"),
+    `Hall Name : ${hallName}\n`,
     separator("-"),
     CENTER,
     SIZE_HEIGHT,
