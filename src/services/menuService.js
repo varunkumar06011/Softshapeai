@@ -7,7 +7,7 @@ export const MENU_QUERY_KEY = ["menu"];
 const DEFAULT_MENU_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
 
-const FETCH_TIMEOUT_MS = 10000; // 10-second timeout per request
+const FETCH_TIMEOUT_MS = 45000; // 45-second timeout per request
 
 const fetchOpts = {
   method: "GET",

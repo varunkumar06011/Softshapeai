@@ -186,6 +186,7 @@ function acquireSocket(handlers) {
 
 async function persistStatusChanges(prevTables, nextTables) {
   const tasks = [];
+  const VALID_STATUSES = new Set(["Free","Occupied","Preparing","Ready","Waiting Bill","Reserved","Cleaning"]);
 
   for (const table of nextTables) {
     if (!table.backendId) continue;
@@ -200,9 +201,10 @@ async function persistStatusChanges(prevTables, nextTables) {
       table.currentBill !== prev.currentBill;
 
     if (sessionChanged) {
+      const safeStatus = VALID_STATUSES.has(table.status) ? table.status : "Occupied";
       tasks.push(
         updateBarTableSession(table.backendId, {
-          status: table.status,
+          status: safeStatus,
           captainId: table.captainId ?? null,
           guests: table.guests ?? 0,
           time: table.time ?? null,
