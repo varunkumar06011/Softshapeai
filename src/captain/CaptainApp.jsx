@@ -783,8 +783,8 @@ export default function CaptainApp({ onLogout }) {
       diet: activeDiet,
     });
     if (!q) return base;
-    // Sort: name-starts-with > word-starts-with > contains > other
-    return base.slice().sort((a, b) => {
+
+    const sorted = base.slice().sort((a, b) => {
       const an = (a.n || '').toLowerCase();
       const bn = (b.n || '').toLowerCase();
       const tier = (name) =>
@@ -794,6 +794,26 @@ export default function CaptainApp({ onLogout }) {
         : 3;
       return tier(an) - tier(bn);
     });
+
+    // Also append any items matching ANY individual word (partial match)
+    // that aren't already in the sorted results
+    const words = q.split(/\s+/).filter(w => w.length >= 3);
+    if (words.length >= 1) {
+      const resultIds = new Set(sorted.map(i => i.id || i.n));
+      const partialMatches = outletFilteredMenuItems.filter(item => {
+        if (resultIds.has(item.id || item.n)) return false;
+        if (activeDiet !== 'All' && item.t !== activeDiet) return false;
+        const name = (item.n || '').toLowerCase();
+        const cat = (item.c || '').toLowerCase();
+        return words.some(w =>
+          name.includes(w) || cat.includes(w) ||
+          name.split(/\s+/).some(nw => nw.startsWith(w) || (w.length >= 4 && w.startsWith(nw)))
+        );
+      });
+      return [...sorted, ...partialMatches];
+    }
+
+    return sorted;
   }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]);
 
   const suggestedSpecials = useMemo(() => {
@@ -974,22 +994,28 @@ export default function CaptainApp({ onLogout }) {
       for (let i = 0; i < Math.min(results.length, 5); i++) {
         candidates.push(results[i].transcript.trim());
       }
-      let bestMatch = null;
-      let bestScore = 0;
+
+      // Pick the candidate that matches the most menu items by individual words
+      let bestCandidate = candidates[0] || '';
+      let bestMatchCount = 0;
+
       for (const candidate of candidates) {
-        for (const item of outletFilteredMenuItems) {
-          const score = scoreTranscriptAgainstName(candidate, item.n || item.name || '');
-          if (score > bestScore) {
-            bestScore = score;
-            bestMatch = item.n || item.name || '';
-          }
+        const words = candidate.toLowerCase().split(/\s+/).filter(Boolean);
+        const matchCount = outletFilteredMenuItems.filter(item => {
+          const name = (item.n || item.name || '').toLowerCase();
+          return words.some(w => w.length >= 3 && (
+            name.includes(w) ||
+            name.split(/\s+/).some(nw => nw.startsWith(w) || w.startsWith(nw))
+          ));
+        }).length;
+        if (matchCount > bestMatchCount) {
+          bestMatchCount = matchCount;
+          bestCandidate = candidate;
         }
       }
-      if (bestScore >= 0.30 && bestMatch) {
-        setSearchInput(bestMatch);
-      } else {
-        setSearchInput(candidates[0] || '');
-      }
+
+      // Put raw spoken text into search — fuzzy engine handles the rest
+      setSearchInput(bestCandidate);
     };
 
     recognition.onerror = (e) => {
@@ -2120,13 +2146,83 @@ export default function CaptainApp({ onLogout }) {
                 <div className="flex-grow overflow-y-auto p-6 scroll-smooth">
                   {menuLoading ? (
                     <p className="text-center text-xs text-gray-400 py-12 font-black uppercase tracking-widest">Syncing menu…</p>
-                  ) : filteredMenu.length === 0 ? (
-                    <p className="text-center text-sm text-gray-500 py-12 font-bold">
-                      {searchQuery.trim()
-                        ? `No dishes found for "${searchQuery.trim()}"`
-                        : "No items in this category."}
-                    </p>
-                  ) : (
+                  ) : filteredMenu.length === 0 ? (() => {
+  const words = (searchQuery || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+  const related = words.length > 0
+    ? outletFilteredMenuItems.filter(item => {
+        const name = (item.n || item.name || '').toLowerCase();
+        const cat = (item.c || item.category || '').toLowerCase();
+        return words.some(w => name.includes(w) || cat.includes(w) ||
+          name.split(/\s+/).some(nw => nw.startsWith(w) || w.startsWith(nw))
+        );
+      })
+    : [];
+  return (
+    <div className="pb-12">
+      <div className="text-center py-8">
+        <div className="text-4xl mb-3">🔍</div>
+        <p className="text-sm font-black text-gray-700 uppercase tracking-widest">No Exact Search Found</p>
+        <p className="text-xs font-bold text-gray-400 mt-1">
+          {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'No items in this category.'}
+        </p>
+      </div>
+      {related.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-4 px-1">
+            <div className="flex-1 h-px bg-gray-100" />
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Related Items</span>
+            <div className="flex-1 h-px bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+            {related.slice(0, 12).map((item, idx) => {
+              const totalQty = currentSessionItems.filter(i => i.n.startsWith(item.n)).reduce((acc, i) => acc + i.q, 0);
+              const isVeg = item.t === 'veg';
+              return (
+                <div
+                  key={idx}
+                  onClick={(e) => handleItemClick(e, item)}
+                  className="cursor-pointer bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden"
+                >
+                  <div className="w-8 h-8 shrink-0 flex items-center justify-center">
+                    <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
+                      <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
+                    </div>
+                  </div>
+                  <div className="flex-grow min-w-0 py-0.5 flex flex-col justify-between h-full">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest truncate">{item.c || 'Dish'}</span>
+                      </div>
+                      <h3 className="font-extrabold text-[11px] sm:text-[12px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 group-hover:text-red-600">{item.n}</h3>
+                      {item.desc && <p className="text-[10px] text-gray-400 font-medium line-clamp-1">{item.desc}</p>}
+                    </div>
+                    <div className="flex items-center justify-between mt-2.5">
+                      <div className="flex items-baseline">
+                        <span className="text-[11px] font-bold text-[#E53935] mr-0.5">₹</span>
+                        <span className="text-sm sm:text-base font-black text-gray-900 tracking-tight">{item.p}</span>
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {totalQty > 0 ? (
+                          <div className="flex items-center gap-1 bg-red-50/80 rounded-full p-0.5 border border-red-100 shadow-sm">
+                            <button onClick={(e) => { e.stopPropagation(); updateDraftQty(item.n, -1); }} className="w-6 h-6 rounded-full bg-white text-[#E53935] flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-red-100"><Minus size={10} strokeWidth={3.5} /></button>
+                            <span className="text-xs font-black w-4 text-center text-gray-900">{totalQty}</span>
+                            <button onClick={(e) => { e.stopPropagation(); addItemToSession(item); }} className="w-6 h-6 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"><Plus size={10} strokeWidth={3.5} /></button>
+                          </div>
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); handleItemClick(e, item); }} className="px-4 py-1.5 rounded-full bg-white border border-red-100 text-[9px] font-black uppercase tracking-widest text-[#E53935] hover:bg-[#E53935] hover:text-white hover:border-[#E53935] transition-all shadow-sm active:scale-95 duration-200">Add</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+})() : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 pb-12">
                       {filteredMenu.map((item, idx) => {
                         const totalQty = currentSessionItems.filter(i => i.n.startsWith(item.n)).reduce((acc, i) => acc + i.q, 0);
