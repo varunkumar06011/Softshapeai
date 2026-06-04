@@ -1,4 +1,5 @@
 import { QZ_CERT } from './certificate.js';
+import { CircuitBreaker, logCriticalError, RETRY_CONFIG } from '../utils/resilience';
 
 const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
 const BAR_PRINTER = import.meta.env.VITE_BAR_PRINTER_NAME || 'BAR_PRINTER';
@@ -6,6 +7,13 @@ const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PR
 const KOT_FAMILY_PRINTER = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME || 'KOT FAMILY';
 const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
 const KOT_PRINTER = import.meta.env.VITE_KOT_PRINTER_NAME || 'KOT PRINTER';
+
+// ── Circuit Breaker for Printer Service ─────────────────────────────────────
+const printerCircuitBreaker = new CircuitBreaker({
+  failureThreshold: 5,
+  resetTimeoutMs: 60000,
+  name: 'PrinterService'
+});
 
 // ── ESC/POS Constants ──────────────────────────
 const INIT = '\x1B\x40';
@@ -199,103 +207,113 @@ async function sendToPrinter(printerName, data) {
 
 // ── API Print functions ───────────────────────
 export async function printBillQZ({ table, items, subtotal, taxes, total, method, orderId, discount, kotNumbers, captainName, section, billNumber, sectionTag }) {
-  if (orderId) {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/print/receipt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId })
-    });
-    const res = await response.json();
-    // Backend returns { data: [...], breakdown: {...} } — extract .data
-    if (res && res.data) {
-      const printData = Array.isArray(res.data) ? res.data : [res.data];
-      // Route receipt to correct printer based on venue
-      let printerName = BILLING_PRINTER;
-      if (sectionTag === 'venue-family-restaurant') {
-        printerName = DINE_IN_BILL_PRINTER;
-      } else if (sectionTag === 'venue-restaurant-parcel') {
-        printerName = KOT_PRINTER;
+  return printerCircuitBreaker.execute(async () => {
+    if (orderId) {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/print/receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId })
+      });
+      const res = await response.json();
+      // Backend returns { data: [...], breakdown: {...} } — extract .data
+      if (res && res.data) {
+        const printData = Array.isArray(res.data) ? res.data : [res.data];
+        // Route receipt to correct printer based on venue
+        let printerName = BILLING_PRINTER;
+        if (sectionTag === 'venue-family-restaurant') {
+          printerName = DINE_IN_BILL_PRINTER;
+        } else if (sectionTag === 'venue-restaurant-parcel') {
+          printerName = KOT_PRINTER;
+        }
+        await sendToPrinter(printerName, printData);
+        return { success: true };
       }
-      await sendToPrinter(printerName, printData);
-      return { success: true };
+
     }
 
-  }
-
-  // Fallback if no orderId or data is null
-  const commands = buildBillCommands({ table, items, subtotal, taxes, total, method, discount, kotNumbers, captainName, section, billNumber, sectionTag });
-  const formattedData = [{ type: 'raw', format: 'plain', data: commands.join('') }];
-  // Route fallback bill to correct printer based on venue
-  let printerName = BILLING_PRINTER;
-  if (sectionTag === 'venue-family-restaurant') {
-    printerName = DINE_IN_BILL_PRINTER;
-  } else if (sectionTag === 'venue-restaurant-parcel') {
-    printerName = KOT_PRINTER;
-  }
-  await sendToPrinter(printerName, formattedData);
-  return { success: true };
+    // Fallback if no orderId or data is null
+    const commands = buildBillCommands({ table, items, subtotal, taxes, total, method, discount, kotNumbers, captainName, section, billNumber, sectionTag });
+    const formattedData = [{ type: 'raw', format: 'plain', data: commands.join('') }];
+    // Route fallback bill to correct printer based on venue
+    let printerName = BILLING_PRINTER;
+    if (sectionTag === 'venue-family-restaurant') {
+      printerName = DINE_IN_BILL_PRINTER;
+    } else if (sectionTag === 'venue-restaurant-parcel') {
+      printerName = KOT_PRINTER;
+    }
+    await sendToPrinter(printerName, formattedData);
+    return { success: true };
+  }).catch(error => {
+    logCriticalError('printBillQZ', error, { orderId, sectionTag });
+    throw error;
+  });
 }
 
 export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, kotNumber, captainName }) {
-  const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR')
-    .map(i => ({
-      name: i.n || i.name, quantity: i.q || i.quantity,
-      price: i.p || i.price, notes: i.notes || null, type: 'food'
-    }));
+  return printerCircuitBreaker.execute(async () => {
+    const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR')
+      .map(i => ({
+        name: i.n || i.name, quantity: i.q || i.quantity,
+        price: i.p || i.price, notes: i.notes || null, type: 'food'
+      }));
 
-  const liquorItems = items.filter(i => i.menuType === 'LIQUOR')
-    .map(i => ({
-      name: i.n || i.name, quantity: i.q || i.quantity,
-      price: i.p || i.price, notes: i.notes || null, type: 'liquor'
-    }));
+    const liquorItems = items.filter(i => i.menuType === 'LIQUOR')
+      .map(i => ({
+        name: i.n || i.name, quantity: i.q || i.quantity,
+        price: i.p || i.price, notes: i.notes || null, type: 'liquor'
+      }));
 
-  const printPromises = [];
+    const printPromises = [];
 
-  if (foodItems.length > 0) {
-    const foodPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/food-kot`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableId: tableId, orderId: orderId, kotId: kotId, items: foodItems, captainName: captainName || undefined })
-    })
-      .then(r => r.json())
-      .then(res => {
-        if (!res || !res.data) return null;
-        const printData = Array.isArray(res.data) ? res.data : [res.data];
-        return sendToPrinter(KITCHEN_PRINTER, printData);
+    if (foodItems.length > 0) {
+      const foodPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/food-kot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableId: tableId, orderId: orderId, kotId: kotId, items: foodItems, captainName: captainName || undefined })
       })
-      .catch(err => {
-        err.message = `Kitchen Printer Failed: ${err.message}`;
-        throw err;
-      });
-    printPromises.push(foodPrint);
-  }
+        .then(r => r.json())
+        .then(res => {
+          if (!res || !res.data) return null;
+          const printData = Array.isArray(res.data) ? res.data : [res.data];
+          return sendToPrinter(KITCHEN_PRINTER, printData);
+        })
+        .catch(err => {
+          err.message = `Kitchen Printer Failed: ${err.message}`;
+          throw err;
+        });
+      printPromises.push(foodPrint);
+    }
 
-  if (liquorItems.length > 0) {
-    const liquorPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/liquor-kot`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableId: tableId, orderId: orderId, kotId: kotId, items: liquorItems, captainName: captainName || undefined })
-    })
-      .then(r => r.json())
-      .then(res => {
-        if (!res || !res.data) return null;
-        const printData = Array.isArray(res.data) ? res.data : [res.data];
-        return sendToPrinter(BAR_PRINTER, printData);
+    if (liquorItems.length > 0) {
+      const liquorPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/liquor-kot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableId: tableId, orderId: orderId, kotId: kotId, items: liquorItems, captainName: captainName || undefined })
       })
-      .catch(err => {
-        err.message = `Bar Printer Failed: ${err.message}`;
-        throw err;
-      });
-    printPromises.push(liquorPrint);
-  }
+        .then(r => r.json())
+        .then(res => {
+          if (!res || !res.data) return null;
+          const printData = Array.isArray(res.data) ? res.data : [res.data];
+          return sendToPrinter(BAR_PRINTER, printData);
+        })
+        .catch(err => {
+          err.message = `Bar Printer Failed: ${err.message}`;
+          throw err;
+        });
+      printPromises.push(liquorPrint);
+    }
 
-  const results = await Promise.allSettled(printPromises);
+    const results = await Promise.allSettled(printPromises);
 
-  const failures = results.filter(r => r.status === 'rejected');
-  if (failures.length > 0) {
-    const errorMsgs = failures.map(f => f.reason.message).join(' | ');
-    throw new Error(errorMsgs);
-  }
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length > 0) {
+      const errorMsgs = failures.map(f => f.reason.message).join(' | ');
+      throw new Error(errorMsgs);
+    }
 
-  return { success: true };
+    return { success: true };
+  }).catch(error => {
+    logCriticalError('printKOTQZ', error, { tableId, kotId, orderId });
+    throw error;
+  });
 }

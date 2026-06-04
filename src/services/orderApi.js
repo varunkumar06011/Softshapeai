@@ -1,5 +1,6 @@
 import { apiUrl } from "./apiConfig";
 import { RESTAURANT_ID } from "./tableApi";
+import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -61,23 +62,33 @@ export async function fetchTableOrder(tableId) {
 }
 
 export async function updateOrderItems(orderId, items, requestId = null) {
-  const body = { items: toOrderItems(items) };
-  if (requestId) body.requestId = requestId;
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return parseResponse(res);
+  return withRetry(
+    async () => {
+      const body = { items: toOrderItems(items) };
+      if (requestId) body.requestId = requestId;
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return parseResponse(res);
+    },
+    RETRY_CONFIG.KOT
+  );
 }
 
 export async function updateOrderStatus(orderId, status) {
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/status`), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  return parseResponse(res);
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/status`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      return parseResponse(res);
+    },
+    RETRY_CONFIG.TABLE_UPDATE
+  );
 }
 
 export async function requestBilling(orderId) {
@@ -97,12 +108,17 @@ export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
 }
 
 export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier') {
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ removedItemIds, removedBy }),
-  });
-  return parseResponse(res);
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removedItemIds, removedBy }),
+      });
+      return parseResponse(res);
+    },
+    RETRY_CONFIG.SETTLE
+  );
 }
 
 export async function saveTransaction({
@@ -165,12 +181,17 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
 }
 
 export async function swapTable(sourceTableBackendId, targetTableBackendId, swappedBy, restaurantId) {
-  const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/swap`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetTableId: targetTableBackendId, swappedBy, restaurantId }),
-  });
-  return parseResponse(res);
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/swap`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetTableId: targetTableBackendId, swappedBy, restaurantId }),
+      });
+      return parseResponse(res);
+    },
+    RETRY_CONFIG.TABLE_UPDATE
+  );
 }
 
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
@@ -183,16 +204,21 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
 }
 
 export async function transferItems(sourceTableBackendId, targetTableBackendId, itemIds, transferredBy, restaurantId) {
-  const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/transfer-items`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetTableId: targetTableBackendId, itemIds, transferredBy, restaurantId }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to transfer items');
-  }
-  return res.json();
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/transfer-items`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetTableId: targetTableBackendId, itemIds, transferredBy, restaurantId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to transfer items');
+      }
+      return res.json();
+    },
+    RETRY_CONFIG.TABLE_UPDATE
+  );
 }
 
 export async function deleteTransaction(transactionId, restaurantId) {
