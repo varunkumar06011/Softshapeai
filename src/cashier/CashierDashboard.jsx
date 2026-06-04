@@ -2581,6 +2581,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <table className="w-full text-left">
                             <thead className="bg-gray-50 border-b border-gray-100">
                               <tr>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Bill No</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Table</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Captain</th>
@@ -2592,7 +2593,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <tbody className="divide-y divide-gray-50">
                               {txnsLoading && filteredTransactions.length === 0 ? (
                                 <tr>
-                                  <td colSpan={6} className="p-12 text-center">
+                                  <td colSpan={7} className="p-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2 py-8">
                                       <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
                                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
@@ -2607,7 +2608,10 @@ const CashierDashboard = ({ onLogout }) => {
                                       className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
                                     >
                                       <td className="p-4">
-                                        <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || txn.id}</span>
+                                        <span className="text-xs md:text-sm font-black text-[#E53935]">{txn.displayId || '—'}</span>
+                                      </td>
+                                      <td className="p-4">
+                                        <span className="text-xs md:text-sm font-black text-gray-900">{txn.id}</span>
                                       </td>
                                       {/* FIX 6: Table Number */}
                                       <td className="p-4">
