@@ -221,9 +221,9 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
         // Route receipt to correct printer based on venue
         let printerName = BILLING_PRINTER;
         if (sectionTag === 'venue-family-restaurant') {
-          printerName = DINE_IN_BILL_PRINTER;
+          printerName = KOT_FAMILY_PRINTER;
         } else if (sectionTag === 'venue-restaurant-parcel') {
-          printerName = KOT_PRINTER;
+          printerName = KOT_FAMILY_PRINTER;
         }
         await sendToPrinter(printerName, printData);
         return { success: true };
@@ -237,9 +237,9 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
     // Route fallback bill to correct printer based on venue
     let printerName = BILLING_PRINTER;
     if (sectionTag === 'venue-family-restaurant') {
-      printerName = DINE_IN_BILL_PRINTER;
+      printerName = KOT_FAMILY_PRINTER;
     } else if (sectionTag === 'venue-restaurant-parcel') {
-      printerName = KOT_PRINTER;
+      printerName = KOT_FAMILY_PRINTER;
     }
     await sendToPrinter(printerName, formattedData);
     return { success: true };
@@ -249,7 +249,7 @@ export async function printBillQZ({ table, items, subtotal, taxes, total, method
   });
 }
 
-export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, kotNumber, captainName }) {
+export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, kotNumber, captainName, sectionTag }) {
   return printerCircuitBreaker.execute(async () => {
     const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR')
       .map(i => ({
@@ -265,6 +265,11 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, ko
 
     const printPromises = [];
 
+    // Determine printer targets based on venue section
+    const isVenueRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel';
+    const foodPrinter = isVenueRestaurant ? KOT_FAMILY_PRINTER : KITCHEN_PRINTER;
+    const liquorPrinter = isVenueRestaurant ? DINE_IN_BILL_PRINTER : BAR_PRINTER;
+
     if (foodItems.length > 0) {
       const foodPrint = fetch(`${import.meta.env.VITE_API_URL}/api/print/food-kot`, {
         method: 'POST',
@@ -275,10 +280,10 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, ko
         .then(res => {
           if (!res || !res.data) return null;
           const printData = Array.isArray(res.data) ? res.data : [res.data];
-          return sendToPrinter(KITCHEN_PRINTER, printData);
+          return sendToPrinter(foodPrinter, printData);
         })
         .catch(err => {
-          err.message = `Kitchen Printer Failed: ${err.message}`;
+          err.message = `${isVenueRestaurant ? 'KOT Family' : 'Kitchen'} Printer Failed: ${err.message}`;
           throw err;
         });
       printPromises.push(foodPrint);
@@ -294,10 +299,10 @@ export async function printKOTQZ({ tableId, kotId, items, captainId, orderId, ko
         .then(res => {
           if (!res || !res.data) return null;
           const printData = Array.isArray(res.data) ? res.data : [res.data];
-          return sendToPrinter(BAR_PRINTER, printData);
+          return sendToPrinter(liquorPrinter, printData);
         })
         .catch(err => {
-          err.message = `Bar Printer Failed: ${err.message}`;
+          err.message = `${isVenueRestaurant ? 'Dine In Bill' : 'Bar'} Printer Failed: ${err.message}`;
           throw err;
         });
       printPromises.push(liquorPrint);

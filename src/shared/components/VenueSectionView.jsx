@@ -35,7 +35,7 @@ export default function VenueSectionView({
       return table.sectionTag === venueId;
     }
     return true;
-  });
+  }).filter((table) => getTableSectionLabel(table) !== 'P1');
 
   // DEBUG logging — remove once fixed
   React.useEffect(() => {

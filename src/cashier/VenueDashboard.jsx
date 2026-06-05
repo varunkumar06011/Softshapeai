@@ -23,6 +23,7 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 import { fetchVenueMenu, updateVenueTableSession } from '../services/venueTableApi';
 import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
 import { createOrder, updateOrderItems } from '../services/orderApi';
+import { getSocket } from '../hooks/useSocket';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
     }
 
     setIsSendingKot(true);
+    const requestId = crypto.randomUUID();
     try {
       let orderId = selectedTable.activeOrder?.id;
 
@@ -188,6 +190,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           tableNumber: selectedTable.id || selectedTable.number,
           items: cart,
           restaurantId: VENUE_ID,
+          requestId,
         });
         orderId = order.id;
         setVenueTables((prev) =>
@@ -198,7 +201,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           )
         );
       } else {
-        await updateOrderItems(orderId, cart, crypto.randomUUID());
+        await updateOrderItems(orderId, cart, requestId);
       }
 
       // Build KOT entry
@@ -212,7 +215,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
         items: cart.map((i) => ({ n: i.n, q: i.q, p: i.p, menuType: 'FOOD' })),
       };
 
-      // Update local table kotHistory
+      // Update local table kotHistory (optimistic)
       setVenueTables((prev) =>
         prev.map((t) => {
           if (t.backendId !== selectedTable.backendId) return t;
@@ -233,11 +236,30 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
         })
       );
 
-      // KOT Print is now purely handled via backend socket `print_job` emit
-      // to the PrintStation.
+      // Wait for physical print confirmation from PrintStation (max 15s)
+      const socket = getSocket();
+      const printResult = await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          socket.off('kot:printed', handler);
+          resolve('timeout');
+        }, 15000);
+        const handler = ({ requestId: ackRequestId, status }) => {
+          if (ackRequestId === requestId) {
+            clearTimeout(timeout);
+            socket.off('kot:printed', handler);
+            resolve(status || 'success');
+          }
+        };
+        socket.on('kot:printed', handler);
+      });
 
+      // Clear cart and notify after print confirmation or timeout
       setCart([]);
-      addNotification?.('KOT Sent', `KOT sent for ${getTableLabel(activeSection, selectedTable.number)}`, 'success');
+      if (printResult === 'timeout') {
+        addNotification?.('KOT Saved — Print delayed', `KOT saved for ${getTableLabel(activeSection, selectedTable.number)}`, 'warning');
+      } else {
+        addNotification?.('KOT Printed', `KOT printed for ${getTableLabel(activeSection, selectedTable.number)}`, 'success');
+      }
     } catch (err) {
       console.error('[VenueDashboard] KOT error:', err);
       addNotification?.('KOT Failed', err.message || 'Failed to send KOT', 'error');

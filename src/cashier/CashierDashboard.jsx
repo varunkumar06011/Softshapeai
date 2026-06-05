@@ -750,7 +750,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
-      setActiveTables(prev => prev.map(t => {
+      const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
         // FIX #4: Merge kotHistory — never lose KOTs already in local state
         const mergedKotHistory = (() => {
@@ -766,7 +766,11 @@ const CashierDashboard = ({ onLogout }) => {
           status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
         };
-      }), { skipPersist: true });
+      });
+      setActiveTables(applyTableUpdate, { skipPersist: true });
+      if (setVenueTables) {
+        setVenueTables(applyTableUpdate, { skipPersist: true });
+      }
       if (selectedTable?.backendId === table.id) {
         setSelectedTable(prev => {
           if (!prev) return prev;
@@ -1626,7 +1630,7 @@ const CashierDashboard = ({ onLogout }) => {
         localStorage.removeItem(`cashier_table_discount_${tableSnap.backendId}`);
       }
 
-      addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
+      addNotification('Session Terminated', `Table ${tableSnap.displayName ?? tableSnap.number ?? tableSnap.id} freed`, 'info');
 
     } catch (err) {
       console.warn('[Terminate] failed:', err.message);
@@ -4730,7 +4734,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div>
                 <p className="text-xs font-black uppercase text-red-500 tracking-wider">Terminate Session</p>
                 <p className="text-base font-black text-gray-900 mt-0.5">
-                  Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : selectedTable.id}
+                  Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : (selectedTable.displayName ?? selectedTable.number ?? selectedTable.id)}
                 </p>
               </div>
               <button

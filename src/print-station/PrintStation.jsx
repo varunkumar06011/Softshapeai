@@ -443,16 +443,13 @@ export default function PrintStation() {
 
           if (type === 'KOT') {
             if (data.restaurantId === 'venue-001') {
-              // ── Restaurant KOT split uses printerTarget per item ───────────────
-              //   BAR_PRINTER  → Dine in Bill (cashier counter printer)
-              //   KOT_PRINTER / null / undefined → KOT FAMILY (kitchen printer)
+              // ── Restaurant KOT split uses menuType per item ──────────────────
+              //   LIQUOR (soft drinks / beverages / alcohol) → Dine in Bill (counter)
+              //   FOOD / everything else → KOT FAMILY (kitchen printer)
               //   This is the source-of-truth routing for venue-001.
-              //   Do NOT remove this logic — future devs: the backend already
-              //   sends printerTarget on every item payload; no name-matching
-              //   heuristics should ever be added here.
               // ───────────────────────────────────────────────────────────────────
-              const kitchenItems = (data.items || []).filter(i => i.printerTarget !== 'BAR_PRINTER');
-              const counterItems = (data.items || []).filter(i => i.printerTarget === 'BAR_PRINTER');
+              const kitchenItems = (data.items || []).filter(i => i.menuType !== 'LIQUOR');
+              const counterItems = (data.items || []).filter(i => i.menuType === 'LIQUOR');
               if (kitchenItems.length > 0) {
                 printTasks.push({
                   printer: KOT_FAMILY_PRINTER,
@@ -480,9 +477,9 @@ export default function PrintStation() {
           } else if (type === 'BILL') {
             cmds    = buildBillCommands(data);
             if (data.sectionTag === 'venue-family-restaurant') {
-              printer = DINE_IN_BILL_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }
@@ -500,9 +497,9 @@ export default function PrintStation() {
             }
             cmds = Array.isArray(res.data) ? res.data : [res.data];
             if (data.sectionTag === 'venue-family-restaurant') {
-              printer = DINE_IN_BILL_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }
@@ -510,11 +507,10 @@ export default function PrintStation() {
           } else if (type === 'CANCEL_KOT') {
             cmds = buildCancelKOTCommands(data);
             if (data.restaurantId === 'venue-001') {
-              const pt = data.item?.printerTarget;
-              if (pt === 'BAR_PRINTER') {
+              if (data.item?.menuType === 'LIQUOR') {
                 printer = DINE_IN_BILL_PRINTER;
               } else {
-                // Default to kitchen when printerTarget is missing / KOT_PRINTER / null
+                // Default to kitchen for FOOD / missing menuType
                 printer = KOT_FAMILY_PRINTER;
               }
             } else if (data.sectionTag === 'venue-family-restaurant') {
@@ -552,6 +548,15 @@ export default function PrintStation() {
             await sendToPrinter(task.printer, task.cmds);
             pushLog(`✓ Printed [${type}] → ${task.printer} (Table ${data?.tableNumber ?? '?'})`);
           }));
+
+          // Notify backend so captain UI can stop loading
+          if (data?.requestId && data?.restaurantId) {
+            socket.emit('print:ack', {
+              restaurantId: data.restaurantId,
+              requestId: data.requestId,
+              status: 'success',
+            });
+          }
         } catch (err) {
           pushLog(`✗ Print failed [${type}]: ${err.message}`, false);
           // If QZ dropped, try reconnecting

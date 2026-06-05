@@ -2071,6 +2071,10 @@ export default function CaptainApp({ onLogout }) {
 
     const existingOrderId = activeOrderIdRef.current;
 
+    const requestId = crypto.randomUUID();
+
+    kotRequestIdRef.current = requestId;
+
 
 
     try {
@@ -2108,12 +2112,6 @@ export default function CaptainApp({ onLogout }) {
       const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
 
       const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
-
-      const requestId = existingOrderId
-
-        ? (kotRequestIdRef.current || (kotRequestIdRef.current = crypto.randomUUID()))
-
-        : null;
 
 
 
@@ -2161,6 +2159,8 @@ export default function CaptainApp({ onLogout }) {
           restaurantId: orderRestaurantId,
           items: apiItems,
 
+          requestId,
+
         });
 
         // Store the real DB id so next KOT uses updateOrderItems, not createOrder
@@ -2172,8 +2172,6 @@ export default function CaptainApp({ onLogout }) {
         realKotId = savedOrder?.kotHistory?.[savedOrder.kotHistory.length - 1]?.id;
 
       }
-
-      kotRequestIdRef.current = null;
 
 
 
@@ -2273,17 +2271,59 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-      // ✅ DB confirmed — snapshot and clear draft
+      // 4. Wait for physical print confirmation from PrintStation (max 15s)
+
+      const socket = getSocket();
+
+      const printResult = await new Promise((resolve) => {
+
+        const timeout = setTimeout(() => {
+
+          socket.off('kot:printed', handler);
+
+          resolve('timeout');
+
+        }, 15000);
+
+        const handler = ({ requestId: ackRequestId, status }) => {
+
+          if (ackRequestId === requestId) {
+
+            clearTimeout(timeout);
+
+            socket.off('kot:printed', handler);
+
+            resolve(status || 'success');
+
+          }
+
+        };
+
+        socket.on('kot:printed', handler);
+
+      });
+
+
+
+      // 5. Clear cart and notify after print confirmation or timeout
 
       const committedSoFar = getTableItems(activeTable);
 
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
 
-      setTableCarts(prev => ({ ...prev, [activeTableId]: [] })); // clear draft
+      setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
 
 
 
-      addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
+      if (printResult === 'timeout') {
+
+        addNotification(`KOT #${realKotId || newKOT.id} Saved — Print confirmation timed out`, 'warning');
+
+      } else {
+
+        addNotification(`KOT #${realKotId || newKOT.id} Printed ✓`, 'success');
+
+      }
 
     } catch (err) {
 
@@ -2308,6 +2348,8 @@ export default function CaptainApp({ onLogout }) {
       isSubmittingKotRef.current = false;
 
       setSendingKOT(false);
+
+      kotRequestIdRef.current = null;
 
     }
 
@@ -3264,7 +3306,7 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-              {(outlet === 'bar' && tableSubCategory === 'bar-ac-hall') || (outlet === 'restaurant' && tableSubCategory === 'family-restaurant') ? (
+              {outlet === 'bar' && tableSubCategory === 'bar-ac-hall' ? (
 
                 <>
 
