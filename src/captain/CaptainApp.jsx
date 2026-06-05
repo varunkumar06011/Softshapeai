@@ -2882,7 +2882,7 @@ export default function CaptainApp({ onLogout }) {
 
       {/* GLOBAL HEADER */}
 
-      <header className="h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50">
+      <header className={`h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
 
         <div className="flex items-center gap-4">
 
@@ -2942,7 +2942,7 @@ export default function CaptainApp({ onLogout }) {
 
       {/* CAPTAIN NAV TABS */}
 
-      <div className="bg-white border-b border-gray-100 px-4 flex shrink-0">
+      <div className={`bg-white border-b border-gray-100 px-4 flex shrink-0 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
 
         <button
 
@@ -3672,7 +3672,7 @@ export default function CaptainApp({ onLogout }) {
 
                 {outlet === 'bar' ? (
 
-                  <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300">
+                  <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300 sticky top-0">
 
                     <div className="px-4 py-3 flex flex-col gap-3">
 
@@ -3791,7 +3791,7 @@ export default function CaptainApp({ onLogout }) {
 
                 ) : (
 
-                  <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30">
+                  <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30 sticky top-0">
 
                     <div className="relative group flex items-center">
 
