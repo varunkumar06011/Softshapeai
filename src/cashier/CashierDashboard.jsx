@@ -907,7 +907,6 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Listen for menu update events from admin panel
     const onMenuItemUpdated = (payload) => {
-      console.log('[CashierDashboard] Received menu-item-updated:', payload);
       // Dispatch window event for menuSyncService to pick up
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
     };
@@ -1150,8 +1149,6 @@ const CashierDashboard = ({ onLogout }) => {
         ? ['bar-001', 'venue-001']
         : ['restaurant-001', 'venue-001'];
       
-      console.log('[Bill Finder] Searching with date:', billFinderDate, 'restaurantIds:', restaurantIds);
-      
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
           console.error(`[Bill Finder] Fetch failed for ${rid}:`, err);
@@ -1159,14 +1156,10 @@ const CashierDashboard = ({ onLogout }) => {
         }))
       );
 
-      console.log('[Bill Finder] Raw results:', allResults);
-
       const allTxns = allResults.flatMap((txns, idx) => {
         const rid = restaurantIds[idx];
         return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
       });
-
-      console.log('[Bill Finder] All transactions:', allTxns.length, allTxns);
 
       const filtered = allTxns.filter(txn => {
         let matches = true;
@@ -1183,29 +1176,23 @@ const CashierDashboard = ({ onLogout }) => {
         return matches;
       });
 
-      console.log('[Bill Finder] After bill/table filter:', filtered.length);
-
       // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
         // If sectionTag is null/undefined, include the transaction (fallback for older data)
         if (!txn.sectionTag) {
-          console.log('[Bill Finder] No sectionTag, including transaction:', txn.displayId);
           return true;
         }
         
         if (outlet === 'bar') {
           // Bar sees ONLY bar-sourced transactions — never any restaurant source
           const matches = BAR_SOURCES.has(txn.sectionTag);
-          console.log('[Bill Finder] Bar filter - sectionTag:', txn.sectionTag, 'matches:', matches);
           return matches;
         }
         // Restaurant sees ONLY restaurant-sourced transactions — never bar or unknown venue
         const matches = RESTAURANT_SOURCES.has(txn.sectionTag);
-        console.log('[Bill Finder] Restaurant filter - sectionTag:', txn.sectionTag, 'matches:', matches);
         return matches;
       });
 
-      console.log('[Bill Finder] Final results:', isolated.length);
       setBillFinderResults(isolated);
     } catch (error) {
       console.error('[Bill Finder] Search error:', error);

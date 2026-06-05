@@ -62,16 +62,17 @@ const LINE_NORMAL = 42;
 function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
-function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, sectionTag }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, sectionTag, restaurantId }) {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
   const displayKotId = kotId || "N/A";
   const rawLabel = (tableNumber || 'N/A').toString();
-  const numericPart = rawLabel.replace(/^[A-Z]/i, '') || rawLabel;
-  const tableDisplay = (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel')
-    ? `F${numericPart}`
+  const stripped = /^[BTVF]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel;
+  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === 'venue-001';
+  const tableDisplay = isFamilyRestaurant
+    ? `F${stripped}`
     : (/^[BT]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel);
 
   // Determine venue label based on sectionTag
@@ -81,6 +82,10 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
         ? 'V GRAND FAMILY RESTAURANT'
         : label);
 
+  const kotLabel = `KOT No : ${displayKotId}`;
+  const tableLabel = `Table : ${tableDisplay}`;
+  const gap = Math.max(1, LINE_NORMAL - kotLabel.length - tableLabel.length);
+
   const cmds = [
     INIT,
     CENTER,
@@ -89,11 +94,9 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
     BOLD_OFF,
     LEFT,
     separator("-"),
-    SIZE_HEIGHT,
     BOLD_ON,
-    padRight(`KOT No : ${displayKotId}`, `Table : ${tableDisplay}`) + '\n',
+    kotLabel + ' '.repeat(gap) + tableLabel + '\n',
     BOLD_OFF,
-    SIZE_NORMAL,
     separator("-"),
     `Waiter : ${captainName && captainName !== 'N/A' ? captainName : 'Waiter'}\n`,
     `Ordered Date : ${dateStr}  Time : ${timeStr}\n`,
@@ -134,7 +137,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
-function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName, sectionTag }) {
+function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName, sectionTag, restaurantId }) {
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const itemType = item?.menuType === 'BAR' ? 'Bar Item' : 'Food Item';
 
@@ -145,7 +148,8 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
   const rawTable = (tableNumber || 'N/A').toString();
   const cancelNumeric = rawTable.replace(/^[A-Z]/i, '') || rawTable;
-  const tableDisplay = (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel')
+  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === 'venue-001';
+  const tableDisplay = isFamilyRestaurant
     ? `F${cancelNumeric}`
     : rawTable;
 
@@ -155,12 +159,12 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     BOLD_ON,
     `${venueLabel}\n`,
     BOLD_OFF,
+    LEFT,
     separator("-"),
     `Table : ${tableDisplay}\n`,
     `Time  : ${timeStr}\n`,
     `By    : ${cancelledBy || 'Staff'}\n`,
     separator("-"),
-    LEFT,
   ];
 
   if (item) {
@@ -197,7 +201,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
-function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, sectionName, sectionTag }) {
+function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, sectionName, sectionTag, restaurantId }) {
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
@@ -206,7 +210,8 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
   const rawTable = (tableNumber || 'N/A').toString();
   const cancelNumeric = rawTable.replace(/^[A-Z]/i, '') || rawTable;
-  const tableDisplay = (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel')
+  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === 'venue-001';
+  const tableDisplay = isFamilyRestaurant
     ? `F${cancelNumeric}`
     : rawTable;
 
@@ -216,12 +221,12 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     BOLD_ON,
     `${venueLabel}\n`,
     BOLD_OFF,
+    LEFT,
     separator("-"),
     `Table : ${tableDisplay}\n`,
     `Time  : ${timeStr}\n`,
     `By    : ${cancelledBy || 'Staff'}\n`,
     separator("-"),
-    LEFT,
     BOLD_ON,
     "Qty  Item\n",
     BOLD_OFF,
@@ -477,7 +482,7 @@ export default function PrintStation() {
                 if (counterItems.length > 0) {
                   printTasks.push({
                     printer: DINE_IN_BILL_PRINTER,
-                    cmds: buildKOTCommands({ ...data, items: counterItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
+                    cmds: buildKOTCommands({ ...data, items: counterItems, label: 'COUNTER ORDER', sectionTag: data.sectionTag }),
                   });
                 }
               }
@@ -529,11 +534,11 @@ export default function PrintStation() {
           } else if (type === 'CANCEL_KOT') {
             cmds = buildCancelKOTCommands(data);
             if (data.restaurantId === 'venue-001') {
-              if (data.item?.menuType === 'LIQUOR') {
-                printer = DINE_IN_BILL_PRINTER;
+              // Route based on printerTarget set in admin menu page
+              if (data.printerTarget === 'BAR_PRINTER') {
+                printer = DINE_IN_BILL_PRINTER;  // water, drinks, cool drinks
               } else {
-                // Default to kitchen for FOOD / missing menuType
-                printer = KOT_FAMILY_PRINTER;
+                printer = KOT_FAMILY_PRINTER;    // food items (KOT_PRINTER or null)
               }
             } else if (data.sectionTag === 'venue-family-restaurant') {
               printer = KOT_FAMILY_PRINTER;
