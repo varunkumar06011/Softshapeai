@@ -3794,6 +3794,8 @@ export default function CaptainApp({ onLogout }) {
 
                   </div>
 
+                </div>
+
                 ) : (
 
                   <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30 sticky top-0">
@@ -3911,6 +3913,8 @@ export default function CaptainApp({ onLogout }) {
                     </div>
 
                   </div>
+
+                </div>
 
                 )}
 
