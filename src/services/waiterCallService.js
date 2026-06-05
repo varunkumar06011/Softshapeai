@@ -70,9 +70,9 @@ export function initSocket() {
  *
  * Returns `true` if the socket was connected at emit time.
  */
-export function broadcastWaiterEvent(type, payload) {
+export function broadcastWaiterEvent(type, payload, outlet = 'restaurant') {
   const socket = getSocket();
-  const restaurantId = "softshape-restaurant";
+  const restaurantId = `softshape-${outlet}`;
 
   // Ensure socket is ready
   if (!socket.connected) {
