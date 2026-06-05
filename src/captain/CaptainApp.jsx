@@ -754,6 +754,41 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+  // Sticky header scroll detection
+  useEffect(() => {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentScrollY = window.scrollY;
+          
+          // Show header when scrolling up or at the top
+          if (currentScrollY < lastScrollYRef.current || currentScrollY < 50) {
+            setIsHeaderVisible(true);
+          } 
+          // Hide header when scrolling down (and not at top)
+          else if (currentScrollY > lastScrollYRef.current && currentScrollY > 50) {
+            setIsHeaderVisible(false);
+          }
+          
+          lastScrollYRef.current = currentScrollY;
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    // Add scroll listener to window
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+
+
   const currentSessionItems = tableCarts[activeTableId] ?? [];
 
 
@@ -763,6 +798,10 @@ export default function CaptainApp({ onLogout }) {
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [inlineQtyItem, setInlineQtyItem] = useState(null);
   const isInstructionFocusedRef = useRef(false);
+
+  // Sticky header scroll state
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
 
   // Cancel-item state
 
@@ -3567,7 +3606,7 @@ export default function CaptainApp({ onLogout }) {
 
             {/* STICKY SESSION HEADER */}
 
-            <div className="bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 shrink-0 z-40 shadow-sm">
+            <div className={`bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 shrink-0 z-40 shadow-sm transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
 
               <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
 
