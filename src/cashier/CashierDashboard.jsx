@@ -759,12 +759,15 @@ const CashierDashboard = ({ onLogout }) => {
           if (incoming.length >= existing.length) return incoming;
           return existing;
         })();
+        // FIX: Also update activeOrder from incoming socket data so occupied tables show items
+        const incomingOrder = table.orders?.[0] || table.activeOrder || null;
         return {
           ...t,
           kotHistory: mergedKotHistory,
           currentBill: table.currentBill ?? t.currentBill,
           status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
+          activeOrder: incomingOrder || t.activeOrder,
         };
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
@@ -1567,11 +1570,15 @@ const CashierDashboard = ({ onLogout }) => {
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
           : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
+        // Cross-browser compatible timeout (AbortSignal.timeout is not supported on older browsers)
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), 10000);
         const response = await fetch(terminateUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(10000), // 10s timeout — don't hang forever
+          signal: abortController.signal,
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
@@ -3723,6 +3730,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {selectedTable.status && selectedTable.status !== 'Free' && (
                   <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
                     <button
+                      type="button"
                       onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
                       className="py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
                     >
@@ -3730,6 +3738,7 @@ const CashierDashboard = ({ onLogout }) => {
                       Swap Table
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setItemSwapSelectedIds([]);
                         setItemSwapTargetId(null);
@@ -3741,6 +3750,7 @@ const CashierDashboard = ({ onLogout }) => {
                       Swap Items
                     </button>
                     <button
+                      type="button"
                       onClick={() => setShowTerminateModal(true)}
                       disabled={isTerminating}
                       className={`py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
@@ -4751,12 +4761,14 @@ const CashierDashboard = ({ onLogout }) => {
             </div>
             <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
               <button
+                type="button"
                 onClick={() => setShowTerminateModal(false)}
                 className="flex-1 py-3 rounded-xl text-sm font-black text-gray-500 hover:bg-gray-200 transition-colors uppercase tracking-widest"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setShowTerminateModal(false);
                   terminateTableSession();

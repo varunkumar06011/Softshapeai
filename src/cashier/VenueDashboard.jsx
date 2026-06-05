@@ -71,6 +71,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [isSendingKot, setIsSendingKot] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
   const [settledOrderIds] = useState(() => new Set());
 
   // ── Group tables by section ──
@@ -338,8 +339,10 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
   // ─── Terminate ───────────────────────────────────────────────────────────────
   const terminateTableSession = async () => {
     if (!selectedTable) return;
+    if (isTerminating) return;
 
     const tableSnap = selectedTable;
+    setIsTerminating(true);
 
     // Step 1: Optimistically free the table in local state
     setVenueTables(prev => prev.map(t =>
@@ -365,7 +368,12 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
       const terminateUrl = `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
       try {
-        const response = await fetch(terminateUrl, { method: 'POST' });
+        // Cross-browser compatible timeout
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), 10000);
+        const response = await fetch(terminateUrl, { method: 'POST', signal: abortController.signal });
+        clearTimeout(timeoutId);
+
         if (!response.ok) throw new Error('Backend sync failed');
 
         // Background cleanup - use the venue table API
@@ -382,9 +390,12 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
             ? tableSnap
             : t
         ));
+      } finally {
+        setIsTerminating(false);
       }
     } else {
       addNotification('Session Terminated', `Table ${getTableLabel(activeSection, tableSnap.number)} freed`, 'info');
+      setIsTerminating(false);
     }
   };
 
@@ -650,11 +661,13 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
                 )}
                 {selectedTable.status && selectedTable.status !== 'Free' && (
                   <button
+                    type="button"
                     onClick={() => setShowTerminateModal(true)}
-                    className="w-full py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                    disabled={isTerminating}
+                    className={`w-full py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
                   >
-                    <X size={10} />
-                    Terminate
+                    {isTerminating ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+                    {isTerminating ? 'Ending...' : 'Terminate'}
                   </button>
                 )}
               </div>
@@ -744,19 +757,22 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
             </div>
             <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
               <button
+                type="button"
                 onClick={() => setShowTerminateModal(false)}
                 className="flex-1 py-3 rounded-xl text-sm font-black text-gray-500 hover:bg-gray-200 transition-colors uppercase tracking-widest"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setShowTerminateModal(false);
                   terminateTableSession();
                 }}
-                className="flex-1 py-3 rounded-xl text-sm font-black bg-red-600 text-white hover:bg-red-700 transition-colors uppercase tracking-widest"
+                disabled={isTerminating}
+                className={`flex-1 py-3 rounded-xl text-sm font-black bg-red-600 text-white hover:bg-red-700 transition-colors uppercase tracking-widest ${isTerminating ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                Terminate
+                {isTerminating ? 'Ending...' : 'Terminate'}
               </button>
             </div>
           </div>

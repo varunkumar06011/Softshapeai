@@ -64,6 +64,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const sectionName = row.section?.name ?? existing?.sectionName ?? "";
   const section = row.section ?? existing?.section;
   const sectionId = row.sectionId ?? existing?.sectionId;
+  const sectionTag = row.sectionTag ?? existing?.sectionTag ?? null;
 
   const incomingOrder = row.orders?.[0] || row.activeOrder || existing?.activeOrder || null;
   const existingOrder = existing?.activeOrder;
@@ -88,6 +89,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     sectionId: sectionId,
     sectionName: sectionName,
     section: section,
+    sectionTag: sectionTag,
     guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
     time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
