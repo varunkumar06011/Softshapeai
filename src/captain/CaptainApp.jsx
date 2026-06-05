@@ -764,11 +764,11 @@ export default function CaptainApp({ onLogout }) {
           const currentScrollY = window.scrollY;
           
           // Show header when scrolling up or at the top
-          if (currentScrollY < lastScrollYRef.current || currentScrollY < 50) {
+          if (currentScrollY < lastScrollYRef.current || currentScrollY < 10) {
             setIsHeaderVisible(true);
           } 
           // Hide header when scrolling down (and not at top)
-          else if (currentScrollY > lastScrollYRef.current && currentScrollY > 50) {
+          else if (currentScrollY > lastScrollYRef.current && currentScrollY > 10) {
             setIsHeaderVisible(false);
           }
           
@@ -2882,7 +2882,7 @@ export default function CaptainApp({ onLogout }) {
 
       {/* GLOBAL HEADER */}
 
-      <header className={`h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+      <header className={`h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50 transition-all duration-300 ${isHeaderVisible ? 'opacity-100 h-14' : 'opacity-0 h-0 overflow-hidden'}`}>
 
         <div className="flex items-center gap-4">
 
@@ -2942,7 +2942,7 @@ export default function CaptainApp({ onLogout }) {
 
       {/* CAPTAIN NAV TABS */}
 
-      <div className={`bg-white border-b border-gray-100 px-4 flex shrink-0 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+      <div className={`bg-white border-b border-gray-100 px-4 flex shrink-0 transition-all duration-300 ${isHeaderVisible ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>
 
         <button
 
@@ -3606,7 +3606,7 @@ export default function CaptainApp({ onLogout }) {
 
             {/* STICKY SESSION HEADER */}
 
-            <div className={`bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 shrink-0 z-40 shadow-sm transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+            <div className={`bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 shrink-0 z-40 shadow-sm transition-all duration-300 ${isHeaderVisible ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden py-0'}`}>
 
               <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
 
