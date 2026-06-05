@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
 import { printBillQZ, printKOTQZ } from '../services/printService';
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -1093,7 +1093,7 @@ const CashierDashboard = ({ onLogout }) => {
       console.log('[Bill Finder] Searching with date:', billFinderDate, 'restaurantIds:', restaurantIds);
       
       const allResults = await Promise.all(
-        restaurantIds.map(rid => fetchTransactions(rid, 500, billFinderDate).catch((err) => {
+        restaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
           console.error(`[Bill Finder] Fetch failed for ${rid}:`, err);
           return [];
         }))
