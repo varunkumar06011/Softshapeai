@@ -71,7 +71,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
     const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
     const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
-    if (existingUpdated > incomingUpdated) {
+    // Keep existing if it's newer OR has more items (items are never deleted from DB, only flagged)
+    if (existingUpdated >= incomingUpdated ||
+        (incomingOrder.items?.length ?? 0) < (existingOrder.items?.length ?? 0)) {
       activeOrder = existingOrder;
     }
     // Preserve existing items if incoming has none (prevents wipe on partial socket payloads)

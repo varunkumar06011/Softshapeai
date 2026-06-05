@@ -805,7 +805,7 @@ const CashierDashboard = ({ onLogout }) => {
           currentBill: table.currentBill ?? t.currentBill,
           status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
-          activeOrder: incomingOrder || t.activeOrder,
+          activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
         };
       });
       const isVenue = table.restaurantId === 'venue-001';
@@ -822,7 +822,13 @@ const CashierDashboard = ({ onLogout }) => {
             const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
             return incoming.length >= existing.length ? incoming : existing;
           })();
-          return { ...prev, kotHistory: mergedKotHistory, currentBill: table.currentBill ?? prev.currentBill };
+          const incomingOrder = table.orders?.[0] || table.activeOrder || null;
+          return {
+            ...prev,
+            kotHistory: mergedKotHistory,
+            currentBill: table.currentBill ?? prev.currentBill,
+            activeOrder: incomingOrder || prev.activeOrder,
+          };
         });
       }
     };
