@@ -34,20 +34,20 @@ export default function UserMenuApp() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-8 text-center z-10"
+          className="mb-4 sm:mb-8 text-center z-10"
         >
           <img 
             src="/logo softshape.ai.png" 
             alt="softshape.ai" 
-            className="h-44 md:h-52 w-auto object-contain mx-auto" 
+            className="h-28 sm:h-44 md:h-52 w-auto object-contain mx-auto" 
           />
-          <h1 className="text-xl font-black text-gray-500 uppercase tracking-[0.2em] mt-2">
+          <h1 className="text-base sm:text-xl font-black text-gray-500 uppercase tracking-[0.2em] mt-2">
             Welcome to Table {tableId.replace('table-', '')}
           </h1>
         </motion.div>
 
         {/* Experience Cards */}
-        <div className="grid w-full max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2 z-10 px-4">
+        <div className="grid w-full max-w-3xl grid-cols-2 gap-3 sm:gap-6 z-10 px-4">
           
           {/* Restaurant Experience */}
           <motion.button 
@@ -55,23 +55,23 @@ export default function UserMenuApp() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
             onClick={() => setView('engagement')}
-            className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-8 shadow-[0_20px_40px_rgba(255,77,79,0.04)] transition-all duration-500 hover:border-[#FF4D4F] hover:bg-white hover:translate-y-[-8px] text-left cursor-pointer"
+            className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-5 sm:p-8 shadow-[0_20px_40px_rgba(255,77,79,0.04)] transition-all duration-500 hover:border-[#FF4D4F] hover:bg-white hover:translate-y-[-8px] text-left cursor-pointer"
           >
-            <div className="absolute top-6 right-6 bg-red-50 text-[#FF4D4F] px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
-              <Sparkles size={10} className="animate-pulse" /> Play & Win
+            <div className="absolute top-4 sm:top-6 right-4 sm:right-6 bg-red-50 text-[#FF4D4F] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+              <Sparkles size={8} sm:size={10} className="animate-pulse" /> Play & Win
             </div>
             
-            <div className="mb-6 rounded-2xl bg-red-50 p-4 text-[#FF4D4F] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#FF4D4F] group-hover:text-white shadow-inner">
-              <UtensilsCrossed size={32} strokeWidth={2.5} />
+            <div className="mb-4 sm:mb-6 rounded-2xl bg-red-50 p-3 sm:p-4 text-[#FF4D4F] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#FF4D4F] group-hover:text-white shadow-inner">
+              <UtensilsCrossed size={28} sm:size={32} strokeWidth={2.5} />
             </div>
             
-            <h2 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Dining Room</h2>
-            <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">
+            <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tighter uppercase">Dining Room</h2>
+            <p className="mt-2 sm:mt-3 text-[11px] sm:text-[13px] font-semibold leading-relaxed text-gray-500">
               Play our quick table game to win exclusive food discounts, then browse our full range of starters, mains, and desserts.
             </p>
             
-            <div className="mt-6 flex items-center gap-2 text-[#FF4D4F] text-[11px] font-black uppercase tracking-widest group-hover:translate-x-1 transition-transform">
-              Proceed <ArrowRight size={14} />
+            <div className="mt-4 sm:mt-6 flex items-center gap-2 text-[#FF4D4F] text-[10px] sm:text-[11px] font-black uppercase tracking-widest group-hover:translate-x-1 transition-transform">
+              Proceed <ArrowRight size={12} sm:size={14} />
             </div>
           </motion.button>
 
@@ -81,23 +81,23 @@ export default function UserMenuApp() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
             onClick={() => setView('bar-menu')}
-            className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-8 shadow-[0_20px_40px_rgba(183,28,28,0.04)] transition-all duration-500 hover:border-[#B71C1C] hover:bg-white hover:translate-y-[-8px] text-left cursor-pointer"
+            className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-5 sm:p-8 shadow-[0_20px_40px_rgba(183,28,28,0.04)] transition-all duration-500 hover:border-[#B71C1C] hover:bg-white hover:translate-y-[-8px] text-left cursor-pointer"
           >
-            <div className="absolute top-6 right-6 bg-red-50/50 text-[#B71C1C] px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
+            <div className="absolute top-4 sm:top-6 right-4 sm:right-6 bg-red-50/50 text-[#B71C1C] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-sm">
               ⚡ Direct Entry
             </div>
 
-            <div className="mb-6 rounded-2xl bg-[#FFF5F5] p-4 text-[#B71C1C] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#B71C1C] group-hover:text-white shadow-inner">
-              <GlassWater size={32} strokeWidth={2.5} />
+            <div className="mb-4 sm:mb-6 rounded-2xl bg-[#FFF5F5] p-3 sm:p-4 text-[#B71C1C] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#B71C1C] group-hover:text-white shadow-inner">
+              <GlassWater size={28} sm:size={32} strokeWidth={2.5} />
             </div>
             
-            <h2 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Bar & Lounge</h2>
-            <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">
+            <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tighter uppercase">Bar & Lounge</h2>
+            <p className="mt-2 sm:mt-3 text-[11px] sm:text-[13px] font-semibold leading-relaxed text-gray-500">
               Skip the game. Browse our premium craft beers, imported liquor, signature cocktails, and gourmet lounge pairings immediately.
             </p>
             
-            <div className="mt-6 flex items-center gap-2 text-[#B71C1C] text-[11px] font-black uppercase tracking-widest group-hover:translate-x-1 transition-transform">
-              Proceed <ArrowRight size={14} />
+            <div className="mt-4 sm:mt-6 flex items-center gap-2 text-[#B71C1C] text-[10px] sm:text-[11px] font-black uppercase tracking-widest group-hover:translate-x-1 transition-transform">
+              Proceed <ArrowRight size={12} sm:size={14} />
             </div>
           </motion.button>
 
