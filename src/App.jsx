@@ -10,6 +10,7 @@ import PrintStation from "./print-station/PrintStation";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
+import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 
 
 // ─── Live Kitchen Display System ──────────────────────────────────────────────
@@ -190,23 +191,25 @@ const KitchenView = () => {
 // Root Component
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<PortalSelectionWrapper />} />
-        <Route path="/admin" element={<AdminLoginWrapper />} />
-        <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
-        <Route path="/cashier" element={<CashierLoginWrapper />} />
-        <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
-        <Route path="/captain/*" element={<CaptainApp 
-          onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }} 
-        />} />
-        <Route path="/kitchen" element={<KitchenView />} />
-        <Route path="/print-station" element={<PrintStation />} />
-        <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
-        <Route path="/user-menu/:tableId" element={<UserMenuApp />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<PortalSelectionWrapper />} />
+          <Route path="/admin" element={<AdminLoginWrapper />} />
+          <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
+          <Route path="/cashier" element={<CashierLoginWrapper />} />
+          <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
+          <Route path="/captain/*" element={<CaptainApp 
+            onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }} 
+          />} />
+          <Route path="/kitchen" element={<KitchenView />} />
+          <Route path="/print-station" element={<PrintStation />} />
+          <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
+          <Route path="/user-menu/:tableId" element={<UserMenuApp />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

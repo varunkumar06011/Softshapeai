@@ -33,11 +33,14 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
-import { withOptimisticUpdate, logCriticalError } from '../utils/resilience';
+import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 const TXN_PAGE_SIZE = 100;
+
+// Background queue for final bill + inventory deduction
+const settlementQueue = new BackgroundQueue('settlement');
 
 const toFrontendTableStatus = (backendStatus) => {
   const map = {
@@ -1481,29 +1484,32 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Commit function: call backend settle endpoint
     const commitFn = async () => {
-      // Call backend settle endpoint (creates transaction, marks paid, resets table)
-      // NO PRINTING - that already happened in handleFinalBill
-      if (orderId) {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentMethod: method, discountPercent })
-          }
-        );
+      // Add to background queue for final bill + inventory deduction
+      await settlementQueue.add(async () => {
+        // Call backend settle endpoint (creates transaction, marks paid, resets table)
+        // NO PRINTING - that already happened in handleFinalBill
+        if (orderId) {
+          const response = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentMethod: method, discountPercent })
+            }
+          );
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Settlement failed on server');
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Settlement failed on server');
+          }
+
+          // Mark as settled locally to prevent retries
+          setSettledOrderIds(prev => new Set([...prev, orderId]));
         }
 
-        // Mark as settled locally to prevent retries
-        setSettledOrderIds(prev => new Set([...prev, orderId]));
-      }
-
-      // Refresh transactions list to show the new transaction
-      loadTransactions(txnDateFilterRef.current);
+        // Refresh transactions list to show the new transaction
+        loadTransactions(txnDateFilterRef.current);
+      });
     };
 
     // Use optimistic update with rollback
