@@ -14,7 +14,7 @@ export function getTableSectionLabel(table) {
 
   if (sectionName.includes('bar parcel')) return `BP${num}`;
   if (sectionName.includes('bar')) return `B${num}`;
-  if (sectionName.includes('family restaurant')) return `T${num}`;
+  if (sectionName.includes('family restaurant')) return `F${num}`;
   if (sectionName.includes('conference')) return `C${num}`;
   if (sectionName.includes('pdr')) return `PDR${num}`;
   if (sectionName.includes('rooms')) return `R${num}`;

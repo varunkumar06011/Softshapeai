@@ -346,9 +346,17 @@ export function useTableSync() {
         if (!updatedTable?.id) return;
 
         setTablesState((prev) => {
-          const next = prev.map((t) =>
-            t.backendId === updatedTable.id ? mapBackendTable(updatedTable, t) : t
-          );
+          const next = prev.map((t) => {
+            if (t.backendId !== updatedTable.id) return t;
+            // Guard: if socket says AVAILABLE but local table has an active order,
+            // skip this update — it's a stale/race event. Wait for the correct one.
+            const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
+            if (incomingIsAvailable && t.activeOrder) {
+              console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+              return t;
+            }
+            return mapBackendTable(updatedTable, t);
+          });
           writeCache(next);
           return next;
         });

@@ -137,7 +137,7 @@ export function getPrinterForJob(type, restaurantId, sectionTag) {
   if (type === 'BAR_KOT') return BAR_PRINTER;
   if (type === 'BILL' || type === 'FINAL_BILL') {
     if (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel') {
-      return KOT_FAMILY_PRINTER;
+      return DINE_IN_BILL_PRINTER;
     }
     return restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
   }

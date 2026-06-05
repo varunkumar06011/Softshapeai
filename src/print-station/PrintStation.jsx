@@ -18,15 +18,32 @@ import { io } from 'socket.io-client';
 import { API_BASE } from '../services/apiConfig.js';
 import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
 
-const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
-const BAR_PRINTER     = import.meta.env.VITE_BAR_PRINTER_NAME     || 'BAR_PRINTER';
-const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
-const RESTAURANT_KITCHEN_PRINTER = import.meta.env.VITE_RESTAURANT_KITCHEN_PRINTER_NAME || KITCHEN_PRINTER;
+let KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
+let BAR_PRINTER     = import.meta.env.VITE_BAR_PRINTER_NAME     || 'BAR_PRINTER';
+let BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
+let RESTAURANT_KITCHEN_PRINTER = import.meta.env.VITE_RESTAURANT_KITCHEN_PRINTER_NAME || KITCHEN_PRINTER;
 
 // ── Restaurant printer routing ───────────────────────────────────────────────
-const KOT_FAMILY_PRINTER   = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME   || 'KOT FAMILY';
-const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
-const KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
+let KOT_FAMILY_PRINTER   = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME   || 'KOT FAMILY';
+let DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
+let KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
+
+// ── localStorage printer overrides (admin settings) ──────────────────────────
+try {
+  const stored = localStorage.getItem('softshape_printer_config');
+  if (stored) {
+    const config = JSON.parse(stored);
+    if (config.kitchenPrinter)           KITCHEN_PRINTER = config.kitchenPrinter;
+    if (config.barPrinter)               BAR_PRINTER = config.barPrinter;
+    if (config.billingPrinter)           BILLING_PRINTER = config.billingPrinter;
+    if (config.restaurantKitchenPrinter) RESTAURANT_KITCHEN_PRINTER = config.restaurantKitchenPrinter;
+    if (config.kotFamilyPrinter)         KOT_FAMILY_PRINTER = config.kotFamilyPrinter;
+    if (config.dineInBillPrinter)        DINE_IN_BILL_PRINTER = config.dineInBillPrinter;
+    if (config.kotPrinter)               KOT_PRINTER = config.kotPrinter;
+  }
+} catch {
+  // ignore parse errors — fall back to env defaults
+}
 
 // ── ESC/POS constants ────────────────────────────────────────────────────────
 const INIT = '\x1B\x40';
@@ -52,7 +69,10 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
   const displayKotId = kotId || "N/A";
   const rawLabel = (tableNumber || 'N/A').toString();
-  const tableDisplay = /^[BT]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel;
+  const numericPart = rawLabel.replace(/^[A-Z]/i, '') || rawLabel;
+  const tableDisplay = (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel')
+    ? `F${numericPart}`
+    : (/^[BT]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel);
 
   // Determine venue label based on sectionTag
   const venueLabel = sectionTag === 'venue-family-restaurant'
@@ -71,8 +91,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
     separator("-"),
     SIZE_HEIGHT,
     BOLD_ON,
-    `KOT No : ${displayKotId}\n`,
-    `Table  : ${tableDisplay}\n`,
+    padRight(`KOT No : ${displayKotId}`, `Table : ${tableDisplay}`) + '\n',
     BOLD_OFF,
     SIZE_NORMAL,
     separator("-"),
@@ -124,6 +143,12 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     ? 'V GRAND FAMILY RESTAURANT'
     : 'CANCEL ITEM';
 
+  const rawTable = (tableNumber || 'N/A').toString();
+  const cancelNumeric = rawTable.replace(/^[A-Z]/i, '') || rawTable;
+  const tableDisplay = (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel')
+    ? `F${cancelNumeric}`
+    : rawTable;
+
   const cmds = [
     INIT,
     CENTER,
@@ -131,11 +156,11 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     `${venueLabel}\n`,
     BOLD_OFF,
     separator("-"),
-    LEFT,
-    `Table : ${tableNumber}\n`,
+    `Table : ${tableDisplay}\n`,
     `Time  : ${timeStr}\n`,
     `By    : ${cancelledBy || 'Staff'}\n`,
     separator("-"),
+    LEFT,
   ];
 
   if (item) {
@@ -179,6 +204,12 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     ? 'V GRAND FAMILY RESTAURANT'
     : 'CANCEL ORDER';
 
+  const rawTable = (tableNumber || 'N/A').toString();
+  const cancelNumeric = rawTable.replace(/^[A-Z]/i, '') || rawTable;
+  const tableDisplay = (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel')
+    ? `F${cancelNumeric}`
+    : rawTable;
+
   const cmds = [
     INIT,
     CENTER,
@@ -186,11 +217,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     `${venueLabel}\n`,
     BOLD_OFF,
     separator("-"),
-    LEFT,
-    `Table : ${tableNumber}\n`,
+    `Table : ${tableDisplay}\n`,
     `Time  : ${timeStr}\n`,
     `By    : ${cancelledBy || 'Staff'}\n`,
     separator("-"),
+    LEFT,
     BOLD_ON,
     "Qty  Item\n",
     BOLD_OFF,
@@ -200,9 +231,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
   (items || []).forEach(item => {
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
+      SIZE_HEIGHT,
       BOLD_ON,
       itemLine + "\n",
       BOLD_OFF,
+      SIZE_NORMAL,
     );
   });
 
@@ -487,10 +520,8 @@ export default function PrintStation() {
               throw new Error('No ESC/POS data received in print_job payload');
             }
             cmds = Array.isArray(data.escposData) ? data.escposData : [data.escposData];
-            if (data.sectionTag === 'venue-family-restaurant') {
-              printer = KOT_FAMILY_PRINTER;
-            } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_PRINTER;
+            if (data.sectionTag === 'venue-family-restaurant' || data.sectionTag === 'venue-restaurant-parcel') {
+              printer = DINE_IN_BILL_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }

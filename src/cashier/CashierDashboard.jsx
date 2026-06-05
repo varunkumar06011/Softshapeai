@@ -2362,7 +2362,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 >
                                   <div className="flex items-start justify-between gap-1">
                                     <span className={`text-4xl font-black leading-none ${textColor}`}>
-                                      {outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}
+                                      {outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}
                                     </span>
                                     <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
                                       {statusLabel}
@@ -2484,7 +2484,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         {table.captainName.split(' ')[0]}
                                       </div>
                                     )}
-                                    <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
+                                    <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                                   </div>
                                 );
