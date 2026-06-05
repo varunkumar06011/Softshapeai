@@ -23,6 +23,7 @@ import { useVenueTableSync } from '../services/venueTableSyncService';
 import { fetchVenueMenu, updateVenueTableSession } from '../services/venueTableApi';
 import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
 import { createOrder, updateOrderItems } from '../services/orderApi';
+import { getSocket } from '../hooks/useSocket';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -67,8 +68,10 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
 
   // ── Billing ──
   const [showPayModal, setShowPayModal] = useState(false);
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [isSendingKot, setIsSendingKot] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
   const [settledOrderIds] = useState(() => new Set());
 
   // ── Group tables by section ──
@@ -178,6 +181,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
     }
 
     setIsSendingKot(true);
+    const requestId = crypto.randomUUID();
     try {
       let orderId = selectedTable.activeOrder?.id;
 
@@ -187,6 +191,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           tableNumber: selectedTable.id || selectedTable.number,
           items: cart,
           restaurantId: VENUE_ID,
+          requestId,
         });
         orderId = order.id;
         setVenueTables((prev) =>
@@ -197,7 +202,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           )
         );
       } else {
-        await updateOrderItems(orderId, cart, crypto.randomUUID());
+        await updateOrderItems(orderId, cart, requestId);
       }
 
       // Build KOT entry
@@ -211,7 +216,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
         items: cart.map((i) => ({ n: i.n, q: i.q, p: i.p, menuType: 'FOOD' })),
       };
 
-      // Update local table kotHistory
+      // Update local table kotHistory (optimistic)
       setVenueTables((prev) =>
         prev.map((t) => {
           if (t.backendId !== selectedTable.backendId) return t;
@@ -232,11 +237,30 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
         })
       );
 
-      // KOT Print is now purely handled via backend socket `print_job` emit
-      // to the PrintStation.
+      // Wait for physical print confirmation from PrintStation (max 15s)
+      const socket = getSocket();
+      const printResult = await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          socket.off('kot:printed', handler);
+          resolve('timeout');
+        }, 15000);
+        const handler = ({ requestId: ackRequestId, status }) => {
+          if (ackRequestId === requestId) {
+            clearTimeout(timeout);
+            socket.off('kot:printed', handler);
+            resolve(status || 'success');
+          }
+        };
+        socket.on('kot:printed', handler);
+      });
 
+      // Clear cart and notify after print confirmation or timeout
       setCart([]);
-      addNotification?.('KOT Sent', `KOT sent for ${getTableLabel(activeSection, selectedTable.number)}`, 'success');
+      if (printResult === 'timeout') {
+        addNotification?.('KOT Saved — Print delayed', `KOT saved for ${getTableLabel(activeSection, selectedTable.number)}`, 'warning');
+      } else {
+        addNotification?.('KOT Printed', `KOT printed for ${getTableLabel(activeSection, selectedTable.number)}`, 'success');
+      }
     } catch (err) {
       console.error('[VenueDashboard] KOT error:', err);
       addNotification?.('KOT Failed', err.message || 'Failed to send KOT', 'error');
@@ -315,8 +339,10 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
   // ─── Terminate ───────────────────────────────────────────────────────────────
   const terminateTableSession = async () => {
     if (!selectedTable) return;
+    if (isTerminating) return;
 
     const tableSnap = selectedTable;
+    setIsTerminating(true);
 
     // Step 1: Optimistically free the table in local state
     setVenueTables(prev => prev.map(t =>
@@ -342,7 +368,12 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
       const terminateUrl = `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
       try {
-        const response = await fetch(terminateUrl, { method: 'POST' });
+        // Cross-browser compatible timeout
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), 10000);
+        const response = await fetch(terminateUrl, { method: 'POST', signal: abortController.signal });
+        clearTimeout(timeoutId);
+
         if (!response.ok) throw new Error('Backend sync failed');
 
         // Background cleanup - use the venue table API
@@ -359,9 +390,12 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
             ? tableSnap
             : t
         ));
+      } finally {
+        setIsTerminating(false);
       }
     } else {
       addNotification('Session Terminated', `Table ${getTableLabel(activeSection, tableSnap.number)} freed`, 'info');
+      setIsTerminating(false);
     }
   };
 
@@ -627,11 +661,13 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
                 )}
                 {selectedTable.status && selectedTable.status !== 'Free' && (
                   <button
-                    onClick={terminateTableSession}
-                    className="w-full py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 hover:bg-red-100/60 flex items-center justify-center gap-1 cursor-pointer"
+                    type="button"
+                    onClick={() => setShowTerminateModal(true)}
+                    disabled={isTerminating}
+                    className={`w-full py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-[9px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
                   >
-                    <X size={10} />
-                    Terminate
+                    {isTerminating ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+                    {isTerminating ? 'Ending...' : 'Terminate'}
                   </button>
                 )}
               </div>
@@ -695,6 +731,53 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* TERMINATE CONFIRMATION MODAL */}
+      {showTerminateModal && selectedTable && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black uppercase text-red-500 tracking-wider">Terminate Session</p>
+                <p className="text-base font-black text-gray-900 mt-0.5">
+                  Table {getTableLabel(activeSection, selectedTable.number)}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTerminateModal(false)}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-700 font-semibold">
+                This will remove all items and free the table. Are you sure?
+              </p>
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowTerminateModal(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-black text-gray-500 hover:bg-gray-200 transition-colors uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTerminateModal(false);
+                  terminateTableSession();
+                }}
+                disabled={isTerminating}
+                className={`flex-1 py-3 rounded-xl text-sm font-black bg-red-600 text-white hover:bg-red-700 transition-colors uppercase tracking-widest ${isTerminating ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isTerminating ? 'Ending...' : 'Terminate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

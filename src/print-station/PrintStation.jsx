@@ -15,14 +15,13 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { QZ_CERT } from '../services/certificate.js';
 import { API_BASE } from '../services/apiConfig.js';
+import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
 
 const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
 const BAR_PRINTER     = import.meta.env.VITE_BAR_PRINTER_NAME     || 'BAR_PRINTER';
 const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
 const RESTAURANT_KITCHEN_PRINTER = import.meta.env.VITE_RESTAURANT_KITCHEN_PRINTER_NAME || KITCHEN_PRINTER;
-const VITE_API_URL    = import.meta.env.VITE_API_URL || API_BASE;
 
 // ── Restaurant printer routing ───────────────────────────────────────────────
 const KOT_FAMILY_PRINTER   = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME   || 'KOT FAMILY';
@@ -230,111 +229,79 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 }
 
 
+function pad(str, len) { return String(str).padEnd(len); }
+function padRight(left, right, width = LINE_NORMAL) {
+  const leftStr = String(left).slice(0, width - String(right).length - 1);
+  return leftStr.padEnd(width - String(right).length) + right;
+}
+
 function buildBillCommands({ tableNumber, items, totalAmount }) {
   const cmds = [
-    CMD.INIT,
-    CMD.ALIGN_CENTER,
-    CMD.BOLD_ON,
+    INIT,
+    CENTER,
+    BOLD_ON,
     'BILL RECEIPT\n',
-    CMD.BOLD_OFF,
-    divider(),
-    CMD.ALIGN_LEFT,
+    BOLD_OFF,
+    separator(),
+    LEFT,
     `Table : ${tableNumber}\n`,
     `Date  : ${new Date().toLocaleString('en-IN')}\n`,
-    divider(),
-    CMD.BOLD_ON,
-    pad('ITEM', 24) + pad('QTY', 6) + padRight('', 'AMT', 12) + '\n',
-    CMD.BOLD_OFF,
-    divider(),
+    separator(),
+    BOLD_ON,
+    pad('ITEM', 24) + pad('QTY', 6) + 'AMT'.padStart(12) + '\n',
+    BOLD_OFF,
+    separator(),
   ];
   (items || []).forEach(item => {
     const name = String(item.name || item.n || '').slice(0, 24);
     const qty  = String(item.quantity || item.q || 1);
     const amt  = 'Rs.' + ((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0);
-    cmds.push(pad(name, 24) + pad(qty, 6) + padRight('', amt, 12) + '\n');
+    cmds.push(pad(name, 24) + pad(qty, 6) + amt.padStart(12) + '\n');
   });
   const subtotal = Number(totalAmount) || 0;
   const tax = subtotal * 0.05;
   const total = subtotal + tax;
   cmds.push(
-    divider(),
+    separator(),
     padRight('Subtotal', 'Rs.' + subtotal.toFixed(0)) + '\n',
     padRight('GST (5%)', 'Rs.' + tax.toFixed(0)) + '\n',
-    divider('='),
-    CMD.BOLD_ON,
+    separator('='),
+    BOLD_ON,
     padRight('TOTAL', 'Rs.' + total.toFixed(0)) + '\n',
-    CMD.BOLD_OFF,
-    divider(),
-    CMD.ALIGN_CENTER,
+    BOLD_OFF,
+    separator(),
+    CENTER,
     'Thank you! Visit again.\n',
     '\n',
     'Powered by VTech - Softshape.ai\n',
     '\n\n\n',
-    CMD.CUT,
+    CUT,
   );
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
 function buildTableSwapCommands({ fromTableNumber, toTableNumber, swappedBy, timestamp }) {
   const cmds = [
-    CMD.INIT,
-    CMD.ALIGN_CENTER,
-    CMD.BOLD_ON,
+    INIT,
+    CENTER,
+    BOLD_ON,
     'TABLE MOVED\n',
-    CMD.BOLD_OFF,
-    divider(),
-    CMD.ALIGN_LEFT,
+    BOLD_OFF,
+    separator(),
+    LEFT,
     `From  : Table ${fromTableNumber}\n`,
     `To    : Table ${toTableNumber}\n`,
     `By    : ${swappedBy || 'Staff'}\n`,
     `Time  : ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
-    divider(),
-    CMD.ALIGN_CENTER,
-    CMD.BOLD_ON,
+    separator(),
+    CENTER,
+    BOLD_ON,
     'Session transferred\n',
-    CMD.BOLD_OFF,
+    BOLD_OFF,
     '\n\n',
-    CMD.CUT,
+    CUT,
   ];
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
-}
-
-// ── QZ Tray singleton ────────────────────────────────────────────────────────
-let _qz = null;
-
-async function getQZ() {
-  if (!_qz) {
-    const mod = await import('qz-tray');
-    _qz = mod.default;
-  }
-  return _qz;
-}
-
-async function connectQZ() {
-  const qz = await getQZ();
-  qz.security.setCertificatePromise(function (resolve) { resolve(QZ_CERT); });
-  // MUST match backend signing algorithm — SHA512 prevents Allow/Block popup
-  qz.security.setSignatureAlgorithm('SHA512');
-  qz.security.setSignaturePromise(function (toSign) {
-    return function (resolve, reject) {
-      fetch(`${VITE_API_URL}/api/print/qz-sign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toSign }),
-      })
-        .then(r => r.json())
-        .then(d => resolve(d.signature))
-        .catch(reject);
-    };
-  });
-  if (!qz.websocket.isActive()) await qz.websocket.connect();
-  return qz;
-}
-
-async function sendToPrinter(printerName, data) {
-  const qz = await connectQZ();
-  const config = qz.configs.create(printerName);
-  await qz.print(config, data);
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -356,10 +323,15 @@ export default function PrintStation() {
   }, []);
 
   // ── QZ Tray init + retry ─────────────────────────────────────────────────
+  const stopKeepAliveRef = useRef(null);
+
   const initQZ = useCallback(async () => {
     setQzStatus('connecting');
     try {
       await connectQZ();
+      await warmSignature();
+      if (stopKeepAliveRef.current) stopKeepAliveRef.current();
+      stopKeepAliveRef.current = startKeepAlive();
       setQzStatus('ready');
       pushLog('QZ Tray connected ✓');
     } catch (err) {
@@ -372,7 +344,10 @@ export default function PrintStation() {
 
   useEffect(() => {
     initQZ();
-    return () => clearTimeout(retryTimer.current);
+    return () => {
+      clearTimeout(retryTimer.current);
+      if (stopKeepAliveRef.current) stopKeepAliveRef.current();
+    };
   }, [initQZ]);
 
   // ── Socket.io ────────────────────────────────────────────────────────────
@@ -381,7 +356,7 @@ export default function PrintStation() {
     (async () => {
       socket = io(API_BASE, {
         path: '/socket.io',
-        transports: ['polling', 'websocket'],
+        transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 2000,
@@ -443,66 +418,73 @@ export default function PrintStation() {
 
           if (type === 'KOT') {
             if (data.restaurantId === 'venue-001') {
-              // ── Restaurant KOT split uses printerTarget per item ───────────────
-              //   BAR_PRINTER  → Dine in Bill (cashier counter printer)
-              //   KOT_PRINTER / null / undefined → KOT FAMILY (kitchen printer)
-              //   This is the source-of-truth routing for venue-001.
-              //   Do NOT remove this logic — future devs: the backend already
-              //   sends printerTarget on every item payload; no name-matching
-              //   heuristics should ever be added here.
-              // ───────────────────────────────────────────────────────────────────
-              const kitchenItems = (data.items || []).filter(i => i.printerTarget !== 'BAR_PRINTER');
-              const counterItems = (data.items || []).filter(i => i.printerTarget === 'BAR_PRINTER');
-              if (kitchenItems.length > 0) {
-                printTasks.push({
-                  printer: KOT_FAMILY_PRINTER,
-                  cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
-                });
+              // Use pre-built ESC/POS from backend when available
+              if (data.escposData && data.escposData.length > 0) {
+                printTasks.push({ printer: KOT_FAMILY_PRINTER, cmds: data.escposData });
               }
-              if (counterItems.length > 0) {
-                printTasks.push({
-                  printer: DINE_IN_BILL_PRINTER,
-                  cmds: buildKOTCommands({ ...data, items: counterItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
-                });
+              if (data.escposDataCounter && data.escposDataCounter.length > 0) {
+                printTasks.push({ printer: DINE_IN_BILL_PRINTER, cmds: data.escposDataCounter });
+              }
+              // Fallback to local builder if backend didn't send escposData
+              if (printTasks.length === 0) {
+                const kitchenItems = (data.items || []).filter(i => i.menuType !== 'LIQUOR');
+                const counterItems = (data.items || []).filter(i => i.menuType === 'LIQUOR');
+                if (kitchenItems.length > 0) {
+                  printTasks.push({
+                    printer: KOT_FAMILY_PRINTER,
+                    cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
+                  });
+                }
+                if (counterItems.length > 0) {
+                  printTasks.push({
+                    printer: DINE_IN_BILL_PRINTER,
+                    cmds: buildKOTCommands({ ...data, items: counterItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
+                  });
+                }
               }
             } else {
               // Non-venue-001: old restaurant or bar-venue
-              cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag: data.sectionTag });
-              printer = data.restaurantId === 'restaurant-001'
-                ? RESTAURANT_KITCHEN_PRINTER
-                : KITCHEN_PRINTER;
-              printTasks.push({ printer, cmds });
+              if (data.escposData && data.escposData.length > 0) {
+                printTasks.push({
+                  printer: data.restaurantId === 'restaurant-001' ? RESTAURANT_KITCHEN_PRINTER : KITCHEN_PRINTER,
+                  cmds: data.escposData,
+                });
+              } else {
+                cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag: data.sectionTag });
+                printer = data.restaurantId === 'restaurant-001'
+                  ? RESTAURANT_KITCHEN_PRINTER
+                  : KITCHEN_PRINTER;
+                printTasks.push({ printer, cmds });
+              }
             }
           } else if (type === 'BAR_KOT') {
-            cmds    = buildKOTCommands({ ...data, label: 'BAR ORDER', sectionTag: data.sectionTag });
-            printer = BAR_PRINTER;
-            printTasks.push({ printer, cmds });
+            if (data.escposData && data.escposData.length > 0) {
+              printTasks.push({ printer: BAR_PRINTER, cmds: data.escposData });
+            } else {
+              cmds = buildKOTCommands({ ...data, label: 'BAR ORDER', sectionTag: data.sectionTag });
+              printer = BAR_PRINTER;
+              printTasks.push({ printer, cmds });
+            }
           } else if (type === 'BILL') {
-            cmds    = buildBillCommands(data);
+            cmds = buildBillCommands(data);
             if (data.sectionTag === 'venue-family-restaurant') {
-              printer = DINE_IN_BILL_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }
             printTasks.push({ printer, cmds });
           } else if (type === 'FINAL_BILL') {
-            // Fetch pre-built ESC/POS data from backend
-            const response = await fetch(`${VITE_API_URL}/api/print/final-bill`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ billData: data })
-            });
-            const res = await response.json();
-            if (!res || !res.data) {
-              throw new Error('No ESC/POS data received from backend');
+            // Use pre-built ESC/POS embedded in the socket payload (no Render round-trip)
+            if (!data.escposData || !data.escposData.length) {
+              throw new Error('No ESC/POS data received in print_job payload');
             }
-            cmds = Array.isArray(res.data) ? res.data : [res.data];
+            cmds = Array.isArray(data.escposData) ? data.escposData : [data.escposData];
             if (data.sectionTag === 'venue-family-restaurant') {
-              printer = DINE_IN_BILL_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_PRINTER;
+              printer = KOT_FAMILY_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }
@@ -510,11 +492,10 @@ export default function PrintStation() {
           } else if (type === 'CANCEL_KOT') {
             cmds = buildCancelKOTCommands(data);
             if (data.restaurantId === 'venue-001') {
-              const pt = data.item?.printerTarget;
-              if (pt === 'BAR_PRINTER') {
+              if (data.item?.menuType === 'LIQUOR') {
                 printer = DINE_IN_BILL_PRINTER;
               } else {
-                // Default to kitchen when printerTarget is missing / KOT_PRINTER / null
+                // Default to kitchen for FOOD / missing menuType
                 printer = KOT_FAMILY_PRINTER;
               }
             } else if (data.sectionTag === 'venue-family-restaurant') {
@@ -552,6 +533,15 @@ export default function PrintStation() {
             await sendToPrinter(task.printer, task.cmds);
             pushLog(`✓ Printed [${type}] → ${task.printer} (Table ${data?.tableNumber ?? '?'})`);
           }));
+
+          // Notify backend so captain UI can stop loading
+          if (data?.requestId && data?.restaurantId) {
+            socket.emit('print:ack', {
+              restaurantId: data.restaurantId,
+              requestId: data.requestId,
+              status: 'success',
+            });
+          }
         } catch (err) {
           pushLog(`✗ Print failed [${type}]: ${err.message}`, false);
           // If QZ dropped, try reconnecting

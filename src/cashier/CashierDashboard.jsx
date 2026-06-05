@@ -10,7 +10,7 @@ import {
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
-import { printBillQZ, printKOTQZ } from '../services/printService';
+// REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -353,7 +353,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const venuePrices = useVenuePrices();
-  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading } = useVenueTableSync();
+  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
 
   // Persist selections to localStorage
   useEffect(() => {
@@ -399,6 +399,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [itemSwapSelectedIds, setItemSwapSelectedIds] = useState([]);
   const [itemSwapTargetId, setItemSwapTargetId] = useState(null);
   const [isSwappingItems, setIsSwappingItems] = useState(false);
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -455,9 +456,9 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnPage, setTxnPage] = useState(1);
 
   const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
-  const { tables, setTables } = useTableSync();
+  const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
 
-  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
+  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync();
   const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
@@ -466,7 +467,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : RESTAURANT_ID;
 
   const socket = useSocket(activeRestaurantId);
 
@@ -668,12 +669,15 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!socket) return;
 
-    socket.emit('join', activeRestaurantId);
-    socket.emit('join', 'venue-001');
-
+    // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
     const onConnect = () => {
-      socket.emit('join', activeRestaurantId);
-      socket.emit('join', 'venue-001');
+      if (outlet === 'bar') {
+        refetchBarTables();
+      } else if (outlet === 'venue') {
+        refetchVenueTables();
+      } else {
+        refetchRestaurantTables();
+      }
     };
 
     socket.on('connect', onConnect);
@@ -681,6 +685,17 @@ const CashierDashboard = ({ onLogout }) => {
     const onBillingRequested = (payload) => {
       const { table, order } = payload;
       if (!table) return;
+
+      // Route table status update to the correct array
+      const isVenue = payload?.restaurantId === 'venue-001' || table?.restaurantId === 'venue-001';
+      const updateTableStatus = (prev) => prev.map(t =>
+        t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+      );
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTableStatus, { skipPersist: true });
+      } else {
+        setActiveTables(updateTableStatus, { skipPersist: true });
+      }
 
       // Add to billing alerts queue for cashier attention
       setBillingAlerts(prev => {
@@ -708,27 +723,50 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
-      setActiveTables(prev => prev.map(t =>
+      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-      ), { skipPersist: true });
-      if (setVenueTables) {
-        setVenueTables(prev => prev.map(t =>
-          t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-        ), { skipPersist: true });
+      );
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
+      } else {
+        setActiveTables(updateTables, { skipPersist: true });
       }
     };
 
     const mergeOrder = (incoming, existing) => {
       if (!existing) return incoming;
+      // FIX: Don't overwrite items that have local removedFromBill=true
+      // unless the incoming item also has removedFromBill=true.
+      const incomingItems = incoming?.items || [];
+      const existingItems = existing?.items || [];
+      const existingMap = new Map(existingItems.map(i => [i.id, i]));
+
+      const mergedItems = incomingItems.map(incomingItem => {
+        const existingItem = existingMap.get(incomingItem.id);
+        if (existingItem?.removedFromBill && !incomingItem.removedFromBill) {
+          return { ...incomingItem, removedFromBill: true, quantity: 0 };
+        }
+        return incomingItem;
+      });
+
+      const incomingIds = new Set(incomingItems.map(i => i.id));
+      const localOnlyRemoved = existingItems.filter(i => i.removedFromBill && !incomingIds.has(i.id));
+
+      const merged = {
+        ...incoming,
+        items: [...mergedItems, ...localOnlyRemoved],
+      };
+
       // FIX #4: Always use the version with MORE items to prevent data loss
-      const incomingItemCount = (incoming?.items?.length ?? 0);
-      const existingItemCount = (existing?.items?.length ?? 0);
-      if (incomingItemCount > existingItemCount) return incoming;
+      const incomingItemCount = merged.items.length;
+      const existingItemCount = existingItems.length;
+      if (incomingItemCount > existingItemCount) return merged;
       if (existingItemCount > incomingItemCount) return existing;
       // Equal items — fall back to timestamp
       const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
       const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-      return incomingTime >= existingTime ? incoming : existing;
+      return incomingTime >= existingTime ? merged : existing;
     };
 
     const onOrderUpdated = (payload) => {
@@ -737,19 +775,20 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
-      setActiveTables(prev => prev.map(t =>
+      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-      ), { skipPersist: true });
-      if (setVenueTables) {
-        setVenueTables(prev => prev.map(t =>
-          t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-        ), { skipPersist: true });
+      );
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
+      } else {
+        setActiveTables(updateTables, { skipPersist: true });
       }
     };
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
-      setActiveTables(prev => prev.map(t => {
+      const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
         // FIX #4: Merge kotHistory — never lose KOTs already in local state
         const mergedKotHistory = (() => {
@@ -758,14 +797,23 @@ const CashierDashboard = ({ onLogout }) => {
           if (incoming.length >= existing.length) return incoming;
           return existing;
         })();
+        // FIX: Also update activeOrder from incoming socket data so occupied tables show items
+        const incomingOrder = table.orders?.[0] || table.activeOrder || null;
         return {
           ...t,
           kotHistory: mergedKotHistory,
           currentBill: table.currentBill ?? t.currentBill,
-          status: table.status ?? t.status,
+          status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
+          activeOrder: incomingOrder || t.activeOrder,
         };
-      }));
+      });
+      const isVenue = table.restaurantId === 'venue-001';
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(applyTableUpdate, { skipPersist: true });
+      } else {
+        setActiveTables(applyTableUpdate, { skipPersist: true });
+      }
       if (selectedTable?.backendId === table.id) {
         setSelectedTable(prev => {
           if (!prev) return prev;
@@ -812,20 +860,27 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
+      const isVenue = payload?.restaurantId === 'venue-001' || sourceTable?.restaurantId === 'venue-001' || targetTable?.restaurantId === 'venue-001';
+      const allTables = isVenue ? venueTables : activeTables;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
-        activeTables.find((table) => table.backendId === sourceTableId) || null,
+        allTables.find((table) => table.backendId === sourceTableId) || null,
       );
       const mappedTarget = mapRealtimeTablePayload(
         targetTable,
-        activeTables.find((table) => table.backendId === targetTableId) || null,
+        allTables.find((table) => table.backendId === targetTableId) || null,
       );
 
-      setActiveTables(prev => prev.map((table) => {
+      const updateTables = (prev) => prev.map((table) => {
         if (table.backendId === sourceTableId) return mappedSource || table;
         if (table.backendId === targetTableId) return mappedTarget || table;
         return table;
-      }));
+      });
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
 
       if (selectedTable?.backendId === sourceTableId && mappedSource) {
         setSelectedTable(mappedSource);
@@ -863,7 +918,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
     };
-  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
+  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables]);
 
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -1196,36 +1251,6 @@ const CashierDashboard = ({ onLogout }) => {
   const activeSgst = activeOrderCalc.sgst ?? 0;
   const fallbackTotal = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
 
-  const printBill = async (table, total, subtotal, taxes, method) => {
-    const orderId = table?.activeOrder?.id || table?.orderId || null;
-
-    // Extract items from active order for fallback printing
-    const items = table?.activeOrder?.items || table?.items || [];
-
-    // Pass all parameters for fallback printing when backend fails or orderId is missing
-    await printBillQZ({
-      orderId,           // For backend fetch
-      table: {           // For fallback local print
-        id: table?.id || table?.number || 'N/A',
-        guests: table?.guestCount || table?.guests || 0
-      },
-      items,             // Items array from order
-      subtotal,          // Subtotal amount
-      taxes,             // Tax amount
-      total,             // Total amount
-      method,            // Payment method (can be null for final bill)
-      kotNumbers: (table?.kotHistory || []).map(k => k.id || k.kotNumber),
-      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A',
-      sectionTag: table?.sectionTag || (
-        (table?.section?.name || '').toLowerCase().includes('parcel')
-          ? 'venue-restaurant-parcel'
-          : (table?.section?.name || '').toLowerCase().includes('family')
-            ? 'venue-family-restaurant'
-            : null
-      ),
-    });
-  };
-
   const handleFinalBill = async () => {
     if (!selectedTable || !selectedTable.backendId) {
       addNotification('Error', 'Invalid table selected.', 'error');
@@ -1266,20 +1291,29 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
-        await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
+        const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
       }
 
       addNotification('Success', 'Bill printed successfully.', 'success');
 
       // Optimistically update local table status → shows "Settlement" button
-      setActiveTables((prev) =>
+      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+      const updateBillStatus = (prev) =>
         prev.map((t) =>
           t.backendId === selectedTable.backendId ? { ...t, status: 'Waiting Bill' } : t
-        )
-      );
+        );
+      if (isVenueTable) {
+        if (setVenueTables) setVenueTables(updateBillStatus);
+      } else {
+        setActiveTables(updateBillStatus);
+      }
 
       window.dispatchEvent(new Event('softshape_order_updated'));
 
@@ -1303,50 +1337,44 @@ const CashierDashboard = ({ onLogout }) => {
     const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
     const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
 
-    // Emit print_job directly to billing printer via socket (no backend order needed)
-    // Use the same printBillQZ function already available:
-    await printBillQZ({
-      orderId: null,
-      table: { id: tableLabel, guests: 0 },
-      items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
-      subtotal: subtotalAmt,
-      taxes: 0,
-      total: grandTotalAmt,
-      method: null,
-      kotNumbers: [],
-      captainName: 'Walk-in',
-      discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-      sectionTag: 'venue-restaurant-parcel',
-    });
+    try {
+      setIsPrintingBill(true);
 
-    addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
-    // Show settlement picker immediately
-    setShowMethodPicker(true);
+      const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: activeRestaurantId,
+          billData: {
+            tableNumber: tableLabel,
+            items: cart.map(i => ({
+              name: i.n || i.name,
+              quantity: i.q,
+              price: Number(i.p),
+              menuType: i.menuType || 'FOOD'
+            })),
+            subtotal: subtotalAmt,
+            grandTotal: grandTotalAmt,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+            captain: 'Walk-in',
+            sectionTag: 'venue-restaurant-parcel'
+          }
+        })
+      });
 
-    // Reset loading state immediately after optimistic UI update
-    setIsPrintingBill(false);
-
-    // Run print in background without blocking UI
-    (async () => {
-      try {
-        // Emit print_job directly to billing printer via socket (no backend order needed)
-        // Use the same printBillQZ function already available:
-        await printBillQZ({
-          orderId: null,
-          table: { id: tableLabel, guests: 0 },
-          items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
-          subtotal: subtotalAmt,
-          taxes: 0,
-          total: grandTotalAmt,
-          method: null,
-          kotNumbers: [],
-          captainName: 'Walk-in',
-          discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-        });
-      } catch (err) {
-        addNotification('Print Failed', err.message || 'Could not print bill', 'error');
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || `Server returned ${response.status}`);
       }
-    })();
+
+      addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
+      setShowMethodPicker(true);
+    } catch (err) {
+      console.error('Walk-in bill print error:', err);
+      addNotification('Print Failed', err.message || 'Could not print walk-in bill', 'error');
+    } finally {
+      setIsPrintingBill(false);
+    }
   };
 
   const handleReprintBill = async () => {
@@ -1436,10 +1464,12 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Store previous table state for rollback
     const previousTableState = selectedTable;
+    const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+    const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
 
     // Optimistic update: table becomes free
     const optimisticFn = () => {
-      setActiveTables((prev) =>
+      setTargetTables((prev) =>
         prev.map((t) =>
           t.backendId === selectedTable.backendId
             ? {
@@ -1496,7 +1526,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Rollback function: restore previous table state
     const rollbackFn = () => {
-      setActiveTables((prev) =>
+      setTargetTables((prev) =>
         prev.map((t) =>
           t.backendId === previousTableState.backendId ? previousTableState : t
         )
@@ -1562,11 +1592,15 @@ const CashierDashboard = ({ onLogout }) => {
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
           : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
+        // Cross-browser compatible timeout (AbortSignal.timeout is not supported on older browsers)
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), 10000);
         const response = await fetch(terminateUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(10000), // 10s timeout — don't hang forever
+          signal: abortController.signal,
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
@@ -1592,7 +1626,9 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
-      setActiveTables(prev => prev.map(t =>
+      const isVenueTable = tableSnap.section?.restaurantId === 'venue-001' || tableSnap.restaurantId === 'venue-001';
+      const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+      setTargetTables(prev => prev.map(t =>
         t.id === tableSnap.id || t.backendId === tableSnap.backendId
           ? {
               ...t,
@@ -1625,7 +1661,7 @@ const CashierDashboard = ({ onLogout }) => {
         localStorage.removeItem(`cashier_table_discount_${tableSnap.backendId}`);
       }
 
-      addNotification('Session Terminated', `Table ${tableSnap.id} freed`, 'info');
+      addNotification('Session Terminated', `Table ${tableSnap.displayName ?? tableSnap.number ?? tableSnap.id} freed`, 'info');
 
     } catch (err) {
       console.warn('[Terminate] failed:', err.message);
@@ -1661,7 +1697,9 @@ const CashierDashboard = ({ onLogout }) => {
         editedBy: 'Cashier',
       });
       // Update local table state so bill total reflects immediately
-      setActiveTables(prev => prev.map(t => {
+      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+      const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+      setTargetTables(prev => prev.map(t => {
         if (t.backendId !== selectedTable.backendId) return t;
         return {
           ...t,
@@ -1896,7 +1934,9 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
-    setActiveTables(prev => prev.map(t => {
+    const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+    const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+    setTargetTables(prev => prev.map(t => {
       if (t.id === tableId || t.backendId === tableId) {
         let allReady = true;
         const updatedKotHistory = (t.kotHistory || []).map(kot => {
@@ -3718,6 +3758,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {selectedTable.status && selectedTable.status !== 'Free' && (
                   <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
                     <button
+                      type="button"
                       onClick={() => { setSwapTargetId(null); setShowSwapModal(true); }}
                       className="py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-xs font-black uppercase tracking-wider transition-all duration-150 hover:bg-blue-100/60 flex items-center justify-center gap-1 cursor-pointer"
                     >
@@ -3725,6 +3766,7 @@ const CashierDashboard = ({ onLogout }) => {
                       Swap Table
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setItemSwapSelectedIds([]);
                         setItemSwapTargetId(null);
@@ -3736,7 +3778,8 @@ const CashierDashboard = ({ onLogout }) => {
                       Swap Items
                     </button>
                     <button
-                      onClick={terminateTableSession}
+                      type="button"
+                      onClick={() => setShowTerminateModal(true)}
                       disabled={isTerminating}
                       className={`py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
                     >
@@ -4455,8 +4498,10 @@ const CashierDashboard = ({ onLogout }) => {
                   };
                 });
 
-                // Also update activeTables so the table card reflects the change
-                setActiveTables(prev => prev.map(t => {
+                // Also update table array so the table card reflects the change
+                const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+                const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+                setTargetTables(prev => prev.map(t => {
                   if (t.backendId !== selectedTable.backendId) return t;
                   const updatedOrder = t.activeOrder
                     ? {
@@ -4715,6 +4760,53 @@ const CashierDashboard = ({ onLogout }) => {
                 className="flex-1 py-3 rounded-xl text-sm font-black bg-[#E53935] text-white hover:bg-red-700 transition-colors uppercase tracking-widest"
               >
                 Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TERMINATE CONFIRMATION MODAL */}
+      {showTerminateModal && selectedTable && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black uppercase text-red-500 tracking-wider">Terminate Session</p>
+                <p className="text-base font-black text-gray-900 mt-0.5">
+                  Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : (selectedTable.displayName ?? selectedTable.number ?? selectedTable.id)}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTerminateModal(false)}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-700 font-semibold">
+                This will remove all items and free the table. Are you sure?
+              </p>
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowTerminateModal(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-black text-gray-500 hover:bg-gray-200 transition-colors uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTerminateModal(false);
+                  terminateTableSession();
+                }}
+                disabled={isTerminating}
+                className={`flex-1 py-3 rounded-xl text-sm font-black bg-red-600 text-white hover:bg-red-700 transition-colors uppercase tracking-widest ${isTerminating ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isTerminating ? 'Ending...' : 'Terminate'}
               </button>
             </div>
           </div>

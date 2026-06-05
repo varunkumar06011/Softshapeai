@@ -30,8 +30,9 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
+  if (requestId) orderData.requestId = requestId;
   
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));
@@ -179,11 +180,11 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
   );
 }
 
-export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1) {
+export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity }),
+    body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId }),
   });
   return parseResponse(res);
 }

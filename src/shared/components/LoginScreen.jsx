@@ -96,7 +96,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
             <div className="space-y-6 py-4">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Your Profile</label>
               <div className="grid grid-cols-2 gap-4">
-                {['Ajay Kumar', 'Raja Behera', 'Sagar', 'Durga Prasad', 'Subbaiah', 'Happy'].map(name => (
+                {['Ajay Kumar', 'Raja Behera', 'Sagar', 'Durga Prasad', 'Subbaiah', 'Happy', 'Subbu', 'Sunil', 'Rama Rao'].map(name => (
                   <button
                     key={name}
                     onClick={() => { }}

@@ -5,7 +5,6 @@ import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
 const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v4";
-const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const TABLE_STATUS = {
   FREE: "Free",
@@ -251,45 +250,45 @@ export function useBarTableSync() {
   });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadTables = useCallback(async () => {
+    cancelledRef.current = false;
+    setIsSyncing(true);
+    let apiTables = null;
 
-    const loadTables = async () => {
-      setIsSyncing(true);
-      let apiTables = null;
+    try {
+      apiTables = flattenSections(await fetchBarTables());
+    } catch (err) {
+      console.error("[TableSync] GET /api/tables failed:", err);
+    }
 
-      try {
-        apiTables = flattenSections(await fetchBarTables());
-      } catch (err) {
-        console.error("[TableSync] GET /api/tables failed:", err);
-      }
+    if (cancelledRef.current) return;
 
-      if (cancelled) return;
-
-      if (!apiTables || !Array.isArray(apiTables) || apiTables.length === 0) {
-        console.warn('[BarTableSync] API returned no tables — keeping current state, not injecting local fakes');
-        setIsSyncing(false);
-        return;
-      }
-
-      setTablesState((current) => {
-        const merged = mergeTablesFromApi(apiTables, current);
-        // Deduplicate by backendId to prevent duplicate cards
-        const deduped = merged.filter((table, index, self) =>
-          index === self.findIndex(t => t.backendId === table.backendId)
-        );
-        writeCache(deduped);
-        return deduped;
-      });
-
+    if (!apiTables || !Array.isArray(apiTables) || apiTables.length === 0) {
+      console.warn('[BarTableSync] API returned no tables — keeping current state, not injecting local fakes');
       setIsSyncing(false);
-    };
+      return;
+    }
 
+    setTablesState((current) => {
+      const merged = mergeTablesFromApi(apiTables, current);
+      // Deduplicate by backendId to prevent duplicate cards
+      const deduped = merged.filter((table, index, self) =>
+        index === self.findIndex(t => t.backendId === table.backendId)
+      );
+      writeCache(deduped);
+      return deduped;
+    });
+
+    setIsSyncing(false);
+  }, []);
+
+  useEffect(() => {
     loadTables();
 
     const releaseSocket = acquireSocket({
@@ -332,55 +331,22 @@ export function useBarTableSync() {
       },
     });
 
-    const pollInterval = setInterval(async () => {
-      // Automatic midnight reset
-      const now = new Date();
-      if (now.getHours() === 0 && now.getMinutes() === 0) {
-        const today = now.toLocaleDateString();
-        if (localStorage.getItem('last_bartable_reset_date') !== today) {
-          localStorage.setItem('last_bartable_reset_date', today);
-          setTablesState((prev) => {
-            const next = prev.map((t) => {
-              if (t.status === 'Free' || t.status === 'AVAILABLE') return t;
-              return { ...t, status: 'Free', captainId: null, guests: 0, time: null, currentBill: 0, kotHistory: [] };
-            });
-            persistStatusChanges(prev, next).catch((e) => console.error("Auto reset failed", e));
-            writeCache(next);
-            return next;
-          });
-          return;
-        }
-      }
-
-      if (_persistingCount > 0) return;
-      if (cancelled) return;
-      const fetchStartTime = Date.now();
-      try {
-        const apiTables = flattenSections(await fetchBarTables());
-        if (cancelled || apiTables.length === 0) return;
-
-        if (_persistingCount > 0 || _lastLocalUpdate > fetchStartTime) return;
-
-        setTablesState((current) => {
-          const merged = mergeTablesFromApi(apiTables, current);
-          // Deduplicate by backendId to prevent duplicate cards
-          const deduped = merged.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
-          writeCache(deduped);
-          return deduped;
-        });
-      } catch {
-        /* polling is a fallback, keep quiet */
-      }
-    }, POLL_INTERVAL_MS);
+    // Re-fetch on every reconnect to recover orders missed during the gap.
+    const socket = getSocket();
+    const onReconnect = () => {
+      console.log("[BarTableSync] Socket reconnected — refetching tables to recover missed events");
+      loadTables().catch((err) =>
+        console.warn("[BarTableSync] Reconnect refetch failed:", err.message)
+      );
+    };
+    socket.on("connect", onReconnect);
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       releaseSocket();
-      clearInterval(pollInterval);
+      socket.off("connect", onReconnect);
     };
-  }, []);
+  }, [loadTables]);
 
   const setTables = useCallback((updater, { skipPersist = false } = {}) => {
     const current = tablesRef.current ?? [];
@@ -431,5 +397,6 @@ export function useBarTableSync() {
     setTables,
     isSyncing,
     TABLE_STATUS,
+    refetch: loadTables,
   };
 }

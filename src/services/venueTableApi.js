@@ -20,7 +20,7 @@ async function parseResponse(res) {
  * Fetch with timeout and retry logic for resilient API calls
  * Note: AbortController is handled by the caller (component) to avoid conflicts
  */
-async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 15000 } = {}) {
+async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 45000 } = {}) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -61,7 +61,7 @@ export async function fetchVenueSections() {
   const res = await fetchWithRetry(apiUrl(`/api/venue/sections`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-  }, { retries: 2, timeoutMs: 15000 });
+  }, { retries: 2, timeoutMs: 45000 });
   return parseResponse(res);
 }
 
