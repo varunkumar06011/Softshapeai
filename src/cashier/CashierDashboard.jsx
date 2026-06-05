@@ -683,6 +683,17 @@ const CashierDashboard = ({ onLogout }) => {
       const { table, order } = payload;
       if (!table) return;
 
+      // Route table status update to the correct array
+      const isVenue = payload?.restaurantId === 'venue-001' || table?.restaurantId === 'venue-001';
+      const updateTableStatus = (prev) => prev.map(t =>
+        t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+      );
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTableStatus, { skipPersist: true });
+      } else {
+        setActiveTables(updateTableStatus, { skipPersist: true });
+      }
+
       // Add to billing alerts queue for cashier attention
       setBillingAlerts(prev => {
         const exists = prev.find(a => a.tableBackendId === table.id);
@@ -709,13 +720,14 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
-      setActiveTables(prev => prev.map(t =>
+      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-      ), { skipPersist: true });
-      if (setVenueTables) {
-        setVenueTables(prev => prev.map(t =>
-          t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-        ), { skipPersist: true });
+      );
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
+      } else {
+        setActiveTables(updateTables, { skipPersist: true });
       }
     };
 
@@ -738,13 +750,14 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
-      setActiveTables(prev => prev.map(t =>
+      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-      ), { skipPersist: true });
-      if (setVenueTables) {
-        setVenueTables(prev => prev.map(t =>
-          t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
-        ), { skipPersist: true });
+      );
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
+      } else {
+        setActiveTables(updateTables, { skipPersist: true });
       }
     };
 
@@ -770,9 +783,11 @@ const CashierDashboard = ({ onLogout }) => {
           activeOrder: incomingOrder || t.activeOrder,
         };
       });
-      setActiveTables(applyTableUpdate, { skipPersist: true });
-      if (setVenueTables) {
-        setVenueTables(applyTableUpdate, { skipPersist: true });
+      const isVenue = table.restaurantId === 'venue-001';
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(applyTableUpdate, { skipPersist: true });
+      } else {
+        setActiveTables(applyTableUpdate, { skipPersist: true });
       }
       if (selectedTable?.backendId === table.id) {
         setSelectedTable(prev => {
@@ -820,20 +835,27 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
+      const isVenue = payload?.restaurantId === 'venue-001' || sourceTable?.restaurantId === 'venue-001' || targetTable?.restaurantId === 'venue-001';
+      const allTables = isVenue ? venueTables : activeTables;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
-        activeTables.find((table) => table.backendId === sourceTableId) || null,
+        allTables.find((table) => table.backendId === sourceTableId) || null,
       );
       const mappedTarget = mapRealtimeTablePayload(
         targetTable,
-        activeTables.find((table) => table.backendId === targetTableId) || null,
+        allTables.find((table) => table.backendId === targetTableId) || null,
       );
 
-      setActiveTables(prev => prev.map((table) => {
+      const updateTables = (prev) => prev.map((table) => {
         if (table.backendId === sourceTableId) return mappedSource || table;
         if (table.backendId === targetTableId) return mappedTarget || table;
         return table;
-      }));
+      });
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
 
       if (selectedTable?.backendId === sourceTableId && mappedSource) {
         setSelectedTable(mappedSource);
@@ -1274,20 +1296,29 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
-        await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
+        const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
       }
 
       addNotification('Success', 'Bill printed successfully.', 'success');
 
       // Optimistically update local table status → shows "Settlement" button
-      setActiveTables((prev) =>
+      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+      const updateBillStatus = (prev) =>
         prev.map((t) =>
           t.backendId === selectedTable.backendId ? { ...t, status: 'Waiting Bill' } : t
-        )
-      );
+        );
+      if (isVenueTable) {
+        if (setVenueTables) setVenueTables(updateBillStatus);
+      } else {
+        setActiveTables(updateBillStatus);
+      }
 
       window.dispatchEvent(new Event('softshape_order_updated'));
 
@@ -1444,10 +1475,12 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Store previous table state for rollback
     const previousTableState = selectedTable;
+    const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+    const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
 
     // Optimistic update: table becomes free
     const optimisticFn = () => {
-      setActiveTables((prev) =>
+      setTargetTables((prev) =>
         prev.map((t) =>
           t.backendId === selectedTable.backendId
             ? {
@@ -1504,7 +1537,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Rollback function: restore previous table state
     const rollbackFn = () => {
-      setActiveTables((prev) =>
+      setTargetTables((prev) =>
         prev.map((t) =>
           t.backendId === previousTableState.backendId ? previousTableState : t
         )
@@ -1604,7 +1637,9 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
-      setActiveTables(prev => prev.map(t =>
+      const isVenueTable = tableSnap.section?.restaurantId === 'venue-001' || tableSnap.restaurantId === 'venue-001';
+      const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+      setTargetTables(prev => prev.map(t =>
         t.id === tableSnap.id || t.backendId === tableSnap.backendId
           ? {
               ...t,
@@ -1673,7 +1708,9 @@ const CashierDashboard = ({ onLogout }) => {
         editedBy: 'Cashier',
       });
       // Update local table state so bill total reflects immediately
-      setActiveTables(prev => prev.map(t => {
+      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+      const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+      setTargetTables(prev => prev.map(t => {
         if (t.backendId !== selectedTable.backendId) return t;
         return {
           ...t,
@@ -1908,7 +1945,9 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
-    setActiveTables(prev => prev.map(t => {
+    const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+    const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+    setTargetTables(prev => prev.map(t => {
       if (t.id === tableId || t.backendId === tableId) {
         let allReady = true;
         const updatedKotHistory = (t.kotHistory || []).map(kot => {
@@ -4470,8 +4509,10 @@ const CashierDashboard = ({ onLogout }) => {
                   };
                 });
 
-                // Also update activeTables so the table card reflects the change
-                setActiveTables(prev => prev.map(t => {
+                // Also update table array so the table card reflects the change
+                const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+                const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+                setTargetTables(prev => prev.map(t => {
                   if (t.backendId !== selectedTable.backendId) return t;
                   const updatedOrder = t.activeOrder
                     ? {

@@ -627,6 +627,7 @@ export default function CaptainApp({ onLogout }) {
   const kotRequestIdRef = useRef(null);
 
   const isSubmittingKotRef = useRef(false);
+  const isVenueTableRef = useRef(false);
 
 
 
@@ -1039,14 +1040,14 @@ export default function CaptainApp({ onLogout }) {
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
 
   // Route mutations to the correct table array based on where the active table lives
+  // Uses a ref to avoid stale closure when venueTables is momentarily empty during re-fetch
   const setActiveOrVenueTables = useCallback((updater) => {
-    const isVenueTable = venueTables.some(t => t.id === activeTableId);
-    if (isVenueTable) {
+    if (isVenueTableRef.current) {
       setVenueTables(updater);
     } else {
       setActiveTables(updater);
     }
-  }, [activeTableId, venueTables, setVenueTables, setActiveTables]);
+  }, [setVenueTables, setActiveTables]);
 
   const activeTable = useMemo(() =>
     activeTables.find(t => t.id === activeTableId) ||
@@ -1371,6 +1372,56 @@ export default function CaptainApp({ onLogout }) {
         addNotification('Order settled', 'success');
       }
     };
+    const onTableUpdated = ({ table } = {}) => {
+      if (!table?.id) return;
+      const applyUpdate = (prev) => prev.map(t => {
+        if (t.backendId !== table.id && t.id !== table.id) return t;
+        return {
+          ...t,
+          status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
+          workflowStatus: table.workflowStatus ?? t.workflowStatus,
+          currentBill: table.currentBill ?? t.currentBill,
+          activeOrder: table.orders?.[0] || table.activeOrder || t.activeOrder,
+        };
+      });
+      if (table.restaurantId === 'venue-001') {
+        setVenueTables(applyUpdate);
+      } else {
+        setActiveTables(applyUpdate);
+      }
+    };
+    sharedSocket.on('table:updated', onTableUpdated);
+
+    const onOrderUpdated = (payload) => {
+      const order = payload?.order || payload;
+      if (!order?.tableId) return;
+      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
+        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
+      );
+      if (isVenue) {
+        setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
+    };
+    sharedSocket.on('order:updated', onOrderUpdated);
+
+    const onBillingRequested = (payload) => {
+      const { table } = payload;
+      if (!table?.id) return;
+      const isVenue = payload?.restaurantId === 'venue-001' || table?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
+        t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+      );
+      if (isVenue) {
+        setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
+    };
+    sharedSocket.on('billing:requested', onBillingRequested);
+
     sharedSocket.on('order:paid', onOrderPaid);
 
     return () => {
@@ -1383,6 +1434,9 @@ export default function CaptainApp({ onLogout }) {
 
       }
       sharedSocket.off('connect', joinRooms);
+      sharedSocket.off('table:updated', onTableUpdated);
+      sharedSocket.off('order:updated', onOrderUpdated);
+      sharedSocket.off('billing:requested', onBillingRequested);
       sharedSocket.off('order:paid', onOrderPaid);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1797,8 +1851,11 @@ export default function CaptainApp({ onLogout }) {
       console.warn('[CaptainApp] openTableSession blocked: missing table or table.id', table);
       return;
     }
+    // Determine venue vs regular at open time using a ref (stable across re-renders)
+    isVenueTableRef.current = venueTables.some(t => t.id === table.id || t.backendId === table.id)
+                           || (table.id && String(table.id).includes('-'));
     setActiveTableId(table.id);
-    lastConfirmedItemsRef.current = [];
+    lastConfirmedItemsRef.current = getTableItems(table); // seed immediately from live table
     activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
     setView('session');
@@ -2030,6 +2087,10 @@ export default function CaptainApp({ onLogout }) {
         activeOrderIdRef.current = null;
 
       }
+
+      // Seed lastConfirmedItemsRef from live table so items survive re-mount/re-open
+
+      lastConfirmedItemsRef.current = getTableItems(liveTableEntry);
 
     }
 

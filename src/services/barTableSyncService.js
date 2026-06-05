@@ -375,10 +375,21 @@ export function useBarTableSync() {
       }
     }, POLL_INTERVAL_MS);
 
+    // Re-fetch on every reconnect to recover orders missed during the gap.
+    const socket = getSocket();
+    const onReconnect = () => {
+      console.log("[BarTableSync] Socket reconnected — refetching tables to recover missed events");
+      loadTables().catch((err) =>
+        console.warn("[BarTableSync] Reconnect refetch failed:", err.message)
+      );
+    };
+    socket.on("connect", onReconnect);
+
     return () => {
       cancelled = true;
       releaseSocket();
       clearInterval(pollInterval);
+      socket.off("connect", onReconnect);
     };
   }, []);
 
