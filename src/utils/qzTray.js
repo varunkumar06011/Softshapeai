@@ -173,6 +173,7 @@ export async function connectQZ() {
 
   if (!qz.websocket.isActive()) {
     try {
+      signatureCache.clear();
       await qz.websocket.connect();
     } catch (err) {
       const msg = 'QZ Tray is not running on this computer. Please start QZ Tray.';

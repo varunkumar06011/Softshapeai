@@ -426,9 +426,15 @@ export default function PrintStation() {
                 printTasks.push({ printer: DINE_IN_BILL_PRINTER, cmds: data.escposDataCounter });
               }
               // Fallback to local builder if backend didn't send escposData
+              const COUNTER_CATEGORIES = ['beverages', 'cold drinks', 'soft drinks', 'ice cream',
+                                           'ice creams', 'mocktails', 'juices', 'water', 'drinks'];
+              const isCounterItem = (item) => {
+                const cat = (item.category || '').toLowerCase();
+                return COUNTER_CATEGORIES.some(c => cat.includes(c)) || item.menuType === 'LIQUOR';
+              };
               if (printTasks.length === 0) {
-                const kitchenItems = (data.items || []).filter(i => i.menuType !== 'LIQUOR');
-                const counterItems = (data.items || []).filter(i => i.menuType === 'LIQUOR');
+                const kitchenItems = (data.items || []).filter(i => !isCounterItem(i));
+                const counterItems = (data.items || []).filter(i => isCounterItem(i));
                 if (kitchenItems.length > 0) {
                   printTasks.push({
                     printer: KOT_FAMILY_PRINTER,
@@ -470,7 +476,7 @@ export default function PrintStation() {
             if (data.sectionTag === 'venue-family-restaurant') {
               printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_FAMILY_PRINTER;
+              printer = KOT_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }
@@ -484,7 +490,7 @@ export default function PrintStation() {
             if (data.sectionTag === 'venue-family-restaurant') {
               printer = KOT_FAMILY_PRINTER;
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_FAMILY_PRINTER;
+              printer = KOT_PRINTER;
             } else {
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
             }
