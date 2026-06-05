@@ -720,7 +720,7 @@ export default function CaptainApp({ onLogout }) {
       const screenHeight = window.screen.height;
       const screenWidth = window.innerWidth;
       // Skip cart minimization and scroll when instruction input is focused
-      if (viewportHeight < screenHeight * 0.7 && screenWidth < 1024 && !isInstructionFocused) {
+      if (viewportHeight < screenHeight * 0.7 && screenWidth < 1024 && !isInstructionFocusedRef.current) {
         setIsCartMinimized(true);
         // Prevent the browser from scrolling the page up when keyboard opens
         if (window.visualViewport) {
@@ -736,7 +736,7 @@ export default function CaptainApp({ onLogout }) {
     return () => {
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
     };
-  }, [isInstructionFocused]);
+  }, []);
 
 
 
@@ -762,7 +762,7 @@ export default function CaptainApp({ onLogout }) {
 
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [inlineQtyItem, setInlineQtyItem] = useState(null);
-  const [isInstructionFocused, setIsInstructionFocused] = useState(false);
+  const isInstructionFocusedRef = useRef(false);
 
   // Cancel-item state
 
@@ -4615,9 +4615,9 @@ export default function CaptainApp({ onLogout }) {
 
                                     value={item.notes || ''}
 
-                                    onFocus={() => setIsInstructionFocused(true)}
+                                    onFocus={() => isInstructionFocusedRef.current = true}
 
-                                    onBlur={() => setIsInstructionFocused(false)}
+                                    onBlur={() => isInstructionFocusedRef.current = false}
 
                                     onChange={e => {
 
