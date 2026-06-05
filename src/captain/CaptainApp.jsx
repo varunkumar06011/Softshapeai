@@ -501,7 +501,7 @@ export default function CaptainApp({ onLogout }) {
   useSocket(null);
   useSocket(null);
 
-  const { activeCalls, clearCall } = useWaiterCalls();
+  const { activeCalls, clearCall } = useWaiterCalls(outlet);
 
 
 
@@ -2840,7 +2840,7 @@ export default function CaptainApp({ onLogout }) {
 
                   captainName: currentCaptain.name
 
-                });
+                }, outlet);
 
                 addNotification(`You accepted table ${call.tableId}`, 'success');
 

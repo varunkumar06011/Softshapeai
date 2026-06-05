@@ -431,7 +431,7 @@ export default function BarMenu({ tableId }) {
         source: 'bar'
       };
       console.log('[BarMenu] Broadcasting waiter call:', payload);
-      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload);
+      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload, 'bar');
       if (!wasConnected) {
         console.warn('[BarMenu] Socket was disconnected during emit — event queued');
       }

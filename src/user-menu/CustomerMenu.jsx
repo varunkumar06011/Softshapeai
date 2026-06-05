@@ -209,7 +209,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
         source: 'restaurant'
       };
       console.log('[CustomerMenu] Broadcasting waiter call:', payload);
-      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload);
+      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload, 'restaurant');
       if (!wasConnected) {
         console.warn('[CustomerMenu] Socket was disconnected during emit — event queued');
       }
