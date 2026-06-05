@@ -2,7 +2,6 @@ import React from 'react';
 import { getTableSectionLabel, getSectionBadgeColor } from '../../utils/tableHelpers';
 
 export default function VenueSectionView({
-  venueId,
   sectionName,
   restaurantId,
   roomMode,
@@ -23,34 +22,10 @@ export default function VenueSectionView({
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
-    // Primary match: section name must match (case-insensitive, allowing minor differences)
     const tableName = currentName;
     const target = targetName;
-    const nameMatches = tableName === target || tableName.includes(target) || target.includes(tableName);
-    if (!nameMatches) return false;
-    // Secondary discriminator: if venueId is provided and the table has a sectionTag,
-    // use it to disambiguate same-named sections across bar/restaurant outlets.
-    // sectionTag is set by the backend on venue tables to identify their sub-venue.
-    if (venueId && table.sectionTag) {
-      return table.sectionTag === venueId;
-    }
-    return true;
+    return tableName === target || tableName.includes(target) || target.includes(tableName);
   });
-
-  // DEBUG logging — remove once fixed
-  React.useEffect(() => {
-    console.log(`[VenueSectionView] sectionName="${sectionName}" targetName="${targetName}" isSyncing=${isSyncing} venueTables.length=${venueTables.length} sectionTables.length=${sectionTables.length}`);
-    if (venueTables.length > 0) {
-      const sample = venueTables.slice(0, 3).map(t => ({
-        id: t.id,
-        backendId: t.backendId,
-        number: t.number,
-        sectionName: t.sectionName,
-        sectionNameFromSection: t.section?.name,
-      }));
-      console.log(`[VenueSectionView] sample tables:`, sample);
-    }
-  }, [sectionName, targetName, isSyncing, venueTables, sectionTables.length]);
 
   if (isSyncing && (!sectionTables || sectionTables.length === 0)) {
     return (
@@ -64,7 +39,7 @@ export default function VenueSectionView({
   if (!sectionTables || sectionTables.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">
-        No tables found for {sectionName} (check browser console for debug info)
+        No tables found for {sectionName}
       </div>
     );
   }

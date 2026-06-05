@@ -217,15 +217,19 @@ function acquireSocket(handlers) {
     }
     sharedSocket.emit("join", VENUE_ID);
 
-    const { onUpdated, onCreated, onDeleted } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
+    sharedSocket.on("order:created", onOrderCreated);
+    sharedSocket.on("order:updated", onOrderUpdated);
 
     return () => {
       sharedSocket?.off("table:updated", onUpdated);
       sharedSocket?.off("table:created", onCreated);
       sharedSocket?.off("table:deleted", onDeleted);
+      sharedSocket?.off("order:created", onOrderCreated);
+      sharedSocket?.off("order:updated", onOrderUpdated);
     };
   } catch (err) {
     console.error("[VenueTableSync] Socket init failed:", err);
@@ -320,6 +324,46 @@ export function useVenueTableSync() {
         if (restaurantId && restaurantId !== VENUE_ID) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderCreated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) =>
+            t.backendId === order.tableId
+              ? {
+                  ...t,
+                  status: t.status === 'Free' ? 'Occupied' : t.status,
+                  workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
+                  activeOrder: order,
+                  items: order.items || t.items || [],
+                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+                }
+              : t
+          );
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderUpdated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) =>
+            t.backendId === order.tableId
+              ? {
+                  ...t,
+                  activeOrder: order,
+                  items: order.items || t.items || [],
+                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+                }
+              : t
+          );
           writeCache(next);
           return next;
         });
