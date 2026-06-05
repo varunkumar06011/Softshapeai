@@ -10,7 +10,7 @@ import {
 
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
 
-  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff
+  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart
 
 } from 'lucide-react';
 
@@ -802,6 +802,10 @@ export default function CaptainApp({ onLogout }) {
   // Sticky header scroll state
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollYRef = useRef(0);
+
+  // Menu scroll state for collapsible sticky header
+  const [isMenuScrolled, setIsMenuScrolled] = useState(false);
+  const menuScrollRef = useRef(null);
 
   // Cancel-item state
 
@@ -3725,7 +3729,8 @@ export default function CaptainApp({ onLogout }) {
 
                       </div>
 
-                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                      <div className={`overflow-hidden transition-all duration-300 ${isMenuScrolled ? 'max-h-0 opacity-0 py-0' : 'max-h-40 opacity-100'}`}>
+                        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
 
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide scroll-smooth flex-grow">
 
@@ -3842,7 +3847,8 @@ export default function CaptainApp({ onLogout }) {
 
                     </div>
 
-                    <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
+                    <div className={`overflow-hidden transition-all duration-300 ${isMenuScrolled ? 'max-h-0 opacity-0 py-0' : 'max-h-40 opacity-100'}`}>
+                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
 
                       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
 
@@ -3871,8 +3877,6 @@ export default function CaptainApp({ onLogout }) {
                         ))}
 
                       </div>
-
-
 
                       {/* Dietary Filter */}
 
@@ -3914,7 +3918,14 @@ export default function CaptainApp({ onLogout }) {
 
                 {/* SCROLLABLE MENU GRID */}
 
-                <div className="flex-grow overflow-y-auto p-6 scroll-smooth">
+                <div
+                  ref={menuScrollRef}
+                  className="flex-grow overflow-y-auto p-6 scroll-smooth"
+                  onScroll={(e) => {
+                    const scrollTop = e.currentTarget.scrollTop;
+                    setIsMenuScrolled(scrollTop > 60);
+                  }}
+                >
 
                   {menuLoading ? (
 
