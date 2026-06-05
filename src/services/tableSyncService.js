@@ -6,7 +6,6 @@ import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
 
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
 const TABLES_CACHE_KEY = "softshape_tables_cache_v6";
-const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const TABLE_STATUS = {
   FREE: "Free",
@@ -301,40 +300,40 @@ export function useTableSync() {
   });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
 
+  const loadTables = useCallback(async () => {
+    cancelledRef.current = false;
+    setIsSyncing(true);
+    let apiTables = null;
+
+    try {
+      apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
+    } catch (err) {
+      console.error("[TableSync] GET /api/tables failed:", err);
+    }
+
+    if (cancelledRef.current) return;
+
+    setTablesState((current) => {
+      const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
+      const merged = useFallback ? getFallbackTables(current) : mergeTablesFromApi(apiTables, current);
+      // Deduplicate by backendId to prevent duplicate cards
+      const deduped = merged.filter((table, index, self) =>
+        index === self.findIndex(t => t.backendId === table.backendId)
+      );
+      writeCache(deduped);
+      return deduped;
+    });
+
+    setIsSyncing(false);
+  }, []);
+
   useEffect(() => {
-    let cancelled = false;
-
-    const loadTables = async () => {
-      setIsSyncing(true);
-      let apiTables = null;
-
-      try {
-        apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
-      } catch (err) {
-        console.error("[TableSync] GET /api/tables failed:", err);
-      }
-
-      if (cancelled) return;
-
-      setTablesState((current) => {
-        const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-        const merged = useFallback ? getFallbackTables(current) : mergeTablesFromApi(apiTables, current);
-        // Deduplicate by backendId to prevent duplicate cards
-        const deduped = merged.filter((table, index, self) =>
-          index === self.findIndex(t => t.backendId === table.backendId)
-        );
-        writeCache(deduped);
-        return deduped;
-      });
-
-      setIsSyncing(false);
-    };
-
     loadTables();
     // Register so the socket reconnect handler can trigger a refetch
     // to recover any orders missed while the socket was down.
@@ -380,55 +379,11 @@ export function useTableSync() {
       },
     });
 
-    const pollInterval = setInterval(async () => {
-      // Automatic midnight reset
-      const now = new Date();
-      if (now.getHours() === 0 && now.getMinutes() === 0) {
-        const today = now.toLocaleDateString();
-        if (localStorage.getItem('last_table_reset_date') !== today) {
-          localStorage.setItem('last_table_reset_date', today);
-          setTablesState((prev) => {
-            const next = prev.map((t) => {
-              if (t.status === 'Free' || t.status === 'AVAILABLE') return t;
-              return { ...t, status: 'Free', captainId: null, guests: 0, time: null, currentBill: 0, kotHistory: [] };
-            });
-            persistStatusChanges(prev, next).catch((e) => console.error("Auto reset failed", e));
-            writeCache(next);
-            return next;
-          });
-          return;
-        }
-      }
-
-      if (cancelled) return;
-
-      const fetchStartedAt = Date.now();
-
-      try {
-        const apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
-        if (cancelled || apiTables.length === 0) return;
-        if (_lastLocalUpdate > fetchStartedAt) return;
-
-        setTablesState((current) => {
-          const merged = mergeTablesFromApi(apiTables, current);
-          // Deduplicate by backendId to prevent duplicate cards
-          const deduped = merged.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
-          writeCache(deduped);
-          return deduped;
-        });
-      } catch {
-        /* polling is a fallback, keep quiet */
-      }
-    }, POLL_INTERVAL_MS);
-
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       releaseSocket();
-      clearInterval(pollInterval);
     };
-  }, []);
+  }, [loadTables]);
 
   const setTables = useCallback((updater, { skipPersist = false } = {}) => {
     const current = tablesRef.current ?? [];
@@ -477,5 +432,6 @@ export function useTableSync() {
     setTables,
     isSyncing,
     TABLE_STATUS,
+    refetch: loadTables,
   };
 }

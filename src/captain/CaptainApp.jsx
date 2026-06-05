@@ -497,10 +497,9 @@ export default function CaptainApp({ onLogout }) {
 
 
   // Socket hooks must be called at top level, not conditionally
-
-  const barSocket = useSocket(BAR_ID);
-
-  const restaurantSocket = useSocket(RESTAURANT_ID);
+  // Preserve hook count; actual room management is done in the socket effect below
+  useSocket(null);
+  useSocket(null);
 
   const { activeCalls, clearCall } = useWaiterCalls();
 
@@ -1307,58 +1306,35 @@ export default function CaptainApp({ onLogout }) {
 
 
   useEffect(() => {
-
     // Show the Live Sync indicator whenever the global menu broadcasts an update
-
     const onMenuUpdated = () => {
-
       setIsSyncing(true);
-
       setTimeout(() => setIsSyncing(false), 800);
-
     };
-
     window.addEventListener('softshape_menu_updated', onMenuUpdated);
 
+    if (!activeRestaurantId) return;
 
+    const socket = getSocket();
+
+    // Join only the currently active outlet room; leave is handled on cleanup
+    socket.emit('join', activeRestaurantId);
+
+    const onConnect = () => {
+      socket.emit('join', activeRestaurantId);
+    };
+    socket.on('connect', onConnect);
 
     // Listen for socket menu update events from admin panel
-
     const onMenuItemUpdated = (payload) => {
-
       console.log('[CaptainApp] Received menu-item-updated:', payload);
-
-      // Dispatch window event for menuSyncService to pick up
-
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
-
     };
-
-
-
-    // Use the pre-called socket hooks based on outlet
-
-    const socket = outlet === 'bar' ? barSocket : restaurantSocket;
-
-    if (socket) {
-
-      socket.on('menu-item-updated', onMenuItemUpdated);
-
-    }
-
-    // ── Order:paid listener (critical for venue table settlement sync) ──
-    const sharedSocket = getSocket();
-    const joinRooms = () => {
-      if (activeRestaurantId) sharedSocket.emit('join', activeRestaurantId);
-      sharedSocket.emit('join', 'venue-001');
-    };
-    joinRooms();
-    sharedSocket.on('connect', joinRooms);
+    socket.on('menu-item-updated', onMenuItemUpdated);
 
     const onOrderPaid = (payload) => {
       const tableId = payload?.tableId;
       if (!tableId) return;
-      // Only react if this captain is currently viewing the settled table
       if (activeTableIdRef.current && String(tableId) === String(activeTableIdRef.current)) {
         const settledId = activeTableIdRef.current;
         setTableCarts(prev => {
@@ -1372,6 +1348,7 @@ export default function CaptainApp({ onLogout }) {
         addNotification('Order settled', 'success');
       }
     };
+
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
       const applyUpdate = (prev) => prev.map(t => {
@@ -1390,7 +1367,7 @@ export default function CaptainApp({ onLogout }) {
         setActiveTables(applyUpdate);
       }
     };
-    sharedSocket.on('table:updated', onTableUpdated);
+    socket.on('table:updated', onTableUpdated);
 
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
@@ -1405,7 +1382,7 @@ export default function CaptainApp({ onLogout }) {
         setActiveTables(updateTables);
       }
     };
-    sharedSocket.on('order:updated', onOrderUpdated);
+    socket.on('order:updated', onOrderUpdated);
 
     const onBillingRequested = (payload) => {
       const { table } = payload;
@@ -1420,27 +1397,22 @@ export default function CaptainApp({ onLogout }) {
         setActiveTables(updateTables);
       }
     };
-    sharedSocket.on('billing:requested', onBillingRequested);
+    socket.on('billing:requested', onBillingRequested);
 
-    sharedSocket.on('order:paid', onOrderPaid);
+    socket.on('order:paid', onOrderPaid);
 
     return () => {
-
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
-
-      if (socket) {
-
-        socket.off('menu-item-updated', onMenuItemUpdated);
-
-      }
-      sharedSocket.off('connect', joinRooms);
-      sharedSocket.off('table:updated', onTableUpdated);
-      sharedSocket.off('order:updated', onOrderUpdated);
-      sharedSocket.off('billing:requested', onBillingRequested);
-      sharedSocket.off('order:paid', onOrderPaid);
+      socket.off('connect', onConnect);
+      socket.off('menu-item-updated', onMenuItemUpdated);
+      socket.off('table:updated', onTableUpdated);
+      socket.off('order:updated', onOrderUpdated);
+      socket.off('billing:requested', onBillingRequested);
+      socket.off('order:paid', onOrderPaid);
+      socket.emit('leave', activeRestaurantId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outlet, barSocket, restaurantSocket, activeRestaurantId]);
+  }, [activeRestaurantId]);
 
 
 
@@ -2332,59 +2304,28 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-      // 4. Wait for physical print confirmation from PrintStation (max 15s)
-
-      const socket = getSocket();
-
-      const printResult = await new Promise((resolve) => {
-
-        const timeout = setTimeout(() => {
-
-          socket.off('kot:printed', handler);
-
-          resolve('timeout');
-
-        }, 15000);
-
-        const handler = ({ requestId: ackRequestId, status }) => {
-
-          if (ackRequestId === requestId) {
-
-            clearTimeout(timeout);
-
-            socket.off('kot:printed', handler);
-
-            resolve(status || 'success');
-
-          }
-
-        };
-
-        socket.on('kot:printed', handler);
-
-      });
-
-
-
-      // 5. Clear cart and notify after print confirmation or timeout
-
+      // 4. Unblock UI immediately after DB write; print confirmation is background
       const committedSoFar = getTableItems(activeTable);
-
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
-
       setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
+      addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
 
-
-
-      if (printResult === 'timeout') {
-
-        addNotification(`KOT #${realKotId || newKOT.id} Saved — Print confirmation timed out`, 'warning');
-
-      } else {
-
-        addNotification(`KOT #${realKotId || newKOT.id} Printed ✓`, 'success');
-
-      }
+      // Background listener for print confirmation (non-blocking)
+      const socket = getSocket();
+      const handler = ({ requestId: ackRequestId, status }) => {
+        if (ackRequestId === requestId) {
+          socket.off('kot:printed', handler);
+          clearTimeout(printTimeout);
+          if (status !== 'success') {
+            addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, 'warning');
+          }
+        }
+      };
+      socket.on('kot:printed', handler);
+      const printTimeout = setTimeout(() => {
+        socket.off('kot:printed', handler);
+        addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
+      }, 15000);
 
     } catch (err) {
 
@@ -2480,6 +2421,8 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+    const cancelRequestId = crypto.randomUUID();
+
     try {
 
       await cancelOrderItem(
@@ -2492,13 +2435,34 @@ export default function CaptainApp({ onLogout }) {
 
         activeTable?.number ?? activeTable?.id,
 
-        Number(kotItem.q ?? 1)
+        Number(kotItem.q ?? 1),
+
+        cancelRequestId
 
       );
 
       addNotification(`${kotItem.n} cancelled`, 'success');
 
-      // Backend emits CANCEL_KOT print_job → PrintStation handles it
+      // Wait for CANCEL_KOT print ack (best-effort, 5s timeout)
+      const socket = getSocket();
+      const printResult = await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          socket.off('kot:printed', handler);
+          resolve('timeout');
+        }, 5000);
+        const handler = ({ requestId: ackRequestId, status }) => {
+          if (ackRequestId === cancelRequestId) {
+            clearTimeout(timeout);
+            socket.off('kot:printed', handler);
+            resolve(status || 'success');
+          }
+        };
+        socket.on('kot:printed', handler);
+      });
+
+      if (printResult === 'timeout') {
+        addNotification('Cancel recorded — printer offline, slip not printed', 'warning');
+      }
 
     } catch (err) {
 

@@ -10,7 +10,7 @@ import {
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
-import { printBillQZ, printKOTQZ } from '../services/printService';
+// REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -353,7 +353,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const venuePrices = useVenuePrices();
-  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading } = useVenueTableSync();
+  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
 
   // Persist selections to localStorage
   useEffect(() => {
@@ -456,9 +456,9 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnPage, setTxnPage] = useState(1);
 
   const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
-  const { tables, setTables } = useTableSync();
+  const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
 
-  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
+  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync();
   const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
@@ -467,7 +467,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : RESTAURANT_ID;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : RESTAURANT_ID;
 
   const socket = useSocket(activeRestaurantId);
 
@@ -669,12 +669,15 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!socket) return;
 
-    socket.emit('join', activeRestaurantId);
-    socket.emit('join', 'venue-001');
-
+    // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
     const onConnect = () => {
-      socket.emit('join', activeRestaurantId);
-      socket.emit('join', 'venue-001');
+      if (outlet === 'bar') {
+        refetchBarTables();
+      } else if (outlet === 'venue') {
+        refetchVenueTables();
+      } else {
+        refetchRestaurantTables();
+      }
     };
 
     socket.on('connect', onConnect);
@@ -733,15 +736,37 @@ const CashierDashboard = ({ onLogout }) => {
 
     const mergeOrder = (incoming, existing) => {
       if (!existing) return incoming;
+      // FIX: Don't overwrite items that have local removedFromBill=true
+      // unless the incoming item also has removedFromBill=true.
+      const incomingItems = incoming?.items || [];
+      const existingItems = existing?.items || [];
+      const existingMap = new Map(existingItems.map(i => [i.id, i]));
+
+      const mergedItems = incomingItems.map(incomingItem => {
+        const existingItem = existingMap.get(incomingItem.id);
+        if (existingItem?.removedFromBill && !incomingItem.removedFromBill) {
+          return { ...incomingItem, removedFromBill: true, quantity: 0 };
+        }
+        return incomingItem;
+      });
+
+      const incomingIds = new Set(incomingItems.map(i => i.id));
+      const localOnlyRemoved = existingItems.filter(i => i.removedFromBill && !incomingIds.has(i.id));
+
+      const merged = {
+        ...incoming,
+        items: [...mergedItems, ...localOnlyRemoved],
+      };
+
       // FIX #4: Always use the version with MORE items to prevent data loss
-      const incomingItemCount = (incoming?.items?.length ?? 0);
-      const existingItemCount = (existing?.items?.length ?? 0);
-      if (incomingItemCount > existingItemCount) return incoming;
+      const incomingItemCount = merged.items.length;
+      const existingItemCount = existingItems.length;
+      if (incomingItemCount > existingItemCount) return merged;
       if (existingItemCount > incomingItemCount) return existing;
       // Equal items — fall back to timestamp
       const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
       const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-      return incomingTime >= existingTime ? incoming : existing;
+      return incomingTime >= existingTime ? merged : existing;
     };
 
     const onOrderUpdated = (payload) => {
@@ -893,7 +918,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
     };
-  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions]);
+  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables]);
 
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -1226,36 +1251,6 @@ const CashierDashboard = ({ onLogout }) => {
   const activeSgst = activeOrderCalc.sgst ?? 0;
   const fallbackTotal = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
 
-  const printBill = async (table, total, subtotal, taxes, method) => {
-    const orderId = table?.activeOrder?.id || table?.orderId || null;
-
-    // Extract items from active order for fallback printing
-    const items = table?.activeOrder?.items || table?.items || [];
-
-    // Pass all parameters for fallback printing when backend fails or orderId is missing
-    await printBillQZ({
-      orderId,           // For backend fetch
-      table: {           // For fallback local print
-        id: table?.id || table?.number || 'N/A',
-        guests: table?.guestCount || table?.guests || 0
-      },
-      items,             // Items array from order
-      subtotal,          // Subtotal amount
-      taxes,             // Tax amount
-      total,             // Total amount
-      method,            // Payment method (can be null for final bill)
-      kotNumbers: (table?.kotHistory || []).map(k => k.id || k.kotNumber),
-      captainName: CAPTAINS.find(c => c.id === table?.captainId)?.name || table?.captainId || 'N/A',
-      sectionTag: table?.sectionTag || (
-        (table?.section?.name || '').toLowerCase().includes('parcel')
-          ? 'venue-restaurant-parcel'
-          : (table?.section?.name || '').toLowerCase().includes('family')
-            ? 'venue-family-restaurant'
-            : null
-      ),
-    });
-  };
-
   const handleFinalBill = async () => {
     if (!selectedTable || !selectedTable.backendId) {
       addNotification('Error', 'Invalid table selected.', 'error');
@@ -1342,50 +1337,44 @@ const CashierDashboard = ({ onLogout }) => {
     const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
     const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
 
-    // Emit print_job directly to billing printer via socket (no backend order needed)
-    // Use the same printBillQZ function already available:
-    await printBillQZ({
-      orderId: null,
-      table: { id: tableLabel, guests: 0 },
-      items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
-      subtotal: subtotalAmt,
-      taxes: 0,
-      total: grandTotalAmt,
-      method: null,
-      kotNumbers: [],
-      captainName: 'Walk-in',
-      discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-      sectionTag: 'venue-restaurant-parcel',
-    });
+    try {
+      setIsPrintingBill(true);
 
-    addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
-    // Show settlement picker immediately
-    setShowMethodPicker(true);
+      const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: activeRestaurantId,
+          billData: {
+            tableNumber: tableLabel,
+            items: cart.map(i => ({
+              name: i.n || i.name,
+              quantity: i.q,
+              price: Number(i.p),
+              menuType: i.menuType || 'FOOD'
+            })),
+            subtotal: subtotalAmt,
+            grandTotal: grandTotalAmt,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+            captain: 'Walk-in',
+            sectionTag: 'venue-restaurant-parcel'
+          }
+        })
+      });
 
-    // Reset loading state immediately after optimistic UI update
-    setIsPrintingBill(false);
-
-    // Run print in background without blocking UI
-    (async () => {
-      try {
-        // Emit print_job directly to billing printer via socket (no backend order needed)
-        // Use the same printBillQZ function already available:
-        await printBillQZ({
-          orderId: null,
-          table: { id: tableLabel, guests: 0 },
-          items: cart.map(i => ({ name: i.n || i.name, quantity: i.q, price: Number(i.p), menuType: i.menuType || 'FOOD' })),
-          subtotal: subtotalAmt,
-          taxes: 0,
-          total: grandTotalAmt,
-          method: null,
-          kotNumbers: [],
-          captainName: 'Walk-in',
-          discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-        });
-      } catch (err) {
-        addNotification('Print Failed', err.message || 'Could not print bill', 'error');
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || `Server returned ${response.status}`);
       }
-    })();
+
+      addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
+      setShowMethodPicker(true);
+    } catch (err) {
+      console.error('Walk-in bill print error:', err);
+      addNotification('Print Failed', err.message || 'Could not print walk-in bill', 'error');
+    } finally {
+      setIsPrintingBill(false);
+    }
   };
 
   const handleReprintBill = async () => {

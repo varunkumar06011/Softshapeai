@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
 
@@ -10,7 +10,7 @@ export function getSocket() {
   if (!socketInstance) {
     socketInstance = io(API_BASE, {
       path: "/socket.io",
-      transports: ["polling", "websocket"],
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 5000, // 5s backoff as required
@@ -53,16 +53,29 @@ function processEventQueue() {
 
 export function useSocket(restaurantId) {
   const socket = getSocket();
+  const prevRestaurantIdRef = useRef(null);
 
   useEffect(() => {
     if (!restaurantId) return;
 
-    const join = () => socket.emit("join", restaurantId);
+    const join = () => {
+      const prev = prevRestaurantIdRef.current;
+      if (prev && prev !== restaurantId) {
+        socket.emit("leave", prev);
+      }
+      socket.emit("join", restaurantId);
+      prevRestaurantIdRef.current = restaurantId;
+    };
+
     join();
     socket.on("connect", join);
 
     return () => {
       socket.off("connect", join);
+      if (prevRestaurantIdRef.current) {
+        socket.emit("leave", prevRestaurantIdRef.current);
+        prevRestaurantIdRef.current = null;
+      }
     };
   }, [restaurantId, socket]);
 

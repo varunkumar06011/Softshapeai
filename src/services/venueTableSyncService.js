@@ -3,7 +3,6 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchVenueSections, VENUE_ID, updateVenueTableSession } from "./venueTableApi";
 
 const TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
-const POLL_INTERVAL_MS = 30000; // 30s — socket handles real-time; polling is true fallback
 
 export const VENUE_TABLE_STATUS = {
   FREE: "Free",
@@ -249,42 +248,42 @@ export function useVenueTableSync() {
   });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadTables = async () => {
-      setIsSyncing(true);
-      try {
-        console.log('[VenueTableSync] Fetching /api/venue/sections ...');
-        const sections = await fetchVenueSections();
-        if (cancelled) return;
-        console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
-        const flat = flattenSections(sections);
-        console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
-        setTablesState((current) => {
-          const merged = flat.map((row) => {
-            const existing = current.find((t) => t.backendId === row.id);
-            return mapBackendTable(row, existing);
-          });
-          // Deduplicate by backendId to prevent duplicate cards
-          const deduped = merged.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
-          writeCache(deduped);
-          return deduped;
+  const loadTables = useCallback(async () => {
+    cancelledRef.current = false;
+    setIsSyncing(true);
+    try {
+      console.log('[VenueTableSync] Fetching /api/venue/sections ...');
+      const sections = await fetchVenueSections();
+      if (cancelledRef.current) return;
+      console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
+      const flat = flattenSections(sections);
+      console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
+      setTablesState((current) => {
+        const merged = flat.map((row) => {
+          const existing = current.find((t) => t.backendId === row.id);
+          return mapBackendTable(row, existing);
         });
-      } catch (err) {
-        console.error("[VenueTableSync] Fetch failed:", err);
-      } finally {
-        if (!cancelled) setIsSyncing(false);
-      }
-    };
+        // Deduplicate by backendId to prevent duplicate cards
+        const deduped = merged.filter((table, index, self) =>
+          index === self.findIndex(t => t.backendId === table.backendId)
+        );
+        writeCache(deduped);
+        return deduped;
+      });
+    } catch (err) {
+      console.error("[VenueTableSync] Fetch failed:", err);
+    } finally {
+      if (!cancelledRef.current) setIsSyncing(false);
+    }
+  }, []);
 
+  useEffect(() => {
     loadTables();
 
     const releaseSocket = acquireSocket({
@@ -325,29 +324,6 @@ export function useVenueTableSync() {
       },
     });
 
-    const pollInterval = setInterval(async () => {
-      if (_persistingCount > 0 || cancelled) return;
-      try {
-        const sections = await fetchVenueSections();
-        if (cancelled) return;
-        const flat = flattenSections(sections);
-        setTablesState((current) => {
-          const merged = flat.map((row) => {
-            const existing = current.find((t) => t.backendId === row.id);
-            return mapBackendTable(row, existing);
-          });
-          // Deduplicate by backendId to prevent duplicate cards
-          const deduped = merged.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
-          writeCache(deduped);
-          return deduped;
-        });
-      } catch {
-        /* polling fallback — stay quiet */
-      }
-    }, POLL_INTERVAL_MS);
-
     // Re-fetch on every reconnect to recover orders missed during the gap.
     const socket = getSocket();
     const onReconnect = () => {
@@ -359,12 +335,11 @@ export function useVenueTableSync() {
     socket.on("connect", onReconnect);
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       releaseSocket();
-      clearInterval(pollInterval);
       socket.off("connect", onReconnect);
     };
-  }, []);
+  }, [loadTables]);
 
   const setTables = useCallback((updater, { skipPersist = false } = {}) => {
     const current = tablesRef.current ?? [];
@@ -416,5 +391,6 @@ export function useVenueTableSync() {
     setTables,
     isSyncing,
     TABLE_STATUS: VENUE_TABLE_STATUS,
+    refetch: loadTables,
   };
 }
