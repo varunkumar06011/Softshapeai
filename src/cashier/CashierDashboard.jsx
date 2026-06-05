@@ -399,6 +399,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [itemSwapSelectedIds, setItemSwapSelectedIds] = useState([]);
   const [itemSwapTargetId, setItemSwapTargetId] = useState(null);
   const [isSwappingItems, setIsSwappingItems] = useState(false);
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -762,10 +763,10 @@ const CashierDashboard = ({ onLogout }) => {
           ...t,
           kotHistory: mergedKotHistory,
           currentBill: table.currentBill ?? t.currentBill,
-          status: table.status ?? t.status,
+          status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
         };
-      }));
+      }), { skipPersist: true });
       if (selectedTable?.backendId === table.id) {
         setSelectedTable(prev => {
           if (!prev) return prev;
@@ -3736,7 +3737,7 @@ const CashierDashboard = ({ onLogout }) => {
                       Swap Items
                     </button>
                     <button
-                      onClick={terminateTableSession}
+                      onClick={() => setShowTerminateModal(true)}
                       disabled={isTerminating}
                       className={`py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1 ${isTerminating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100/60 cursor-pointer'}`}
                     >
@@ -4715,6 +4716,51 @@ const CashierDashboard = ({ onLogout }) => {
                 className="flex-1 py-3 rounded-xl text-sm font-black bg-[#E53935] text-white hover:bg-red-700 transition-colors uppercase tracking-widest"
               >
                 Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TERMINATE CONFIRMATION MODAL */}
+      {showTerminateModal && selectedTable && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black uppercase text-red-500 tracking-wider">Terminate Session</p>
+                <p className="text-base font-black text-gray-900 mt-0.5">
+                  Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : selectedTable.id}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTerminateModal(false)}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-700 font-semibold">
+                This will remove all items and free the table. Are you sure?
+              </p>
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => setShowTerminateModal(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-black text-gray-500 hover:bg-gray-200 transition-colors uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowTerminateModal(false);
+                  terminateTableSession();
+                }}
+                disabled={isTerminating}
+                className={`flex-1 py-3 rounded-xl text-sm font-black bg-red-600 text-white hover:bg-red-700 transition-colors uppercase tracking-widest ${isTerminating ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isTerminating ? 'Ending...' : 'Terminate'}
               </button>
             </div>
           </div>
