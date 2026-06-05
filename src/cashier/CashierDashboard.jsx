@@ -1112,14 +1112,14 @@ const CashierDashboard = ({ onLogout }) => {
         return matches;
       });
 
-      // Apply outlet-level isolation filter
+      // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
         if (outlet === 'bar') {
           // Bar sees ONLY bar-sourced transactions — never any restaurant source
-          return BAR_SOURCES.has(txn.source);
+          return BAR_SOURCES.has(txn.sectionTag);
         }
         // Restaurant sees ONLY restaurant-sourced transactions — never bar or unknown venue
-        return RESTAURANT_SOURCES.has(txn.source);
+        return RESTAURANT_SOURCES.has(txn.sectionTag);
       });
 
       setBillFinderResults(isolated);
