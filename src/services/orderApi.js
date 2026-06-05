@@ -171,6 +171,14 @@ export async function fetchTransactions(restaurantId, limit = 2000, date = null,
   return parseResponse(res);
 }
 
+// Wrap fetchTransactions with retry logic for Bill Finder
+export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, date = null, month = null) {
+  return withRetry(
+    () => fetchTransactions(restaurantId, limit, date, month),
+    RETRY_CONFIG.TRANSACTIONS
+  );
+}
+
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
     method: 'PATCH',

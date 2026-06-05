@@ -201,4 +201,5 @@ export const RETRY_CONFIG = {
   KOT: { maxRetries: 3, baseDelayMs: 500, maxDelayMs: 3000 },
   TABLE_UPDATE: { maxRetries: 3, baseDelayMs: 500, maxDelayMs: 2000 },
   INVENTORY: { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 5000 },
+  TRANSACTIONS: { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 5000 },
 };
