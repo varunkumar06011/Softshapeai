@@ -200,10 +200,11 @@ export default function BarMenu({ tableId }) {
         ]);
 
         if (!posViewRes.ok) throw new Error(`POS-view failed: ${posViewRes.status}`);
-        if (!itemsRes.ok) throw new Error(`Items failed: ${itemsRes.status}`);
+        // itemsRes is non-critical (used only for search) — degrade gracefully
+        const itemsData = itemsRes.ok ? await itemsRes.json() : [];
+        if (!itemsRes.ok) console.warn(`[BarMenu] /api/bar/menu/items returned ${itemsRes.status} — search disabled`);
 
         const posViewData = await posViewRes.json();
-        const itemsData = await itemsRes.json();
         const flatTables = flattenSections(tablesRes);
         const restaurantData = restaurantRes.ok ? await restaurantRes.json() : [];
 

@@ -3889,8 +3889,7 @@ export default function CaptainApp({ onLogout }) {
 
                     </div>
 
-                    <div className={`overflow-hidden transition-all duration-300 ${isMenuScrolled ? 'max-h-0 opacity-0 py-0' : 'max-h-40 opacity-100'}`}>
-                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
+                    <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 xl:gap-0">
 
                       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
 
@@ -3919,8 +3918,6 @@ export default function CaptainApp({ onLogout }) {
                         ))}
 
                       </div>
-
-                      {/* Dietary Filter */}
 
                       <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0">
 
