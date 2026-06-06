@@ -65,7 +65,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     id: Number(row.number) || row.number,
     number: row.number,
     dbStatus: row.status,
-    status: row.workflowStatus || toFrontendTableStatus(row.status),
+    status: isFreeWorkflow ? 'Free' : (row.workflowStatus || toFrontendTableStatus(row.status)),
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
@@ -278,7 +278,8 @@ const CashierDashboard = ({ onLogout }) => {
       if (!savedTable || savedTable.status === 'Free' || savedTable.status === 'AVAILABLE') {
         return [];
       }
-      const saved = localStorage.getItem('cashier_cart');
+      const key = getCartStorageKey(savedTable);
+      const saved = localStorage.getItem(key) || localStorage.getItem('cashier_cart');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -316,6 +317,48 @@ const CashierDashboard = ({ onLogout }) => {
   const [isReprintingBill, setIsReprintingBill] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
+  // Set of table backendIds settled this session — prevents socket/sync from reverting UI
+  const [settledTableIds, setSettledTableIds] = useState(() => new Set());
+  const settledTableIdsRef = useRef(settledTableIds);
+  useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
+  const syncPauseUntilRef = useRef(0);
+
+  // Helper: namespaced cart key so tables never bleed into each other
+  const getCartStorageKey = (table) => {
+    if (!table) return 'cashier_cart_none';
+    if (table.isWalkIn || !table.backendId) return 'cashier_cart_walkin';
+    return `cashier_cart_${table.backendId}`;
+  };
+
+  const clearCashierTableCache = (table) => {
+    localStorage.removeItem('cashier_selected_table');
+    if (table?.backendId) {
+      localStorage.removeItem(`cashier_cart_${table.backendId}`);
+    }
+    localStorage.removeItem('cashier_cart_walkin');
+    localStorage.removeItem('cashier_cart');
+  };
+
+  const activeTablesRef = useRef(activeTables);
+  useEffect(() => { activeTablesRef.current = activeTables; }, [activeTables]);
+  const venueTablesRef = useRef(venueTables);
+  useEffect(() => { venueTablesRef.current = venueTables; }, [venueTables]);
+
+  // Helper: determine if an incoming table update should be blocked for a settled table
+  const shouldBlockTableUpdate = (tableId, incomingStatus) => {
+    if (!settledTableIdsRef.current.has(tableId)) return false;
+    // During 5s pause after settlement: block ALL updates
+    if (Date.now() < syncPauseUntilRef.current) return true;
+    // After pause: if table is already Free locally, a new session may have started — allow
+    const localTable = [...(activeTablesRef.current || []), ...(venueTablesRef.current || [])]
+      .find(t => t.backendId === tableId);
+    if (!localTable || localTable.status === 'Free' || localTable.status === 'AVAILABLE') return false;
+    // Otherwise only allow forward transitions (Free / AVAILABLE / TERMINATED / CLEANING)
+    const forward = new Set(['Free', 'AVAILABLE', 'TERMINATED', 'CLEANING', 'Cleaning']);
+    const mapped = toFrontendTableStatus(incomingStatus);
+    return !forward.has(incomingStatus) && !forward.has(mapped);
+  };
+
   const [discountMode, setDiscountMode] = useState('percent');
   const [rawDiscountInput, setRawDiscountInput] = useState('');
   const [walkinTableNumber, setWalkinTableNumber] = useState(null); // 1-20 when active
@@ -388,8 +431,13 @@ const CashierDashboard = ({ onLogout }) => {
   }, [selectedPDRRoom]);
 
   useEffect(() => {
-    localStorage.setItem('cashier_cart', JSON.stringify(cart));
-  }, [cart]);
+    const key = getCartStorageKey(selectedTable);
+    if (key && key !== 'cashier_cart_none') {
+      localStorage.setItem(key, JSON.stringify(cart));
+    }
+    // Also clear legacy global key to prevent stale data from ever bleeding
+    localStorage.removeItem('cashier_cart');
+  }, [cart, selectedTable]);
 
   // Table-swap state
   const [showSwapModal, setShowSwapModal] = useState(false);
@@ -685,6 +733,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onBillingRequested = (payload) => {
       const { table, order } = payload;
       if (!table) return;
+      if (shouldBlockTableUpdate(table.id, table.status)) return;
 
       // Route table status update to the correct array
       const isVenue = payload?.restaurantId === 'venue-001' || table?.restaurantId === 'venue-001';
@@ -720,6 +769,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      if (shouldBlockTableUpdate(order.tableId, null)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
@@ -772,6 +822,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      if (shouldBlockTableUpdate(order.tableId, null)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
@@ -788,6 +839,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
+      if (shouldBlockTableUpdate(table.id, table.status)) return;
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
         // FIX #4: Merge kotHistory — never lose KOTs already in local state
@@ -835,6 +887,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onOrderPaid = (payload) => {
       const { tableId } = payload;
+      if (shouldBlockTableUpdate(tableId, 'AVAILABLE')) return;
       // Remove from billing alerts
       setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
       // Clear selectedTable if it was the paid one
@@ -843,8 +896,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedOrder(null);
         setCart([]);
         lastConfirmedItemsRef.current = [];
-        localStorage.removeItem('cashier_selected_table');
-        localStorage.setItem('cashier_cart', '[]');
+        clearCashierTableCache(selectedTable);
         setExpandedNoteItemId(null);
         setRemovedItemIds([]);
         setShowPaymentModal(false);
@@ -855,6 +907,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableSwapped = (payload) => {
       const { sourceTableId, targetTableId, targetTable } = payload;
+      if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
       // If cashier had the source table selected, switch to the new location
       if (selectedTable?.backendId === sourceTableId) {
         setSelectedTable(prev => prev ? { ...prev, backendId: targetTableId, ...targetTable } : prev);
@@ -866,6 +919,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
+      if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
       const isVenue = payload?.restaurantId === 'venue-001' || sourceTable?.restaurantId === 'venue-001' || targetTable?.restaurantId === 'venue-001';
       const allTables = isVenue ? venueTables : activeTables;
       const mappedSource = mapRealtimeTablePayload(
@@ -907,7 +961,6 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Listen for menu update events from admin panel
     const onMenuItemUpdated = (payload) => {
-      console.log('[CashierDashboard] Received menu-item-updated:', payload);
       // Dispatch window event for menuSyncService to pick up
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
     };
@@ -956,6 +1009,9 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!selectedTable?.backendId) return;
 
+    // FIX: once a table is marked settled, ignore sync updates that try to revert it
+    if (settledTableIdsRef.current.has(selectedTable.backendId)) return;
+
     const isSelectedFree = !selectedTable.status || selectedTable.status === 'Free' || selectedTable.status === 'AVAILABLE' || selectedTable.workflowStatus === 'Free';
     const hasStaleGhostData = isSelectedFree && ((selectedTable.kotHistory?.length > 0) || (selectedTable.currentBill > 0));
     
@@ -963,8 +1019,7 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedTable(null);
       setCart([]);
       lastConfirmedItemsRef.current = [];
-      localStorage.removeItem('cashier_selected_table');
-      localStorage.setItem('cashier_cart', '[]');
+      clearCashierTableCache(selectedTable);
       return;
     }
 
@@ -983,8 +1038,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedOrder(null);
         setCart([]);
         lastConfirmedItemsRef.current = [];
-        localStorage.removeItem('cashier_selected_table');
-        localStorage.setItem('cashier_cart', '[]');
+        clearCashierTableCache(selectedTable);
         setExpandedNoteItemId(null);
         setRemovedItemIds([]);
         return;
@@ -1150,8 +1204,6 @@ const CashierDashboard = ({ onLogout }) => {
         ? ['bar-001', 'venue-001']
         : ['restaurant-001', 'venue-001'];
       
-      console.log('[Bill Finder] Searching with date:', billFinderDate, 'restaurantIds:', restaurantIds);
-      
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
           console.error(`[Bill Finder] Fetch failed for ${rid}:`, err);
@@ -1159,14 +1211,10 @@ const CashierDashboard = ({ onLogout }) => {
         }))
       );
 
-      console.log('[Bill Finder] Raw results:', allResults);
-
       const allTxns = allResults.flatMap((txns, idx) => {
         const rid = restaurantIds[idx];
         return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
       });
-
-      console.log('[Bill Finder] All transactions:', allTxns.length, allTxns);
 
       const filtered = allTxns.filter(txn => {
         let matches = true;
@@ -1183,29 +1231,23 @@ const CashierDashboard = ({ onLogout }) => {
         return matches;
       });
 
-      console.log('[Bill Finder] After bill/table filter:', filtered.length);
-
       // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
         // If sectionTag is null/undefined, include the transaction (fallback for older data)
         if (!txn.sectionTag) {
-          console.log('[Bill Finder] No sectionTag, including transaction:', txn.displayId);
           return true;
         }
         
         if (outlet === 'bar') {
           // Bar sees ONLY bar-sourced transactions — never any restaurant source
           const matches = BAR_SOURCES.has(txn.sectionTag);
-          console.log('[Bill Finder] Bar filter - sectionTag:', txn.sectionTag, 'matches:', matches);
           return matches;
         }
         // Restaurant sees ONLY restaurant-sourced transactions — never bar or unknown venue
         const matches = RESTAURANT_SOURCES.has(txn.sectionTag);
-        console.log('[Bill Finder] Restaurant filter - sectionTag:', txn.sectionTag, 'matches:', matches);
         return matches;
       });
 
-      console.log('[Bill Finder] Final results:', isolated.length);
       setBillFinderResults(isolated);
     } catch (error) {
       console.error('[Bill Finder] Search error:', error);
@@ -1506,8 +1548,7 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedOrder(null);
       setCart([]);
       lastConfirmedItemsRef.current = [];
-      localStorage.removeItem('cashier_selected_table');
-      localStorage.setItem('cashier_cart', '[]');
+      clearCashierTableCache(selectedTable);
       // Clean up persisted discount now that table is settled
       if (selectedTable?.backendId) {
         localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
@@ -1524,6 +1565,22 @@ const CashierDashboard = ({ onLogout }) => {
         setIsWalkinMode(false);
         setSelectedTable(null);
         setCart([]);
+      }
+
+      // FIX 1 & 3: mark table as settled and update cache immediately
+      if (selectedTable?.backendId) {
+        setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
+        syncPauseUntilRef.current = Date.now() + 5000;
+        const cacheKey = outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : outlet === 'venue' ? 'softshape_venue_tables_cache_v1' : 'softshape_tables_cache_v6';
+        try {
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+          const updated = cached.map(t =>
+            t.backendId === selectedTable.backendId
+              ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+              : t
+          );
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+        } catch {}
       }
 
       // Reset loading state immediately after optimistic UI update
@@ -1564,6 +1621,12 @@ const CashierDashboard = ({ onLogout }) => {
 
           // Mark as settled locally to prevent retries
           setSettledOrderIds(prev => new Set([...prev, orderId]));
+
+          // FIX 1 & 5: mark table backendId as settled and pause sync for 5s
+          if (selectedTable?.backendId) {
+            setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
+            syncPauseUntilRef.current = Date.now() + 5000;
+          }
         }
 
         // Refresh transactions list to show the new transaction
@@ -1657,8 +1720,7 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedOrder(null);
       setCart([]);
       lastConfirmedItemsRef.current = [];
-      localStorage.removeItem('cashier_selected_table');
-      localStorage.setItem('cashier_cart', '[]');
+      clearCashierTableCache(selectedTable);
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
       setShowTableModal(false);
@@ -1858,8 +1920,11 @@ const CashierDashboard = ({ onLogout }) => {
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = (table) => {
+    // Defensive: clear any previous table's cart from localStorage before switching
+    clearCashierTableCache(selectedTable);
     setSelectedTable(table);
     setCart([]);
+    setSelectedOrder(null);
     lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
 
@@ -2234,6 +2299,9 @@ const CashierDashboard = ({ onLogout }) => {
                         // Find and select the table so cashier can process payment
                         const t = activeTables.find(tbl => tbl.backendId === alert.tableBackendId);
                         if (t) {
+                          setCart([]);
+                          lastConfirmedItemsRef.current = [];
+                          clearCashierTableCache(selectedTable);
                           setSelectedTable(t);
                           setShowPaymentModal(true);
                           setActiveTab('tables');
@@ -2362,7 +2430,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 >
                                   <div className="flex items-start justify-between gap-1">
                                     <span className={`text-4xl font-black leading-none ${textColor}`}>
-                                      {outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}
+                                      {outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}
                                     </span>
                                     <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
                                       {statusLabel}
@@ -2484,7 +2552,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         {table.captainName.split(' ')[0]}
                                       </div>
                                     )}
-                                    <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : table.id}</span>
+                                    <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                                   </div>
                                 );
@@ -2564,6 +2632,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 <div
                                   key={wt.id}
                                   onClick={() => {
+                                    clearCashierTableCache(selectedTable);
                                     setIsWalkinMode(true);
                                     setSelectedTable(wt);
                                     setCart([]);
@@ -3552,7 +3621,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
-                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
+                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.number ?? selectedTable.id}`}
                 </div>
                 <div>
                   <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
@@ -3725,7 +3794,13 @@ const CashierDashboard = ({ onLogout }) => {
                   >
                     Edit Bill
                   </button>
-                  {selectedTable.status === 'Waiting Bill' || selectedTable.status === 'BILLING_REQUESTED' ? (
+                  {/* FIX 4: single source of truth for button rendering */}
+                  {(() => {
+                    const tableStatus = settledTableIds.has(selectedTable.backendId)
+                      ? 'Settled'
+                      : selectedTable.status;
+                    return tableStatus === 'Waiting Bill' || tableStatus === 'BILLING_REQUESTED';
+                  })() ? (
                     <button
                       onClick={() => setShowMethodPicker(true)}
                       className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"

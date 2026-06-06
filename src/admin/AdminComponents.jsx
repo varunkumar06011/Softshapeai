@@ -485,6 +485,9 @@ const CAPTAINS = [
   { id: 'C4', name: 'Durga Prasad' },
   { id: 'C5', name: 'Subbaiah' },
   { id: 'C6', name: 'Happy' },
+  { id: 'C7', name: 'Subbu' },
+  { id: 'C8', name: 'Sunil' },
+  { id: 'C9', name: 'Ramarao' },
 ];
 
 export function Tables({ onOpen }) {

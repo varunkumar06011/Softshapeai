@@ -16,29 +16,32 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 
 // ── Signature Cache ──────────────────────────────────────────────────────────
 let cachedSignature = null;
+let cachedToSign = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 55_000; // QZ tokens valid for 60s; cache for 55s
 let keepAliveInterval = null;
 
 export const signatureCache = {
-  get() {
-    if (cachedSignature && Date.now() - cachedAt < CACHE_TTL_MS) {
+  get(toSign) {
+    if (cachedSignature && cachedToSign === toSign && Date.now() - cachedAt < CACHE_TTL_MS) {
       return cachedSignature;
     }
     return null;
   },
-  set(signature) {
+  set(toSign, signature) {
+    cachedToSign = toSign;
     cachedSignature = signature;
     cachedAt = Date.now();
   },
   clear() {
+    cachedToSign = null;
     cachedSignature = null;
     cachedAt = 0;
   },
 };
 
 async function fetchSignature(toSign) {
-  const cached = signatureCache.get();
+  const cached = signatureCache.get(toSign);
   if (cached) return cached;
 
   const res = await fetch(`${API_URL}/api/print/qz-sign`, {
@@ -49,7 +52,7 @@ async function fetchSignature(toSign) {
   if (!res.ok) throw new Error(`QZ sign request failed: ${res.status}`);
   const data = await res.json();
   if (!data.signature) throw new Error('QZ sign response missing signature');
-  signatureCache.set(data.signature);
+  signatureCache.set(toSign, data.signature);
   return data.signature;
 }
 
@@ -59,8 +62,11 @@ async function fetchSignature(toSign) {
  */
 export async function warmSignature() {
   try {
-    const dummy = 'WARMUP-' + Date.now();
-    await fetchSignature(dummy);
+    await fetch(`${API_URL}/api/print/qz-sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toSign: 'WARMUP-' + Date.now() }),
+    });
   } catch (err) {
     console.warn('[qzTray] Signature warm-up failed:', err.message);
   }
@@ -131,7 +137,7 @@ export function getPrinterForJob(type, restaurantId, sectionTag) {
   if (type === 'BAR_KOT') return BAR_PRINTER;
   if (type === 'BILL' || type === 'FINAL_BILL') {
     if (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel') {
-      return KOT_FAMILY_PRINTER;
+      return DINE_IN_BILL_PRINTER;
     }
     return restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
   }

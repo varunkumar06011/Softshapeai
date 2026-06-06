@@ -17,36 +17,36 @@ async function parseResponse(res) {
 }
 
 /**
- * Fetch with timeout and retry logic for resilient API calls
- * Note: AbortController is handled by the caller (component) to avoid conflicts
+ * Fetch with timeout and retry logic for resilient API calls.
+ * Timeout is 45000ms (well above the 8000ms minimum) to avoid premature AbortErrors.
+ * If an external signal is provided via options.signal, it is linked to the internal
+ * timeout controller so callers can cancel the request on unmount.
  */
 async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 45000 } = {}) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timeoutId);
-      return res;
-    } catch (err) {
-      clearTimeout(timeoutId);
-      // Only retry on network errors, not on abort errors
-      if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
-        console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
-        await new Promise(r => setTimeout(r, 1000)); // 1s backoff
-        return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
-      }
-      throw err;
-    }
+  // Link external signal if provided so unmounting components can abort the fetch
+  const externalSignal = options?.signal;
+  const onExternalAbort = externalSignal ? () => controller.abort() : null;
+  if (externalSignal && !externalSignal.aborted) {
+    externalSignal.addEventListener('abort', onExternalAbort);
+  } else if (externalSignal?.aborted) {
+    controller.abort();
+  }
+
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
+    return res;
   } catch (err) {
-    // If it's an abort error, don't retry - it's intentional cancellation
-    if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-      throw err;
-    }
-    if (retries > 0) {
+    clearTimeout(timeoutId);
+    if (onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
+    // Only retry on network errors, not on abort errors
+    if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
       console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 1000)); // 1s backoff
       return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
     }
     throw err;
@@ -57,10 +57,11 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
  * Fetch all venue sections with their tables.
  * Returns the same shape as GET /api/tables?restaurantId=venue-001
  */
-export async function fetchVenueSections() {
+export async function fetchVenueSections(signal) {
   const res = await fetchWithRetry(apiUrl(`/api/venue/sections`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    signal,
   }, { retries: 2, timeoutMs: 45000 });
   return parseResponse(res);
 }

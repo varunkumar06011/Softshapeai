@@ -50,7 +50,7 @@ export function getVenueTableLabel(sectionName, tableNumber) {
   const name = (sectionName || '').toLowerCase();
   if (name.includes('bar parcel')) return `BP${tableNumber}`;
   if (name.includes('bar')) return `B${tableNumber}`;
-  if (name.includes('family restaurant')) return `T${tableNumber}`;
+  if (name.includes('family restaurant')) return `F${tableNumber}`;
   if (name.includes('conference')) return `C${tableNumber}`;
   if (name.includes('pdr')) return `PDR${tableNumber}`;
   if (name.includes('rooms')) return `R${tableNumber}`;
@@ -217,15 +217,19 @@ function acquireSocket(handlers) {
     }
     sharedSocket.emit("join", VENUE_ID);
 
-    const { onUpdated, onCreated, onDeleted } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
+    sharedSocket.on("order:created", onOrderCreated);
+    sharedSocket.on("order:updated", onOrderUpdated);
 
     return () => {
       sharedSocket?.off("table:updated", onUpdated);
       sharedSocket?.off("table:created", onCreated);
       sharedSocket?.off("table:deleted", onDeleted);
+      sharedSocket?.off("order:created", onOrderCreated);
+      sharedSocket?.off("order:updated", onOrderUpdated);
     };
   } catch (err) {
     console.error("[VenueTableSync] Socket init failed:", err);
@@ -251,18 +255,27 @@ export function useVenueTableSync() {
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
   const cancelledRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
 
   const loadTables = useCallback(async () => {
+    if (isFetchingRef.current) {
+      console.log('[VenueTableSync] Fetch already in progress, skipping');
+      return;
+    }
+    isFetchingRef.current = true;
+    abortControllerRef.current = new AbortController();
     cancelledRef.current = false;
     setIsSyncing(true);
     try {
       console.log('[VenueTableSync] Fetching /api/venue/sections ...');
-      const sections = await fetchVenueSections();
-      if (cancelledRef.current) return;
+      const sections = await fetchVenueSections(abortControllerRef.current.signal);
+      if (!mountedRef.current || cancelledRef.current) return;
       console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
       const flat = flattenSections(sections);
       console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
@@ -279,13 +292,20 @@ export function useVenueTableSync() {
         return deduped;
       });
     } catch (err) {
-      console.error("[VenueTableSync] Fetch failed:", err);
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        console.log('[VenueTableSync] Fetch aborted');
+      } else {
+        console.error("[VenueTableSync] Fetch failed:", err);
+      }
     } finally {
-      if (!cancelledRef.current) setIsSyncing(false);
+      isFetchingRef.current = false;
+      abortControllerRef.current = null;
+      if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
     }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     loadTables();
 
     const releaseSocket = acquireSocket({
@@ -293,10 +313,29 @@ export function useVenueTableSync() {
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         const updatedTable = payload?.table || payload;
         if (!updatedTable?.id) return;
+
+        // Detect settled/terminated tables and emit clear event to frontend
+        const isSettledOrTerminated = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free' || updatedTable.status === 'TERMINATED';
+        const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
+        const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
+        if (isSettledOrTerminated && hadActiveOrder) {
+          window.dispatchEvent(new CustomEvent('table:settled', {
+            detail: { tableId: updatedTable.id, tableNumber: existingTable?.number }
+          }));
+        }
+
         setTablesState((prev) => {
-          const next = prev.map((t) =>
-            t.backendId === updatedTable.id ? mapBackendTable(updatedTable, t) : t
-          );
+          const next = prev.map((t) => {
+            if (t.backendId !== updatedTable.id) return t;
+            // Guard: if socket says AVAILABLE but local table has an active order,
+            // skip this update — it's a stale/race event. Wait for the correct one.
+            const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
+            if (incomingIsAvailable && t.activeOrder) {
+              console.warn('[VenueTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+              return t;
+            }
+            return mapBackendTable(updatedTable, t);
+          });
           writeCache(next);
           return next;
         });
@@ -324,6 +363,46 @@ export function useVenueTableSync() {
           return next;
         });
       },
+      onOrderCreated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) =>
+            t.backendId === order.tableId
+              ? {
+                  ...t,
+                  status: t.status === 'Free' ? 'Occupied' : t.status,
+                  workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
+                  activeOrder: order,
+                  items: order.items || t.items || [],
+                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+                }
+              : t
+          );
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderUpdated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) =>
+            t.backendId === order.tableId
+              ? {
+                  ...t,
+                  activeOrder: order,
+                  items: order.items || t.items || [],
+                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+                }
+              : t
+          );
+          writeCache(next);
+          return next;
+        });
+      },
     });
 
     // Re-fetch on every reconnect to recover orders missed during the gap.
@@ -337,7 +416,9 @@ export function useVenueTableSync() {
     socket.on("connect", onReconnect);
 
     return () => {
+      mountedRef.current = false;
       cancelledRef.current = true;
+      abortControllerRef.current?.abort();
       releaseSocket();
       socket.off("connect", onReconnect);
     };

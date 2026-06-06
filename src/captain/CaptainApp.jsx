@@ -1358,6 +1358,31 @@ export default function CaptainApp({ onLogout }) {
     };
     window.addEventListener('softshape_menu_updated', onMenuUpdated);
 
+    // Listen for settled/terminated tables from sync services and clear stale state immediately
+    const onTableSettled = (e) => {
+      const { tableId } = e.detail || {};
+      if (!tableId) return;
+      // Clear cart for this table from localStorage-backed state
+      setTableCarts(prev => {
+        const next = { ...prev };
+        delete next[tableId];
+        return next;
+      });
+      // If this is the currently active table, reset all session state
+      if (String(activeTableIdRef.current) === String(tableId)) {
+        setActiveTableId(null);
+        activeOrderIdRef.current = null;
+        lastConfirmedItemsRef.current = [];
+        kotRequestIdRef.current = null;
+        setKotError(null);
+        setSendingKOT(false);
+        isSubmittingKotRef.current = false;
+        setView('tables');
+        addNotification('Table settled by cashier', 'success');
+      }
+    };
+    window.addEventListener('table:settled', onTableSettled);
+
     if (!activeRestaurantId) return;
 
     const socket = getSocket();
@@ -1448,6 +1473,7 @@ export default function CaptainApp({ onLogout }) {
 
     return () => {
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
+      window.removeEventListener('table:settled', onTableSettled);
       socket.off('connect', onConnect);
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
@@ -1871,10 +1897,32 @@ export default function CaptainApp({ onLogout }) {
     // Determine venue vs regular at open time using a ref (stable across re-renders)
     isVenueTableRef.current = venueTables.some(t => t.id === table.id || t.backendId === table.id)
                            || (table.id && String(table.id).includes('-'));
-    setActiveTableId(table.id);
-    lastConfirmedItemsRef.current = getTableItems(table); // seed immediately from live table
+
+    // BUG FIX: Reset ALL session state before switching tables so nothing from the previous table leaks in.
+    // Clear the previous table's cart from localStorage-backed state.
+    const previousTableId = activeTableIdRef.current;
+    if (previousTableId) {
+      setTableCarts(prev => {
+        const next = { ...prev };
+        delete next[previousTableId];
+        return next;
+      });
+    }
+    setTableCarts(prev => ({ ...prev, [table.id]: [] }));
+    lastConfirmedItemsRef.current = [];
     activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
+    setKotError(null);
+    setSendingKOT(false);
+    isSubmittingKotRef.current = false;
+    setExpandedNoteItemId(null);
+    setInlineQtyItem(null);
+    setActiveVariantItem(null);
+    setPreviewItem(null);
+    setEditingItem(null);
+
+    setActiveTableId(table.id);
+    lastConfirmedItemsRef.current = getTableItems(table); // seed immediately from live table
     setView('session');
   };
 
@@ -2056,20 +2104,29 @@ export default function CaptainApp({ onLogout }) {
   useEffect(() => {
     // Sync ref so async socket handlers always read the latest active table
     activeTableIdRef.current = activeTableId;
-    // Always clear first - never carry a ref from a previous table
 
+    // BUG FIX: Reset ALL session state at the top of the effect before any live-table lookup.
+    // This guarantees the UI shows empty/clean state first even if the fetch is slow.
     activeOrderIdRef.current = null;
-
     kotRequestIdRef.current = null;
-
-
+    setKotError(null);
+    setSendingKOT(false);
+    isSubmittingKotRef.current = false;
+    lastConfirmedItemsRef.current = [];
 
     if (activeTableId) {
+      // Ensure the cart for this table starts empty so stale items never appear.
+      // (If the table truly has a live session, the sync service will populate it via socket.)
+      setTableCarts(prev => {
+        const hadCart = prev[activeTableId] && prev[activeTableId].length > 0;
+        if (hadCart) {
+          return { ...prev, [activeTableId]: [] };
+        }
+        return prev;
+      });
 
       // Re-seed from live state so second KOT on a reloaded session works correctly
-
       const liveTableEntry = activeTables.find(
-
         t => t.backendId === activeTableId || t.id === activeTableId
       ) || venueTables.find(
         t => t.backendId === activeTableId || t.id === activeTableId
@@ -2077,42 +2134,25 @@ export default function CaptainApp({ onLogout }) {
 
       const liveOrder = liveTableEntry?.activeOrder;
 
-      
-
       if (
-
         liveOrder?.id &&
-
         liveTableEntry?.status !== 'Free' &&
-
         liveTableEntry?.status !== 'AVAILABLE' &&
-
         liveTableEntry?.dbStatus !== 'AVAILABLE' &&
-
         liveOrder?.status !== 'CANCELLED' &&
-
         liveOrder?.status !== 'PAID' &&
-
         (liveOrder?.items?.length ?? 0) > 0
-
       ) {
-
         activeOrderIdRef.current = liveOrder.id;
-
       } else {
-
         activeOrderIdRef.current = null;
-
       }
 
       // Seed lastConfirmedItemsRef from live table so items survive re-mount/re-open
-
       lastConfirmedItemsRef.current = getTableItems(liveTableEntry);
-
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-
   }, [activeTableId]);
 
   // Stale session guard: if view is 'session' but there's no active table, reset to tables view
@@ -3794,6 +3834,8 @@ export default function CaptainApp({ onLogout }) {
 
                   </div>
 
+                </div>
+
                 ) : (
 
                   <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col gap-4 shrink-0 z-30 sticky top-0">
@@ -3911,6 +3953,8 @@ export default function CaptainApp({ onLogout }) {
                     </div>
 
                   </div>
+
+                </div>
 
                 )}
 
