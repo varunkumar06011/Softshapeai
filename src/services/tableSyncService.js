@@ -301,23 +301,40 @@ export function useTableSync() {
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
   const cancelledRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
 
   const loadTables = useCallback(async () => {
+    if (isFetchingRef.current) {
+      console.log('[TableSync] Fetch already in progress, skipping');
+      return;
+    }
+    isFetchingRef.current = true;
+    abortControllerRef.current = new AbortController();
     cancelledRef.current = false;
     setIsSyncing(true);
     let apiTables = null;
 
     try {
-      apiTables = flattenSections(await fetchTables(RESTAURANT_ID));
+      apiTables = flattenSections(await fetchTables(RESTAURANT_ID, abortControllerRef.current.signal));
     } catch (err) {
-      console.error("[TableSync] GET /api/tables failed:", err);
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        console.log('[TableSync] Fetch aborted');
+      } else {
+        console.error("[TableSync] GET /api/tables failed:", err);
+      }
     }
 
-    if (cancelledRef.current) return;
+    if (!mountedRef.current || cancelledRef.current) {
+      isFetchingRef.current = false;
+      abortControllerRef.current = null;
+      return;
+    }
 
     setTablesState((current) => {
       const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
@@ -330,10 +347,13 @@ export function useTableSync() {
       return deduped;
     });
 
-    setIsSyncing(false);
+    isFetchingRef.current = false;
+    abortControllerRef.current = null;
+    if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     loadTables();
     // Register so the socket reconnect handler can trigger a refetch
     // to recover any orders missed while the socket was down.
@@ -344,6 +364,16 @@ export function useTableSync() {
         if (payload?.restaurantId && payload.restaurantId !== RESTAURANT_ID) return;
         const updatedTable = unwrapTableEvent(payload);
         if (!updatedTable?.id) return;
+
+        // Detect settled/terminated tables and emit clear event to frontend
+        const isSettledOrTerminated = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free' || updatedTable.status === 'TERMINATED';
+        const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
+        const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
+        if (isSettledOrTerminated && hadActiveOrder) {
+          window.dispatchEvent(new CustomEvent('table:settled', {
+            detail: { tableId: updatedTable.id, tableNumber: existingTable?.number }
+          }));
+        }
 
         setTablesState((prev) => {
           const next = prev.map((t) => {
@@ -388,7 +418,9 @@ export function useTableSync() {
     });
 
     return () => {
+      mountedRef.current = false;
       cancelledRef.current = true;
+      abortControllerRef.current?.abort();
       releaseSocket();
     };
   }, [loadTables]);

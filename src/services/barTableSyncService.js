@@ -251,27 +251,46 @@ export function useBarTableSync() {
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
   const cancelledRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
 
   const loadTables = useCallback(async () => {
+    if (isFetchingRef.current) {
+      console.log('[BarTableSync] Fetch already in progress, skipping');
+      return;
+    }
+    isFetchingRef.current = true;
+    abortControllerRef.current = new AbortController();
     cancelledRef.current = false;
     setIsSyncing(true);
     let apiTables = null;
 
     try {
-      apiTables = flattenSections(await fetchBarTables());
+      apiTables = flattenSections(await fetchBarTables(abortControllerRef.current.signal));
     } catch (err) {
-      console.error("[TableSync] GET /api/tables failed:", err);
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        console.log('[BarTableSync] Fetch aborted');
+      } else {
+        console.error("[BarTableSync] GET /api/tables failed:", err);
+      }
     }
 
-    if (cancelledRef.current) return;
+    if (!mountedRef.current || cancelledRef.current) {
+      isFetchingRef.current = false;
+      abortControllerRef.current = null;
+      return;
+    }
 
     if (!apiTables || !Array.isArray(apiTables) || apiTables.length === 0) {
       console.warn('[BarTableSync] API returned no tables — keeping current state, not injecting local fakes');
-      setIsSyncing(false);
+      isFetchingRef.current = false;
+      abortControllerRef.current = null;
+      if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
       return;
     }
 
@@ -285,10 +304,13 @@ export function useBarTableSync() {
       return deduped;
     });
 
-    setIsSyncing(false);
+    isFetchingRef.current = false;
+    abortControllerRef.current = null;
+    if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     loadTables();
 
     const releaseSocket = acquireSocket({
@@ -296,6 +318,16 @@ export function useBarTableSync() {
         if (payload?.restaurantId && payload.restaurantId !== BAR_ID) return;
         const updatedTable = unwrapTableEvent(payload);
         if (!updatedTable?.id) return;
+
+        // Detect settled/terminated tables and emit clear event to frontend
+        const isSettledOrTerminated = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free' || updatedTable.status === 'TERMINATED';
+        const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
+        const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
+        if (isSettledOrTerminated && hadActiveOrder) {
+          window.dispatchEvent(new CustomEvent('table:settled', {
+            detail: { tableId: updatedTable.id, tableNumber: existingTable?.number }
+          }));
+        }
 
         setTablesState((prev) => {
           const next = prev.map((t) =>
@@ -342,7 +374,9 @@ export function useBarTableSync() {
     socket.on("connect", onReconnect);
 
     return () => {
+      mountedRef.current = false;
       cancelledRef.current = true;
+      abortControllerRef.current?.abort();
       releaseSocket();
       socket.off("connect", onReconnect);
     };
