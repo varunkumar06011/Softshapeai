@@ -41,7 +41,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
             p: Math.round(item.price),
             c: item.category,
             t: item.isVeg ? 'veg' : 'non',
-            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            img: item.image || null,
             desc: item.description || '',
             menuType: item.menuType,
             isAvailable: item.isActive,
@@ -154,6 +154,11 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
     // Apply Veg/Non-Veg filter locally without breaking existing logic
     if (dietFilter === 'Veg') items = items.filter(i => i.t === 'veg');
     if (dietFilter === 'Non-Veg') items = items.filter(i => i.t === 'non');
+
+    // Sort: items with images first, no-image items last (preserve original order within each group)
+    const withImage = items.filter(i => i.img);
+    const withoutImage = items.filter(i => !i.img);
+    items = [...withImage, ...withoutImage];
 
     return items;
   }, [searchQuery, activeCategory, dietFilter, menuItems]);
@@ -344,7 +349,13 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                     <div className="relative bg-white rounded-[32px] overflow-hidden flex flex-col h-full shadow-[0_10px_30px_rgba(0,0,0,0.03)] group-hover:-translate-y-2 group-hover:shadow-[0_20px_40px_rgba(255,77,79,0.2)] transition-all duration-500">
 
                       <div className="h-40 w-full overflow-hidden relative">
-                        <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                        {item.img ? (
+                          <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-100 text-4xl">
+                            🍽️
+                          </div>
+                        )}
 
                         {/* Animated Badge */}
                         <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-[0_5px_15px_rgba(0,0,0,0.1)] flex items-center gap-1 animate-[bounce_3s_infinite]">
@@ -417,7 +428,13 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                   className="relative hover:z-10 cursor-pointer bg-white border border-red-50 rounded-2xl xs:rounded-[28px] p-3 xs:p-4 flex gap-3 xs:gap-5 items-center group hover:shadow-[0_15px_30px_rgba(255,77,79,0.08)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
                 >
                   <div className="w-20 h-20 xs:w-24 xs:h-24 sm:w-28 sm:h-28 rounded-xl xs:rounded-[20px] sm:rounded-[24px] overflow-hidden shrink-0 relative shadow-inner">
-                    <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                    {item.img ? (
+                      <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-100 text-2xl">
+                        🍽️
+                      </div>
+                    )}
                     <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm p-1 rounded-md shadow-sm">
                       <div className={`w-2 h-2 xs:w-2.5 xs:h-2.5 rounded-full ${item.t === 'veg' ? 'bg-emerald-500' : 'bg-red-500'}`} />
                     </div>
@@ -555,7 +572,13 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setPreviewItem(null)}>
           <div className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="h-64 w-full relative">
-              <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
+              {previewItem.img ? (
+                <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 text-6xl">
+                  🍽️
+                </div>
+              )}
               <button
                 onClick={() => setPreviewItem(null)}
                 className="absolute top-4 right-4 w-10 h-10 bg-black/50 backdrop-blur-md rounded-full text-white flex items-center justify-center hover:bg-black/70 transition-colors"
@@ -640,7 +663,13 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
             <div className="flex-grow overflow-y-auto p-6 space-y-6">
               {cart.map(item => (
                 <div key={item.n} className="flex items-center gap-4">
-                  <img src={item.img} alt={item.n} className="w-16 h-16 rounded-2xl object-cover shadow-sm" />
+                  {item.img ? (
+                    <img src={item.img} alt={item.n} className="w-16 h-16 rounded-2xl object-cover shadow-sm" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gray-100 text-2xl shadow-sm">
+                      🍽️
+                    </div>
+                  )}
                   <div className="flex-grow min-w-0">
                     <h3 className="font-black text-sm text-gray-900 truncate">{item.n}</h3>
                     <div className="mt-1">

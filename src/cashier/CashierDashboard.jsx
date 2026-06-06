@@ -3281,8 +3281,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {activeMenuItems.map((item) => (
                             <div
                               key={item.id || item.n}
-                              onClick={() => handleAddItem(item)}
-                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between"
+                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between"
                             >
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
@@ -3304,7 +3303,7 @@ const CashierDashboard = ({ onLogout }) => {
                               {/* Price + Add button */}
                               <div className="flex items-center justify-between mt-auto">
                                 <p className="text-lg md:text-xl font-black text-[#E53935]">₹{item.p}</p>
-                                <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0">
+                                <div onClick={(e) => { e.stopPropagation(); handleAddItem(item); }} className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0 cursor-pointer">
                                   <Plus className="w-5 h-5" />
                                 </div>
                               </div>
@@ -3634,13 +3633,17 @@ const CashierDashboard = ({ onLogout }) => {
 
                 {/* ── Discount & Totals (Ultra Compact) ──────────────── */}
                 <div className="flex gap-2 sm:gap-3 mb-2">
+                  {(() => {
+                    const isBillFinalised = selectedTable?.status === 'Waiting Bill' || selectedTable?.status === 'BILLING_REQUESTED';
+                    return (
+                      <>
                   {/* Discount */}
                   <div className="w-32 sm:w-36 shrink-0">
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">
                         Discount
                       </label>
-                      <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
+                      <div className={`flex bg-gray-100 rounded-lg p-1 ml-2 ${isBillFinalised ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
                         <button 
                           onClick={() => { setDiscountMode('percent'); setRawDiscountInput(''); }}
                           className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#E53935]' : 'text-gray-400 hover:text-gray-600'}`}
@@ -3657,9 +3660,15 @@ const CashierDashboard = ({ onLogout }) => {
                       step={discountMode === 'percent' ? "0.01" : "1"}
                       value={rawDiscountInput}
                       onChange={(e) => setRawDiscountInput(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-sm font-bold text-center transition-colors"
+                      disabled={isBillFinalised}
+                      className="w-full px-3 py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-sm font-bold text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
                       placeholder="0"
                     />
+                    {isBillFinalised && (
+                      <p className="text-[9px] text-gray-400 text-center mt-1 flex items-center justify-center gap-1">
+                        🔒 Bill printed — discount locked
+                      </p>
+                    )}
                   </div>
 
                   {/* Totals */}
@@ -3687,6 +3696,9 @@ const CashierDashboard = ({ onLogout }) => {
                       </span>
                     </div>
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* ── Action buttons ──────────────────────────────────── */}

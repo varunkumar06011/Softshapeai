@@ -79,10 +79,13 @@ export function useBarMenuSync() {
 
   // Listen for socket menu update events from admin panel
   useEffect(() => {
+    let debounceTimer = null;
     const handleMenuUpdate = (event) => {
       console.log("[BarMenuSync] Received menu-item-updated event:", event);
-      // Refresh menu from backend to get latest data
-      refreshMenu();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshMenu();
+      }, 800);
     };
 
     // Listen for custom event from socket wrapper
@@ -90,6 +93,7 @@ export function useBarMenuSync() {
 
     return () => {
       window.removeEventListener("menu-item-updated", handleMenuUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, []);
 

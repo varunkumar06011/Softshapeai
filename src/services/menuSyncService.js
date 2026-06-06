@@ -202,12 +202,38 @@ export function useGlobalMenuSync() {
 
   // Listen for socket menu update events from admin panel
   useEffect(() => {
+    let debounceTimer = null;
     const handleMenuUpdate = (event) => {
       console.log("[MenuSync] Received menu-item-updated event:", event);
-      // Refresh menu from backend to get latest data
-      refreshMenu().catch(err => {
-        console.error("[MenuSync] Failed to refresh menu after socket event:", err);
-      });
+      const payload = event.detail;
+      // Optimistic update: if payload has itemId + updatedItem, patch in memory immediately
+      if (payload && payload.itemId && payload.updatedItem && globalMenu) {
+        const updated = payload.updatedItem;
+        const patched = globalMenu.map(item =>
+          item.id === payload.itemId
+            ? {
+                ...item,
+                n: updated.name ?? item.n,
+                p: updated.price ?? item.p,
+                t: updated.isVeg != null ? (updated.isVeg ? 'veg' : 'non') : item.t,
+                c: updated.category ?? item.c,
+                imageUrl: updated.imageUrl ?? item.imageUrl,
+                available: updated.isAvailable ?? item.available,
+              }
+            : item
+        );
+        globalMenu = patched;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(patched));
+        notifySubscribers();
+        dispatchMenuEvent(patched);
+      }
+      // Then debounced full refresh for correctness
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshMenu().catch(err => {
+          console.error("[MenuSync] Failed to refresh menu after socket event:", err);
+        });
+      }, 800);
     };
 
     // Listen for custom event from socket wrapper
@@ -215,6 +241,7 @@ export function useGlobalMenuSync() {
 
     return () => {
       window.removeEventListener("menu-item-updated", handleMenuUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, [refreshMenu]);
 

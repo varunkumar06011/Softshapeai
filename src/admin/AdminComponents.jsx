@@ -806,8 +806,8 @@ export function MenuPage({ onAddDish }) {
   // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
   const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
     // Convert base64 data URI → Blob for multipart/form-data upload
-    const [, b64] = base64DataUri.split(',');
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const base64Data = base64DataUri.includes(',') ? base64DataUri.split(',')[1] : base64DataUri;
+    const bytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: 'image/jpeg' });
 
     const formData = new FormData();
