@@ -65,7 +65,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     id: Number(row.number) || row.number,
     number: row.number,
     dbStatus: row.status,
-    status: row.workflowStatus || toFrontendTableStatus(row.status),
+    status: isFreeWorkflow ? 'Free' : (row.workflowStatus || toFrontendTableStatus(row.status)),
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
@@ -3540,7 +3540,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
-                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
+                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.number ?? selectedTable.id}`}
                 </div>
                 <div>
                   <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
