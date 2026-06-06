@@ -339,6 +339,27 @@ const CashierDashboard = ({ onLogout }) => {
     localStorage.removeItem('cashier_cart');
   };
 
+  // ── Moved up: these must be declared before activeTablesRef / venueTablesRef ──
+  const venuePrices = useVenuePrices();
+  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
+
+  const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
+  const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
+
+  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync();
+  const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
+  const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
+  const [barMenuTab, setBarMenuTab] = useState('food');
+  const [variantPickerItem, setVariantPickerItem] = useState(null);
+
+  // Derived — restaurant or bar depending on outlet
+  const activeTables = outlet === 'bar' ? barTables : tables;
+  const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : RESTAURANT_ID;
+
+  const socket = useSocket(activeRestaurantId);
+  // ── End moved block ──
+
   const activeTablesRef = useRef(activeTables);
   useEffect(() => { activeTablesRef.current = activeTables; }, [activeTables]);
   const venueTablesRef = useRef(venueTables);
@@ -394,9 +415,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  const venuePrices = useVenuePrices();
-  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
 
   // Persist selections to localStorage
   useEffect(() => {
@@ -502,22 +520,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
   const [txnPage, setTxnPage] = useState(1);
-
-  const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
-  const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
-
-  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync();
-  const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
-  const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
-  const [barMenuTab, setBarMenuTab] = useState('food');
-  const [variantPickerItem, setVariantPickerItem] = useState(null);
-
-  // Derived — restaurant or bar depending on outlet
-  const activeTables = outlet === 'bar' ? barTables : tables;
-  const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : RESTAURANT_ID;
-
-  const socket = useSocket(activeRestaurantId);
 
   function formatBillNumber(txnDate, txnNumber) {
     return formatTxnDisplayId(txnDate, txnNumber);
