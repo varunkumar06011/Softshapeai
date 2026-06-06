@@ -159,7 +159,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     BOLD_ON,
     `${venueLabel}\n`,
     BOLD_OFF,
-    LEFT,
+    CENTER,
     separator("-"),
     `Table : ${tableDisplay}\n`,
     `Time  : ${timeStr}\n`,
@@ -170,6 +170,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
   if (item) {
     const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`;
     cmds.push(
+      CENTER,
       SIZE_HEIGHT,
       BOLD_ON,
       itemLine + "\n",
@@ -186,9 +187,9 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
         : (sectionName ? sectionName.toUpperCase() : 'N/A'));
   cmds.push(
     separator("-"),
+    CENTER,
     `Hall Name : ${hallName}\n`,
     separator("-"),
-    CENTER,
     SIZE_HEIGHT,
     BOLD_ON,
     '** CANCELLED **\n',
@@ -221,7 +222,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     BOLD_ON,
     `${venueLabel}\n`,
     BOLD_OFF,
-    LEFT,
+    CENTER,
     separator("-"),
     `Table : ${tableDisplay}\n`,
     `Time  : ${timeStr}\n`,
@@ -236,6 +237,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
   (items || []).forEach(item => {
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
+      CENTER,
       SIZE_HEIGHT,
       BOLD_ON,
       itemLine + "\n",
@@ -251,9 +253,9 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
         : (sectionName ? sectionName.toUpperCase() : 'N/A'));
   cmds.push(
     separator("-"),
+    CENTER,
     `Hall Name : ${hallName}\n`,
     separator("-"),
-    CENTER,
     SIZE_HEIGHT,
     BOLD_ON,
     '** CANCELLED **\n',
