@@ -322,6 +322,20 @@ const CashierDashboard = ({ onLogout }) => {
   const settledTableIdsRef = useRef(settledTableIds);
   useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
   const syncPauseUntilRef = useRef(0);
+  // --- Bill-printed guard ---
+  // Primary flag: table IDs where bill was printed but settlement not yet confirmed.
+  // This is the single source of truth for the Settlement button and socket guards.
+  const [billPrintedTableIds, setBillPrintedTableIds] = useState(() => {
+    // Restore any bill_printed state from localStorage on mount
+    try {
+      const stored = localStorage.getItem('cashier_bill_printed_tables');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+  const billPrintedTableIdsRef = useRef(billPrintedTableIds);
+  useEffect(() => { billPrintedTableIdsRef.current = billPrintedTableIds; }, [billPrintedTableIds]);
+  // Per-table cooldown: tableBackendId -> timestamp until which socket updates are ignored
+  const billPrintCooldownRef = useRef(new Map()); // Map<tableBackendId, number>
 
   // Helper: namespaced cart key so tables never bleed into each other
   const getCartStorageKey = (table) => {
@@ -365,8 +379,20 @@ const CashierDashboard = ({ onLogout }) => {
   const venueTablesRef = useRef(venueTables);
   useEffect(() => { venueTablesRef.current = venueTables; }, [venueTables]);
 
-  // Helper: determine if an incoming table update should be blocked for a settled table
+  // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
+    // --- Bill-print cooldown: ignore all sync for 5s after printing ---
+    const billCooldownUntil = billPrintCooldownRef.current.get(tableId) || 0;
+    if (Date.now() < billCooldownUntil) return true;
+
+    // --- Bill printed but not yet settled: block any status that would revert to non-Waiting-Bill ---
+    if (billPrintedTableIdsRef.current.has(tableId)) {
+      // Only allow the table to go Free/AVAILABLE (settlement done by another tab) or stay Waiting Bill
+      const forward = new Set(['Free', 'AVAILABLE', 'TERMINATED', 'CLEANING', 'Cleaning', 'Waiting Bill', 'BILLING_REQUESTED']);
+      const mapped = toFrontendTableStatus(incomingStatus);
+      if (incomingStatus && !forward.has(incomingStatus) && !forward.has(mapped)) return true;
+    }
+
     if (!settledTableIdsRef.current.has(tableId)) return false;
     // During 5s pause after settlement: block ALL updates
     if (Date.now() < syncPauseUntilRef.current) return true;
@@ -1014,6 +1040,33 @@ const CashierDashboard = ({ onLogout }) => {
     // FIX: once a table is marked settled, ignore sync updates that try to revert it
     if (settledTableIdsRef.current.has(selectedTable.backendId)) return;
 
+    // BILL-PRINT GUARD: if bill was printed, do not let sync downgrade selectedTable back
+    // to a non-Waiting-Bill status. The button must stay as "Settlement".
+    if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
+      // Only let sync through if it brings a Free/AVAILABLE (settlement confirmed elsewhere)
+      const liveTable = activeTables.find((t) => t.backendId === selectedTable.backendId) ||
+        venueTables.find((t) => t.backendId === selectedTable.backendId);
+      if (liveTable) {
+        const isNowFree = liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free';
+        if (isNowFree) {
+          // Settlement was confirmed — clear the print flag then let normal logic run
+          setBillPrintedTableIds(prev => { const next = new Set(prev); next.delete(selectedTable.backendId); return next; });
+          billPrintCooldownRef.current.delete(selectedTable.backendId);
+          // Persist removal
+          try {
+            const stored = JSON.parse(localStorage.getItem('cashier_bill_printed_tables') || '[]');
+            localStorage.setItem('cashier_bill_printed_tables', JSON.stringify(stored.filter(id => id !== selectedTable.backendId)));
+          } catch {}
+          setSelectedTable(null); setSelectedOrder(null); setCart([]);
+          lastConfirmedItemsRef.current = [];
+          clearCashierTableCache(selectedTable);
+          setExpandedNoteItemId(null); setRemovedItemIds([]);
+        }
+        // else: keep selectedTable as-is — ignore the sync update
+      }
+      return;
+    }
+
     const isSelectedFree = !selectedTable.status || selectedTable.status === 'Free' || selectedTable.status === 'AVAILABLE' || selectedTable.workflowStatus === 'Free';
     const hasStaleGhostData = isSelectedFree && ((selectedTable.kotHistory?.length > 0) || (selectedTable.currentBill > 0));
     
@@ -1053,7 +1106,7 @@ const CashierDashboard = ({ onLogout }) => {
         setSelectedTable(liveTable);
       }
     }
-  }, [activeTables, venueTables, selectedTable]);
+  }, [activeTables, venueTables, selectedTable, billPrintedTableIds]);
 
   useEffect(() => {
     if (selectedTable?.discount && Number(selectedTable.discount) > 0) {
@@ -1323,6 +1376,42 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       setIsPrintingBill(true);
 
+      // ── BILL-PRINT GUARD: arm BEFORE the async call so the button locks immediately ──
+      const tableBackendId = selectedTable.backendId;
+      setBillPrintedTableIds(prev => {
+        const next = new Set(prev);
+        next.add(tableBackendId);
+        // Persist so the flag survives component remount
+        try {
+          localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next]));
+        } catch {}
+        return next;
+      });
+      // Update selectedTable status optimistically right now
+      setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
+      // Start 5-second per-table socket cooldown
+      billPrintCooldownRef.current.set(tableBackendId, Date.now() + 5000);
+      // Update the table list cache immediately to 'Waiting Bill'
+      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+      const updateBillStatus = (prev) =>
+        prev.map((t) =>
+          t.backendId === tableBackendId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+        );
+      if (isVenueTable) {
+        if (setVenueTables) setVenueTables(updateBillStatus);
+      } else {
+        setActiveTables(updateBillStatus);
+      }
+      // Also persist 'bill_printed' in the table localStorage cache
+      try {
+        const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1' : outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        const updatedCache = cached.map(t =>
+          t.backendId === tableBackendId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+        );
+        localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+      } catch {}
+      // ── END GUARD SETUP ──
 
       // Step 1: Update table discount if entered
       if (discountPercent > 0) {
@@ -1353,18 +1442,6 @@ const CashierDashboard = ({ onLogout }) => {
 
       addNotification('Success', 'Bill printed successfully.', 'success');
 
-      // Optimistically update local table status → shows "Settlement" button
-      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
-      const updateBillStatus = (prev) =>
-        prev.map((t) =>
-          t.backendId === selectedTable.backendId ? { ...t, status: 'Waiting Bill' } : t
-        );
-      if (isVenueTable) {
-        if (setVenueTables) setVenueTables(updateBillStatus);
-      } else {
-        setActiveTables(updateBillStatus);
-      }
-
       window.dispatchEvent(new Event('softshape_order_updated'));
 
       // Cooldown so cashier can't double-print immediately
@@ -1375,6 +1452,18 @@ const CashierDashboard = ({ onLogout }) => {
     } catch (error) {
       console.error('Final bill error:', error);
       addNotification('Error', error.message || 'Failed to print bill.', 'error');
+      // On error, roll back the bill-printed flag
+      const tableBackendId = selectedTable?.backendId;
+      if (tableBackendId) {
+        setBillPrintedTableIds(prev => {
+          const next = new Set(prev);
+          next.delete(tableBackendId);
+          try { localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next])); } catch {}
+          return next;
+        });
+        billPrintCooldownRef.current.delete(tableBackendId);
+        setSelectedTable(prev => prev ? { ...prev, status: 'Occupied', workflowStatus: 'Occupied' } : prev);
+      }
     } finally {
       setIsPrintingBill(false);
     }
@@ -1541,6 +1630,18 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Clear billing alerts for this table
       setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
+
+      // ── Release bill-printed lock on settlement ──
+      const settledId = selectedTable.backendId;
+      if (settledId) {
+        setBillPrintedTableIds(prev => {
+          const next = new Set(prev);
+          next.delete(settledId);
+          try { localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next])); } catch {}
+          return next;
+        });
+        billPrintCooldownRef.current.delete(settledId);
+      }
 
       // Close modals and clear state
       setShowMethodPicker(false);
@@ -3796,12 +3897,15 @@ const CashierDashboard = ({ onLogout }) => {
                   >
                     Edit Bill
                   </button>
-                  {/* FIX 4: single source of truth for button rendering */}
+                  {/* Primary source of truth: billPrintedTableIds then socket status */}
                   {(() => {
-                    const tableStatus = settledTableIds.has(selectedTable.backendId)
-                      ? 'Settled'
-                      : selectedTable.status;
-                    return tableStatus === 'Waiting Bill' || tableStatus === 'BILLING_REQUESTED';
+                    // If bill was printed and not yet settled → always show Settlement (ignore stale sync)
+                    if (billPrintedTableIds.has(selectedTable.backendId)) return true;
+                    // Settled this session → treat as done
+                    if (settledTableIds.has(selectedTable.backendId)) return false;
+                    // Fall back to socket-driven status
+                    const s = selectedTable.status;
+                    return s === 'Waiting Bill' || s === 'BILLING_REQUESTED';
                   })() ? (
                     <button
                       onClick={() => setShowMethodPicker(true)}
