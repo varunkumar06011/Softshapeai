@@ -1405,6 +1405,15 @@ export default function CaptainApp({ onLogout }) {
     const onOrderPaid = (payload) => {
       const tableId = payload?.tableId;
       if (!tableId) return;
+
+      const clearTable = (prev) => prev.map(t =>
+        t.backendId === tableId || t.id === tableId
+          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+          : t
+      );
+      setActiveTables(clearTable);
+      setVenueTables(clearTable);
+
       if (activeTableIdRef.current && String(tableId) === String(activeTableIdRef.current)) {
         const settledId = activeTableIdRef.current;
         setTableCarts(prev => {
@@ -1423,6 +1432,15 @@ export default function CaptainApp({ onLogout }) {
       if (!table?.id) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
+
+        // Guard: if socket says AVAILABLE but local table has an active order,
+        // skip this update — it's a stale/race event. Wait for the correct one.
+        const incomingIsAvailable = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
+        if (incomingIsAvailable && t.activeOrder) {
+          console.warn('[CaptainApp] Skipping stale AVAILABLE event for occupied table', t.number);
+          return t;
+        }
+
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),

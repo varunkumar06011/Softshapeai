@@ -893,6 +893,14 @@ const CashierDashboard = ({ onLogout }) => {
       if (shouldBlockTableUpdate(table.id, table.status)) return;
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
+
+        const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
+        const incomingIsAvailable = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.status === 'AVAILABLE';
+        if (incomingIsAvailable && t.activeOrder) {
+          console.warn('[CashierDashboard] Skipping stale AVAILABLE event for occupied table', t.number);
+          return t;
+        }
+
         // FIX #4: Merge kotHistory — never lose KOTs already in local state
         const mergedKotHistory = (() => {
           const existing = t.kotHistory || [];
@@ -902,7 +910,6 @@ const CashierDashboard = ({ onLogout }) => {
         })();
         // FIX: Also update activeOrder from incoming socket data so occupied tables show items
         const incomingOrder = table.orders?.[0] || table.activeOrder || null;
-        const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
         // Never downgrade a table that is locally in 'Waiting Bill' state back to a lesser state
         const protectedStatus = (t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill')
           && incomingStatus !== 'Free' && incomingStatus !== 'AVAILABLE'
@@ -927,6 +934,14 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === table.id) {
         setSelectedTable(prev => {
           if (!prev) return prev;
+
+          const incomingStatusSel = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : prev.status);
+          const incomingIsAvailableSel = incomingStatusSel === 'Free' || incomingStatusSel === 'AVAILABLE' || table.status === 'AVAILABLE';
+          if (incomingIsAvailableSel && prev.activeOrder) {
+            console.warn('[CashierDashboard] Skipping stale AVAILABLE event for selected occupied table', prev.number);
+            return prev;
+          }
+
           const mergedKotHistory = (() => {
             const existing = prev.kotHistory || [];
             const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
@@ -937,7 +952,6 @@ const CashierDashboard = ({ onLogout }) => {
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
-          const incomingStatusSel = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : prev.status);
           const protectedStatusSel = (prev.status === 'Waiting Bill' || prev.workflowStatus === 'Waiting Bill')
             && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
             ? 'Waiting Bill'
@@ -957,6 +971,16 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderPaid = (payload) => {
       const { tableId } = payload;
       if (shouldBlockTableUpdate(tableId, 'AVAILABLE')) return;
+
+      // Clear table status to Free in activeTables and venueTables
+      const clearTable = (prev) => prev.map(t =>
+        t.backendId === tableId
+          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+          : t
+      );
+      setActiveTables(clearTable, { skipPersist: true });
+      if (setVenueTables) setVenueTables(clearTable, { skipPersist: true });
+
       // Remove from billing alerts
       setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
       // Clear selectedTable if it was the paid one
@@ -1128,6 +1152,14 @@ const CashierDashboard = ({ onLogout }) => {
         if (wasFree) {
             // It was already free, and the user is just building an order on it. Don't clear it.
             return;
+        }
+
+        // Guard: if liveTable still has order data, it's clearly still occupied — preserve status and skip clear
+        const hasOrderData = liveTable.activeOrder || (liveTable.orders?.length > 0) || (liveTable.kotHistory?.length > 0) || (liveTable.currentBill > 0);
+        if (hasOrderData) {
+          // Preserve current status/workflowStatus from selectedTable to prevent deselection during sync gap
+          setSelectedTable(prev => prev ? { ...liveTable, status: prev.status, workflowStatus: prev.workflowStatus } : null);
+          return;
         }
 
         setSelectedTable(null);
@@ -1374,7 +1406,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
+  const { subtotal, taxes, total, grandTotal: cartGrandTotal, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
     const committedItems = getBillableItems(selectedTable);
@@ -2341,7 +2373,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (selectedTable?.backendId) {
           if (selectedTable.activeOrder?.id) {
             // Subsequent KOT — append new items to existing order
-            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId);
+            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier');
           } else {
             // First KOT — create a brand-new order row
             await createOrder({
@@ -2350,6 +2382,7 @@ const CashierDashboard = ({ onLogout }) => {
               restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
               items: apiItems,
               requestId,
+              captainName: 'Cashier',
             });
           }
         }
@@ -3733,7 +3766,7 @@ const CashierDashboard = ({ onLogout }) => {
                         )}
                         <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
                           <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                          <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                          <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeGrandTotal : cartGrandTotal).toFixed(0)}</span>
                         </div>
                       </div>
 

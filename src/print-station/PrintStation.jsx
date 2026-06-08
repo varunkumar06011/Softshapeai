@@ -89,9 +89,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   const cmds = [
     INIT,
     CENTER,
+    SIZE_HEIGHT,
     BOLD_ON,
     `${venueLabel}\n`,
     BOLD_OFF,
+    SIZE_NORMAL,
     LEFT,
     separator("-"),
     BOLD_ON,
@@ -108,11 +110,13 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   ];
 
   (items || []).forEach(item => {
-    const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      BOLD_ON,
-      itemLine + "\n",
-      BOLD_OFF,
+      `${item.quantity}  `,  // Qty at normal size
+      SIZE_2X,              // Switch to 2x size (double width + double height)
+      BOLD_ON,              // Bold
+      `${item.name.toUpperCase()}\n`,  // Name at 2x bold
+      BOLD_OFF,             // Reset bold
+      SIZE_NORMAL,          // Reset size
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(
@@ -129,7 +133,9 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
         : (sectionName ? sectionName.toUpperCase() : 'MAIN HALL'));
   cmds.push(
     separator("-"),
+    BOLD_ON,
     `Hall Name : ${hallName}\n`,
+    BOLD_OFF,
     "\n\n\n",
     CUT
   );
@@ -443,9 +449,10 @@ export default function PrintStation() {
           // ── Deduplication for ALL print types ───────────────────────────────────
           {
             const itemCount = data.items?.length || 0;
+            const tsBucket = Math.floor(Date.now() / 10000);
             const dedupKey = data.eventId
               ? String(data.eventId)
-              : `${type}-${data.kotId || data.orderId || ''}-${data.tableNumber}-${itemCount}`;
+              : `${type}-${data.kotId || data.orderId || ''}-${data.tableNumber}-${itemCount}-${tsBucket}`;
             if (printedKotIds.current.has(dedupKey)) {
               pushLog(`Duplicate print_job skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
               return;
