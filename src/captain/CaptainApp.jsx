@@ -280,7 +280,7 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
 
 
-  const displayTableId = String(call?.tableId || 'UNKNOWN').toUpperCase().replace(new RegExp('TABLE[- ]?'), '');
+  const displayTableId = String(call?.tableId || 'UNKNOWN').toUpperCase().replace(/TABLE[- ]?/, '');
 
   const sourceLabel = call?.source === 'bar' ? 'Bar' : call?.source === 'restaurant' ? 'Restaurant' : '';
 
@@ -1168,7 +1168,7 @@ export default function CaptainApp({ onLogout }) {
 
     if (!captain) return '';
 
-    const match = captain.color.match(new RegExp('text-\[([^\]]+)\]'));
+    const match = captain.color.match(/text-\[([^\]]+)\]/);
 
     return match ? `border-l-[${match[1]}]` : '';
 
@@ -1245,7 +1245,7 @@ export default function CaptainApp({ onLogout }) {
       });
     }
 
-    const words = q.split(new RegExp('\s+')).filter(w => w.length >= 2);
+    const words = q.split(/\s+/).filter(w => w.length >= 2);
 
     return outletFilteredMenuItems
       .filter(item => {
@@ -2862,7 +2862,7 @@ export default function CaptainApp({ onLogout }) {
 
               // 2. Collision check: Did someone else just lock this table in the live floor map?
 
-              const callTableNumber = String(call.tableId).match(new RegExp('(\d+)'))?.[1] || call.tableId;
+              const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
               const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber))
                 || venueTables.find(t => String(t.id) === String(callTableNumber) || String(t.number) === String(callTableNumber));
 
@@ -3983,7 +3983,7 @@ export default function CaptainApp({ onLogout }) {
                     </div>
                   ) : filteredMenu.length === 0 ? (() => {
 
-  const words = (searchQuery || '').toLowerCase().split(new RegExp('\s+')).filter(w => w.length >= 3);
+  const words = (searchQuery || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3);
 
   const related = words.length > 0
 
@@ -3995,7 +3995,7 @@ export default function CaptainApp({ onLogout }) {
 
         return words.some(w => name.includes(w) || cat.includes(w) ||
 
-          name.split(new RegExp('\s+')).some(nw => nw.startsWith(w) || w.startsWith(nw))
+          name.split(/\s+/).some(nw => nw.startsWith(w) || w.startsWith(nw))
 
         );
 
