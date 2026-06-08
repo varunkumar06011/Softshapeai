@@ -354,6 +354,7 @@ export default function PrintStation() {
   const socketRef   = useRef(null);
   const retryTimer  = useRef(null);
   const printedKotIds = useRef(new Set());
+  const hasJoinedRef = useRef(false);
 
   const pushLog = useCallback((msg, ok = true) => {
     setLog(prev => [
