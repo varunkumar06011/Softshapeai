@@ -1789,15 +1789,10 @@ const CashierDashboard = ({ onLogout }) => {
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
           : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
-        // Cross-browser compatible timeout (AbortSignal.timeout is not supported on older browsers)
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 10000);
         const response = await fetch(terminateUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: abortController.signal,
         });
-        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));

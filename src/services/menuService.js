@@ -40,7 +40,7 @@ async function fetchWithRetry(url, options, { retries = 2, timeoutMs = FETCH_TIM
     // Only retry on network errors, not on abort errors
     if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
       console.warn(`[MenuService] Retrying ${url} after error:`, err.message);
-      await new Promise(r => setTimeout(r, 1200));
+      await new Promise(r => setTimeout(r, 5000));
       return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
     }
     throw err;
@@ -130,7 +130,7 @@ async function parseMenuResponse(res, label) {
 async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
   const url = apiUrl(`/api/menu/items?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
-  const res = await fetchWithRetry(url, fetchOpts, { retries: 2, timeoutMs: 12000 });
+  const res = await fetchWithRetry(url, fetchOpts, { retries: 3, timeoutMs: 45000 });
   const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
@@ -138,7 +138,7 @@ async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
 async function fetchPosViewMenu(restaurantId = RESTAURANT_ID) {
   const url = apiUrl(`/api/menu/pos-view?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
-  const res = await fetchWithRetry(url, fetchOpts, { retries: 2, timeoutMs: 12000 });
+  const res = await fetchWithRetry(url, fetchOpts, { retries: 3, timeoutMs: 45000 });
   const categories = await parseMenuResponse(res, "Menu pos-view");
   return mapPosViewToMenuItems(categories);
 }
