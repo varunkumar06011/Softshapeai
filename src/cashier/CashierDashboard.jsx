@@ -305,6 +305,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSending, setIsKotSending] = useState(false);
   const [isTerminating, setIsTerminating] = useState(false);
   const isSubmittingKotRef = useRef(false);
+  const kotRequestIdRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -312,6 +313,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
+  const isPrintingBillRef = useRef(false);
   const [lastPrintTime, setLastPrintTime] = useState(null);
   const [printCooldown, setPrintCooldown] = useState(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
@@ -1385,9 +1387,14 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // Ref guard - synchronous check to prevent race condition
+    if (isPrintingBillRef.current) return;
+    isPrintingBillRef.current = true;
+
     // Check if order is already paid
     if (selectedTable?.activeOrder?.status === 'PAID') {
       addNotification('Error', 'This order has already been settled.', 'error');
+      isPrintingBillRef.current = false;
       return;
     }
 
@@ -1395,6 +1402,7 @@ const CashierDashboard = ({ onLogout }) => {
     const orderItems = getBillableItems(selectedTable);
     if (orderItems.length === 0) {
       addNotification('Error', 'Cannot print bill with no items. Please add items to the order first.', 'error');
+      isPrintingBillRef.current = false;
       return;
     }
 
@@ -1455,6 +1463,13 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
+        // Per-table bill-print ref guard - synchronous check to prevent duplicate API calls
+        if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
+          // Already printing/printed for this table — abort silently
+          isPrintingBillRef.current = false;
+          return;
+        }
+
         const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -1491,11 +1506,17 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } finally {
       setIsPrintingBill(false);
+      isPrintingBillRef.current = false;
     }
   };
 
   const handleWalkinFinalBill = async () => {
     if (cart.length === 0) return;
+
+    // Ref guard - synchronous check to prevent race condition
+    if (isPrintingBillRef.current) return;
+    isPrintingBillRef.current = true;
+
     const tableLabel = selectedTable?.id || 'Walk-in';
     const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
     const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
@@ -1538,6 +1559,7 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Print Failed', err.message || 'Could not print walk-in bill', 'error');
     } finally {
       setIsPrintingBill(false);
+      isPrintingBillRef.current = false;
     }
   };
 
@@ -2217,6 +2239,10 @@ const CashierDashboard = ({ onLogout }) => {
     setIsKotSending(true);
     setIsKotSuccess(false);
 
+    // Generate requestId BEFORE optimistic UI update for deduplication
+    const requestId = crypto.randomUUID();
+    kotRequestIdRef.current = requestId;
+
     const foodItems = cart.filter(i => i.menuType === 'FOOD' || !i.menuType);
     const barItems = cart.filter(i => i.menuType === 'LIQUOR');
 
@@ -2293,10 +2319,6 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
 
-    // Reset loading state immediately after optimistic UI update
-    isSubmittingKotRef.current = false;
-    setIsKotSending(false);
-
     // Run API call in background without blocking UI
     (async () => {
       try {
@@ -2307,7 +2329,7 @@ const CashierDashboard = ({ onLogout }) => {
         // whatever it receives — it does NOT replace old ones.
         // Previously we were merging existingItems + apiItems, which caused old items
         // to be re-inserted as duplicates on every KOT, bleeding across tables.
-        const response = await updateOrderItems(selectedTable.activeOrder.id, apiItems, crypto.randomUUID());
+        const response = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId);
         // Extract real KOT ID from API response
         const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
           (response?.order?.kotHistory || response?.kotHistory)?.length - 1
@@ -2318,11 +2340,15 @@ const CashierDashboard = ({ onLogout }) => {
             tableNumber: selectedTable.number || selectedTable.id,
             restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
             items: apiItems,
+            requestId,
           });
         }
       }
     } catch (err) {
       console.warn('[BG] order write failed:', err.message);
+    } finally {
+      isSubmittingKotRef.current = false;
+      setIsKotSending(false);
     }
     })();
   };

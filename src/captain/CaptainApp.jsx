@@ -2189,7 +2189,9 @@ export default function CaptainApp({ onLogout }) {
 
     const existingOrderId = activeOrderIdRef.current;
 
-    const requestId = crypto.randomUUID();
+    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
     kotRequestIdRef.current = requestId;
 
@@ -2254,7 +2256,7 @@ export default function CaptainApp({ onLogout }) {
 
         // Subsequent KOT on same table — append items to existing order
 
-        const response = await updateOrderItems(existingOrderId, apiItems, requestId);
+        const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined);
 
         savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
 
@@ -2278,6 +2280,7 @@ export default function CaptainApp({ onLogout }) {
           items: apiItems,
 
           requestId,
+          captainName: currentCaptain?.name || undefined,
 
         });
 
@@ -2506,7 +2509,9 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    const cancelRequestId = crypto.randomUUID();
+    const cancelRequestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
     try {
 

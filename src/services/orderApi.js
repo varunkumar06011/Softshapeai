@@ -30,9 +30,10 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null, captainName = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
+  if (captainName) orderData.captainName = captainName;
   
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));
@@ -62,11 +63,12 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null) {
   return withRetry(
     async () => {
       const body = { items: toOrderItems(items) };
       if (requestId) body.requestId = requestId;
+      if (captainName) body.captainName = captainName;
       const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

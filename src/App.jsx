@@ -199,9 +199,16 @@ function App() {
           <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
           <Route path="/cashier" element={<CashierLoginWrapper />} />
           <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
-          <Route path="/captain/*" element={<CaptainApp 
-            onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }} 
-          />} />
+          <Route path="/captain/*" element={
+            <ErrorBoundary
+              showDetails={import.meta.env.DEV}
+              onRetry={() => window.location.reload()}
+            >
+              <CaptainApp 
+                onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }} 
+              />
+            </ErrorBoundary>
+          } />
           <Route path="/kitchen" element={<KitchenView />} />
           <Route path="/print-station" element={<PrintStation />} />
           <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
