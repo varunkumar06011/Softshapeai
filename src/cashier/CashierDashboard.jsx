@@ -902,12 +902,19 @@ const CashierDashboard = ({ onLogout }) => {
         })();
         // FIX: Also update activeOrder from incoming socket data so occupied tables show items
         const incomingOrder = table.orders?.[0] || table.activeOrder || null;
+        const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
+        // Never downgrade a table that is locally in 'Waiting Bill' state back to a lesser state
+        const protectedStatus = (t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill')
+          && incomingStatus !== 'Free' && incomingStatus !== 'AVAILABLE'
+          ? 'Waiting Bill'
+          : incomingStatus;
+        const incomingBillAmt = table.currentBill ?? table.orders?.[0]?.totalAmount ?? t.currentBill;
         return {
           ...t,
           kotHistory: mergedKotHistory,
-          currentBill: table.currentBill ?? t.currentBill,
-          status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
-          workflowStatus: table.workflowStatus ?? t.workflowStatus,
+          currentBill: Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0)),
+          status: protectedStatus,
+          workflowStatus: protectedStatus,
           activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
         };
       });
@@ -930,10 +937,17 @@ const CashierDashboard = ({ onLogout }) => {
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
+          const incomingStatusSel = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : prev.status);
+          const protectedStatusSel = (prev.status === 'Waiting Bill' || prev.workflowStatus === 'Waiting Bill')
+            && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
+            ? 'Waiting Bill'
+            : incomingStatusSel;
           return {
             ...prev,
             kotHistory: isTableFree ? [] : mergedKotHistory,
             currentBill: stableBill,
+            status: isTableFree ? 'Free' : protectedStatusSel,
+            workflowStatus: isTableFree ? 'Free' : protectedStatusSel,
             activeOrder: incomingOrder || (isTableFree ? null : prev.activeOrder),
           };
         });
@@ -2240,7 +2254,9 @@ const CashierDashboard = ({ onLogout }) => {
     setIsKotSuccess(false);
 
     // Generate requestId BEFORE optimistic UI update for deduplication
-    const requestId = crypto.randomUUID();
+    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
     kotRequestIdRef.current = requestId;
 
     const foodItems = cart.filter(i => i.menuType === 'FOOD' || !i.menuType);
@@ -2324,32 +2340,25 @@ const CashierDashboard = ({ onLogout }) => {
       try {
         if (selectedTable?.backendId) {
           if (selectedTable.activeOrder?.id) {
-        // FIX: Only send the NEW cart items (apiItems) to the backend.
-        // The backend PATCH /items endpoint always creates NEW orderItem rows for
-        // whatever it receives — it does NOT replace old ones.
-        // Previously we were merging existingItems + apiItems, which caused old items
-        // to be re-inserted as duplicates on every KOT, bleeding across tables.
-        const response = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId);
-        // Extract real KOT ID from API response
-        const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
-          (response?.order?.kotHistory || response?.kotHistory)?.length - 1
-        ]?.id ?? kotsToCreate[0]?.id;
-        } else {
-          await createOrder({
-            tableId: selectedTable.backendId,
-            tableNumber: selectedTable.number || selectedTable.id,
-            restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-            items: apiItems,
-            requestId,
-          });
+            // Subsequent KOT — append new items to existing order
+            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId);
+          } else {
+            // First KOT — create a brand-new order row
+            await createOrder({
+              tableId: selectedTable.backendId,
+              tableNumber: selectedTable.number || selectedTable.id,
+              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+              items: apiItems,
+              requestId,
+            });
+          }
         }
+      } catch (err) {
+        console.warn('[BG] order write failed:', err.message);
+      } finally {
+        isSubmittingKotRef.current = false;
+        setIsKotSending(false);
       }
-    } catch (err) {
-      console.warn('[BG] order write failed:', err.message);
-    } finally {
-      isSubmittingKotRef.current = false;
-      setIsKotSending(false);
-    }
     })();
   };
 
@@ -2551,7 +2560,12 @@ const CashierDashboard = ({ onLogout }) => {
                               const isWaitingBill = table.status === 'Waiting Bill';
                               const isPreparing = table.status === 'Preparing';
                               const bill = calculateTableBill(table);
-                              const billAmt = Number(table.currentBill || bill?.subtotal || 0);
+                              const billAmt = Math.max(
+                                Number(table.currentBill || 0),
+                                Number(bill?.subtotal || 0),
+                                Number(table.activeOrder?.totalAmount || 0),
+                                Number(table.orders?.[0]?.totalAmount || 0)
+                              );
 
                               let cardBg = 'bg-red-50 border-[#E53935]';
                               let textColor = 'text-[#E53935]';

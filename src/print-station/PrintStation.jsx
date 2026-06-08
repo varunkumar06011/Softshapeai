@@ -98,7 +98,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
     kotLabel + ' '.repeat(gap) + tableLabel + '\n',
     BOLD_OFF,
     separator("-"),
-    `Waiter : ${captainName && captainName !== 'N/A' ? captainName : 'Waiter'}\n`,
+    `Waiter : ${captainName && captainName !== 'N/A' && captainName !== 'undefined' ? captainName : 'Captain'}\n`,
     `Ordered Date : ${dateStr}  Time : ${timeStr}\n`,
     separator("-"),
     BOLD_ON,

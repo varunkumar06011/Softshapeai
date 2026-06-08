@@ -1085,11 +1085,11 @@ export default function CaptainApp({ onLogout }) {
 
   // Route mutations to the correct table array based on where the active table lives
   // Uses a ref to avoid stale closure when venueTables is momentarily empty during re-fetch
-  const setActiveOrVenueTables = useCallback((updater) => {
+  const setActiveOrVenueTables = useCallback((updater, options) => {
     if (isVenueTableRef.current) {
-      setVenueTables(updater);
+      setVenueTables(updater, options);
     } else {
-      setActiveTables(updater);
+      setActiveTables(updater, options);
     }
   }, [setVenueTables, setActiveTables]);
 
@@ -2341,7 +2341,7 @@ export default function CaptainApp({ onLogout }) {
 
         };
 
-      }));
+      }), { skipPersist: true });
 
 
 
