@@ -404,10 +404,9 @@ export default function PrintStation() {
       });
       socketRef.current = socket;
 
-      let hasJoined = false;
       socket.on('connect', () => {
         setSockOk(true);
-        if (!hasJoined) {
+        if (!hasJoinedRef.current) {
           // Join DEDICATED print rooms — these are isolated from the main
           // restaurant/bar rooms that captain and cashier sockets join.
           // This guarantees print_job events are only delivered to this
@@ -415,7 +414,7 @@ export default function PrintStation() {
           socket.emit('join:print', 'restaurant-001');
           socket.emit('join:print', 'bar-001');
           socket.emit('join:print', 'venue-001');
-          hasJoined = true;
+          hasJoinedRef.current = true;
           pushLog('Socket connected ✓');
         } else {
           // On reconnect: re-join the print rooms because the server treats
