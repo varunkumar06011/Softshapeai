@@ -468,7 +468,11 @@ export default function PrintStation() {
                 printTasks.push({ printer: KOT_FAMILY_PRINTER, cmds: data.escposData });
               }
               if (data.escposDataCounter && data.escposDataCounter.length > 0) {
-                printTasks.push({ printer: DINE_IN_BILL_PRINTER, cmds: data.escposDataCounter });
+                // Parcel counter items go to KOT_PRINTER (parcel printer), not billing printer
+                const counterPrinter = data.sectionTag === 'venue-restaurant-parcel'
+                  ? KOT_PRINTER
+                  : DINE_IN_BILL_PRINTER;
+                printTasks.push({ printer: counterPrinter, cmds: data.escposDataCounter });
               }
               // Fallback to local builder if backend didn't send escposData
               const COUNTER_CATEGORIES = ['beverages', 'cold drinks', 'soft drinks', 'ice cream',
@@ -487,8 +491,11 @@ export default function PrintStation() {
                   });
                 }
                 if (counterItems.length > 0) {
+                  const fallbackCounterPrinter = data.sectionTag === 'venue-restaurant-parcel'
+                    ? KOT_PRINTER
+                    : DINE_IN_BILL_PRINTER;
                   printTasks.push({
-                    printer: DINE_IN_BILL_PRINTER,
+                    printer: fallbackCounterPrinter,
                     cmds: buildKOTCommands({ ...data, items: counterItems, label: 'COUNTER ORDER', sectionTag: data.sectionTag }),
                   });
                 }
@@ -543,7 +550,7 @@ export default function PrintStation() {
             if (data.restaurantId === 'venue-001') {
               // Route based on printerTarget set in admin menu page
               if (data.printerTarget === 'BAR_PRINTER') {
-                printer = DINE_IN_BILL_PRINTER;  // water, drinks, cool drinks
+                printer = data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER : DINE_IN_BILL_PRINTER;
               } else {
                 printer = KOT_FAMILY_PRINTER;    // food items (KOT_PRINTER or null)
               }

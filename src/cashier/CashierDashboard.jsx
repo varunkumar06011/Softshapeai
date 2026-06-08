@@ -797,13 +797,28 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      console.log('[CashierDashboard] Received order:created for table:', order.tableId);
       if (shouldBlockTableUpdate(order.tableId, null)) return;
       if (selectedTable?.backendId === order.tableId) {
-        setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
+        setSelectedTable(prev => prev ? {
+          ...prev,
+          activeOrder: mergeOrder(order, prev.activeOrder),
+          status: prev.status === 'Free' ? 'Occupied' : prev.status,
+          workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
+          currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+        } : prev);
       }
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
+        t.backendId === order.tableId
+          ? {
+              ...t,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            }
+          : t
       );
       if (isVenue) {
         if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
@@ -856,7 +871,13 @@ const CashierDashboard = ({ onLogout }) => {
       }
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
+        t.backendId === order.tableId
+          ? {
+              ...t,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            }
+          : t
       );
       if (isVenue) {
         if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
@@ -902,12 +923,16 @@ const CashierDashboard = ({ onLogout }) => {
             const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
             return incoming.length >= existing.length ? incoming : existing;
           })();
-          const incomingOrder = table.orders?.[0] || table.activeOrder || null;
+          const isTableFree = (table.workflowStatus || table.status) === 'Free';
+          const incomingOrder = isTableFree ? null : (table.orders?.[0] || table.activeOrder || null);
+          // Never flicker bill to 0 unless table is actually free
+          const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
+          const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
           return {
             ...prev,
-            kotHistory: mergedKotHistory,
-            currentBill: table.currentBill ?? prev.currentBill,
-            activeOrder: incomingOrder || prev.activeOrder,
+            kotHistory: isTableFree ? [] : mergedKotHistory,
+            currentBill: stableBill,
+            activeOrder: incomingOrder || (isTableFree ? null : prev.activeOrder),
           };
         });
       }
