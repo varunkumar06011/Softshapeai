@@ -395,6 +395,11 @@ export default function PrintStation() {
   useEffect(() => {
     let socket;
     (async () => {
+      // If a live socket already exists, reuse it and skip recreation
+      if (socketRef.current?.connected) {
+        pushLog('Socket already connected — skipping recreation');
+        return;
+      }
       socket = io(API_BASE, {
         path: '/socket.io',
         transports: ['websocket', 'polling'],
@@ -435,14 +440,14 @@ export default function PrintStation() {
         pushLog(`Received print_job [${type}] — Table ${data?.tableNumber ?? '?'}`);
         try {
           let cmds, printer;
-          // ── Deduplication for KOT / BAR_KOT ───────────────────────────────────
-          if (type === 'KOT' || type === 'BAR_KOT') {
+          // ── Deduplication for ALL print types ───────────────────────────────────
+          {
             const itemCount = data.items?.length || 0;
             const dedupKey = data.eventId
               ? String(data.eventId)
-              : `${data.kotId}-${data.tableNumber}-${itemCount}`;
+              : `${type}-${data.kotId || data.orderId || ''}-${data.tableNumber}-${itemCount}`;
             if (printedKotIds.current.has(dedupKey)) {
-              pushLog(`Duplicate KOT skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
+              pushLog(`Duplicate print_job skipped [${type}] — Table ${data?.tableNumber ?? '?'}`);
               return;
             }
             printedKotIds.current.add(dedupKey);
@@ -596,7 +601,10 @@ export default function PrintStation() {
         }
       });
     })();
-    return () => socket?.disconnect();
+    return () => {
+      hasJoinedRef.current = false;
+      socket?.disconnect();
+    };
   }, [pushLog, initQZ]);
 
   // ── QZ disconnect watcher ────────────────────────────────────────────────
