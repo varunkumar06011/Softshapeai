@@ -3952,7 +3952,7 @@ export default function CaptainApp({ onLogout }) {
                   </div>
 
                 </div>
-
+                )}
                 )}
 
 
@@ -3969,9 +3969,18 @@ export default function CaptainApp({ onLogout }) {
                 >
 
                   {menuLoading ? (
-
-                    <p className="text-center text-xs text-gray-400 py-12 font-black uppercase tracking-widest">Syncing menu…</p>
-
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                      {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 flex gap-4 items-center">
+                          <div className="w-16 h-16 bg-gray-200 animate-pulse rounded-lg shrink-0" />
+                          <div className="flex-grow">
+                            <div className="h-4 w-3/4 bg-gray-200 animate-pulse rounded mb-2" />
+                            <div className="h-3 w-1/2 bg-gray-200 animate-pulse rounded mb-2" />
+                            <div className="h-4 w-1/4 bg-gray-200 animate-pulse rounded" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : filteredMenu.length === 0 ? (() => {
 
   const words = (searchQuery || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3);

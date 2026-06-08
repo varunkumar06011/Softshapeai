@@ -1,10 +1,12 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
 import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
+
+const ALLOWED_CATEGORIES = ['Soups', 'Biryanis', 'Biryani & Rice', 'Today Special', 'Today Specials', 'Desserts', 'Dessert'];
 
 export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
@@ -56,9 +58,11 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
   const categories = useMemo(() => {
     if (unifiedMenu && unifiedMenu.categories) {
-      return ['All', ...unifiedMenu.categories.map(cat => cat.name)].filter(Boolean);
+      const visibleCats = unifiedMenu.categories.filter(c => ALLOWED_CATEGORIES.includes(c.name));
+      return ['All', ...visibleCats.map(cat => cat.name)].filter(Boolean);
     }
-    return legacyCategories;
+    const visibleLegacyCats = legacyCategories.filter(c => ALLOWED_CATEGORIES.includes(c));
+    return visibleLegacyCats;
   }, [unifiedMenu, legacyCategories]);
 
   const loading = unifiedLoading || legacyLoading;
@@ -82,7 +86,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
     lastScrollTop.current = scrollTop;
   };
 
-  const getEngagement = (id, name) => {
+  const getEngagement = useCallback((id, name) => {
     const hash = String(id || name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const purchases = (hash * 17) % 4800 + 200; // range: 200 to 5000
     const wishlist = (hash * 31) % 5800 + 200;  // range: 200 to 6000
@@ -98,7 +102,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
       purchases: formatVal(purchases),
       wishlist: formatVal(wishlist)
     };
-  };
+  }, []);
 
   // Modals state
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
@@ -227,10 +231,44 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
   const displayCategories = ['All', 'Today Specials', ...categories.filter(c => c !== 'All')];
 
+  // Skeleton components
+  const CategorySkeleton = () => (
+    <div className="px-4 sm:px-6 overflow-x-auto scrollbar-hide flex gap-2 sm:gap-3 py-1.5 sm:py-2">
+      {[1, 2, 3, 4, 5].map(i => (
+        <div key={i} className="h-8 w-24 bg-gray-200 animate-pulse rounded-full shrink-0" />
+      ))}
+    </div>
+  );
+
+  const ItemsSkeleton = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+      {[1, 2, 3, 4, 5, 6].map(i => (
+        <div key={i} className="bg-white border border-red-50 rounded-2xl p-4 flex gap-4 items-center">
+          <div className="w-20 h-20 bg-gray-200 animate-pulse rounded-xl shrink-0" />
+          <div className="flex-grow">
+            <div className="h-4 w-3/4 bg-gray-200 animate-pulse rounded mb-2" />
+            <div className="h-3 w-1/2 bg-gray-200 animate-pulse rounded mb-2" />
+            <div className="h-4 w-1/4 bg-gray-200 animate-pulse rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#FFF5F5] text-[#FF4D4F]">
-        <div className="w-10 h-10 rounded-full border-4 border-t-[#FF4D4F] border-red-100 animate-spin" />
+      <div className="flex flex-col h-[100dvh] bg-[#FFF5F5] font-['Inter',sans-serif] overflow-hidden">
+        <div className="px-4 sm:px-6 pt-6 pb-4">
+          <div className="h-8 w-40 bg-gray-200 animate-pulse rounded-lg mb-2" />
+          <div className="h-3 w-56 bg-gray-100 animate-pulse rounded" />
+        </div>
+        <div className="px-4 sm:px-6 mb-3">
+          <div className="h-12 w-full bg-gray-200 animate-pulse rounded-2xl" />
+        </div>
+        <CategorySkeleton />
+        <div className="flex-grow px-4 sm:px-6 pt-4">
+          <ItemsSkeleton />
+        </div>
       </div>
     );
   }
@@ -274,8 +312,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
       {/* Filters & Categories */}
       <div className="shrink-0 relative z-10 sticky top-0 bg-[#FFF5F5]/90 backdrop-blur-xl border-b border-red-50 pb-1.5 sm:pb-2">
         {/* Veg / Non-Veg Toggle */}
-        <div className={`px-4 sm:px-6 flex gap-1.5 sm:gap-2 transition-all duration-300 ease-in-out overflow-hidden ${isScrolledDown ? 'h-0 opacity-0 py-0 mb-0 pointer-events-none' : 'h-10 py-2'
-          }`}>
+        <div className="px-4 sm:px-6 flex gap-1.5 sm:gap-2 py-2">
           {['All', 'Veg', 'Non-Veg'].map(diet => (
             <button
               key={diet}
@@ -350,7 +387,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
                       <div className="h-40 w-full overflow-hidden relative">
                         {item.img ? (
-                          <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                          <img src={item.img} alt={item.n} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-gray-100 text-4xl">
                             🍽️
@@ -429,7 +466,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
                 >
                   <div className="w-20 h-20 xs:w-24 xs:h-24 sm:w-28 sm:h-28 rounded-xl xs:rounded-[20px] sm:rounded-[24px] overflow-hidden shrink-0 relative shadow-inner">
                     {item.img ? (
-                      <img src={item.img} alt={item.n} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                      <img src={item.img} alt={item.n} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-100 text-2xl">
                         🍽️
@@ -573,7 +610,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
           <div className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="h-64 w-full relative">
               {previewItem.img ? (
-                <img src={previewItem.img} alt={previewItem.n} className="w-full h-full object-cover" />
+                <img src={previewItem.img} alt={previewItem.n} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gray-100 text-6xl">
                   🍽️
@@ -664,7 +701,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
               {cart.map(item => (
                 <div key={item.n} className="flex items-center gap-4">
                   {item.img ? (
-                    <img src={item.img} alt={item.n} className="w-16 h-16 rounded-2xl object-cover shadow-sm" />
+                    <img src={item.img} alt={item.n} loading="lazy" decoding="async" className="w-16 h-16 rounded-2xl object-cover shadow-sm" />
                   ) : (
                     <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gray-100 text-2xl shadow-sm">
                       🍽️
