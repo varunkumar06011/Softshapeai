@@ -3949,8 +3949,6 @@ export default function CaptainApp({ onLogout }) {
 
                     </div>
 
-                  </div>
-
                 </div>
                 )}
 
