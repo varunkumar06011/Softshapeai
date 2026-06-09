@@ -109,14 +109,17 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
     separator("-"),
   ];
 
+  const SIZE_3X = '\x1D\x21\x22'; // triple height + double width (approx 150%+ bigger than SIZE_2X)
+
   (items || []).forEach(item => {
     cmds.push(
+      SIZE_NORMAL,
       `${item.quantity}  `,  // Qty at normal size
-      SIZE_2X,              // Switch to 2x size (double width + double height)
-      BOLD_ON,              // Bold
-      `${item.name.toUpperCase()}\n`,  // Name at 2x bold
-      BOLD_OFF,             // Reset bold
-      SIZE_NORMAL,          // Reset size
+      SIZE_HEIGHT,           // Switch to height-only size
+      BOLD_ON,               // Bold
+      `${item.name.toUpperCase()}\n`,  // Name at height bold
+      BOLD_OFF,              // Reset bold
+      SIZE_NORMAL,           // Reset size
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(
