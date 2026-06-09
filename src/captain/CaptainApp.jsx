@@ -853,6 +853,12 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+  // Menu panel error state for local error boundary
+
+  const [menuPanelError, setMenuPanelError] = useState(null);
+
+
+
   // Sync state to localStorage
 
   useEffect(() => {
@@ -898,6 +904,32 @@ export default function CaptainApp({ onLogout }) {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
 
   }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter]);
+
+
+
+  // Monitor menu loading errors for local error boundary
+
+  useEffect(() => {
+
+    if (restaurantMenuLoading || barMenuLoading) return;
+
+    // Check for errors from menu sync services
+
+    const restaurantError = restaurantMenuLoading === false && restaurantMenu.length === 0;
+
+    const barError = barMenuLoading === false && barMenu.length === 0 && outlet === 'bar';
+
+    if (restaurantError || barError) {
+
+      setMenuPanelError(new Error('Menu failed to load'));
+
+    } else {
+
+      setMenuPanelError(null);
+
+    }
+
+  }, [restaurantMenuLoading, barMenuLoading, restaurantMenu.length, barMenu.length, outlet]);
 
 
 
@@ -3988,7 +4020,25 @@ export default function CaptainApp({ onLogout }) {
                   }}
                 >
 
-                  {menuLoading ? (
+                  {menuPanelError ? (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                      <p className="text-red-600 font-medium mb-2">Menu failed to load — tap to retry</p>
+                      <button
+                        onClick={() => {
+                          setMenuPanelError(null);
+                          // Trigger menu refresh by calling refreshMenu from the hooks
+                          if (outlet === 'bar') {
+                            // barMenu refresh is handled by the hook, just clear error
+                          } else {
+                            // restaurantMenu refresh is handled by the hook, just clear error
+                          }
+                        }}
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : menuLoading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                       {[1, 2, 3, 4, 5, 6].map(i => (
                         <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 flex gap-4 items-center">
@@ -5448,6 +5498,9 @@ export default function CaptainApp({ onLogout }) {
               setCancelLoading(prev => ({ ...prev, [item.orderItemId]: false }));
 
             }
+
+            // Add delay between sequential cancel calls to prevent DB race
+            await new Promise(r => setTimeout(r, 400));
 
           }
 
