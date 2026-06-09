@@ -831,8 +831,8 @@ const CashierDashboard = ({ onLogout }) => {
 
     const mergeOrder = (incoming, existing) => {
       if (!existing) return incoming;
-      // FIX: Don't overwrite items that have local removedFromBill=true
-      // unless the incoming item also has removedFromBill=true.
+      // FIX: Additive item merging - union incoming with existing, never replace
+      // An item already present in existing should never be removed unless removedFromBill === true
       const incomingItems = incoming?.items || [];
       const existingItems = existing?.items || [];
       const existingMap = new Map(existingItems.map(i => [i.id, i]));
@@ -846,11 +846,14 @@ const CashierDashboard = ({ onLogout }) => {
       });
 
       const incomingIds = new Set(incomingItems.map(i => i.id));
+      // Add existing items that are NOT in incoming (additive merge)
+      const localOnlyItems = existingItems.filter(i => !incomingIds.has(i.id));
+      // Also preserve items marked as removedFromBill locally even if they're in incoming
       const localOnlyRemoved = existingItems.filter(i => i.removedFromBill && !incomingIds.has(i.id));
 
       const merged = {
         ...incoming,
-        items: [...mergedItems, ...localOnlyRemoved],
+        items: [...mergedItems, ...localOnlyItems, ...localOnlyRemoved],
       };
 
       // FIX #4: Always use the version with MORE items to prevent data loss
@@ -897,8 +900,11 @@ const CashierDashboard = ({ onLogout }) => {
         const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
         const incomingIsAvailable = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
-          console.warn('[CashierDashboard] Skipping stale AVAILABLE event for occupied table', t.number);
-          return t;
+          // Only clear if table is actually settled by this cashier tab
+          if (!settledTableIdsRef.current.has(t.backendId)) {
+            console.warn('[CashierDashboard] Skipping stale AVAILABLE event for occupied table (not settled)', t.number);
+            return t;
+          }
         }
 
         // FIX #4: Merge kotHistory — never lose KOTs already in local state
@@ -948,7 +954,10 @@ const CashierDashboard = ({ onLogout }) => {
             return incoming.length >= existing.length ? incoming : existing;
           })();
           const isTableFree = (table.workflowStatus || table.status) === 'Free';
-          const incomingOrder = isTableFree ? null : (table.orders?.[0] || table.activeOrder || null);
+          const isTableSettled = settledTableIdsRef.current.has(prev.backendId);
+          // Only clear kotHistory if table is actually settled by this cashier tab
+          const shouldClearKotHistory = isTableFree && isTableSettled;
+          const incomingOrder = isTableFree && isTableSettled ? null : (table.orders?.[0] || table.activeOrder || null);
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
@@ -958,11 +967,11 @@ const CashierDashboard = ({ onLogout }) => {
             : incomingStatusSel;
           return {
             ...prev,
-            kotHistory: isTableFree ? [] : mergedKotHistory,
+            kotHistory: shouldClearKotHistory ? [] : mergedKotHistory,
             currentBill: stableBill,
-            status: isTableFree ? 'Free' : protectedStatusSel,
-            workflowStatus: isTableFree ? 'Free' : protectedStatusSel,
-            activeOrder: incomingOrder || (isTableFree ? null : prev.activeOrder),
+            status: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
+            workflowStatus: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
+            activeOrder: incomingOrder || (isTableFree && isTableSettled ? null : prev.activeOrder),
           };
         });
       }
