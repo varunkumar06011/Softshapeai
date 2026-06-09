@@ -353,9 +353,14 @@ export function useBarTableSync() {
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
             const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
-            if (incomingIsAvailable && t.activeOrder) {
-              console.warn('[BarTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
-              return t;
+            if (incomingIsAvailable) {
+              // Use tablesRef.current (synchronously updated) instead of prev (pre-commit state)
+              // to correctly check if this table was just cleared by terminate/settle
+              const refTable = tablesRef.current.find(rt => rt.backendId === updatedTable.id);
+              if (refTable?.activeOrder) {
+                console.warn('[BarTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+                return t;
+              }
             }
             return mapBackendTable(updatedTable, t);
           });

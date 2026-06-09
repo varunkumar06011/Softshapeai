@@ -323,6 +323,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [settledTableIds, setSettledTableIds] = useState(() => new Set());
   const settledTableIdsRef = useRef(settledTableIds);
   useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
+  const terminatedTableIdsRef = useRef(new Set());
   const syncPauseUntilRef = useRef(0);
   // --- Bill-printed guard ---
   // Primary flag: table IDs where bill was printed but settlement not yet confirmed.
@@ -801,10 +802,11 @@ const CashierDashboard = ({ onLogout }) => {
       if (!order?.tableId) return;
       console.log('[CashierDashboard] Received order:created for table:', order.tableId);
       if (shouldBlockTableUpdate(order.tableId, null)) return;
+      if (terminatedTableIdsRef.current.has(order.tableId)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? {
           ...prev,
-          activeOrder: mergeOrder(order, prev.activeOrder),
+          activeOrder: order,
           status: prev.status === 'Free' ? 'Occupied' : prev.status,
           workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
           currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
@@ -815,7 +817,7 @@ const CashierDashboard = ({ onLogout }) => {
         t.backendId === order.tableId
           ? {
               ...t,
-              activeOrder: mergeOrder(order, t.activeOrder),
+              activeOrder: order,
               status: t.status === 'Free' ? 'Occupied' : t.status,
               workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
@@ -871,6 +873,7 @@ const CashierDashboard = ({ onLogout }) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
       if (shouldBlockTableUpdate(order.tableId, null)) return;
+      if (terminatedTableIdsRef.current.has(order.tableId)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
@@ -894,6 +897,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
       if (shouldBlockTableUpdate(table.id, table.status)) return;
+      if (terminatedTableIdsRef.current.has(table.id)) return;
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
 
@@ -1855,6 +1859,11 @@ const CashierDashboard = ({ onLogout }) => {
     if (isTerminating) return; // guard against double-click
 
     const tableSnap = { ...selectedTable }; // snapshot before any state mutation
+    // Guard against socket events reviving the just-terminated table
+    if (tableSnap.backendId) {
+      terminatedTableIdsRef.current.add(tableSnap.backendId);
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.backendId), 6000);
+    }
     setIsTerminating(true);
 
     try {
