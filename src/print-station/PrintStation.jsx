@@ -1210,10 +1210,9 @@ export default function PrintStation() {
 
           await Promise.all(printTasks.map(async (task) => {
 
-            // Guard against invalid printer names (empty, undefined, or default placeholders)
-            const DEFAULT_PRINTERS = ['KITCHEN_PRINTER', 'BAR_PRINTER', 'BILLING_PRINTER', 'KOT FAMILY', 'Dine in Bill', 'KOT PRINTER'];
-            if (!task.printer || task.printer.trim() === '' || DEFAULT_PRINTERS.includes(task.printer)) {
-              pushLog(`✗ Skipped print to invalid printer: "${task.printer}" — Check printer config in Settings`, false);
+            // Guard against truly invalid printer names (empty or undefined only)
+            if (!task.printer || task.printer.trim() === '') {
+              pushLog(`✗ Skipped print — no printer configured for this job type`, false);
               return;
             }
 
