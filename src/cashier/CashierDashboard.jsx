@@ -1012,14 +1012,34 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const onTableSwapped = (payload) => {
-      const { sourceTableId, targetTableId, targetTable } = payload;
-      if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      // If cashier had the source table selected, switch to the new location
-      if (selectedTable?.backendId === sourceTableId) {
-        setSelectedTable(prev => prev ? { ...prev, backendId: targetTableId, ...targetTable } : prev);
+      const { sourceTableId, targetTableId, sourceTable: rawSource, targetTable: rawTarget } = payload;
+
+      // Map raw DB payloads to frontend shape using existing mapper
+      const isVenue = payload?.restaurantId === 'venue-001' || rawSource?.restaurantId === 'venue-001' || rawTarget?.restaurantId === 'venue-001';
+      const allTables = isVenue ? venueTables : activeTables;
+      const existingSource = allTables?.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = allTables?.find(t => t.backendId === targetTableId) || null;
+      const mappedSource = mapRealtimeTablePayload(rawSource, existingSource);
+      const mappedTarget = mapRealtimeTablePayload(rawTarget, existingTarget);
+
+      // Update the tables array for both source and target
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId === sourceTableId) return mappedSource || t;
+        if (t.backendId === targetTableId) return mappedTarget || t;
+        return t;
+      });
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
+
+      // If cashier had the source table open, switch selection to the new table
+      if (selectedTable?.backendId === sourceTableId && mappedTarget) {
+        setSelectedTable(mappedTarget);
         setShowTableModal(false);
         setShowSwapModal(false);
-        addNotification('Table Moved', `Session moved to Table ${targetTable?.number ?? ''}`, 'success');
+        addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
       }
     };
 
