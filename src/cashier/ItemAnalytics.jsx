@@ -90,7 +90,8 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const getDateRange = () => {
     const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
     const now = new Date(Date.now() + IST_OFFSET_MS);
-    const today = now.toISOString().slice(0, 10);
+    const todayParts = now.toISOString().slice(0, 10); // safe: this is already IST-shifted, .slice gives correct YYYY-MM-DD
+    const today = todayParts;
 
     if (timeFilter === 'custom' && customDate) {
       return { startDate: customDate, endDate: customDate };
@@ -102,7 +103,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
       const y = yesterday.toISOString().slice(0, 10);
       return { startDate: y, endDate: y };
     } else if (timeFilter === 'month') {
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
       return { startDate: firstDay, endDate: today };
     }
     return { startDate: today, endDate: today };
