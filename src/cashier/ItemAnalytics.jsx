@@ -25,7 +25,7 @@ function getSectionNameForSource(source) {
   if (source === 'bar-conference') return 'conference hall';
   if (source === 'bar-pdr') return 'pdr';
   if (source === 'bar-rooms') return 'rooms';
-  if (source === 'bar-parcel') return 'parcel';
+  if (source === 'bar-parcel') return 'bar parcel';
   if (source === 'family-restaurant') return 'family restaurant';
   if (source === 'restaurant-parcel') return 'parcel';
   return null;
@@ -66,7 +66,7 @@ function itemNameMatchesSearch(item, query) {
 }
 
 export default function ItemAnalytics({ outlet = 'restaurant' }) {
-  const defaultSource = outlet === 'bar' ? 'bar' : 'family-restaurant';
+  const defaultSource = outlet === 'bar' ? 'all' : 'family-restaurant';
   const [source, setSource] = useState(defaultSource);
 
   const [timeFilter, setTimeFilter] = useState('today');
@@ -80,7 +80,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    setSource(outlet === 'bar' ? 'bar' : 'family-restaurant');
+    setSource(outlet === 'bar' ? 'all' : 'family-restaurant');
   }, [outlet]);
 
   useEffect(() => {
@@ -113,6 +113,46 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     setLoading(true);
     try {
       const { startDate, endDate } = getDateRange();
+
+      if (source === 'all') {
+        // Fetch bar-001 (no section) + venue-001 (no section) in parallel
+        const makeUrl = (rId, sName) => {
+          let u = `${API_BASE}/api/analytics/items-sold?restaurantId=${rId}&startDate=${startDate}&endDate=${endDate}`;
+          if (sName) u += `&sectionName=${encodeURIComponent(sName)}`;
+          u += `&outletType=bar`;
+          return u;
+        };
+        const [barRes, venueRes] = await Promise.all([
+          fetch(makeUrl(BAR_ID, null)),
+          fetch(makeUrl(VENUE_ID, null)),
+        ]);
+        const [barData, venueData] = await Promise.all([barRes.json(), venueRes.json()]);
+
+        // Merge items from both responses by item key (lowercase name)
+        const mergedMap = new Map();
+        for (const item of [...(barData.items || []), ...(venueData.items || [])]) {
+          const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+          if (mergedMap.has(key)) {
+            const ex = mergedMap.get(key);
+            ex.quantity += item.quantity;
+            ex.revenue += item.revenue;
+            ex.orderCount = (ex.orderCount || 0) + (item.orderCount || 0);
+          } else {
+            mergedMap.set(key, { ...item });
+          }
+        }
+        const mergedItems = Array.from(mergedMap.values()).sort((a, b) => b.revenue - a.revenue);
+        const totalQuantity = mergedItems.reduce((s, i) => s + i.quantity, 0);
+        const totalRevenue = mergedItems.reduce((s, i) => s + i.revenue, 0);
+        setItemsData(mergedItems);
+        setSummary({
+          totalItems: mergedItems.length,
+          totalQuantity,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+        });
+        return;
+      }
+
       const restaurantId = getRestaurantIdForSource(source);
       const sectionName = getSectionNameForSource(source);
       let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
@@ -192,6 +232,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
 
   const sourcePills = outlet === 'bar'
     ? [
+        { id: 'all', label: 'All' },
         { id: 'bar', label: 'Bar AC Hall' },
         { id: 'bar-ac-hall', label: 'AC Hall' },
         { id: 'bar-conference', label: 'Conference' },
