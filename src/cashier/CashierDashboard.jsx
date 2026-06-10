@@ -2761,9 +2761,9 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{pastTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
+                              ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
                             </span>
-                            <span className="text-[10px] font-bold text-red-100">{pastTransactions.length} transactions</span>
+                            <span className="text-[10px] font-bold text-red-100">{filteredTransactions.length} transactions</span>
                           </div>
                         </div>
 
@@ -2774,10 +2774,10 @@ const CashierDashboard = ({ onLogout }) => {
                             { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
                             { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
                           ].map(({ label, method, color, bg, border }) => {
-                            const total = pastTransactions
+                            const total = filteredTransactions
                               .filter(t => t.method === method)
                               .reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
-                            const count = pastTransactions.filter(t => t.method === method).length;
+                            const count = filteredTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
                                 <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
