@@ -34,16 +34,29 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
-  
+
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));
 
-  const res = await fetch(apiUrl("/api/orders"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(orderData),
-  });
-  return parseResponse(res);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const res = await fetch(apiUrl("/api/orders"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orderData),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return parseResponse(res);
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error("KOT request timed out — please retry");
+    }
+    throw error;
+  }
 }
 
 export async function fetchOrders({ restaurantId = RESTAURANT_ID, status } = {}) {
@@ -69,12 +82,26 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       const body = { items: toOrderItems(items) };
       if (requestId) body.requestId = requestId;
       if (captainName) body.captainName = captainName;
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      return parseResponse(res);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      try {
+        const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return parseResponse(res);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error("KOT request timed out — please retry");
+        }
+        throw error;
+      }
     },
     RETRY_CONFIG.KOT
   );

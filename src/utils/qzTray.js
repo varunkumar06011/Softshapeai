@@ -62,11 +62,7 @@ async function fetchSignature(toSign) {
  */
 export async function warmSignature() {
   try {
-    await fetch(`${API_URL}/api/print/qz-sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toSign: 'WARMUP-' + Date.now() }),
-    });
+    await fetchSignature('WARMUP');
   } catch (err) {
     console.warn('[qzTray] Signature warm-up failed:', err.message);
   }

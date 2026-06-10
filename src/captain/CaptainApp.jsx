@@ -1504,6 +1504,23 @@ export default function CaptainApp({ onLogout }) {
     };
     socket.on('order:updated', onOrderUpdated);
 
+    const onOrderCreated = (payload) => {
+      const order = payload?.order || payload;
+      if (!order?.tableId) return;
+      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const updateTables = (prev) => prev.map(t =>
+        t.backendId === order.tableId
+          ? { ...t, activeOrder: order, status: t.status === 'Free' ? 'Occupied' : t.status, workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus }
+          : t
+      );
+      if (isVenue) {
+        setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
+    };
+    socket.on('order:created', onOrderCreated);
+
     const onBillingRequested = (payload) => {
       const { table } = payload;
       if (!table?.id) return;
@@ -1528,6 +1545,7 @@ export default function CaptainApp({ onLogout }) {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
       socket.off('order:updated', onOrderUpdated);
+      socket.off('order:created', onOrderCreated);
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:paid', onOrderPaid);
       socket.emit('leave', activeRestaurantId);
@@ -2463,7 +2481,7 @@ export default function CaptainApp({ onLogout }) {
       const printTimeout = setTimeout(() => {
         socket.off('kot:printed', handler);
         addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
-      }, 15000);
+      }, 50000);
 
     } catch (err) {
 
@@ -2583,13 +2601,13 @@ export default function CaptainApp({ onLogout }) {
 
       addNotification(`${kotItem.n} cancelled`, 'success');
 
-      // Wait for CANCEL_KOT print ack (best-effort, 5s timeout)
+      // Wait for CANCEL_KOT print ack (best-effort, 30s timeout)
       const socket = getSocket();
       const printResult = await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           socket.off('kot:printed', handler);
           resolve('timeout');
-        }, 5000);
+        }, 30000);
         const handler = ({ requestId: ackRequestId, status }) => {
           if (ackRequestId === cancelRequestId) {
             clearTimeout(timeout);
