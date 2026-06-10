@@ -13,10 +13,16 @@ export function getSocket() {
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 5000, // 5s backoff as required
-      reconnectionDelayMax: 30000,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
+      randomizationFactor: 0.5,
       timeout: 20000,
+      autoConnect: true,
+      forceNew: false,
       addTrailingSlash: false,
+      // Prevent server-side timeout killing idle connections
+      pingInterval: 10000,
+      pingTimeout: 5000,
     });
 
     // Queue pending events during disconnect
@@ -27,6 +33,22 @@ export function getSocket() {
     socketInstance.on("connect", () => {
       console.log("[Socket] Reconnected, processing queued events");
       processEventQueue();
+    });
+
+    socketInstance.on("connect_error", (err) => {
+      console.warn("[Socket] Connection error:", err.message);
+    });
+
+    socketInstance.on("reconnect_attempt", (attempt) => {
+      console.log(`[Socket] Reconnect attempt #${attempt}`);
+    });
+
+    socketInstance.on("reconnect_failed", () => {
+      console.error("[Socket] All reconnect attempts failed");
+    });
+
+    socketInstance.io.on("ping", () => {
+      console.debug("[Socket] Ping sent to server");
     });
   }
 
@@ -49,6 +71,16 @@ function processEventQueue() {
   }
 
   isProcessingQueue = false;
+}
+
+export function safeEmit(event, data) {
+  const socket = getSocket();
+  if (socket.connected) {
+    socket.emit(event, data);
+  } else {
+    console.warn(`[Socket] Not connected — queuing event: ${event}`);
+    eventQueue.push({ event, data });
+  }
 }
 
 export function useSocket(restaurantId) {

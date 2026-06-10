@@ -305,6 +305,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSending, setIsKotSending] = useState(false);
   const [isTerminating, setIsTerminating] = useState(false);
   const isSubmittingKotRef = useRef(false);
+  const kotRequestIdRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -312,6 +313,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
+  const isPrintingBillRef = useRef(false);
   const [lastPrintTime, setLastPrintTime] = useState(null);
   const [printCooldown, setPrintCooldown] = useState(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
@@ -321,6 +323,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [settledTableIds, setSettledTableIds] = useState(() => new Set());
   const settledTableIdsRef = useRef(settledTableIds);
   useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
+  const terminatedTableIdsRef = useRef(new Set());
   const syncPauseUntilRef = useRef(0);
   // --- Bill-printed guard ---
   // Primary flag: table IDs where bill was printed but settlement not yet confirmed.
@@ -797,13 +800,29 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      console.log('[CashierDashboard] Received order:created for table:', order.tableId);
       if (shouldBlockTableUpdate(order.tableId, null)) return;
+      if (terminatedTableIdsRef.current.has(order.tableId)) return;
       if (selectedTable?.backendId === order.tableId) {
-        setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
+        setSelectedTable(prev => prev ? {
+          ...prev,
+          activeOrder: order,
+          status: prev.status === 'Free' ? 'Occupied' : prev.status,
+          workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
+          currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+        } : prev);
       }
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
+        t.backendId === order.tableId
+          ? {
+              ...t,
+              activeOrder: order,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            }
+          : t
       );
       if (isVenue) {
         if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
@@ -814,8 +833,8 @@ const CashierDashboard = ({ onLogout }) => {
 
     const mergeOrder = (incoming, existing) => {
       if (!existing) return incoming;
-      // FIX: Don't overwrite items that have local removedFromBill=true
-      // unless the incoming item also has removedFromBill=true.
+      // FIX: Additive item merging - union incoming with existing, never replace
+      // An item already present in existing should never be removed unless removedFromBill === true
       const incomingItems = incoming?.items || [];
       const existingItems = existing?.items || [];
       const existingMap = new Map(existingItems.map(i => [i.id, i]));
@@ -829,11 +848,14 @@ const CashierDashboard = ({ onLogout }) => {
       });
 
       const incomingIds = new Set(incomingItems.map(i => i.id));
+      // Add existing items that are NOT in incoming (additive merge)
+      const localOnlyItems = existingItems.filter(i => !incomingIds.has(i.id));
+      // Also preserve items marked as removedFromBill locally even if they're in incoming
       const localOnlyRemoved = existingItems.filter(i => i.removedFromBill && !incomingIds.has(i.id));
 
       const merged = {
         ...incoming,
-        items: [...mergedItems, ...localOnlyRemoved],
+        items: [...mergedItems, ...localOnlyItems, ...localOnlyRemoved],
       };
 
       // FIX #4: Always use the version with MORE items to prevent data loss
@@ -851,12 +873,19 @@ const CashierDashboard = ({ onLogout }) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
       if (shouldBlockTableUpdate(order.tableId, null)) return;
+      if (terminatedTableIdsRef.current.has(order.tableId)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: mergeOrder(order, t.activeOrder) } : t
+        t.backendId === order.tableId
+          ? {
+              ...t,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            }
+          : t
       );
       if (isVenue) {
         if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
@@ -868,8 +897,20 @@ const CashierDashboard = ({ onLogout }) => {
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
       if (shouldBlockTableUpdate(table.id, table.status)) return;
+      if (terminatedTableIdsRef.current.has(table.id)) return;
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
+
+        const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
+        const incomingIsAvailable = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.status === 'AVAILABLE';
+        if (incomingIsAvailable && t.activeOrder) {
+          // Only clear if table is actually settled by this cashier tab
+          if (!settledTableIdsRef.current.has(t.backendId)) {
+            console.warn('[CashierDashboard] Skipping stale AVAILABLE event for occupied table (not settled)', t.number);
+            return t;
+          }
+        }
+
         // FIX #4: Merge kotHistory — never lose KOTs already in local state
         const mergedKotHistory = (() => {
           const existing = t.kotHistory || [];
@@ -879,12 +920,18 @@ const CashierDashboard = ({ onLogout }) => {
         })();
         // FIX: Also update activeOrder from incoming socket data so occupied tables show items
         const incomingOrder = table.orders?.[0] || table.activeOrder || null;
+        // Never downgrade a table that is locally in 'Waiting Bill' state back to a lesser state
+        const protectedStatus = (t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill')
+          && incomingStatus !== 'Free' && incomingStatus !== 'AVAILABLE'
+          ? 'Waiting Bill'
+          : incomingStatus;
+        const incomingBillAmt = table.currentBill ?? table.orders?.[0]?.totalAmount ?? t.currentBill;
         return {
           ...t,
           kotHistory: mergedKotHistory,
-          currentBill: table.currentBill ?? t.currentBill,
-          status: table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status),
-          workflowStatus: table.workflowStatus ?? t.workflowStatus,
+          currentBill: Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0)),
+          status: protectedStatus,
+          workflowStatus: protectedStatus,
           activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
         };
       });
@@ -897,17 +944,38 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === table.id) {
         setSelectedTable(prev => {
           if (!prev) return prev;
+
+          const incomingStatusSel = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : prev.status);
+          const incomingIsAvailableSel = incomingStatusSel === 'Free' || incomingStatusSel === 'AVAILABLE' || table.status === 'AVAILABLE';
+          if (incomingIsAvailableSel && prev.activeOrder) {
+            console.warn('[CashierDashboard] Skipping stale AVAILABLE event for selected occupied table', prev.number);
+            return prev;
+          }
+
           const mergedKotHistory = (() => {
             const existing = prev.kotHistory || [];
             const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
             return incoming.length >= existing.length ? incoming : existing;
           })();
-          const incomingOrder = table.orders?.[0] || table.activeOrder || null;
+          const isTableFree = (table.workflowStatus || table.status) === 'Free';
+          const isTableSettled = settledTableIdsRef.current.has(prev.backendId);
+          // Only clear kotHistory if table is actually settled by this cashier tab
+          const shouldClearKotHistory = isTableFree && isTableSettled;
+          const incomingOrder = isTableFree && isTableSettled ? null : (table.orders?.[0] || table.activeOrder || null);
+          // Never flicker bill to 0 unless table is actually free
+          const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
+          const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
+          const protectedStatusSel = (prev.status === 'Waiting Bill' || prev.workflowStatus === 'Waiting Bill')
+            && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
+            ? 'Waiting Bill'
+            : incomingStatusSel;
           return {
             ...prev,
-            kotHistory: mergedKotHistory,
-            currentBill: table.currentBill ?? prev.currentBill,
-            activeOrder: incomingOrder || prev.activeOrder,
+            kotHistory: shouldClearKotHistory ? [] : mergedKotHistory,
+            currentBill: stableBill,
+            status: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
+            workflowStatus: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
+            activeOrder: incomingOrder || (isTableFree && isTableSettled ? null : prev.activeOrder),
           };
         });
       }
@@ -916,6 +984,16 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderPaid = (payload) => {
       const { tableId } = payload;
       if (shouldBlockTableUpdate(tableId, 'AVAILABLE')) return;
+
+      // Clear table status to Free in activeTables and venueTables
+      const clearTable = (prev) => prev.map(t =>
+        t.backendId === tableId
+          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+          : t
+      );
+      setActiveTables(clearTable, { skipPersist: true });
+      if (setVenueTables) setVenueTables(clearTable, { skipPersist: true });
+
       // Remove from billing alerts
       setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
       // Clear selectedTable if it was the paid one
@@ -934,14 +1012,34 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const onTableSwapped = (payload) => {
-      const { sourceTableId, targetTableId, targetTable } = payload;
-      if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      // If cashier had the source table selected, switch to the new location
-      if (selectedTable?.backendId === sourceTableId) {
-        setSelectedTable(prev => prev ? { ...prev, backendId: targetTableId, ...targetTable } : prev);
+      const { sourceTableId, targetTableId, sourceTable: rawSource, targetTable: rawTarget } = payload;
+
+      // Map raw DB payloads to frontend shape using existing mapper
+      const isVenue = payload?.restaurantId === 'venue-001' || rawSource?.restaurantId === 'venue-001' || rawTarget?.restaurantId === 'venue-001';
+      const allTables = isVenue ? venueTables : activeTables;
+      const existingSource = allTables?.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = allTables?.find(t => t.backendId === targetTableId) || null;
+      const mappedSource = mapRealtimeTablePayload(rawSource, existingSource);
+      const mappedTarget = mapRealtimeTablePayload(rawTarget, existingTarget);
+
+      // Update the tables array for both source and target
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId === sourceTableId) return mappedSource || t;
+        if (t.backendId === targetTableId) return mappedTarget || t;
+        return t;
+      });
+      if (isVenue) {
+        if (setVenueTables) setVenueTables(updateTables);
+      } else {
+        setActiveTables(updateTables);
+      }
+
+      // If cashier had the source table open, switch selection to the new table
+      if (selectedTable?.backendId === sourceTableId && mappedTarget) {
+        setSelectedTable(mappedTarget);
         setShowTableModal(false);
         setShowSwapModal(false);
-        addNotification('Table Moved', `Session moved to Table ${targetTable?.number ?? ''}`, 'success');
+        addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
       }
     };
 
@@ -1087,6 +1185,14 @@ const CashierDashboard = ({ onLogout }) => {
         if (wasFree) {
             // It was already free, and the user is just building an order on it. Don't clear it.
             return;
+        }
+
+        // Guard: if liveTable still has order data, it's clearly still occupied — preserve status and skip clear
+        const hasOrderData = liveTable.activeOrder || (liveTable.orders?.length > 0) || (liveTable.kotHistory?.length > 0) || (liveTable.currentBill > 0);
+        if (hasOrderData) {
+          // Preserve current status/workflowStatus from selectedTable to prevent deselection during sync gap
+          setSelectedTable(prev => prev ? { ...liveTable, status: prev.status, workflowStatus: prev.workflowStatus } : null);
+          return;
         }
 
         setSelectedTable(null);
@@ -1333,7 +1439,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  const { subtotal, taxes, total, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
+  const { subtotal, taxes, total, grandTotal: cartGrandTotal, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
     const committedItems = getBillableItems(selectedTable);
@@ -1360,9 +1466,14 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // Ref guard - synchronous check to prevent race condition
+    if (isPrintingBillRef.current) return;
+    isPrintingBillRef.current = true;
+
     // Check if order is already paid
     if (selectedTable?.activeOrder?.status === 'PAID') {
       addNotification('Error', 'This order has already been settled.', 'error');
+      isPrintingBillRef.current = false;
       return;
     }
 
@@ -1370,6 +1481,7 @@ const CashierDashboard = ({ onLogout }) => {
     const orderItems = getBillableItems(selectedTable);
     if (orderItems.length === 0) {
       addNotification('Error', 'Cannot print bill with no items. Please add items to the order first.', 'error');
+      isPrintingBillRef.current = false;
       return;
     }
 
@@ -1430,6 +1542,13 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
+        // Per-table bill-print ref guard - synchronous check to prevent duplicate API calls
+        if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
+          // Already printing/printed for this table — abort silently
+          isPrintingBillRef.current = false;
+          return;
+        }
+
         const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -1466,11 +1585,17 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } finally {
       setIsPrintingBill(false);
+      isPrintingBillRef.current = false;
     }
   };
 
   const handleWalkinFinalBill = async () => {
     if (cart.length === 0) return;
+
+    // Ref guard - synchronous check to prevent race condition
+    if (isPrintingBillRef.current) return;
+    isPrintingBillRef.current = true;
+
     const tableLabel = selectedTable?.id || 'Walk-in';
     const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
     const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
@@ -1513,6 +1638,7 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Print Failed', err.message || 'Could not print walk-in bill', 'error');
     } finally {
       setIsPrintingBill(false);
+      isPrintingBillRef.current = false;
     }
   };
 
@@ -1753,6 +1879,11 @@ const CashierDashboard = ({ onLogout }) => {
     if (isTerminating) return; // guard against double-click
 
     const tableSnap = { ...selectedTable }; // snapshot before any state mutation
+    // Guard against socket events reviving the just-terminated table
+    if (tableSnap.backendId) {
+      terminatedTableIdsRef.current.add(tableSnap.backendId);
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.backendId), 6000);
+    }
     setIsTerminating(true);
 
     try {
@@ -1764,15 +1895,10 @@ const CashierDashboard = ({ onLogout }) => {
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
           : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
-        // Cross-browser compatible timeout (AbortSignal.timeout is not supported on older browsers)
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 10000);
         const response = await fetch(terminateUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: abortController.signal,
         });
-        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
@@ -2197,6 +2323,12 @@ const CashierDashboard = ({ onLogout }) => {
     setIsKotSending(true);
     setIsKotSuccess(false);
 
+    // Generate requestId BEFORE optimistic UI update for deduplication
+    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
+    kotRequestIdRef.current = requestId;
+
     const foodItems = cart.filter(i => i.menuType === 'FOOD' || !i.menuType);
     const barItems = cart.filter(i => i.menuType === 'LIQUOR');
 
@@ -2273,37 +2405,31 @@ const CashierDashboard = ({ onLogout }) => {
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
     setTimeout(() => setIsKotSuccess(false), 2000);
 
-    // Reset loading state immediately after optimistic UI update
-    isSubmittingKotRef.current = false;
-    setIsKotSending(false);
-
     // Run API call in background without blocking UI
     (async () => {
       try {
         if (selectedTable?.backendId) {
           if (selectedTable.activeOrder?.id) {
-        // FIX: Only send the NEW cart items (apiItems) to the backend.
-        // The backend PATCH /items endpoint always creates NEW orderItem rows for
-        // whatever it receives — it does NOT replace old ones.
-        // Previously we were merging existingItems + apiItems, which caused old items
-        // to be re-inserted as duplicates on every KOT, bleeding across tables.
-        const response = await updateOrderItems(selectedTable.activeOrder.id, apiItems, crypto.randomUUID());
-        // Extract real KOT ID from API response
-        const realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
-          (response?.order?.kotHistory || response?.kotHistory)?.length - 1
-        ]?.id ?? kotsToCreate[0]?.id;
-        } else {
-          await createOrder({
-            tableId: selectedTable.backendId,
-            tableNumber: selectedTable.number || selectedTable.id,
-            restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-            items: apiItems,
-          });
+            // Subsequent KOT — append new items to existing order
+            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier');
+          } else {
+            // First KOT — create a brand-new order row
+            await createOrder({
+              tableId: selectedTable.backendId,
+              tableNumber: selectedTable.number || selectedTable.id,
+              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+              items: apiItems,
+              requestId,
+              captainName: 'Cashier',
+            });
+          }
         }
+      } catch (err) {
+        console.warn('[BG] order write failed:', err.message);
+      } finally {
+        isSubmittingKotRef.current = false;
+        setIsKotSending(false);
       }
-    } catch (err) {
-      console.warn('[BG] order write failed:', err.message);
-    }
     })();
   };
 
@@ -2505,7 +2631,12 @@ const CashierDashboard = ({ onLogout }) => {
                               const isWaitingBill = table.status === 'Waiting Bill';
                               const isPreparing = table.status === 'Preparing';
                               const bill = calculateTableBill(table);
-                              const billAmt = Number(table.currentBill || bill?.subtotal || 0);
+                              const billAmt = Math.max(
+                                Number(table.currentBill || 0),
+                                Number(bill?.subtotal || 0),
+                                Number(table.activeOrder?.totalAmount || 0),
+                                Number(table.orders?.[0]?.totalAmount || 0)
+                              );
 
                               let cardBg = 'bg-red-50 border-[#E53935]';
                               let textColor = 'text-[#E53935]';
@@ -3425,7 +3556,18 @@ const CashierDashboard = ({ onLogout }) => {
 
                     <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
                       {menuLoading ? (
-                        <p className="text-center text-sm text-gray-400 py-12 font-bold uppercase tracking-widest animate-pulse">Syncing menu…</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                          {[1, 2, 3, 4, 5, 6].map(i => (
+                            <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 flex gap-4 items-center">
+                              <div className="w-16 h-16 bg-gray-200 animate-pulse rounded-lg shrink-0" />
+                              <div className="flex-grow">
+                                <div className="h-4 w-3/4 bg-gray-200 animate-pulse rounded mb-2" />
+                                <div className="h-3 w-1/2 bg-gray-200 animate-pulse rounded mb-2" />
+                                <div className="h-4 w-1/4 bg-gray-200 animate-pulse rounded" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       ) : activeMenuItems.length === 0 ? (
                         <div
                           className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm mt-4 w-full"
@@ -3662,7 +3804,7 @@ const CashierDashboard = ({ onLogout }) => {
                         )}
                         <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
                           <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                          <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeTotal : total).toFixed(0)}</span>
+                          <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeGrandTotal : cartGrandTotal).toFixed(0)}</span>
                         </div>
                       </div>
 

@@ -288,7 +288,7 @@ export function mapBarMenuItems(items, restaurantItems = []) {
   });
 }
 
-async function fetchWithRetry(url, options, { retries = 2, timeoutMs = 45000 } = {}) {
+async function fetchWithRetry(url, options, { retries = 3, timeoutMs = 60000 } = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {

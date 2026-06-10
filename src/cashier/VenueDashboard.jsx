@@ -368,11 +368,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
       const terminateUrl = `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
       try {
-        // Cross-browser compatible timeout
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 10000);
-        const response = await fetch(terminateUrl, { method: 'POST', signal: abortController.signal });
-        clearTimeout(timeoutId);
+        const response = await fetch(terminateUrl, { method: 'POST' });
 
         if (!response.ok) throw new Error('Backend sync failed');
 

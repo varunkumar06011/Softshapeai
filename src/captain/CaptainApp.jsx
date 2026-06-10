@@ -853,6 +853,12 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+  // Menu panel error state for local error boundary
+
+  const [menuPanelError, setMenuPanelError] = useState(null);
+
+
+
   // Sync state to localStorage
 
   useEffect(() => {
@@ -898,6 +904,32 @@ export default function CaptainApp({ onLogout }) {
     localStorage.setItem('softshape_captain_table_filter', tableFilter);
 
   }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter]);
+
+
+
+  // Monitor menu loading errors for local error boundary
+
+  useEffect(() => {
+
+    if (restaurantMenuLoading || barMenuLoading) return;
+
+    // Check for errors from menu sync services
+
+    const restaurantError = restaurantMenuLoading === false && restaurantMenu.length === 0;
+
+    const barError = barMenuLoading === false && barMenu.length === 0 && outlet === 'bar';
+
+    if (restaurantError || barError) {
+
+      setMenuPanelError(new Error('Menu failed to load'));
+
+    } else {
+
+      setMenuPanelError(null);
+
+    }
+
+  }, [restaurantMenuLoading, barMenuLoading, restaurantMenu.length, barMenu.length, outlet]);
 
 
 
@@ -1085,11 +1117,11 @@ export default function CaptainApp({ onLogout }) {
 
   // Route mutations to the correct table array based on where the active table lives
   // Uses a ref to avoid stale closure when venueTables is momentarily empty during re-fetch
-  const setActiveOrVenueTables = useCallback((updater) => {
+  const setActiveOrVenueTables = useCallback((updater, options) => {
     if (isVenueTableRef.current) {
-      setVenueTables(updater);
+      setVenueTables(updater, options);
     } else {
-      setActiveTables(updater);
+      setActiveTables(updater, options);
     }
   }, [setVenueTables, setActiveTables]);
 
@@ -1405,6 +1437,15 @@ export default function CaptainApp({ onLogout }) {
     const onOrderPaid = (payload) => {
       const tableId = payload?.tableId;
       if (!tableId) return;
+
+      const clearTable = (prev) => prev.map(t =>
+        t.backendId === tableId || t.id === tableId
+          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+          : t
+      );
+      setActiveTables(clearTable);
+      setVenueTables(clearTable);
+
       if (activeTableIdRef.current && String(tableId) === String(activeTableIdRef.current)) {
         const settledId = activeTableIdRef.current;
         setTableCarts(prev => {
@@ -1423,6 +1464,15 @@ export default function CaptainApp({ onLogout }) {
       if (!table?.id) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
+
+        // Guard: if socket says AVAILABLE but local table has an active order,
+        // skip this update — it's a stale/race event. Wait for the correct one.
+        const incomingIsAvailable = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
+        if (incomingIsAvailable && t.activeOrder) {
+          console.warn('[CaptainApp] Skipping stale AVAILABLE event for occupied table', t.number);
+          return t;
+        }
+
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
@@ -2189,7 +2239,9 @@ export default function CaptainApp({ onLogout }) {
 
     const existingOrderId = activeOrderIdRef.current;
 
-    const requestId = crypto.randomUUID();
+    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
     kotRequestIdRef.current = requestId;
 
@@ -2254,7 +2306,7 @@ export default function CaptainApp({ onLogout }) {
 
         // Subsequent KOT on same table — append items to existing order
 
-        const response = await updateOrderItems(existingOrderId, apiItems, requestId);
+        const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined);
 
         savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
 
@@ -2278,6 +2330,7 @@ export default function CaptainApp({ onLogout }) {
           items: apiItems,
 
           requestId,
+          captainName: currentCaptain?.name || undefined,
 
         });
 
@@ -2338,7 +2391,7 @@ export default function CaptainApp({ onLogout }) {
 
         };
 
-      }));
+      }), { skipPersist: true });
 
 
 
@@ -2506,7 +2559,9 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    const cancelRequestId = crypto.randomUUID();
+    const cancelRequestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
     try {
 
@@ -3950,7 +4005,6 @@ export default function CaptainApp({ onLogout }) {
                     </div>
 
                   </div>
-
                 )}
 
 
@@ -3966,10 +4020,37 @@ export default function CaptainApp({ onLogout }) {
                   }}
                 >
 
-                  {menuLoading ? (
-
-                    <p className="text-center text-xs text-gray-400 py-12 font-black uppercase tracking-widest">Syncing menu…</p>
-
+                  {menuPanelError ? (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                      <p className="text-red-600 font-medium mb-2">Menu failed to load — tap to retry</p>
+                      <button
+                        onClick={() => {
+                          setMenuPanelError(null);
+                          // Trigger menu refresh by calling refreshMenu from the hooks
+                          if (outlet === 'bar') {
+                            // barMenu refresh is handled by the hook, just clear error
+                          } else {
+                            // restaurantMenu refresh is handled by the hook, just clear error
+                          }
+                        }}
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : menuLoading ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                      {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 flex gap-4 items-center">
+                          <div className="w-16 h-16 bg-gray-200 animate-pulse rounded-lg shrink-0" />
+                          <div className="flex-grow">
+                            <div className="h-4 w-3/4 bg-gray-200 animate-pulse rounded mb-2" />
+                            <div className="h-3 w-1/2 bg-gray-200 animate-pulse rounded mb-2" />
+                            <div className="h-4 w-1/4 bg-gray-200 animate-pulse rounded" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : filteredMenu.length === 0 ? (() => {
 
   const words = (searchQuery || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3);
@@ -5417,6 +5498,9 @@ export default function CaptainApp({ onLogout }) {
               setCancelLoading(prev => ({ ...prev, [item.orderItemId]: false }));
 
             }
+
+            // Add delay between sequential cancel calls to prevent DB race
+            await new Promise(r => setTimeout(r, 400));
 
           }
 

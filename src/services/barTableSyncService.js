@@ -288,6 +288,24 @@ export function useBarTableSync() {
 
     if (!apiTables || !Array.isArray(apiTables) || apiTables.length === 0) {
       console.warn('[BarTableSync] API returned no tables — keeping current state, not injecting local fakes');
+      // Retry once after 1500ms in case the socket race caused an empty response
+      setTimeout(() => {
+        if (!mountedRef.current || cancelledRef.current) return;
+        fetchBarTables()
+          .then(retryData => {
+            if (!mountedRef.current || cancelledRef.current) return;
+            const retryFlat = flattenSections(retryData);
+            if (retryFlat.length > 0) {
+              const merged = mergeTablesFromApi(retryFlat, tablesRef.current);
+              const deduped = merged.filter((table, index, self) =>
+                index === self.findIndex(t => t.backendId === table.backendId)
+              );
+              writeCache(deduped);
+              setTablesState(deduped);
+            }
+          })
+          .catch(err => console.warn('[BarTableSync] Retry fetch failed:', err.message));
+      }, 1500);
       isFetchingRef.current = false;
       abortControllerRef.current = null;
       if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
@@ -330,9 +348,22 @@ export function useBarTableSync() {
         }
 
         setTablesState((prev) => {
-          const next = prev.map((t) =>
-            t.backendId === updatedTable.id ? mapBackendTable(updatedTable, t) : t
-          );
+          const next = prev.map((t) => {
+            if (t.backendId !== updatedTable.id) return t;
+            // Guard: if socket says AVAILABLE but local table has an active order,
+            // skip this update — it's a stale/race event. Wait for the correct one.
+            const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
+            if (incomingIsAvailable) {
+              // Use tablesRef.current (synchronously updated) instead of prev (pre-commit state)
+              // to correctly check if this table was just cleared by terminate/settle
+              const refTable = tablesRef.current.find(rt => rt.backendId === updatedTable.id);
+              if (refTable?.activeOrder) {
+                console.warn('[BarTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+                return t;
+              }
+            }
+            return mapBackendTable(updatedTable, t);
+          });
           writeCache(next);
           return next;
         });
