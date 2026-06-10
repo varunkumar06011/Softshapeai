@@ -963,9 +963,10 @@ export default function BarMenu({ tableId }) {
 
 
       if (activeOrderId) {
-
-        await updateOrderItems(activeOrderId, apiItems, crypto.randomUUID());
-
+        const reqId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await updateOrderItems(activeOrderId, apiItems, reqId);
       } else {
 
         await createOrder({

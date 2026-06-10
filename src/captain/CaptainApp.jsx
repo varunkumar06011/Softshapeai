@@ -813,16 +813,6 @@ export default function CaptainApp({ onLogout }) {
 
   const [cancelConfirm,  setCancelConfirm]  = useState({});
 
-  // Cancel-items modal state
-
-  const [showCancelModal, setShowCancelModal] = useState(false);
-
-  const [cancelSelected,  setCancelSelected]  = useState({});  // { [orderItemId]: { item, kotId } }
-
-  const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
-
-
-
   // KOT dispatch error state — null when no error, or { message, retryItems } when DB write fails.
 
   // retryItems is the pre-cleared currentSessionItems snapshot so the captain can retry
@@ -1140,15 +1130,15 @@ export default function CaptainApp({ onLogout }) {
 
     const isFreshSession =
 
-      activeTable.status === TABLE_STATUS.FREE ||
+      activeTable?.status === TABLE_STATUS.FREE ||
 
       (
 
-        !activeTable.kotHistory?.length &&
+        !activeTable?.kotHistory?.length &&
 
-        !activeTable.currentBill &&
+        !activeTable?.currentBill &&
 
-        !activeTable.activeOrder &&
+        !activeTable?.activeOrder &&
 
         !lastConfirmedItemsRef.current.length   // FIX #5: also check ref
 
@@ -1493,9 +1483,20 @@ export default function CaptainApp({ onLogout }) {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
-      const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId ? { ...t, activeOrder: order } : t
-      );
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId !== order.tableId) return t;
+        // Sync cancelled status back into kotHistory items
+        const cancelledIds = new Set(
+          (order.items || []).filter(i => i.removedFromBill).map(i => i.id)
+        );
+        const updatedKotHistory = (t.kotHistory || []).map(kot => ({
+          ...kot,
+          items: kot.items.map(i =>
+            cancelledIds.has(i.orderItemId) ? { ...i, s: 'Cancelled' } : i
+          )
+        }));
+        return { ...t, activeOrder: order, kotHistory: updatedKotHistory };
+      });
       if (isVenue) {
         setVenueTables(updateTables);
       } else {
@@ -2299,7 +2300,7 @@ export default function CaptainApp({ onLogout }) {
 
       const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
 
-      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).subtotal;
+      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).grandTotal;
 
 
 
@@ -2342,8 +2343,8 @@ export default function CaptainApp({ onLogout }) {
 
         savedOrder = await createOrder({
 
-          tableId: activeTable.backendId,
-          tableNumber: activeTable.number ?? activeTable.id,
+          tableId: activeTable?.backendId,
+          tableNumber: activeTable?.number ?? activeTable?.id,
           restaurantId: orderRestaurantId,
           items: apiItems,
 
@@ -2383,7 +2384,7 @@ export default function CaptainApp({ onLogout }) {
       };
 
       setActiveOrVenueTables(prev => prev.map(t => {
-        if (t.backendId !== activeTable.backendId) return t;
+        if (t.backendId !== activeTable?.backendId) return t;
 
         return {
 
@@ -2419,12 +2420,12 @@ export default function CaptainApp({ onLogout }) {
 
       const allPrevIds = new Set(
 
-        (activeTable.kotHistory || []).flatMap(k => k.items.map(i => i.orderItemId).filter(Boolean))
+        (activeTable?.kotHistory || []).flatMap(k => k.items.map(i => i.orderItemId).filter(Boolean))
 
       );
 
       setActiveOrVenueTables(prev => prev.map(t => {
-        if (t.backendId !== activeTable.backendId) return t;
+        if (t.backendId !== activeTable?.backendId) return t;
 
         return {
 
@@ -2569,7 +2570,7 @@ export default function CaptainApp({ onLogout }) {
 
         }),
 
-        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem.p ?? 0) * (kotItem.q ?? 1)),
+        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem.p ?? 0) * (kotItem.q ?? 1) * (String(kotItem.menuType || 'FOOD').toUpperCase() !== 'LIQUOR' ? 1.05 : 1)),
 
       };
 
@@ -2654,7 +2655,7 @@ export default function CaptainApp({ onLogout }) {
 
           }),
 
-          currentBill: (t.currentBill ?? 0) + (kotItem.p ?? 0) * (kotItem.q ?? 1),
+          currentBill: (t.currentBill ?? 0) + (kotItem.p ?? 0) * (kotItem.q ?? 1) * (String(kotItem.menuType || 'FOOD').toUpperCase() !== 'LIQUOR' ? 1.05 : 1),
 
         };
 
@@ -4602,23 +4603,6 @@ export default function CaptainApp({ onLogout }) {
                                 : '—'}
 
                             </span>
-
-                            {cancellableItems.length > 0 && (
-
-                              <button
-
-                                onClick={() => setShowCancelModal(true)}
-
-                                className="px-2 py-0.5 rounded-md bg-red-50 text-red-500 text-[8px] font-black uppercase tracking-widest border border-red-100 hover:bg-red-100 transition-colors flex items-center gap-1"
-
-                              >
-
-                                <X size={10} /> Cancel Items
-
-                              </button>
-
-                            )}
-
                           </div>
 
                         </div>
@@ -4705,7 +4689,7 @@ export default function CaptainApp({ onLogout }) {
 
                       <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935] flex items-center gap-2"><ShoppingCart size={16} /> New KOT Draft</h4>
 
-                      {(currentSessionItems.length > 0 || (!activeTable?.kotHistory || activeTable.kotHistory.length === 0)) && (
+                      {(currentSessionItems.length > 0 || (!activeTable?.kotHistory || activeTable?.kotHistory.length === 0)) && (
 
                         <button onClick={cancelSession} className="text-[9px] font-black text-[#E53935] uppercase hover:text-red-700 transition-colors bg-red-50 px-2 py-1 rounded-md border border-red-100">Cancel Session</button>
 
@@ -5316,560 +5300,6 @@ export default function CaptainApp({ onLogout }) {
       </div>
 
 
-
-      {/* CANCEL ITEMS MODAL */}
-
-      {showCancelModal && (() => {
-
-        // Gather all cancellable items across all KOTs
-
-        const allCancellable = [];
-
-        (activeTable?.kotHistory || []).forEach(kot => {
-
-          kot.items.forEach(item => {
-
-            if (item.s !== 'Cancelled' && !!item.orderItemId) {
-
-              allCancellable.push({ item, kotId: kot.id, kotTime: kot.time });
-
-            }
-
-          });
-
-        });
-
-        const selectedCount = Object.keys(cancelSelected).length;
-
-        const selectedQuantityTotal = Object.values(cancelSelected).reduce(
-
-          (sum, entry) => sum + Math.max(1, Math.round(Number(entry.quantity ?? 1))),
-
-          0
-
-        );
-
-
-
-        const handleCancelSelected = async () => {
-
-          if (selectedCount === 0) return;
-
-          if (!activeOrderIdRef.current) {
-
-            addNotification('No active order found.', 'error');
-
-            return;
-
-          }
-
-          setCancelBatchLoading(true);
-
-          const entries = Object.values(cancelSelected); // [{ item, kotId }]
-
-          for (const { item, kotId } of entries) {
-
-            const cancelQuantity = Math.max(1, Math.min(
-
-              Number(item.q ?? 0),
-
-              Math.round(Number(cancelSelected[item.orderItemId]?.quantity ?? 1))
-
-            ));
-
-            const isFullCancel = cancelQuantity >= Number(item.q ?? 0);
-
-            // Optimistic update
-            setActiveOrVenueTables(prev => prev.map(t => {
-              if (t.backendId !== activeTable?.backendId) return t;
-
-              return {
-
-                ...t,
-
-                kotHistory: (t.kotHistory || []).map(kot => {
-
-                  if (kot.id !== kotId) return kot;
-
-                  return {
-
-                    ...kot,
-
-                    items: kot.items.map(i => {
-
-                      if (i.orderItemId !== item.orderItemId) return i;
-
-                      if (isFullCancel) {
-
-                        return {
-
-                          ...i,
-
-                          q: 0,
-
-                          s: 'Cancelled',
-
-                          cancelledQuantity: Number(i.cancelledQuantity ?? 0) + cancelQuantity,
-
-                        };
-
-                      }
-
-                      return {
-
-                        ...i,
-
-                        q: Math.max(0, Number(i.q ?? 0) - cancelQuantity),
-
-                        s: 'KOT Sent',
-
-                        cancelledQuantity: Number(i.cancelledQuantity ?? 0) + cancelQuantity,
-
-                      };
-
-                    }),
-
-                  };
-
-                }),
-
-                currentBill: Math.max(0, (t.currentBill ?? 0) - (item.p ?? 0) * cancelQuantity),
-
-              };
-
-            }));
-
-            setCancelLoading(prev => ({ ...prev, [item.orderItemId]: true }));
-
-            try {
-
-              await cancelOrderItem(
-
-                activeOrderIdRef.current,
-
-                item.orderItemId,
-
-                currentCaptain?.name || currentCaptain?.id || 'Captain',
-
-                activeTable?.number ?? activeTable?.id,
-
-                cancelQuantity
-
-              );
-
-            } catch (err) {
-
-              console.error('[CancelBatch]', err.message);
-
-              // Revert this one item
-              setActiveOrVenueTables(prev => prev.map(t => {
-                if (t.backendId !== activeTable?.backendId) return t;
-
-                return {
-
-                  ...t,
-
-                  kotHistory: (t.kotHistory || []).map(kot => {
-
-                    if (kot.id !== kotId) return kot;
-
-                    return {
-
-                      ...kot,
-
-                      items: kot.items.map(i => {
-
-                        if (i.orderItemId !== item.orderItemId) return i;
-
-                        return isFullCancel
-
-                          ? { ...i, q: Math.max(1, Number(item.q ?? 1)), s: 'KOT Sent' }
-
-                          : {
-
-                              ...i,
-
-                              q: Number(i.q ?? 0) + cancelQuantity,
-
-                              s: 'KOT Sent',
-
-                              cancelledQuantity: Math.max(0, Number(i.cancelledQuantity ?? 0) - cancelQuantity),
-
-                            };
-
-                      }),
-
-                    };
-
-                  }),
-
-                  currentBill: (t.currentBill ?? 0) + (item.p ?? 0) * cancelQuantity,
-
-                };
-
-              }));
-
-              addNotification(`Failed to cancel ${item.n}`, 'error');
-
-            } finally {
-
-              setCancelLoading(prev => ({ ...prev, [item.orderItemId]: false }));
-
-            }
-
-            // Add delay between sequential cancel calls to prevent DB race
-            await new Promise(r => setTimeout(r, 400));
-
-          }
-
-          addNotification(
-
-            selectedCount === 1
-
-              ? `${entries[0].item.n} x${selectedQuantityTotal} cancelled`
-
-              : `${selectedQuantityTotal} qty cancelled`,
-
-            'success'
-
-          );
-
-          setCancelSelected({});
-
-          setCancelBatchLoading(false);
-
-          setShowCancelModal(false);
-
-        };
-
-
-
-        return (
-
-          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowCancelModal(false); setCancelSelected({}); }}>
-
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm mx-0 sm:mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-
-              {/* Header */}
-
-              <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
-
-                <div className="flex items-center gap-2">
-
-                  <div className="p-2 bg-red-50 rounded-xl">
-
-                    <X size={18} className="text-red-500" />
-
-                  </div>
-
-                  <div>
-
-                    <h3 className="font-black text-sm text-gray-900">Cancel Items</h3>
-
-                    <p className="text-[10px] text-gray-400 font-semibold">Table {activeTable?.number || activeTable?.id} — select items to remove</p>
-
-                  </div>
-
-                </div>
-
-                <button onClick={() => { setShowCancelModal(false); setCancelSelected({}); }} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-all">
-
-                  <X size={16} />
-
-                </button>
-
-              </div>
-
-
-
-              {/* Item list */}
-
-              <div className="p-4 max-h-72 overflow-y-auto space-y-2">
-
-                {allCancellable.length === 0 ? (
-
-                  <div className="text-center py-8">
-
-                    <CheckCircle2 size={32} className="text-gray-200 mx-auto mb-2" />
-
-                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">No cancellable items</p>
-
-                  </div>
-
-                ) : (
-
-                  allCancellable.map(({ item, kotId, kotTime }) => {
-
-                    const isChecked = !!cancelSelected[item.orderItemId];
-
-                    const cancelQuantity = Math.max(
-
-                      1,
-
-                      Math.min(
-
-                        Number(item.q ?? 1),
-
-                        Math.round(Number(cancelSelected[item.orderItemId]?.quantity ?? 1))
-
-                      )
-
-                    );
-
-                    const remainingQuantity = Math.max(0, Number(item.q ?? 0) - cancelQuantity);
-
-                    return (
-
-                      <button
-
-                        key={item.orderItemId}
-
-                        onClick={() => setCancelSelected(prev => {
-
-                          if (prev[item.orderItemId]) {
-
-                            const next = { ...prev };
-
-                            delete next[item.orderItemId];
-
-                            return next;
-
-                          }
-
-                          return { ...prev, [item.orderItemId]: { item, kotId, quantity: 1 } };
-
-                        })}
-
-                        className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left ${
-
-                          isChecked
-
-                            ? 'border-red-400 bg-red-50'
-
-                            : 'border-gray-100 bg-gray-50 hover:border-gray-200'
-
-                        }`}
-
-                      >
-
-                        <div className="flex items-center gap-3">
-
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
-
-                            isChecked ? 'border-red-500 bg-red-500' : 'border-gray-300 bg-white'
-
-                          }`}>
-
-                            {isChecked && <Check size={12} className="text-white" strokeWidth={3} />}
-
-                          </div>
-
-                          <div>
-
-                            <p className="text-[12px] font-black text-gray-900">{item.n}</p>
-
-                            <p className="text-[9px] font-bold text-gray-400 uppercase">
-
-                              {isChecked && cancelQuantity < Number(item.q ?? 0) ? (
-
-                                <>
-
-                                  <span className="line-through">{cancelQuantity}x</span>
-
-                                  <span className="ml-1 text-red-500">{remainingQuantity}x remain</span>
-
-                                </>
-
-                              ) : (
-
-                                <>{item.q}x · ₹{item.p * item.q} · KOT {kotTime}</>
-
-                              )}
-
-                            </p>
-
-                          </div>
-
-                        </div>
-
-                        <div className="flex items-center gap-2">
-
-                          {isChecked && (
-
-                            <div className="flex items-center gap-1 bg-white border border-red-200 rounded-lg px-2 py-1">
-
-                              <button
-
-                                type="button"
-
-                                onClick={(e) => {
-
-                                  e.stopPropagation();
-
-                                  setCancelSelected(prev => ({
-
-                                    ...prev,
-
-                                    [item.orderItemId]: {
-
-                                      ...prev[item.orderItemId],
-
-                                      quantity: Math.max(1, Number(prev[item.orderItemId]?.quantity ?? 1) - 1),
-
-                                    },
-
-                                  }));
-
-                                }}
-
-                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
-
-                              >
-
-                                −
-
-                              </button>
-
-                              <input
-
-                                type="number"
-
-                                min="1"
-
-                                max={item.q}
-
-                                value={cancelQuantity}
-
-                                onChange={(e) => {
-
-                                  const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
-
-                                  setCancelSelected(prev => ({
-
-                                    ...prev,
-
-                                    [item.orderItemId]: {
-
-                                      ...prev[item.orderItemId],
-
-                                      quantity: nextValue,
-
-                                    },
-
-                                  }));
-
-                                }}
-
-                                onClick={(e) => e.stopPropagation()}
-
-                                className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
-
-                              />
-
-                              <button
-
-                                type="button"
-
-                                onClick={(e) => {
-
-                                  e.stopPropagation();
-
-                                  setCancelSelected(prev => ({
-
-                                    ...prev,
-
-                                    [item.orderItemId]: {
-
-                                      ...prev[item.orderItemId],
-
-                                      quantity: Math.min(Number(item.q ?? 1), Number(prev[item.orderItemId]?.quantity ?? 1) + 1),
-
-                                    },
-
-                                  }));
-
-                                }}
-
-                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
-
-                              >
-
-                                +
-
-                              </button>
-
-                            </div>
-
-                          )}
-
-                          <span className="text-[10px] font-black text-gray-500">₹{item.p * item.q}</span>
-
-                        </div>
-
-                      </button>
-
-                    );
-
-                  })
-
-                )}
-
-              </div>
-
-
-
-              {/* Footer */}
-
-              {allCancellable.length > 0 && (
-
-                <div className="px-4 pb-5 pt-3 border-t border-gray-100 space-y-2">
-
-                  {selectedCount > 0 && (
-
-                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest text-center">
-
-                      {selectedQuantityTotal} qty selected — will be removed from bill
-
-                    </p>
-
-                  )}
-
-                  <button
-
-                    disabled={selectedCount === 0 || cancelBatchLoading}
-
-                    onClick={handleCancelSelected}
-
-                    className="w-full py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed bg-red-600 text-white hover:bg-red-700 active:scale-95 shadow-lg shadow-red-100"
-
-                  >
-
-                    {cancelBatchLoading ? (
-
-                      <><Loader2 size={15} className="animate-spin" /> Cancelling…</>
-
-                    ) : (
-
-                      <><X size={15} /> Cancel {selectedCount > 0 ? `${selectedQuantityTotal} Qty` : 'Selected'}</>
-
-                    )}
-
-                  </button>
-
-                </div>
-
-              )}
-
-            </div>
-
-          </div>
-
-        );
-
-      })()}
-
-
-
       {/* MOVE TABLE MODAL */}
 
       {showMoveModal && (() => {
@@ -5952,7 +5382,7 @@ export default function CaptainApp({ onLogout }) {
 
                             await swapTable(
 
-                              activeTable.backendId,
+                              activeTable?.backendId,
 
                               t.backendId,
 

@@ -1036,6 +1036,9 @@ const CashierDashboard = ({ onLogout }) => {
 
       // If cashier had the source table open, switch selection to the new table
       if (selectedTable?.backendId === sourceTableId && mappedTarget) {
+        // Clear stale localStorage for the source table before switching
+        localStorage.removeItem('cashier_selected_table');
+        localStorage.removeItem(`cashier_cart_${sourceTableId}`);
         setSelectedTable(mappedTarget);
         setShowTableModal(false);
         setShowSwapModal(false);
@@ -1454,7 +1457,11 @@ const CashierDashboard = ({ onLogout }) => {
   const activeSubtotal = activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
-  const activeGrandTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
+  const activeGrandTotal = useMemo(() => {
+    const backendTotal = Number(selectedTable?.activeOrder?.totalAmount ?? 0);
+    if (backendTotal > 0) return backendTotal;
+    return activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
+  }, [selectedTable?.activeOrder?.totalAmount, activeOrderCalc]);
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
@@ -1542,13 +1549,6 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
-        // Per-table bill-print ref guard - synchronous check to prevent duplicate API calls
-        if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
-          // Already printing/printed for this table — abort silently
-          isPrintingBillRef.current = false;
-          return;
-        }
-
         const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -2631,12 +2631,13 @@ const CashierDashboard = ({ onLogout }) => {
                               const isWaitingBill = table.status === 'Waiting Bill';
                               const isPreparing = table.status === 'Preparing';
                               const bill = calculateTableBill(table);
-                              const billAmt = Math.max(
-                                Number(table.currentBill || 0),
-                                Number(bill?.subtotal || 0),
-                                Number(table.activeOrder?.totalAmount || 0),
-                                Number(table.orders?.[0]?.totalAmount || 0)
-                              );
+                              const billAmt = bill?.subtotal > 0
+                                ? bill.subtotal
+                                : Math.max(
+                                    Number(table.currentBill || 0),
+                                    Number(table.activeOrder?.totalAmount || 0),
+                                    Number(table.orders?.[0]?.totalAmount || 0)
+                                  );
 
                               let cardBg = 'bg-red-50 border-[#E53935]';
                               let textColor = 'text-[#E53935]';

@@ -205,6 +205,7 @@ function App() {
               onRetry={() => window.location.reload()}
             >
               <CaptainApp 
+                key="captain-app"
                 onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }} 
               />
             </ErrorBoundary>

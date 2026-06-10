@@ -181,7 +181,9 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
     }
 
     setIsSendingKot(true);
-    const requestId = crypto.randomUUID();
+    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
       let orderId = selectedTable.activeOrder?.id;
 

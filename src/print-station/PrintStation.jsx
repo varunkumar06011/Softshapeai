@@ -966,7 +966,10 @@ export default function PrintStation() {
 
               if (data.escposData && data.escposData.length > 0) {
 
-                printTasks.push({ printer: KOT_FAMILY_PRINTER, cmds: data.escposData });
+                printTasks.push({
+                  printer: data.sectionTag === 'venue-bar-parcel' ? KITCHEN_PRINTER : KOT_FAMILY_PRINTER,
+                  cmds: data.escposData
+                });
 
               }
 
@@ -974,9 +977,9 @@ export default function PrintStation() {
 
                 // Parcel counter items go to KOT_PRINTER (parcel printer), not billing printer
 
-                const counterPrinter = data.sectionTag === 'venue-restaurant-parcel'
+                const counterPrinter = (data.sectionTag === 'venue-restaurant-parcel' || data.sectionTag === 'venue-bar-parcel')
 
-                  ? KOT_PRINTER
+                  ? BAR_PRINTER
 
                   : DINE_IN_BILL_PRINTER;
 
@@ -1008,7 +1011,7 @@ export default function PrintStation() {
 
                   printTasks.push({
 
-                    printer: KOT_FAMILY_PRINTER,
+                    printer: data.sectionTag === 'venue-bar-parcel' ? KITCHEN_PRINTER : KOT_FAMILY_PRINTER,
 
                     cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
 
@@ -1018,9 +1021,9 @@ export default function PrintStation() {
 
                 if (counterItems.length > 0) {
 
-                  const fallbackCounterPrinter = data.sectionTag === 'venue-restaurant-parcel'
+                  const fallbackCounterPrinter = (data.sectionTag === 'venue-restaurant-parcel' || data.sectionTag === 'venue-bar-parcel')
 
-                    ? KOT_PRINTER
+                    ? BAR_PRINTER
 
                     : DINE_IN_BILL_PRINTER;
 
