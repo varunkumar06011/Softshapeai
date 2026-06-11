@@ -832,6 +832,10 @@ export default function PrintStation() {
 
         reconnectionDelay: 2000,
 
+        reconnectionDelayMax: 10000,   // cap backoff at 10s — don't let it stretch too long
+
+        timeout: 20000,                // connection timeout
+
       });
 
       socketRef.current = socket;
