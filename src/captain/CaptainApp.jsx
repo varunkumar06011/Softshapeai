@@ -4933,15 +4933,19 @@ export default function CaptainApp({ onLogout }) {
 
                     <div className="flex flex-col gap-1">
 
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{currentSessionItems.length > 0 ? 'Updating' : 'Grand Total'}</span>
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Running Total</span>
 
                       <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{sessionBill.subtotal}</p>
+
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
+                        + ₹{calculateOrderTotal(getBillableItems(activeTable)).taxes.toFixed(0)} GST
+                      </span>
 
                     </div>
 
                     <div className="text-right flex flex-col gap-1">
 
-                      <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">KOT Draft</span>
+                      <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">New Items</span>
 
                       <span className="text-lg font-black text-gray-400">₹{calculateOrderTotal(currentSessionItems).subtotal}</span>
 

@@ -609,10 +609,10 @@ const CashierDashboard = ({ onLogout }) => {
         return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
       });
 
-      // Better deduping by composite key
+      // Better deduping by transaction ID (UUIDs are globally unique)
       const seen = new Set();
       const deduped = allTxns.filter(txn => {
-        const key = `${txn.id || txn.orderId}-${txn.paidAt}`;
+        const key = txn.id;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -665,8 +665,8 @@ const CashierDashboard = ({ onLogout }) => {
           txnNumber: txn.txnNumber || null,
           displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
           kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
-          amount: grandTotal,
-          grandTotal: txn.grandTotal != null ? grandTotal : null,
+          amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+          grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
           subtotal,
           discountPercent,
           discountAmount,
@@ -936,8 +936,12 @@ const CashierDashboard = ({ onLogout }) => {
           if (incoming.length >= existing.length) return incoming;
           return existing;
         })();
-        // FIX: Also update activeOrder from incoming socket data so occupied tables show items
-        const incomingOrder = table.orders?.[0] || table.activeOrder || null;
+        // When merging an occupied table:updated event, preserve existing activeOrder.items
+        // if the incoming payload has no orders array (partial update)
+        const incomingHasOrders = Array.isArray(table.orders) && table.orders.length > 0;
+        const incomingOrder = incomingHasOrders
+          ? (table.orders[0] || null)
+          : (t.activeOrder || null);  // keep existing if socket didn't send orders
         // Never downgrade a table that is locally in 'Waiting Bill' state back to a lesser state
         const protectedStatus = (t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill')
           && incomingStatus !== 'Free' && incomingStatus !== 'AVAILABLE'
@@ -979,7 +983,7 @@ const CashierDashboard = ({ onLogout }) => {
           const isTableSettled = settledTableIdsRef.current.has(prev.backendId);
           // Only clear kotHistory if table is actually settled by this cashier tab
           const shouldClearKotHistory = isTableFree && isTableSettled;
-          const incomingOrder = isTableFree && isTableSettled ? null : (table.orders?.[0] || table.activeOrder || null);
+          const incomingHasOrdersSel = Array.isArray(table.orders) && table.orders.length > 0;
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
@@ -993,7 +997,9 @@ const CashierDashboard = ({ onLogout }) => {
             currentBill: stableBill,
             status: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
             workflowStatus: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
-            activeOrder: incomingOrder || (isTableFree && isTableSettled ? null : prev.activeOrder),
+            activeOrder: (isTableFree && isTableSettled)
+              ? null
+              : (incomingHasOrdersSel ? table.orders[0] : prev.activeOrder),  // preserve if no incoming orders
           };
           if (shallowEqualSelectedTable(prev, nextVal)) return prev; // bail out if nothing changed
           return nextVal;
@@ -1478,19 +1484,18 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
   const activeGrandTotal = useMemo(() => {
-    // Always prefer frontend-calculated grandTotal — it correctly applies CGST 2.5% + SGST 2.5% on food.
-    // The backend's totalAmount is the raw subtotal (NO GST) and must NOT be used as the displayed total.
-    const calcTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
     const backendTotal = Number(selectedTable?.activeOrder?.totalAmount ?? 0);
-    const candidate = calcTotal > 0 ? calcTotal : backendTotal;
-    // Never display a lower value than what we last showed (prevents flash-to-zero)
-    // Reset only when selectedTable changes identity (new table selected)
+    const calcTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
+    // When discount is active, always trust the recalculated value — never use the stale max
+    const candidate = discountPercent > 0
+      ? (calcTotal > 0 ? calcTotal : backendTotal)
+      : (backendTotal > 0 ? backendTotal : calcTotal);
     if (candidate > 0) {
-      lastKnownBillRef.current = Math.max(lastKnownBillRef.current, candidate);
+      lastKnownBillRef.current = candidate; // update but don't clamp to max
     }
     return lastKnownBillRef.current > 0 ? lastKnownBillRef.current : candidate;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable?.activeOrder?.id, selectedTable?.activeOrder?.totalAmount, activeOrderCalc.grandTotal, activeOrderCalc.total]);
+  }, [selectedTable?.activeOrder?.id, selectedTable?.activeOrder?.totalAmount, activeOrderCalc.grandTotal, activeOrderCalc.total, discountPercent]);
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
@@ -2931,7 +2936,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
+                              ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(0)}
                             </span>
                             <span className="text-[10px] font-bold text-red-100">{filteredTransactions.length} transactions</span>
                           </div>
@@ -2946,7 +2951,7 @@ const CashierDashboard = ({ onLogout }) => {
                           ].map(({ label, method, color, bg, border }) => {
                             const total = filteredTransactions
                               .filter(t => t.method === method)
-                              .reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
+                              .reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0);
                             const count = filteredTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
