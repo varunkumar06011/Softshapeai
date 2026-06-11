@@ -39,7 +39,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   console.log(JSON.stringify(orderData, null, 2));
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   try {
     const res = await fetch(apiUrl("/api/orders"), {
@@ -84,7 +84,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       if (captainName) body.captainName = captainName;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       try {
         const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
@@ -273,4 +273,19 @@ export async function deleteTransaction(transactionId, restaurantId) {
     throw new Error(err.error || 'Failed to delete transaction');
   }
   return res.json();
+}
+
+export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null) {
+  // items: Array<{ orderItemId: string, cancelQuantity: number }>
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-items`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items, cancelledBy, tableNumber, requestId }),
+      });
+      return parseResponse(res);
+    },
+    { maxRetries: 1, baseDelayMs: 600, maxDelayMs: 2000 }
+  );
 }

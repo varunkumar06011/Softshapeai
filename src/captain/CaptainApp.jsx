@@ -2570,7 +2570,7 @@ export default function CaptainApp({ onLogout }) {
 
         }),
 
-        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem.p ?? 0) * (kotItem.q ?? 1) * (String(kotItem.menuType || 'FOOD').toUpperCase() !== 'LIQUOR' ? 1.05 : 1)),
+        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * (kotItem?.q ?? 1)),
 
       };
 
@@ -2602,13 +2602,13 @@ export default function CaptainApp({ onLogout }) {
 
       addNotification(`${kotItem.n} cancelled`, 'success');
 
-      // Wait for CANCEL_KOT print ack (best-effort, 30s timeout)
+      // Wait for CANCEL_KOT print ack (best-effort, 12s timeout)
       const socket = getSocket();
       const printResult = await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           socket.off('kot:printed', handler);
           resolve('timeout');
-        }, 30000);
+        }, 12000);
         const handler = ({ requestId: ackRequestId, status }) => {
           if (ackRequestId === cancelRequestId) {
             clearTimeout(timeout);
@@ -2620,7 +2620,7 @@ export default function CaptainApp({ onLogout }) {
       });
 
       if (printResult === 'timeout') {
-        addNotification('Cancel recorded — printer offline, slip not printed', 'warning');
+        addNotification(`${kotItem.n} cancelled ✓ — cancel slip may be delayed`, 'success');
       }
 
     } catch (err) {
@@ -2655,7 +2655,7 @@ export default function CaptainApp({ onLogout }) {
 
           }),
 
-          currentBill: (t.currentBill ?? 0) + (kotItem.p ?? 0) * (kotItem.q ?? 1) * (String(kotItem.menuType || 'FOOD').toUpperCase() !== 'LIQUOR' ? 1.05 : 1),
+          currentBill: (t.currentBill ?? 0) + (kotItem?.p ?? 0) * (kotItem?.q ?? 1),
 
         };
 

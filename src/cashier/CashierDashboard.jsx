@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems } from '../services/orderApi';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -1478,9 +1478,11 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
   const activeGrandTotal = useMemo(() => {
-    const backendTotal = Number(selectedTable?.activeOrder?.totalAmount ?? 0);
+    // Always prefer frontend-calculated grandTotal — it correctly applies CGST 2.5% + SGST 2.5% on food.
+    // The backend's totalAmount is the raw subtotal (NO GST) and must NOT be used as the displayed total.
     const calcTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
-    const candidate = backendTotal > 0 ? backendTotal : calcTotal;
+    const backendTotal = Number(selectedTable?.activeOrder?.totalAmount ?? 0);
+    const candidate = calcTotal > 0 ? calcTotal : backendTotal;
     // Never display a lower value than what we last showed (prevents flash-to-zero)
     // Reset only when selectedTable changes identity (new table selected)
     if (candidate > 0) {
@@ -1492,7 +1494,13 @@ const CashierDashboard = ({ onLogout }) => {
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
-  const fallbackTotal = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
+  // fallbackTotal must include GST — currentBill and totalAmount are both raw subtotals
+  const fallbackTotal = (() => {
+    const rawFallback = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
+    if (rawFallback <= 0) return 0;
+    const calcTotal = activeOrderCalc.grandTotal ?? 0;
+    return calcTotal > 0 ? calcTotal : rawFallback + (activeOrderCalc.taxes ?? 0);
+  })();
 
   const handleFinalBill = async () => {
     if (!selectedTable || !selectedTable.backendId) {
@@ -4824,106 +4832,85 @@ const CashierDashboard = ({ onLogout }) => {
               if (!freshItemMap[li.id]) freshItemMap[li.id] = li;
             }
 
-            let hasError = false;
+            // Build batch items list, resolving fresh IDs
+            const batchItems = [];
+            const resolvedIds = [];
 
             for (const [itemId, { quantity, item: cachedItem }] of Object.entries(cancelSelected)) {
-              // Resolve to the best available item — prefer fresh DB item, fall back by name
               const freshItem = freshItemMap[itemId]
                 || (cachedItem && freshItemMap[cachedItem.n ?? cachedItem.name])
                 || (cachedItem && freshItemMap[cachedItem.name ?? cachedItem.n]);
+              if (!freshItem) continue;
 
-              if (!freshItem) continue; // already removed — skip silently
-
-              const cancelQuantity = Math.max(
-                1,
-                Math.min(
-                  Number(freshItem.quantity ?? freshItem.q ?? 1),
-                  Math.round(Number(quantity ?? 1))
-                )
-              );
-
-              const resolvedItemId = freshItem.id ?? itemId;
-
-              setCancelLoading(prev => ({ ...prev, [resolvedItemId]: true }));
-              try {
-                await cancelOrderItem(
-                  liveOrder.id,
-                  resolvedItemId,
-                  'Cashier',
-                  selectedTable.number || selectedTable.id,
-                  cancelQuantity
-                );
-
-                // Optimistically remove item from local selectedTable state immediately
-                setSelectedTable(prev => {
-                  if (!prev?.activeOrder?.items) return prev;
-                  return {
-                    ...prev,
-                    activeOrder: {
-                      ...prev.activeOrder,
-                      items: prev.activeOrder.items.map(i =>
-                        i.id === resolvedItemId
-                          ? { ...i, removedFromBill: true, quantity: 0 }
-                          : i
-                      ),
-                    },
-                  };
-                });
-
-                // Also update table array so the table card reflects the change
-                const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
-                const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
-                setTargetTables(prev => prev.map(t => {
-                  if (t.backendId !== selectedTable.backendId) return t;
-                  const updatedOrder = t.activeOrder
-                    ? {
-                        ...t.activeOrder,
-                        items: (t.activeOrder.items || []).map(i =>
-                          i.id === resolvedItemId
-                            ? { ...i, removedFromBill: true, quantity: 0 }
-                            : i
-                        ),
-                      }
-                    : t.activeOrder;
-                  return { ...t, activeOrder: updatedOrder };
-                }));
-
-              } catch (err) {
-                console.error('[CancelBatch]', err.message);
-                if (err.message && err.message.toLowerCase().includes('already cancelled')) {
-                  // Already gone — silently remove from UI
-                  setSelectedTable(prev => {
-                    if (!prev?.activeOrder?.items) return prev;
-                    return {
-                      ...prev,
-                      activeOrder: {
-                        ...prev.activeOrder,
-                        items: prev.activeOrder.items.map(i =>
-                          i.id === resolvedItemId ? { ...i, removedFromBill: true, quantity: 0 } : i
-                        ),
-                      },
-                    };
-                  });
-                } else {
-                  addNotification(`Failed to cancel ${freshItem.n ?? freshItem.name ?? 'item'}`, 'error');
-                  hasError = true;
-                }
-              } finally {
-                setCancelLoading(prev => ({ ...prev, [resolvedItemId]: false }));
-              }
+              const cancelQuantity = Math.max(1, Math.min(
+                Number(freshItem.quantity ?? freshItem.q ?? 1),
+                Math.round(Number(quantity ?? 1))
+              ));
+              batchItems.push({ orderItemId: freshItem.id ?? itemId, cancelQuantity });
+              resolvedIds.push(freshItem.id ?? itemId);
             }
 
-            if (!hasError) {
+            if (batchItems.length === 0) {
+              setCancelSelected({});
+              setShowCancelModal(false);
+              return;
+            }
+
+            const loadingPatch = {};
+            resolvedIds.forEach(id => { loadingPatch[id] = true; });
+            setCancelLoading(prev => ({ ...prev, ...loadingPatch }));
+
+            const batchRequestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : Math.random().toString(36).slice(2) + Date.now().toString(36));
+
+            try {
+              // ONE API call → ONE CANCEL_KOT socket event → ONE printed slip
+              await cancelOrderItems(
+                liveOrder.id,
+                batchItems,
+                'Cashier',
+                selectedTable.number || selectedTable.id,
+                batchRequestId
+              );
+
+              const cancelledIdSet = new Set(resolvedIds);
+              setSelectedTable(prev => {
+                if (!prev?.activeOrder?.items) return prev;
+                return {
+                  ...prev,
+                  activeOrder: {
+                    ...prev.activeOrder,
+                    items: prev.activeOrder.items.map(i =>
+                      cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
+                    ),
+                  },
+                };
+              });
+
+              const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+              const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+              setTargetTables(prev => prev.map(t => {
+                if (t.backendId !== selectedTable.backendId) return t;
+                const updatedOrder = t.activeOrder
+                  ? { ...t.activeOrder, items: (t.activeOrder.items || []).map(i => cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i) }
+                  : t.activeOrder;
+                return { ...t, activeOrder: updatedOrder };
+              }));
+
               const entries = Object.values(cancelSelected);
-              const firstItemName = entries[0]?.item
-                ? (entries[0].item.n ?? entries[0].item.name ?? 'Item')
-                : 'Item';
+              const firstName = entries[0]?.item ? (entries[0].item.n ?? entries[0].item.name ?? 'Item') : 'Item';
               addNotification(
-                selectedCount === 1
-                  ? `${firstItemName} x${selectedQuantityTotal} cancelled` 
-                  : `${selectedQuantityTotal} qty cancelled`,
+                selectedCount === 1 ? `${firstName} x${selectedQuantityTotal} cancelled` : `${selectedQuantityTotal} items cancelled`,
                 'success'
               );
+            } catch (err) {
+              console.error('[CancelBatch]', err.message);
+              addNotification(err.message?.toLowerCase().includes('already') ? 'Items already cancelled' : `Cancel failed: ${err.message}`, 'error');
+            } finally {
+              const clearLoading = {};
+              resolvedIds.forEach(id => { clearLoading[id] = false; });
+              setCancelLoading(prev => ({ ...prev, ...clearLoading }));
             }
 
             setCancelSelected({});

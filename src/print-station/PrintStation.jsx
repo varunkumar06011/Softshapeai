@@ -1154,8 +1154,10 @@ export default function PrintStation() {
             printTasks.push({ printer, cmds });
 
           } else if (type === 'CANCEL_KOT') {
-
-            cmds = buildCancelKOTCommands(data);
+            // Use multi-item builder when batch cancel sends data.items array (2+ items)
+            cmds = (data.items && data.items.length > 1)
+              ? buildFullCancelCommands(data)
+              : buildCancelKOTCommands(data);
 
             if (data.restaurantId === 'venue-001') {
 
@@ -1285,27 +1287,7 @@ export default function PrintStation() {
 
     })();
 
-    // Periodic heartbeat: silently rejoin print rooms to handle silent WebSocket drops
-
-    const printRoomHeartbeat = setInterval(() => {
-
-      if (socket?.connected) {
-
-        socket.emit('join:print', 'restaurant-001');
-
-        socket.emit('join:print', 'bar-001');
-
-        socket.emit('join:print', 'venue-001');
-
-      }
-
-    }, 60_000);
-
-
-
     return () => {
-
-      clearInterval(printRoomHeartbeat);
 
       hasJoinedRef.current = false;
 
