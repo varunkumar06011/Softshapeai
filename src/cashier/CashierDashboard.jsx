@@ -382,6 +382,7 @@ const CashierDashboard = ({ onLogout }) => {
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
+  const [extraTables, setExtraTables] = useState([]); // Bug 1: Extra tables for overflow sessions
 
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
@@ -1853,6 +1854,11 @@ const CashierDashboard = ({ onLogout }) => {
           );
           localStorage.setItem(cacheKey, JSON.stringify(updated));
         } catch {}
+
+        // Bug 1: Remove extra table when settled
+        if (selectedTable.isExtra) {
+          setExtraTables(prev => prev.filter(et => et.id !== selectedTable.id));
+        }
       }
 
       // Reset loading state immediately after optimistic UI update
@@ -2192,6 +2198,55 @@ const CashierDashboard = ({ onLogout }) => {
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = (table) => {
+    // Bug 1: Check if this is an extra table
+    if (table.isExtra) {
+      // Handle extra table selection
+      clearCashierTableCache(selectedTable);
+      lastKnownBillRef.current = 0;
+      setSelectedTable(table);
+      setCart([]);
+      setSelectedOrder(null);
+      lastConfirmedItemsRef.current = [];
+      setExpandedNoteItemId(null);
+      setActiveTab('pos');
+      localStorage.setItem('cashier_active_tab', 'pos');
+      return;
+    }
+
+    // Bug 1: Check if we should create an extra table (Free table that was just settled)
+    const isBarACHall = outlet === 'bar' && tableSubCategory === 'bar-ac-hall';
+    const wasJustSettled = settledTableIdsRef.current.has(table.backendId);
+    const hasExtraTable = extraTables.some(et => et.baseBackendId === table.backendId);
+
+    if (isBarACHall && wasJustSettled && !hasExtraTable && table.status === 'Free') {
+      // Create extra table
+      const extraTable = {
+        id: `${table.number}-X`,
+        number: `${table.number}-X`,
+        backendId: table.backendId, // Same backend ID - uses same physical table
+        baseBackendId: table.backendId, // Track original table
+        isExtra: true,
+        status: 'Free',
+        sectionId: table.sectionId,
+        section: table.section,
+        kotHistory: [],
+        currentBill: 0,
+        activeOrder: null,
+        captainId: null,
+        guests: 0,
+        time: null,
+      };
+      setExtraTables(prev => [...prev, extraTable]);
+      setSelectedTable(extraTable);
+      setCart([]);
+      setSelectedOrder(null);
+      lastConfirmedItemsRef.current = [];
+      setExpandedNoteItemId(null);
+      setActiveTab('pos');
+      localStorage.setItem('cashier_active_tab', 'pos');
+      return;
+    }
+
     // Defensive: clear any previous table's cart from localStorage before switching
     clearCashierTableCache(selectedTable);
     lastKnownBillRef.current = 0; // Reset bill ref when selecting a new table
@@ -2797,21 +2852,30 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Bar AC Hall - uses activeTables from restaurant-001 */}
                         {outlet === 'bar' && tableSubCategory === 'bar-ac-hall' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                            {activeTables
+                            {[...activeTables, ...extraTables]
                               .filter((table) => {
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                return sectionName.includes('bar');
+                                return sectionName.includes('bar') || table.isExtra;
                               })
-                              .sort((a, b) => (Number(a.number || a.id) - Number(b.number || b.id)))
+                              .sort((a, b) => {
+                                // Sort regular tables first, then extra tables
+                                if (a.isExtra && !b.isExtra) return 1;
+                                if (!a.isExtra && b.isExtra) return -1;
+                                return (Number(a.number || a.id) - Number(b.number || b.id));
+                              })
                               .map((table) => {
                                 const isFree = table.status === 'Free' || !table.status;
                                 const isWaitingBill = table.status === 'Waiting Bill';
                                 const isBusy = !isFree && !isWaitingBill;
+                                const isExtra = table.isExtra;
 
                                 let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
                                 let statusText = 'Open';
 
-                                if (isWaitingBill) {
+                                if (isExtra) {
+                                  containerClass = 'bg-blue-50 border-2 border-dashed border-blue-400 text-blue-600 hover:border-blue-500 shadow-sm';
+                                  statusText = 'Extra';
+                                } else if (isWaitingBill) {
                                   containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
                                   statusText = 'Billing Requested';
                                 } else if (isBusy) {
