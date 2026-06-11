@@ -2432,22 +2432,23 @@ const CashierDashboard = ({ onLogout }) => {
       }))
       .filter(i => !!i.menuItemId);
 
+    // Hoist optimistic items so both update blocks can reference them
+    const newTotalBill = selectedTable ? calculateSessionBill(selectedTable, cart).total : 0;
+    const newOptimisticItems = cart.map(i => ({
+      id: null,
+      n: i.n || i.name,
+      name: i.n || i.name,
+      p: Number(i.p ?? i.price ?? 0),
+      price: Number(i.p ?? i.price ?? 0),
+      q: Number(i.q ?? i.quantity ?? 1),
+      quantity: Number(i.q ?? i.quantity ?? 1),
+      menuType: (i.menuType || 'FOOD').toUpperCase(),
+      removedFromBill: false,
+      notes: i.notes || null,
+    }));
+
     if (selectedTable) {
-      const newTotalBill = calculateSessionBill(selectedTable, cart).total;
-      // Merge cart items into activeOrder.items so ORDER SUMMARY is immediately visible
       const existingItems = selectedTable.activeOrder?.items || [];
-      const newOptimisticItems = cart.map(i => ({
-        id: null,
-        n: i.n || i.name,
-        name: i.n || i.name,
-        p: Number(i.p ?? i.price ?? 0),
-        price: Number(i.p ?? i.price ?? 0),
-        q: Number(i.q ?? i.quantity ?? 1),
-        quantity: Number(i.q ?? i.quantity ?? 1),
-        menuType: (i.menuType || 'FOOD').toUpperCase(),
-        removedFromBill: false,
-        notes: i.notes || null,
-      }));
       const mergedItems = [...existingItems, ...newOptimisticItems];
 
       const updater = prev => prev.map(t => {
@@ -2470,13 +2471,10 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         setActiveTables(updater);
       }
-    }
 
-    // Snapshot items before clearing cart to prevent UI flicker
-    if (selectedTable) {
+      // Snapshot items and patch selectedTable so modal shows items immediately
       const committedSoFar = getBillableItems(selectedTable);
       lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
-      // Also patch selectedTable so the modal shows items immediately without waiting for socket/fetch
       setSelectedTable(prev => {
         if (!prev) return prev;
         const prevItems = prev.activeOrder?.items || [];
