@@ -2198,46 +2198,11 @@ const CashierDashboard = ({ onLogout }) => {
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = (table) => {
-    // Bug 1: Check if this is an extra table
+    // Bug 1: Extra table — open directly to POS, same as a new free table
     if (table.isExtra) {
-      // Handle extra table selection
       clearCashierTableCache(selectedTable);
       lastKnownBillRef.current = 0;
       setSelectedTable(table);
-      setCart([]);
-      setSelectedOrder(null);
-      lastConfirmedItemsRef.current = [];
-      setExpandedNoteItemId(null);
-      setActiveTab('pos');
-      localStorage.setItem('cashier_active_tab', 'pos');
-      return;
-    }
-
-    // Bug 1: Check if we should create an extra table (Free table that was just settled)
-    const isBarACHall = outlet === 'bar' && tableSubCategory === 'bar-ac-hall';
-    const wasJustSettled = settledTableIdsRef.current.has(table.backendId);
-    const hasExtraTable = extraTables.some(et => et.baseBackendId === table.backendId);
-
-    if (isBarACHall && wasJustSettled && !hasExtraTable && table.status === 'Free') {
-      // Create extra table
-      const extraTable = {
-        id: `${table.number}-X`,
-        number: `${table.number}-X`,
-        backendId: table.backendId, // Same backend ID - uses same physical table
-        baseBackendId: table.backendId, // Track original table
-        isExtra: true,
-        status: 'Free',
-        sectionId: table.sectionId,
-        section: table.section,
-        kotHistory: [],
-        currentBill: 0,
-        activeOrder: null,
-        captainId: null,
-        guests: 0,
-        time: null,
-      };
-      setExtraTables(prev => [...prev, extraTable]);
-      setSelectedTable(extraTable);
       setCart([]);
       setSelectedOrder(null);
       lastConfirmedItemsRef.current = [];
@@ -2852,50 +2817,75 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Bar AC Hall - uses activeTables from restaurant-001 */}
                         {outlet === 'bar' && tableSubCategory === 'bar-ac-hall' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                            {[...activeTables, ...extraTables]
-                              .filter((table) => {
+                            {[...activeTables.filter((table) => {
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                return sectionName.includes('bar') || table.isExtra;
-                              })
-                              .sort((a, b) => {
-                                // Sort regular tables first, then extra tables
-                                if (a.isExtra && !b.isExtra) return 1;
-                                if (!a.isExtra && b.isExtra) return -1;
-                                return (Number(a.number || a.id) - Number(b.number || b.id));
-                              })
+                                return sectionName.includes('bar');
+                              }).sort((a, b) => Number(a.number || a.id) - Number(b.number || b.id)),
+                              ...extraTables.sort((a, b) => String(a.number).localeCompare(String(b.number)))
+                            ]
                               .map((table) => {
                                 const isFree = table.status === 'Free' || !table.status;
                                 const isWaitingBill = table.status === 'Waiting Bill';
                                 const isBusy = !isFree && !isWaitingBill;
                                 const isExtra = table.isExtra;
+                                const hasExtra = !isExtra && extraTables.some(et => et.baseBackendId === table.backendId);
 
-                                let containerClass = 'bg-white border-gray-150 text-gray-500 hover:border-gray-300 shadow-sm';
+                                let containerClass = 'bg-white border border-gray-200 text-gray-500 hover:border-gray-400 shadow-sm';
                                 let statusText = 'Open';
 
                                 if (isExtra) {
                                   containerClass = 'bg-blue-50 border-2 border-dashed border-blue-400 text-blue-600 hover:border-blue-500 shadow-sm';
                                   statusText = 'Extra';
                                 } else if (isWaitingBill) {
-                                  containerClass = 'bg-amber-50 border-amber-400 text-amber-600 shadow-md shadow-amber-50 animate-pulse';
-                                  statusText = 'Billing Requested';
+                                  containerClass = 'bg-amber-50 border border-amber-400 text-amber-600 shadow-md animate-pulse';
+                                  statusText = 'Bill';
                                 } else if (isBusy) {
-                                  containerClass = 'bg-red-50 border-[#E53935] text-[#E53935] shadow-md shadow-red-55';
+                                  containerClass = 'bg-red-50 border border-[#E53935] text-[#E53935] shadow-md';
                                   statusText = 'Busy';
                                 }
 
                                 return (
                                   <div
-                                    key={table.backendId || table.id}
+                                    key={isExtra ? `extra-${table.id}` : (table.backendId || table.id)}
                                     onClick={() => handleTableSelect(table)}
-                                    className={`aspect-square border rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
+                                    {/* Add Extra (+) button — top-left, only on non-extra Free or Busy tables with no existing extra */}
+                                    {!isExtra && !hasExtra && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const extraId = `${table.number}-X`;
+                                          if (extraTables.some(et => et.id === extraId)) return;
+                                          setExtraTables(prev => [...prev, {
+                                            id: extraId,
+                                            number: extraId,
+                                            backendId: table.backendId,
+                                            baseBackendId: table.backendId,
+                                            isExtra: true,
+                                            status: 'Free',
+                                            sectionId: table.sectionId,
+                                            section: table.section,
+                                            sectionName: table.sectionName,
+                                            kotHistory: [],
+                                            currentBill: 0,
+                                            activeOrder: null,
+                                            captainId: null,
+                                            guests: 0,
+                                            time: null,
+                                          }]);
+                                        }}
+                                        className="absolute top-1 left-1 w-4 h-4 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-green-600 z-10 shadow"
+                                        title={`Add extra session for B${table.number}`}
+                                      >+</button>
+                                    )}
                                     {/* Captain Name Badge - Top Right */}
                                     {table.captainName && (
-                                      <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] md:text-[9px] font-black uppercase tracking-widest max-w-[80%] truncate shadow-sm">
+                                      <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] font-black uppercase tracking-widest max-w-[70%] truncate shadow-sm">
                                         {table.captainName.split(' ')[0]}
                                       </div>
                                     )}
-                                    <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}</span>
+                                    <span className="text-2xl font-black">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                                     {!isFree && (
                                       <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table).grandTotal}</span>
