@@ -1252,6 +1252,7 @@ export default function PrintStation() {
 
 
           // Notify backend so captain UI can stop loading
+          // Also send eventId for server-side deduplication
 
           if (data?.requestId && data?.restaurantId) {
 
@@ -1260,6 +1261,8 @@ export default function PrintStation() {
               restaurantId: data.restaurantId,
 
               requestId: data.requestId,
+
+              eventId: data.eventId || null,
 
               status: 'success',
 
