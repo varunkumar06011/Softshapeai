@@ -2482,7 +2482,7 @@ export default function CaptainApp({ onLogout }) {
       const printTimeout = setTimeout(() => {
         socket.off('kot:printed', handler);
         addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
-      }, 50000);
+      }, 30000);
 
     } catch (err) {
 

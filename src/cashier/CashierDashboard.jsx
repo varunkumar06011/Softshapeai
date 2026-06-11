@@ -339,6 +339,20 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => { billPrintedTableIdsRef.current = billPrintedTableIds; }, [billPrintedTableIds]);
   // Per-table cooldown: tableBackendId -> timestamp until which socket updates are ignored
   const billPrintCooldownRef = useRef(new Map()); // Map<tableBackendId, number>
+  const lastKnownBillRef = useRef(0); // monotonically increasing — never go backwards
+  const lsWriteTimerRef = useRef(null);
+
+  function shallowEqualSelectedTable(prev, next) {
+    if (!prev || !next) return prev === next;
+    return (
+      prev.status === next.status &&
+      prev.workflowStatus === next.workflowStatus &&
+      prev.currentBill === next.currentBill &&
+      prev.activeOrder?.id === next.activeOrder?.id &&
+      prev.activeOrder?.totalAmount === next.activeOrder?.totalAmount &&
+      (prev.kotHistory?.length ?? 0) === (next.kotHistory?.length ?? 0)
+    );
+  }
 
   // Helper: namespaced cart key so tables never bleed into each other
   const getCartStorageKey = (table) => {
@@ -445,13 +459,17 @@ const CashierDashboard = ({ onLogout }) => {
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Persist selections to localStorage
+  // Persist selections to localStorage (debounced to avoid micro-stutters)
   useEffect(() => {
+    if (lsWriteTimerRef.current) clearTimeout(lsWriteTimerRef.current);
     if (selectedTable) {
-      localStorage.setItem('cashier_selected_table', JSON.stringify(selectedTable));
+      lsWriteTimerRef.current = setTimeout(() => {
+        localStorage.setItem('cashier_selected_table', JSON.stringify(selectedTable));
+      }, 300);
     } else {
       localStorage.removeItem('cashier_selected_table');
     }
+    return () => clearTimeout(lsWriteTimerRef.current);
   }, [selectedTable]);
 
   useEffect(() => {
@@ -969,7 +987,7 @@ const CashierDashboard = ({ onLogout }) => {
             && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
             ? 'Waiting Bill'
             : incomingStatusSel;
-          return {
+          const nextVal = {
             ...prev,
             kotHistory: shouldClearKotHistory ? [] : mergedKotHistory,
             currentBill: stableBill,
@@ -977,6 +995,8 @@ const CashierDashboard = ({ onLogout }) => {
             workflowStatus: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
             activeOrder: incomingOrder || (isTableFree && isTableSettled ? null : prev.activeOrder),
           };
+          if (shallowEqualSelectedTable(prev, nextVal)) return prev; // bail out if nothing changed
+          return nextVal;
         });
       }
     };
@@ -1459,9 +1479,16 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTotal = activeOrderCalc.total;
   const activeGrandTotal = useMemo(() => {
     const backendTotal = Number(selectedTable?.activeOrder?.totalAmount ?? 0);
-    if (backendTotal > 0) return backendTotal;
-    return activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
-  }, [selectedTable?.activeOrder?.totalAmount, activeOrderCalc]);
+    const calcTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
+    const candidate = backendTotal > 0 ? backendTotal : calcTotal;
+    // Never display a lower value than what we last showed (prevents flash-to-zero)
+    // Reset only when selectedTable changes identity (new table selected)
+    if (candidate > 0) {
+      lastKnownBillRef.current = Math.max(lastKnownBillRef.current, candidate);
+    }
+    return lastKnownBillRef.current > 0 ? lastKnownBillRef.current : candidate;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTable?.activeOrder?.id, selectedTable?.activeOrder?.totalAmount, activeOrderCalc.grandTotal, activeOrderCalc.total]);
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
@@ -1494,6 +1521,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     try {
       setIsPrintingBill(true);
+      lastKnownBillRef.current = 0; // Reset bill ref before print to allow recalculation
 
       // ── BILL-PRINT GUARD: arm BEFORE the async call so the button locks immediately ──
       const tableBackendId = selectedTable.backendId;
@@ -1774,6 +1802,7 @@ const CashierDashboard = ({ onLogout }) => {
       setShowTableModal(false);
       setShowPaymentModal(false);
       setSelectedTable(null);
+      lastKnownBillRef.current = 0;
       setSelectedOrder(null);
       setCart([]);
       lastConfirmedItemsRef.current = [];
@@ -2151,6 +2180,7 @@ const CashierDashboard = ({ onLogout }) => {
   const handleTableSelect = (table) => {
     // Defensive: clear any previous table's cart from localStorage before switching
     clearCashierTableCache(selectedTable);
+    lastKnownBillRef.current = 0; // Reset bill ref when selecting a new table
     setSelectedTable(table);
     setCart([]);
     setSelectedOrder(null);

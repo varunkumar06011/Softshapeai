@@ -856,15 +856,21 @@ export default function PrintStation() {
 
           // PrintStation socket, preventing double-printing.
 
-          socket.emit('join:print', 'restaurant-001');
+          // Small delay ensures server-side socket state is ready before we join
 
-          socket.emit('join:print', 'bar-001');
+          setTimeout(() => {
 
-          socket.emit('join:print', 'venue-001');
+            socket.emit('join:print', 'restaurant-001');
 
-          hasJoinedRef.current = true;
+            socket.emit('join:print', 'bar-001');
 
-          pushLog('Socket connected ✓');
+            socket.emit('join:print', 'venue-001');
+
+            hasJoinedRef.current = true;
+
+            pushLog('Socket connected — joined print rooms ✓');
+
+          }, 500);
 
         } else {
 
@@ -874,13 +880,17 @@ export default function PrintStation() {
 
           // removes it from all rooms. We MUST re-emit join:print.
 
-          socket.emit('join:print', 'restaurant-001');
+          setTimeout(() => {
 
-          socket.emit('join:print', 'bar-001');
+            socket.emit('join:print', 'restaurant-001');
 
-          socket.emit('join:print', 'venue-001');
+            socket.emit('join:print', 'bar-001');
 
-          pushLog('Socket reconnected ✓');
+            socket.emit('join:print', 'venue-001');
+
+            pushLog('Socket reconnected — rejoined print rooms ✓');
+
+          }, 500);
 
         }
 
@@ -888,15 +898,21 @@ export default function PrintStation() {
 
       socket.on('reconnect', () => {
 
-        // Explicit reconnect handler - ensure rooms are rejoined on reconnect
+        pushLog('Socket reconnected — rejoining print rooms…', true);
 
-        socket.emit('join:print', 'restaurant-001');
+        // Small delay ensures server-side socket state is ready before we join
 
-        socket.emit('join:print', 'bar-001');
+        setTimeout(() => {
 
-        socket.emit('join:print', 'venue-001');
+          socket.emit('join:print', 'restaurant-001');
 
-        pushLog('Socket reconnected — rejoined print rooms ✓', true);
+          socket.emit('join:print', 'bar-001');
+
+          socket.emit('join:print', 'venue-001');
+
+          pushLog('Socket reconnected — rejoined print rooms ✓', true);
+
+        }, 500);
 
       });
 
@@ -924,13 +940,15 @@ export default function PrintStation() {
 
             const itemCount = data.items?.length || 0;
 
-            const tsBucket = Math.floor(Date.now() / 10000);
-
             const dedupKey = data.eventId
 
               ? String(data.eventId)
 
-              : `${type}-${data.kotId || data.orderId || ''}-${data.tableNumber}-${itemCount}-${tsBucket}`;
+              : `${type}-${data.kotId || data.orderId || ''}-${data.tableNumber}-${itemCount}`;
+
+            // NOTE: removed tsBucket — it caused duplicate prints at 10s boundaries.
+
+            // orderId+kotId+tableNumber+itemCount is stable and unique enough.
 
             if (printedKotIds.current.has(dedupKey)) {
 
@@ -1267,7 +1285,27 @@ export default function PrintStation() {
 
     })();
 
+    // Periodic heartbeat: silently rejoin print rooms to handle silent WebSocket drops
+
+    const printRoomHeartbeat = setInterval(() => {
+
+      if (socket?.connected) {
+
+        socket.emit('join:print', 'restaurant-001');
+
+        socket.emit('join:print', 'bar-001');
+
+        socket.emit('join:print', 'venue-001');
+
+      }
+
+    }, 60_000);
+
+
+
     return () => {
+
+      clearInterval(printRoomHeartbeat);
 
       hasJoinedRef.current = false;
 
