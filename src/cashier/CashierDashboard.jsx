@@ -2828,7 +2828,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 const isWaitingBill = table.status === 'Waiting Bill';
                                 const isBusy = !isFree && !isWaitingBill;
                                 const isExtra = table.isExtra;
-                                const hasExtra = !isExtra && extraTables.some(et => et.baseBackendId === table.backendId);
+                                const hasExtra = false; // Always show + button to allow multiple extra tables
 
                                 let containerClass = 'bg-white border border-gray-200 text-gray-500 hover:border-gray-400 shadow-sm';
                                 let statusText = 'Open';
@@ -2851,12 +2851,13 @@ const CashierDashboard = ({ onLogout }) => {
                                     className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
                                     {/* Add Extra (+) button — top-left, only on non-extra Free or Busy tables with no existing extra */}
-                                    {!isExtra && !hasExtra && (
+                                    {!isExtra && (
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          const extraId = `${table.number}-X`;
-                                          if (extraTables.some(et => et.id === extraId)) return;
+                                          // Generate sequential extra ID: B1-X, B1-X2, B1-X3...
+                                          const existingCount = extraTables.filter(et => et.baseBackendId === table.backendId).length;
+                                          const extraId = existingCount === 0 ? `${table.number}-X` : `${table.number}-X${existingCount + 1}`;
                                           setExtraTables(prev => [...prev, {
                                             id: extraId,
                                             number: extraId,
