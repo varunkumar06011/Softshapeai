@@ -4548,7 +4548,7 @@ export default function CaptainApp({ onLogout }) {
 
                   <div className="flex items-center gap-3">
 
-                    <span className="text-sm font-black text-gray-900">₹{sessionBill.subtotal}</span>
+                    <span className="text-sm font-black text-gray-900">₹{sessionBill.grandTotal}</span>
 
                     {isCartMinimized && (
 
@@ -4687,7 +4687,7 @@ export default function CaptainApp({ onLogout }) {
 
                     <div className="flex items-center justify-between">
 
-                      <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935] flex items-center gap-2"><ShoppingCart size={16} /> New KOT Draft</h4>
+                      <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935] flex items-center gap-2"><ShoppingCart size={16} /> New Items</h4>
 
                       {(currentSessionItems.length > 0 || (!activeTable?.kotHistory || activeTable?.kotHistory.length === 0)) && (
 
@@ -4935,11 +4935,7 @@ export default function CaptainApp({ onLogout }) {
 
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Running Total</span>
 
-                      <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{sessionBill.subtotal}</p>
-
-                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
-                        + ₹{calculateOrderTotal(getBillableItems(activeTable)).taxes.toFixed(0)} GST
-                      </span>
+                      <p className="text-3xl font-black text-gray-900 tracking-tighter leading-none">₹{sessionBill.grandTotal}</p>
 
                     </div>
 
