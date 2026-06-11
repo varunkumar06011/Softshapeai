@@ -2240,14 +2240,10 @@ const CashierDashboard = ({ onLogout }) => {
       }
     }
 
-    // Background refresh: silently patch in fresh order data if table is in billing state
-    // Does NOT block the modal from opening
-    if (table.backendId && (
-      table.status === 'Waiting Bill' ||
-      table.status === 'BILLING_REQUESTED' ||
-      table.workflowStatus === 'billing_requested' ||
-      table.workflowStatus === 'Waiting Bill'
-    )) {
+    // Background refresh: fetch fresh order data for ALL occupied tables so items appear in modal
+    // Does NOT block the modal from opening — silently patches in the data
+    const isOccupied = table.status && table.status !== 'Free' && table.status !== 'AVAILABLE';
+    if (table.backendId && isOccupied) {
       fetchFreshOrderData(table.backendId).then(freshOrder => {
         if (freshOrder) {
           setSelectedTable(prev => {
