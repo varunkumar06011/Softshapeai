@@ -2434,6 +2434,22 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable) {
       const newTotalBill = calculateSessionBill(selectedTable, cart).total;
+      // Merge cart items into activeOrder.items so ORDER SUMMARY is immediately visible
+      const existingItems = selectedTable.activeOrder?.items || [];
+      const newOptimisticItems = cart.map(i => ({
+        id: null,
+        n: i.n || i.name,
+        name: i.n || i.name,
+        p: Number(i.p ?? i.price ?? 0),
+        price: Number(i.p ?? i.price ?? 0),
+        q: Number(i.q ?? i.quantity ?? 1),
+        quantity: Number(i.q ?? i.quantity ?? 1),
+        menuType: (i.menuType || 'FOOD').toUpperCase(),
+        removedFromBill: false,
+        notes: i.notes || null,
+      }));
+      const mergedItems = [...existingItems, ...newOptimisticItems];
+
       const updater = prev => prev.map(t => {
         if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
           return {
@@ -2441,6 +2457,9 @@ const CashierDashboard = ({ onLogout }) => {
             status: t.status === 'Free' ? 'Occupied' : t.status,
             kotHistory: [...(t.kotHistory || []), ...kotsToCreate],
             currentBill: newTotalBill,
+            activeOrder: t.activeOrder
+              ? { ...t.activeOrder, items: mergedItems }
+              : { id: null, items: mergedItems, totalAmount: newTotalBill },
           };
         }
         return t;
@@ -2457,6 +2476,20 @@ const CashierDashboard = ({ onLogout }) => {
     if (selectedTable) {
       const committedSoFar = getBillableItems(selectedTable);
       lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
+      // Also patch selectedTable so the modal shows items immediately without waiting for socket/fetch
+      setSelectedTable(prev => {
+        if (!prev) return prev;
+        const prevItems = prev.activeOrder?.items || [];
+        const merged = [...prevItems, ...newOptimisticItems];
+        return {
+          ...prev,
+          status: prev.status === 'Free' ? 'Occupied' : prev.status,
+          currentBill: newTotalBill,
+          activeOrder: prev.activeOrder
+            ? { ...prev.activeOrder, items: merged }
+            : { id: null, items: merged, totalAmount: newTotalBill },
+        };
+      });
     }
 
     setCart([]);
