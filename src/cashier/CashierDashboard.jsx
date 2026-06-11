@@ -820,7 +820,7 @@ const CashierDashboard = ({ onLogout }) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
       console.log('[CashierDashboard] Received order:created for table:', order.tableId);
-      if (shouldBlockTableUpdate(order.tableId, null)) return;
+      // NOTE: no shouldBlockTableUpdate here — item additions must never be suppressed by the bill-print cooldown
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? {
@@ -877,21 +877,16 @@ const CashierDashboard = ({ onLogout }) => {
         items: [...mergedItems, ...localOnlyItems, ...localOnlyRemoved],
       };
 
-      // FIX #4: Always use the version with MORE items to prevent data loss
-      const incomingItemCount = merged.items.length;
-      const existingItemCount = existingItems.length;
-      if (incomingItemCount > existingItemCount) return merged;
-      if (existingItemCount > incomingItemCount) return existing;
-      // Equal items — fall back to timestamp
-      const incomingTime = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
-      const existingTime = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-      return incomingTime >= existingTime ? merged : existing;
+      // FIX #4: Always return merged (union of incoming + existing) — never revert to existing alone.
+      // Count/timestamp heuristics are unsafe: backend updatedAt can be a string that parses
+      // behind local time, causing the stale version to "win" and wipe newer items.
+      return merged;
     };
 
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      if (shouldBlockTableUpdate(order.tableId, null)) return;
+      // NOTE: no shouldBlockTableUpdate here — item updates (captain adding items) must always be visible
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       if (selectedTable?.backendId === order.tableId) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
@@ -1640,9 +1635,19 @@ const CashierDashboard = ({ onLogout }) => {
     isPrintingBillRef.current = true;
 
     const tableLabel = selectedTable?.id || 'Walk-in';
-    const subtotalAmt = cart.reduce((s, i) => s + Number(i.p) * Number(i.q), 0);
-    const discountAmt = discountPercent > 0 ? Math.round(subtotalAmt * (discountPercent / 100) * 100) / 100 : 0;
-    const grandTotalAmt = Math.round((subtotalAmt - discountAmt) * 100) / 100;
+    // Use calculateOrderTotal so walk-in GST matches the printed receipt exactly
+    const walkinCalc = calculateOrderTotal(
+      cart.map(i => ({ ...i, menuType: i.menuType || 'FOOD' })),
+      discountPercent
+    );
+    const subtotalAmt = walkinCalc.subtotal;
+    const discountAmt = walkinCalc.discountAmount;
+    const cgstAmt = walkinCalc.cgst;
+    const sgstAmt = walkinCalc.sgst;
+    const grandTotalAmt = walkinCalc.grandTotal;
+    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
     try {
       setIsPrintingBill(true);
@@ -1662,9 +1667,12 @@ const CashierDashboard = ({ onLogout }) => {
             })),
             subtotal: subtotalAmt,
             grandTotal: grandTotalAmt,
+            cgst: cgstAmt,
+            sgst: sgstAmt,
             discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
             captain: 'Walk-in',
-            sectionTag: 'venue-restaurant-parcel'
+            sectionTag: 'venue-restaurant-parcel',
+            requestId
           }
         })
       });
@@ -1829,6 +1837,10 @@ const CashierDashboard = ({ onLogout }) => {
       setRawDiscountInput('');
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
+
+      // Clear stale transaction cache immediately so History tab never shows old data
+      // commitFn.loadTransactions will write the fresh list once the API call completes
+      try { localStorage.removeItem(TX_CACHE_KEY); } catch {}
 
       // Show success notification
       addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
@@ -2221,7 +2233,7 @@ const CashierDashboard = ({ onLogout }) => {
     lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
 
-    if (!table.status || table.status === 'Free') {
+    if (!table.status || table.status === 'Free' || table.status === 'AVAILABLE') {
       setActiveTab('pos');
       localStorage.setItem('cashier_active_tab', 'pos');
     } else {
@@ -2877,7 +2889,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     onClick={() => handleTableSelect(table)}
                                     className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
                                   >
-                                    {/* Add Extra (+) button — top-left, only on non-extra Free or Busy tables with no existing extra */}
+                                    {/* Add Extra (+) button — top-left, only on non-extra tables */}
                                     {!isExtra && (
                                       <button
                                         onClick={(e) => {
@@ -2906,6 +2918,74 @@ const CashierDashboard = ({ onLogout }) => {
                                         className="absolute top-1 left-1 w-4 h-4 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-green-600 z-10 shadow"
                                         title={`Add extra session for B${table.number}`}
                                       >+</button>
+                                    )}
+                                    {/* Remove Extra (−) button — top-left on extra tables */}
+                                    {isExtra && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          // Find the original/main table
+                                          const mainTable = activeTables.find(t => t.backendId === table.baseBackendId);
+                                          if (!mainTable) {
+                                            setExtraTables(prev => prev.filter(et => et.id !== table.id));
+                                            return;
+                                          }
+                                          // Collect items from the extra table
+                                          const extraItems = getAllOrderItems(table);
+                                          if (extraItems.length > 0) {
+                                            // Merge items into main table's activeOrder.items and kotHistory
+                                            const mainItems = mainTable.activeOrder?.items || [];
+                                            const mainKotHistory = mainTable.kotHistory || [];
+                                            const extraKotHistory = table.kotHistory || [];
+                                            const mergedItems = [...mainItems, ...extraItems.map(i => ({
+                                              id: null,
+                                              n: i.n || i.name,
+                                              name: i.n || i.name,
+                                              p: Number(i.p ?? i.price ?? 0),
+                                              price: Number(i.p ?? i.price ?? 0),
+                                              q: Number(i.q ?? i.quantity ?? 1),
+                                              quantity: Number(i.q ?? i.quantity ?? 1),
+                                              menuType: (i.menuType || 'FOOD').toUpperCase(),
+                                              removedFromBill: false,
+                                              notes: i.notes || null,
+                                            }))];
+                                            const mergedKotHistory = [...mainKotHistory, ...extraKotHistory];
+                                            const newBill = calculateOrderTotal(mergedItems).total;
+                                            // Update main table
+                                            const updater = prev => prev.map(t => {
+                                              if (t.backendId === mainTable.backendId) {
+                                                return {
+                                                  ...t,
+                                                  status: t.status === 'Free' ? 'Occupied' : t.status,
+                                                  kotHistory: mergedKotHistory,
+                                                  currentBill: newBill,
+                                                  activeOrder: t.activeOrder
+                                                    ? { ...t.activeOrder, items: mergedItems }
+                                                    : { id: null, items: mergedItems, totalAmount: newBill },
+                                                };
+                                              }
+                                              return t;
+                                            });
+                                            setActiveTables(updater);
+                                            // Also update selectedTable if it's the main table
+                                            setSelectedTable(prev => {
+                                              if (!prev || prev.backendId !== mainTable.backendId) return prev;
+                                              return {
+                                                ...prev,
+                                                kotHistory: mergedKotHistory,
+                                                currentBill: newBill,
+                                                activeOrder: prev.activeOrder
+                                                  ? { ...prev.activeOrder, items: mergedItems }
+                                                  : { id: null, items: mergedItems, totalAmount: newBill },
+                                              };
+                                            });
+                                          }
+                                          // Remove extra table
+                                          setExtraTables(prev => prev.filter(et => et.id !== table.id));
+                                        }}
+                                        className="absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-red-600 z-10 shadow"
+                                        title={`Remove extra session B${table.number} — items move to main table`}
+                                      >−</button>
                                     )}
                                     {/* Captain Name Badge - Top Right */}
                                     {table.captainName && (

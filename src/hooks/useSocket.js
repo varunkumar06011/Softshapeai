@@ -14,9 +14,9 @@ export function getSocket() {
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
+      reconnectionDelayMax: 15000,
       randomizationFactor: 0.5,
-      timeout: 20000,
+      timeout: 45000,           // 45s — covers Railway cold starts (can take 30s)
       autoConnect: true,
       forceNew: false,
       addTrailingSlash: false,

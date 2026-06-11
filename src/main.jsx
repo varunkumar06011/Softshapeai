@@ -5,6 +5,12 @@ import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
 import { OutletProvider } from './context/OutletContext'
 
+// Catch unhandled promise rejections that React Error Boundaries cannot intercept
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[UnhandledRejection]', event.reason);
+  event.preventDefault();
+});
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <OutletProvider>

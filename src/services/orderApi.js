@@ -39,7 +39,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   console.log(JSON.stringify(orderData, null, 2));
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
   try {
     const res = await fetch(apiUrl("/api/orders"), {
@@ -84,7 +84,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       if (captainName) body.captainName = captainName;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
 
       try {
         const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
