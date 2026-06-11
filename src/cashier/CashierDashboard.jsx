@@ -1484,28 +1484,29 @@ const CashierDashboard = ({ onLogout }) => {
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
   const activeGrandTotal = useMemo(() => {
-    const backendTotal = Number(selectedTable?.activeOrder?.totalAmount ?? 0);
+    // IMPORTANT: selectedTable?.activeOrder?.totalAmount is a RAW subtotal (no GST, no discount).
+    // It must NEVER be used as the displayed grand total.
+    // The correct grand total is always activeOrderCalc.grandTotal, which applies
+    // discount + GST on food (5% = 2.5% CGST + 2.5% SGST) correctly via calculateOrderTotal().
     const calcTotal = activeOrderCalc.grandTotal ?? activeOrderCalc.total ?? 0;
-    // When discount is active, always trust the recalculated value — never use the stale max
-    const candidate = discountPercent > 0
-      ? (calcTotal > 0 ? calcTotal : backendTotal)
-      : (backendTotal > 0 ? backendTotal : calcTotal);
+
+    // Only use calcTotal as the candidate — never backendTotal (which is raw subtotal only)
+    const candidate = calcTotal;
+
+    // Prevent flash-to-zero: only update ref when we have a real value
     if (candidate > 0) {
-      lastKnownBillRef.current = candidate; // update but don't clamp to max
+      lastKnownBillRef.current = candidate; // do NOT use Math.max — allow discounts to reduce the value
     }
     return lastKnownBillRef.current > 0 ? lastKnownBillRef.current : candidate;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable?.activeOrder?.id, selectedTable?.activeOrder?.totalAmount, activeOrderCalc.grandTotal, activeOrderCalc.total, discountPercent]);
+  }, [selectedTable?.activeOrder?.id, activeOrderCalc.grandTotal, activeOrderCalc.total, discountPercent]);
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
-  // fallbackTotal must include GST — currentBill and totalAmount are both raw subtotals
-  const fallbackTotal = (() => {
-    const rawFallback = Number(selectedTable?.currentBill || selectedTable?.activeOrder?.totalAmount || 0);
-    if (rawFallback <= 0) return 0;
-    const calcTotal = activeOrderCalc.grandTotal ?? 0;
-    return calcTotal > 0 ? calcTotal : rawFallback + (activeOrderCalc.taxes ?? 0);
-  })();
+  // currentBill on the table is also raw subtotal — prefer calcTotal for display
+  const fallbackTotal = activeOrderCalc.grandTotal > 0
+    ? activeOrderCalc.grandTotal
+    : Number(selectedTable?.currentBill || 0);
 
   const handleFinalBill = async () => {
     if (!selectedTable || !selectedTable.backendId) {
