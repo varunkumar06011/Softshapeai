@@ -1,5 +1,6 @@
 import React from 'react';
 import { getTableSectionLabel, getSectionBadgeColor } from '../../utils/tableHelpers';
+import { calculateTableBill } from '../utils/billing';
 
 export default function VenueSectionView({
   sectionName,
@@ -120,7 +121,7 @@ function VenueTableCard({ table, sectionName, onClick }) {
           {status}
         </div>
         {!isFree && (
-          <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
+          <span className="text-[10px] font-black opacity-60">₹{calculateTableBill(table).grandTotal}</span>
         )}
       </div>
     </button>

@@ -2417,7 +2417,7 @@ const CashierDashboard = ({ onLogout }) => {
       .filter(i => !!i.menuItemId);
 
     if (selectedTable) {
-      const newTotalBill = calculateSessionBill(selectedTable, cart).subtotal;
+      const newTotalBill = calculateSessionBill(selectedTable, cart).total;
       const updater = prev => prev.map(t => {
         if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
           return {
@@ -2833,6 +2833,9 @@ const CashierDashboard = ({ onLogout }) => {
                                     )}
                                     <span className="text-2xl font-black">{outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
+                                    {!isFree && (
+                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table).grandTotal}</span>
+                                    )}
                                   </div>
                                 );
                               })}

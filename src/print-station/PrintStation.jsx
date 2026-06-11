@@ -926,7 +926,9 @@ export default function PrintStation() {
 
 
 
-      socket.on('print_job', async ({ type, data }) => {
+      socket.on('print_job', async (envelope) => {
+
+        const { type, data, eventId: envelopeEventId } = envelope;
 
         pushLog(`Received print_job [${type}] — Table ${data?.tableNumber ?? '?'}`);
 
@@ -940,9 +942,11 @@ export default function PrintStation() {
 
             const itemCount = data.items?.length || 0;
 
-            const dedupKey = data.eventId
+            const stableEventId = envelopeEventId || data?.eventId;
 
-              ? String(data.eventId)
+            const dedupKey = stableEventId
+
+              ? String(stableEventId)
 
               : `${type}-${data.kotId || data.orderId || ''}-${data.tableNumber}-${itemCount}`;
 
@@ -1262,7 +1266,7 @@ export default function PrintStation() {
 
               requestId: data.requestId,
 
-              eventId: data.eventId || null,
+              eventId: stableEventId || null,
 
               status: 'success',
 
