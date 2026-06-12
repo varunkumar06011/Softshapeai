@@ -11,7 +11,9 @@ async function parseResponse(res) {
     } catch {
       /* ignore */
     }
-    throw new Error(message);
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();
