@@ -32,100 +32,6 @@ import { isBeerItem } from '../utils/itemHelpers';
 
 
 
-// Pure-JS Levenshtein distance using 2D DP array (module-level to avoid temporal dead zone)
-
-const levenshtein = (a, b) => {
-
-  const m = a.length, n = b.length;
-
-  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= m; i++) {
-
-    for (let j = 1; j <= n; j++) {
-
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-
-      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-
-    }
-
-  }
-
-  return dp[m][n];
-
-};
-
-
-
-
-
-
-const getLiquorDescription = (name, category) => {
-
-  const n = (name || '').toLowerCase();
-
-  const c = (category || '').toLowerCase();
-
-  
-
-  if (n.includes('vodka') || c.includes('vodka')) {
-
-    return "Smooth and clean vodka with a crisp finish, ideal for classic cocktails and premium serves.";
-
-  }
-
-  if (n.includes('whisky') || n.includes('whiskey') || c.includes('whisky') || c.includes('single malt')) {
-
-    return "Well-balanced whisky known for its smooth character and rich oak-inspired notes.";
-
-  }
-
-  if (n.includes('brandy') || c.includes('brandy')) {
-
-    return "Classic brandy offering a warm profile with subtle fruit and spice undertones.";
-
-  }
-
-  if (n.includes('beer') || n.includes('lager') || n.includes('ale') || c.includes('beer') || c.includes('draught')) {
-
-    return "Refreshing lager with a light body and easy-drinking character.";
-
-  }
-
-  if (n.includes('rum') || c.includes('rum')) {
-
-    return "Rich and flavorful rum with deep molasses notes and a smooth finish.";
-
-  }
-
-  if (n.includes('gin') || c.includes('gin')) {
-
-    return "Botanical-forward gin with bright juniper notes and a crisp, refreshing profile.";
-
-  }
-
-  if (n.includes('wine') || c.includes('wine') || c.includes('champagne')) {
-
-    return "Elegant wine with a beautifully balanced profile and lingering aromatic finish.";
-
-  }
-
-  if (n.includes('tequila') || c.includes('tequila')) {
-
-    return "Premium tequila offering a vibrant agave character with smooth, earthy undertones.";
-
-  }
-
-  
-
-  return "Premium select offering a refined and smooth profile, crafted for an exceptional tasting experience.";
-
-};
 
 
 
@@ -1013,6 +919,11 @@ export default function CaptainApp({ onLogout }) {
 
     if (tableSubCategory === 'parcel' && outlet !== 'bar') return 'venue-001';
 
+    // Defensive: warn if tableSubCategory is corrupted/unknown
+    if (tableSubCategory && tableSubCategory !== '' && !['dine-in', 'parcel'].includes(tableSubCategory)) {
+      console.warn('[CaptainApp] Unknown tableSubCategory:', tableSubCategory, '— falling back to RESTAURANT_ID');
+    }
+
     return RESTAURANT_ID;
 
   }, [outlet, tableSubCategory]);
@@ -1218,13 +1129,15 @@ export default function CaptainApp({ onLogout }) {
 
     if (outlet === 'bar' && tableSubCategory === 'bar-ac-hall') {
 
-      baseTables = activeTables.filter(t => {
+      const barTables = activeTables.filter(t => {
 
         const sec = (t.sectionName || t.section?.name || '').toLowerCase();
 
         return sec.includes('bar');
 
       });
+
+      baseTables = barTables.length > 0 ? barTables : activeTables;
 
     }
 
@@ -1267,35 +1180,32 @@ export default function CaptainApp({ onLogout }) {
       });
     }
 
-    const words = q.split(/\s+/).filter(w => w.length >= 2);
+    // Use shared filterMenuItems for consistent search behavior across all terminals
+    const baseResults = filterMenuItems(outletFilteredMenuItems, {
+      query: searchQuery,
+      category: activeCategory,
+      diet: activeDiet,
+    });
 
-    return outletFilteredMenuItems
-      .filter(item => {
-        if (activeDiet !== 'All' && item.t !== activeDiet) return false;
+    return baseResults.sort((a, b) => {
+      const an = (a.n || '').toLowerCase();
+      const bn = (b.n || '').toLowerCase();
+      const query = q;
 
-        const name = (item.n || '').toLowerCase();
-        const cat = (item.c || '').toLowerCase();
+      // Exact full-name match comes first
+      if (an === query) return -1;
+      if (bn === query) return 1;
 
-        // Match if ANY spoken word appears anywhere in the item name or category
-        return words.some(w => name.includes(w) || cat.includes(w));
-      })
-      .sort((a, b) => {
-        const an = (a.n || '').toLowerCase();
-        const bn = (b.n || '').toLowerCase();
+      // Items whose name starts with the query come next
+      if (an.startsWith(query) && !bn.startsWith(query)) return -1;
+      if (bn.startsWith(query) && !an.startsWith(query)) return 1;
 
-        // Exact full-name match comes first
-        if (an === q) return -1;
-        if (bn === q) return 1;
-
-        // Items whose name starts with the query come next
-        if (an.startsWith(q) && !bn.startsWith(q)) return -1;
-        if (bn.startsWith(q) && !an.startsWith(q)) return 1;
-
-        // Then items matching more words rank higher
-        const aScore = words.filter(w => an.includes(w)).length;
-        const bScore = words.filter(w => bn.includes(w)).length;
-        return bScore - aScore;
-      });
+      // Then items matching more words rank higher
+      const words = query.split(/\s+/).filter(Boolean);
+      const aScore = words.filter(w => an.includes(w)).length;
+      const bScore = words.filter(w => bn.includes(w)).length;
+      return bScore - aScore;
+    });
   }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]);
 
 
@@ -1446,12 +1356,14 @@ export default function CaptainApp({ onLogout }) {
         setActiveTableId(null);
         activeOrderIdRef.current = null;
         lastConfirmedItemsRef.current = [];
+        kotRequestIdRef.current = null;
         addNotification('Order settled', 'success');
       }
     };
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
+      if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
 
@@ -1701,6 +1613,7 @@ export default function CaptainApp({ onLogout }) {
   // Clean up stale cart keys when a table is deleted from the active list
 
   useEffect(() => {
+    if (tablesSyncing || venueTablesLoading) return;
     const validIds = new Set([...activeTables, ...venueTables].map(t => String(t.id)));
     setTableCarts(prev => {
 
@@ -1713,7 +1626,7 @@ export default function CaptainApp({ onLogout }) {
       return Object.keys(cleaned).length === Object.keys(prev).length ? prev : cleaned;
 
     });
-  }, [activeTables, venueTables]);
+  }, [activeTables, venueTables, tablesSyncing, venueTablesLoading]);
 
 
 
@@ -1721,13 +1634,17 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+  const notificationIdRef = useRef(0);
+
   const addNotification = (title, type = 'success') => {
 
-    const id = Date.now();
+    const id = ++notificationIdRef.current;
 
     setNotifications(prev => [...prev, { id, title, type }]);
 
-    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+    const timer = setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+
+    return () => clearTimeout(timer);
 
   };
 
@@ -1747,13 +1664,18 @@ export default function CaptainApp({ onLogout }) {
 
     if (isListening) {
 
-      recognitionRef.current?.stop();
+      recognitionRef.current?.abort();
+
+      recognitionRef.current = null;
 
       setIsListening(false);
 
       return;
 
     }
+
+    // Abort any orphaned instance before creating a new one
+    recognitionRef.current?.abort();
 
     const recognition = new SpeechRecognition();
 
@@ -1920,7 +1842,7 @@ export default function CaptainApp({ onLogout }) {
 
         unlockAudioContext();
 
-        setTimeout(() => {
+        const authTimer = setTimeout(() => {
 
           if (newPin === selectedProfile.pin) {
 
@@ -1945,6 +1867,7 @@ export default function CaptainApp({ onLogout }) {
           setIsAuthenticating(false);
 
         }, 600);
+        pinTimeoutRef.current = authTimer;
 
       }
 
@@ -1964,18 +1887,21 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
     // Determine venue vs regular at open time using a ref (stable across re-renders)
-    isVenueTableRef.current = venueTables.some(t => t.id === table.id || t.backendId === table.id)
-                           || (table.id && String(table.id).includes('-'));
+    isVenueTableRef.current = venueTables.some(t => t.id === table.id || t.backendId === table.id);
 
     // BUG FIX: Reset ALL session state before switching tables so nothing from the previous table leaks in.
     // Clear the previous table's cart from localStorage-backed state.
     const previousTableId = activeTableIdRef.current;
     if (previousTableId) {
-      setTableCarts(prev => {
-        const next = { ...prev };
-        delete next[previousTableId];
-        return next;
-      });
+      const prevCart = tableCarts[previousTableId];
+      const hasUnsentItems = Array.isArray(prevCart) && prevCart.some(i => i.s === 'Pending');
+      if (!hasUnsentItems) {
+        setTableCarts(prev => {
+          const next = { ...prev };
+          delete next[previousTableId];
+          return next;
+        });
+      }
     }
     setTableCarts(prev => ({ ...prev, [table.id]: [] }));
     lastConfirmedItemsRef.current = [];
@@ -2104,6 +2030,8 @@ export default function CaptainApp({ onLogout }) {
 
   const updateDraftQty = (name, delta) => {
 
+    let itemToRemove = null;
+
     setTableCarts(prev => {
 
       const currentCart = prev[activeTableId] ?? [];
@@ -2112,15 +2040,7 @@ export default function CaptainApp({ onLogout }) {
 
       if (itemToUpdate && itemToUpdate.q + delta <= 0) {
 
-        setRemovedItem(itemToUpdate);
-
-        if (removeTimeoutRef.current) clearTimeout(removeTimeoutRef.current);
-
-        removeTimeoutRef.current = setTimeout(() => {
-
-          setRemovedItem(null);
-
-        }, 5000);
+        itemToRemove = itemToUpdate;
 
       }
 
@@ -2135,6 +2055,15 @@ export default function CaptainApp({ onLogout }) {
       return { ...prev, [activeTableId]: updatedCart };
 
     });
+
+    // Side effects run AFTER the state updater, not inside it
+    if (itemToRemove) {
+      setRemovedItem(itemToRemove);
+      if (removeTimeoutRef.current) clearTimeout(removeTimeoutRef.current);
+      removeTimeoutRef.current = setTimeout(() => {
+        setRemovedItem(null);
+      }, 5000);
+    }
 
   };
 
@@ -2233,6 +2162,8 @@ export default function CaptainApp({ onLogout }) {
   }, [view, activeTableId]);
 
   const sendIncrementalKOT = async () => {
+    // Cancel any pending print timeout from a previous KOT before any early return
+    clearTimeout(printTimeoutRef.current);
 
     if (sendingKOT || isSubmittingKotRef.current) return; // Prevent duplicate clicks
 
@@ -2330,12 +2261,10 @@ export default function CaptainApp({ onLogout }) {
         savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
 
         // Extract real KOT ID from kotHistory in response
-
-        realKotId = (response?.order?.kotHistory || response?.kotHistory)?.[
-
-          (response?.order?.kotHistory || response?.kotHistory)?.length - 1
-
-        ]?.id;
+        const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
+        realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
+          ? _kotHistory[_kotHistory.length - 1].id
+          : null;
 
       } else {
 
@@ -2358,8 +2287,10 @@ export default function CaptainApp({ onLogout }) {
         if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
 
         // Extract real KOT ID from kotHistory in response
-
-        realKotId = savedOrder?.kotHistory?.[savedOrder.kotHistory.length - 1]?.id;
+        const _savedKotHistory = savedOrder?.kotHistory;
+        realKotId = Array.isArray(_savedKotHistory) && _savedKotHistory.length > 0
+          ? _savedKotHistory[_savedKotHistory.length - 1].id
+          : null;
 
       }
 
@@ -2369,7 +2300,7 @@ export default function CaptainApp({ onLogout }) {
 
       const newKOT = {
 
-        id: realKotId || Math.floor(1000 + Math.random() * 9000).toString(),
+        id: realKotId || `kot-${Date.now()}`,
 
         time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
 
@@ -2472,15 +2403,17 @@ export default function CaptainApp({ onLogout }) {
       const handler = ({ requestId: ackRequestId, status }) => {
         if (ackRequestId === requestId) {
           socket.off('kot:printed', handler);
-          clearTimeout(printTimeout);
+          clearTimeout(printTimeoutRef.current);
+          printTimeoutRef.current = null;
           if (status !== 'success') {
             addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, 'warning');
           }
         }
       };
       socket.on('kot:printed', handler);
-      const printTimeout = setTimeout(() => {
+      printTimeoutRef.current = setTimeout(() => {
         socket.off('kot:printed', handler);
+        printTimeoutRef.current = null;
         addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
       }, 30000);
 
@@ -2607,16 +2540,24 @@ export default function CaptainApp({ onLogout }) {
       const printResult = await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           socket.off('kot:printed', handler);
+          socket.off('disconnect', disconnectHandler);
           resolve('timeout');
         }, 12000);
         const handler = ({ requestId: ackRequestId, status }) => {
           if (ackRequestId === cancelRequestId) {
             clearTimeout(timeout);
             socket.off('kot:printed', handler);
+            socket.off('disconnect', disconnectHandler);
             resolve(status || 'success');
           }
         };
+        const disconnectHandler = () => {
+          clearTimeout(timeout);
+          socket.off('kot:printed', handler);
+          resolve('disconnected');
+        };
         socket.on('kot:printed', handler);
+        socket.on('disconnect', disconnectHandler);
       });
 
       if (printResult === 'timeout') {
@@ -2698,19 +2639,14 @@ export default function CaptainApp({ onLogout }) {
 
     addNotification("Billing Requested", 'success');
 
-    setView('tables');
-
-    setActiveTableId(null);
-
-
-
     // 2. Fire API
-
     if (orderId) {
-
       try {
 
         await requestBilling(orderId);
+
+        setView('tables');
+        setActiveTableId(null);
 
       } catch (err) {
 
@@ -4128,7 +4064,7 @@ export default function CaptainApp({ onLogout }) {
 
             {related.slice(0, 12).map((item, idx) => {
 
-              const totalQty = currentSessionItems.filter(i => i.n.startsWith(item.n)).reduce((acc, i) => acc + i.q, 0);
+              const totalQty = currentSessionItems.filter(i => i.n === item.n).reduce((acc, i) => acc + i.q, 0);
 
               const isVeg = item.t === 'veg';
 
@@ -4226,7 +4162,7 @@ export default function CaptainApp({ onLogout }) {
 
                       {filteredMenu.map((item, idx) => {
 
-                        const totalQty = currentSessionItems.filter(i => i.n.startsWith(item.n)).reduce((acc, i) => acc + i.q, 0);
+                        const totalQty = currentSessionItems.filter(i => i.n === item.n).reduce((acc, i) => acc + i.q, 0);
 
                         const isVeg = item.t === 'veg';
 
@@ -5388,7 +5324,7 @@ export default function CaptainApp({ onLogout }) {
 
                               currentCaptain?.name || 'Captain',
 
-                              RESTAURANT_ID,
+                              activeRestaurantId,
 
                             );
 

@@ -159,16 +159,12 @@ export default function CaptainPerformanceDashboard() {
       filteredTxns.forEach(t => {
         const txnDate = new Date(t.paidAt || t.createdAt);
 
-        // Get IST hour (add 5.5 hours offset to UTC)
-        const istDate = new Date(txnDate.getTime() + (5.5 * 60 * 60 * 1000));
-        const hour = istDate.getUTCHours(); // Use UTC hours since we already converted to IST
-
-        // Format hour as readable label (e.g., "10 AM", "2 PM", "11 PM")
-        let hourLabel;
-        if (hour === 0) hourLabel = '12 AM';
-        else if (hour < 12) hourLabel = `${hour} AM`;
-        else if (hour === 12) hourLabel = '12 PM';
-        else hourLabel = `${hour - 12} PM`;
+        // Get IST hour using native timezone-aware formatting
+        const hourLabel = txnDate.toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          hour12: true,
+        }).toUpperCase().replace('.', '').trim();
 
         trendBuckets[hourLabel] = (trendBuckets[hourLabel] || 0) + Number(t.amount || 0);
       });
@@ -177,12 +173,13 @@ export default function CaptainPerformanceDashboard() {
       filteredTxns.forEach(t => {
         const txnDate = new Date(t.paidAt || t.createdAt);
 
-        // Convert to IST and format as DD/MM/YYYY
-        const istDate = new Date(txnDate.getTime() + (5.5 * 60 * 60 * 1000));
-        const day = String(istDate.getUTCDate()).padStart(2, '0');
-        const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
-        const year = istDate.getUTCFullYear();
-        const dateKey = `${day}/${month}/${year}`;
+        // Convert to IST date using native timezone-aware formatting
+        const dateKey = txnDate.toLocaleDateString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        });
 
         trendBuckets[dateKey] = (trendBuckets[dateKey] || 0) + Number(t.amount || 0);
       });
