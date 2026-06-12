@@ -5,7 +5,8 @@ import {
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
-  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar
+  TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -305,6 +306,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSending, setIsKotSending] = useState(false);
   const [isTerminating, setIsTerminating] = useState(false);
   const isSubmittingKotRef = useRef(false);
+  const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const kotRequestIdRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
@@ -461,6 +463,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [rawDiscountInput, discountMode, rawSubtotal]);
 
   const [isCartMinimized, setIsCartMinimized] = useState(true);
+  const [isCartExpanded, setIsCartExpanded] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -856,35 +859,30 @@ const CashierDashboard = ({ onLogout }) => {
 
     const mergeOrder = (incoming, existing) => {
       if (!existing) return incoming;
-      // FIX: Additive item merging - union incoming with existing, never replace
-      // An item already present in existing should never be removed unless removedFromBill === true
       const incomingItems = incoming?.items || [];
       const existingItems = existing?.items || [];
-      const existingMap = new Map(existingItems.map(i => [i.id, i]));
 
-      const mergedItems = incomingItems.map(incomingItem => {
+      // Build a map of existing items by id
+      const existingMap = new Map(existingItems.map(i => [i.id, i]));
+      const incomingMap = new Map(incomingItems.map(i => [i.id, i]));
+
+      // Start with all incoming items, but protect locally-cancelled items
+      const mergedByIncoming = incomingItems.map(incomingItem => {
         const existingItem = existingMap.get(incomingItem.id);
+        // Preserve local cancellations (removedFromBill=true) even if backend hasn't confirmed yet
         if (existingItem?.removedFromBill && !incomingItem.removedFromBill) {
           return { ...incomingItem, removedFromBill: true, quantity: 0 };
         }
         return incomingItem;
       });
 
-      const incomingIds = new Set(incomingItems.map(i => i.id));
-      // Add existing items that are NOT in incoming (additive merge)
-      const localOnlyItems = existingItems.filter(i => !incomingIds.has(i.id));
-      // Also preserve items marked as removedFromBill locally even if they're in incoming
-      const localOnlyRemoved = existingItems.filter(i => i.removedFromBill && !incomingIds.has(i.id));
+      // Add back any existing items NOT present in incoming (additive — never drop items)
+      const localOnlyItems = existingItems.filter(i => !incomingMap.has(i.id) && i.id);
 
-      const merged = {
+      return {
         ...incoming,
-        items: [...mergedItems, ...localOnlyItems, ...localOnlyRemoved],
+        items: [...mergedByIncoming, ...localOnlyItems],
       };
-
-      // FIX #4: Always return merged (union of incoming + existing) — never revert to existing alone.
-      // Count/timestamp heuristics are unsafe: backend updatedAt can be a string that parses
-      // behind local time, causing the stale version to "win" and wipe newer items.
-      return merged;
     };
 
     const onOrderUpdated = (payload) => {
@@ -948,10 +946,12 @@ const CashierDashboard = ({ onLogout }) => {
           ? 'Waiting Bill'
           : incomingStatus;
         const incomingBillAmt = table.currentBill ?? table.orders?.[0]?.totalAmount ?? t.currentBill;
+        const isIncomingFree = (table.workflowStatus === 'Free' || table.status === 'AVAILABLE' || table.status === 'Free');
+        const resolvedBill = isIncomingFree ? 0 : Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0));
         return {
           ...t,
           kotHistory: mergedKotHistory,
-          currentBill: Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0)),
+          currentBill: resolvedBill,
           status: protectedStatus,
           workflowStatus: protectedStatus,
           activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
@@ -1042,9 +1042,9 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Map raw DB payloads to frontend shape using existing mapper
       const isVenue = payload?.restaurantId === 'venue-001' || rawSource?.restaurantId === 'venue-001' || rawTarget?.restaurantId === 'venue-001';
-      const allTables = isVenue ? venueTables : activeTables;
-      const existingSource = allTables?.find(t => t.backendId === sourceTableId) || null;
-      const existingTarget = allTables?.find(t => t.backendId === targetTableId) || null;
+      const allTablesRef = isVenue ? venueTablesRef.current : activeTablesRef.current;
+      const existingSource = allTablesRef?.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = allTablesRef?.find(t => t.backendId === targetTableId) || null;
       const mappedSource = mapRealtimeTablePayload(rawSource, existingSource);
       const mappedTarget = mapRealtimeTablePayload(rawTarget, existingTarget);
 
@@ -1065,8 +1065,14 @@ const CashierDashboard = ({ onLogout }) => {
         // Clear stale localStorage for the source table before switching
         localStorage.removeItem('cashier_selected_table');
         localStorage.removeItem(`cashier_cart_${sourceTableId}`);
-        setSelectedTable(mappedTarget);
-        setShowTableModal(false);
+        // Only re-open to target if it has live data (session fully transferred)
+        if ((mappedTarget.kotHistory?.length > 0) || mappedTarget.activeOrder || (mappedTarget.currentBill > 0)) {
+          setSelectedTable(mappedTarget);
+          setShowTableModal(true);
+        } else {
+          setSelectedTable(null);
+          setShowTableModal(false);
+        }
         setShowSwapModal(false);
         addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
       }
@@ -1248,7 +1254,21 @@ const CashierDashboard = ({ onLogout }) => {
       // Actually, since we use `liveTable` object directly, let's only update if something changed
       // to avoid infinite re-renders. A simple stringify comparison works for our needs here.
       if (JSON.stringify(selectedTable) !== JSON.stringify(liveTable)) {
-        setSelectedTable(liveTable);
+        // Merge live table but never lose items that are in selectedTable but not in liveTable
+        setSelectedTable(prev => {
+          if (!prev) return liveTable;
+          const prevItems = prev.activeOrder?.items || [];
+          const liveItems = liveTable.activeOrder?.items || [];
+          const liveItemIds = new Set(liveItems.map(i => i.id).filter(Boolean));
+          const localOnlyItems = prevItems.filter(i => i.id && !liveItemIds.has(i.id));
+          if (localOnlyItems.length === 0) return liveTable;
+          return {
+            ...liveTable,
+            activeOrder: liveTable.activeOrder
+              ? { ...liveTable.activeOrder, items: [...liveItems, ...localOnlyItems] }
+              : prev.activeOrder,
+          };
+        });
       }
     }
   }, [activeTables, venueTables, selectedTable, billPrintedTableIds]);
@@ -2326,6 +2346,12 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (item) => {
+    const itemKey = String(item.id || item.n || '');
+    const now = Date.now();
+    const lastAdd = addItemCooldownRef.current[itemKey] || 0;
+    if (now - lastAdd < 2000) return; // 2-second cooldown per item
+    addItemCooldownRef.current[itemKey] = now;
+
     // Beer items should be added directly
     if (outlet === 'bar' && isBeerItem(item)) {
       addToCart(item);
@@ -2517,7 +2543,14 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable) {
       const existingItems = selectedTable.activeOrder?.items || [];
-      const mergedItems = [...existingItems, ...newOptimisticItems];
+      // Prevent duplicate optimistic appends if KOT was double-submitted
+      const existingOptimisticNames = new Set(
+        existingItems.filter(i => !i.id).map(i => i.n || i.name)
+      );
+      const deduplicatedOptimistic = newOptimisticItems.filter(
+        i => !existingOptimisticNames.has(i.n || i.name)
+      );
+      const mergedItems = [...existingItems, ...deduplicatedOptimistic];
 
       if (selectedTable.isExtra) {
         // Update extra table in extraTables state
@@ -2964,7 +2997,8 @@ const CashierDashboard = ({ onLogout }) => {
                               ...extraTables.sort((a, b) => String(a.number).localeCompare(String(b.number)))
                             ]
                               .map((table) => {
-                                const isFree = table.status === 'Free' || !table.status;
+                                const isFree = (table.status === 'Free' || !table.status)
+                                  || (Number(table.currentBill ?? 0) === 0 && !(table.kotHistory?.length > 0) && !table.activeOrder);
                                 const isWaitingBill = table.status === 'Waiting Bill';
                                 const isBusy = !isFree && !isWaitingBill;
                                 const isExtra = table.isExtra;
@@ -3942,7 +3976,7 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
 
                   {/* COMPACT CART */}
-                  <div className={`w-full lg:w-[440px] flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`}>
+                  <div className={`w-full ${isCartExpanded ? 'lg:w-[640px]' : 'lg:w-[440px]'} flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`}>
                     <div
                       className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
                       onClick={() => setIsCartMinimized(!isCartMinimized)}
@@ -3953,7 +3987,16 @@ const CashierDashboard = ({ onLogout }) => {
                             <ShoppingCart size={22} className="text-[#E53935]" />
                             Cart Log
                           </h2>
-                          <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setIsCartExpanded(prev => !prev); }}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors hidden lg:flex"
+                              title={isCartExpanded ? 'Collapse cart' : 'Expand cart'}
+                            >
+                              {isCartExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
+                          </div>
                         </div>
                         <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
                           <div className="flex items-center gap-3">
@@ -4878,16 +4921,56 @@ const CashierDashboard = ({ onLogout }) => {
                 )}
               </div>
 
+              {/* Occupied tables — shown greyed out, not selectable */}
+              <p className="text-[11px] font-black uppercase text-gray-400 tracking-wider mt-4 mb-2">Occupied Tables</p>
+              <div className="grid grid-cols-4 gap-2.5 max-h-32 overflow-y-auto pr-1">
+                {activeTables
+                  .filter(t => t.status && t.status !== 'Free' && t.status !== 'AVAILABLE' && t.backendId !== selectedTable.backendId)
+                  .sort((a, b) => Number(a.id) - Number(b.id))
+                  .map(t => (
+                    <div
+                      key={t.backendId || t.id}
+                      className="aspect-square rounded-xl border-2 border-gray-100 bg-gray-50 flex flex-col items-center justify-center text-xs font-black opacity-40 cursor-not-allowed"
+                    >
+                      <span className="text-lg font-black text-gray-400">{outlet === 'bar' ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
+                      <span className="text-[9px] font-bold text-red-400 mt-0.5">Occupied</span>
+                    </div>
+                  ))}
+              </div>
+
               <button
                 onClick={async () => {
                   if (!swapTargetId || !selectedTable?.backendId || isSwapping) return;
                   setIsSwapping(true);
                   try {
                     await swapTable(selectedTable.backendId, swapTargetId, 'Cashier', selectedTable.section?.restaurantId || activeRestaurantId);
+
+                    // Immediately apply swap in local state without waiting for socket
+                    const sourceId = selectedTable.backendId;
+                    const targetId = swapTargetId;
+                    const sourceSnap = { ...selectedTable };
+
+                    const isVenueSwap = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+                    const setSwapTables = isVenueSwap && setVenueTables ? setVenueTables : setActiveTables;
+
+                    setSwapTables(prev => prev.map(t => {
+                      if (t.backendId === sourceId) {
+                        return { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null };
+                      }
+                      if (t.backendId === targetId) {
+                        return { ...t, status: sourceSnap.status, workflowStatus: sourceSnap.workflowStatus, activeOrder: sourceSnap.activeOrder, kotHistory: sourceSnap.kotHistory || [], currentBill: sourceSnap.currentBill || 0, captainId: sourceSnap.captainId || null, guests: sourceSnap.guests || 0, time: sourceSnap.time || null };
+                      }
+                      return t;
+                    }));
+
+                    // Clear localStorage for source table
+                    localStorage.removeItem(`cashier_cart_${sourceId}`);
+
                     setShowSwapModal(false);
                     setShowTableModal(false);
                     setSwapTargetId(null);
                     setSelectedTable(null);
+                    setCart([]);
                     addNotification('Table Moved', 'Session transferred successfully', 'success');
                   } catch (err) {
                     addNotification('Move Failed', err.message || 'Could not move table', 'error');
@@ -4994,7 +5077,8 @@ const CashierDashboard = ({ onLogout }) => {
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider mb-3">Select Destination Table</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {itemSwapDestinationTables.map((table) => {
-                    const isFree = !table.status || table.status === 'Free';
+                    const isFree = (!table.status || table.status === 'Free')
+                      || (Number(table.currentBill ?? 0) === 0 && !(table.kotHistory?.length > 0) && !table.activeOrder);
                     const isSelected = itemSwapTargetId === table.backendId;
                     return (
                       <button
@@ -5081,10 +5165,9 @@ const CashierDashboard = ({ onLogout }) => {
 
           const cancelTimeout = setTimeout(() => {
             setCancelBatchLoading(false);
-            setShowCancelModal(false);
-            setCancelSelected({});
-            addNotification('Cancel timed out — please try again', 'error');
-          }, 15000);
+            // Do NOT close modal or clear selection — user can retry
+            addNotification('Cancel is taking longer than expected — please retry', 'error');
+          }, 30000);
 
           try {
             // Always fetch fresh order data first so we use the correct live orderId and item IDs
@@ -5154,19 +5237,28 @@ const CashierDashboard = ({ onLogout }) => {
                 selectedTable.number || selectedTable.id,
                 batchRequestId
               );
+              clearTimeout(cancelTimeout);
 
               const cancelledIdSet = new Set(resolvedIds);
               setSelectedTable(prev => {
-                if (!prev?.activeOrder?.items) return prev;
-                return {
-                  ...prev,
-                  activeOrder: {
-                    ...prev.activeOrder,
-                    items: prev.activeOrder.items.map(i =>
-                      cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
-                    ),
-                  },
-                };
+                if (!prev) return prev;
+                const updatedOrder = prev.activeOrder ? {
+                  ...prev.activeOrder,
+                  items: (prev.activeOrder.items || []).map(i =>
+                    cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
+                  ),
+                } : prev.activeOrder;
+                // Also patch kotHistory so getAllOrderItems() shows cancellation instantly
+                const updatedKotHistory = (prev.kotHistory || []).map(kot => ({
+                  ...kot,
+                  items: (kot.items || []).map(kotItem =>
+                    (kotItem.orderItemId && cancelledIdSet.has(kotItem.orderItemId)) ||
+                    (kotItem.id && cancelledIdSet.has(kotItem.id))
+                      ? { ...kotItem, s: 'Cancelled', q: 0 }
+                      : kotItem
+                  ),
+                }));
+                return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
               });
 
               const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';

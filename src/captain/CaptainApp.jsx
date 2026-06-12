@@ -532,6 +532,7 @@ export default function CaptainApp({ onLogout }) {
   const kotRequestIdRef = useRef(null);
 
   const isSubmittingKotRef = useRef(false);
+  const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const isVenueTableRef = useRef(false);
 
 
@@ -1934,6 +1935,12 @@ export default function CaptainApp({ onLogout }) {
       console.warn('[CaptainApp] addItemToSession blocked: no activeTableId. Item:', item?.n, 'view:', view);
       return; // no active table, do nothing
     }
+    const itemKey = String(item.id || item.n || '');
+    const now = Date.now();
+    const lastAdd = addItemCooldownRef.current[itemKey] || 0;
+    if (now - lastAdd < 2000) return; // 2-second cooldown per item
+    addItemCooldownRef.current[itemKey] = now;
+
     const finalPrice = variant ? Number(variant.price) : item.p;
 
 
