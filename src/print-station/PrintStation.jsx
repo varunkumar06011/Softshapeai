@@ -1141,33 +1141,29 @@ export default function PrintStation() {
             printTasks.push({ printer, cmds });
 
           } else if (type === 'CANCEL_KOT') {
-            // Split cancelled items by type: food → kitchen, bar/liquor → bar printer
-            const allCancelItems = data.items && data.items.length > 0 ? data.items : (data.item ? [data.item] : []);
-            const foodCancelItems = allCancelItems.filter(i => i.menuType !== 'BAR' && i.menuType !== 'LIQUOR');
-            const barCancelItems  = allCancelItems.filter(i => i.menuType === 'BAR'  || i.menuType === 'LIQUOR');
+            // Separate food vs bar items
+            const allCancelItems = data.items && data.items.length > 0 ? data.items : [data.item].filter(Boolean);
+            const foodItems = allCancelItems.filter(i => i.menuType !== 'BAR');
+            const barItems  = allCancelItems.filter(i => i.menuType === 'BAR');
 
-            if (foodCancelItems.length > 0) {
-              const foodCmds = foodCancelItems.length === 1
-                ? buildCancelKOTCommands({ ...data, item: foodCancelItems[0] })
-                : buildFullCancelCommands({ ...data, items: foodCancelItems });
+            const buildSlip = (items) => {
+              const payload = { ...data, items, item: items[0] };
+              return items.length > 1 ? buildFullCancelCommands(payload) : buildCancelKOTCommands(payload);
+            };
 
-              let foodPrinter;
+            const resolveCancelPrinter = (menuType) => {
               if (data.restaurantId === 'venue-001') {
-                foodPrinter = (data.sectionTag === 'venue-restaurant-parcel') ? KOT_PRINTER : KOT_FAMILY_PRINTER;
-              } else {
-                foodPrinter = KITCHEN_PRINTER;
+                return menuType === 'BAR'
+                  ? (data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER : DINE_IN_BILL_PRINTER)
+                  : KOT_FAMILY_PRINTER;
               }
-              printTasks.push({ printer: foodPrinter, cmds: foodCmds });
-            }
+              if (data.sectionTag === 'venue-family-restaurant') return KOT_FAMILY_PRINTER;
+              if (data.sectionTag === 'venue-restaurant-parcel') return KOT_PRINTER;
+              return menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
+            };
 
-            if (barCancelItems.length > 0) {
-              const barCmds = barCancelItems.length === 1
-                ? buildCancelKOTCommands({ ...data, item: barCancelItems[0] })
-                : buildFullCancelCommands({ ...data, items: barCancelItems });
-
-              const barPrinter = BAR_PRINTER;
-              printTasks.push({ printer: barPrinter, cmds: barCmds });
-            }
+            if (foodItems.length > 0) printTasks.push({ printer: resolveCancelPrinter('FOOD'), cmds: buildSlip(foodItems) });
+            if (barItems.length  > 0) printTasks.push({ printer: resolveCancelPrinter('BAR'),  cmds: buildSlip(barItems)  });
 
           } else if (type === 'CANCEL_ORDER') {
 
