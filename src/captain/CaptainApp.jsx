@@ -1362,26 +1362,52 @@ export default function CaptainApp({ onLogout }) {
       }
     };
 
+    const mergeOrderItems = (existing = [], incoming = []) => {
+      const map = new Map(existing.map(i => [i.id, i]));
+      incoming.forEach(i => map.set(i.id, { ...(map.get(i.id) || {}), ...i }));
+      return Array.from(map.values());
+    };
+
+    const dedupKotHistory = (existing = [], incoming = []) => {
+      const map = new Map();
+      [...existing, ...incoming].forEach(k => {
+        const existingK = map.get(k.id);
+        if (!existingK || (k.createdAt || 0) > (existingK.createdAt || 0)) {
+          map.set(k.id, k);
+        }
+      });
+      return Array.from(map.values());
+    };
+
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
       if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
 
-        // Guard: if socket says AVAILABLE but local table has an active order,
-        // skip this update — it's a stale/race event. Wait for the correct one.
         const incomingIsAvailable = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
           console.warn('[CaptainApp] Skipping stale AVAILABLE event for occupied table', t.number);
           return t;
         }
 
+        const incomingOrder = table.orders?.[0] || table.activeOrder;
+        const mergedItems = incomingOrder?.items
+          ? mergeOrderItems(t.activeOrder?.items || [], incomingOrder.items)
+          : (t.activeOrder?.items || []);
+        const isTableFree = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
+        const mergedKotHistory = isTableFree
+          ? []
+          : dedupKotHistory(t.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
           currentBill: table.currentBill ?? t.currentBill,
-          activeOrder: table.orders?.[0] || table.activeOrder || t.activeOrder,
+          activeOrder: incomingOrder
+            ? { ...(t.activeOrder || {}), ...incomingOrder, items: mergedItems }
+            : t.activeOrder,
+          kotHistory: mergedKotHistory,
         };
       });
       if (table.restaurantId === 'venue-001') {
@@ -1398,17 +1424,23 @@ export default function CaptainApp({ onLogout }) {
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
+        // Merge incoming items with existing so KOTs don't vanish
+        const mergedItems = mergeOrderItems(t.activeOrder?.items || [], order.items || []);
+        const mergedOrder = { ...(t.activeOrder || {}), ...order, items: mergedItems };
         // Sync cancelled status back into kotHistory items
         const cancelledIds = new Set(
           (order.items || []).filter(i => i.removedFromBill).map(i => i.id)
         );
-        const updatedKotHistory = (t.kotHistory || []).map(kot => ({
-          ...kot,
-          items: kot.items.map(i =>
-            cancelledIds.has(i.orderItemId) ? { ...i, s: 'Cancelled' } : i
-          )
-        }));
-        return { ...t, activeOrder: order, kotHistory: updatedKotHistory };
+        const updatedKotHistory = dedupKotHistory(
+          (t.kotHistory || []).map(kot => ({
+            ...kot,
+            items: kot.items.map(i =>
+              cancelledIds.has(i.orderItemId) ? { ...i, s: 'Cancelled' } : i
+            )
+          })),
+          Array.isArray(order.kotHistory) ? order.kotHistory : []
+        );
+        return { ...t, activeOrder: mergedOrder, kotHistory: updatedKotHistory };
       });
       if (isVenue) {
         setVenueTables(updateTables);
@@ -2335,13 +2367,20 @@ export default function CaptainApp({ onLogout }) {
           captainId: currentCaptain.id,
 
           kotHistory: (() => {
-
             const currentHistory = t.kotHistory || [];
-
-            const exists = currentHistory.some(k => String(k.id) === String(newKOT.id));
-
+            const newIdStr = String(newKOT.id);
+            // If this is a real server KOT ID, replace any temp optimistic entry instead of appending
+            const isRealId = !newIdStr.startsWith('kot-');
+            if (isRealId) {
+              const tempIndex = currentHistory.findIndex(k => String(k.id).startsWith('kot-'));
+              if (tempIndex >= 0) {
+                const next = [...currentHistory];
+                next[tempIndex] = newKOT;
+                return next;
+              }
+            }
+            const exists = currentHistory.some(k => String(k.id) === newIdStr);
             return exists ? currentHistory : [...currentHistory, newKOT];
-
           })(),
 
           currentBill: newTotalBill,
@@ -4519,11 +4558,13 @@ export default function CaptainApp({ onLogout }) {
 
                   {/* KOT LOGS */}
 
-                  {(activeTable?.kotHistory || []).map((kot) => {
+                  {(activeTable?.kotHistory || [])
+                    .filter(kot => Array.isArray(kot.items) && kot.items.length > 0)
+                    .map((kot) => {
+                    const visibleItems = kot.items.filter(i => (i.q ?? i.quantity ?? 0) > 0);
+                    const cancellableItems = visibleItems.filter(i => i.s !== 'Cancelled' && !!i.orderItemId);
 
-                    const cancellableItems = kot.items.filter(i => i.s !== 'Cancelled' && !!i.orderItemId);
-
-                    return (
+                    return visibleItems.length > 0 ? (
 
                       <div key={kot.id} className="space-y-4">
 
@@ -4616,7 +4657,7 @@ export default function CaptainApp({ onLogout }) {
 
                       </div>
 
-                    );
+                    ) : null;
 
                   })}
 

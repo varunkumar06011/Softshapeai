@@ -342,6 +342,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Per-table cooldown: tableBackendId -> timestamp until which socket updates are ignored
   const billPrintCooldownRef = useRef(new Map()); // Map<tableBackendId, number>
   const lastKnownBillRef = useRef(0); // monotonically increasing — never go backwards
+  const billItemsSnapshotRef = useRef([]); // snapshot of billable items before print-bill
   const lsWriteTimerRef = useRef(null);
 
   function shallowEqualSelectedTable(prev, next) {
@@ -576,8 +577,9 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnSearch, setTxnSearch] = useState('');
   const [txnPage, setTxnPage] = useState(1);
 
-  function formatBillNumber(txnDate, txnNumber) {
-    return formatTxnDisplayId(txnDate, txnNumber);
+  function formatBillNumber(txn) {
+    if (txn?.billNumber) return txn.billNumber;
+    return formatTxnDisplayId(txn?.txnDate, txn?.txnNumber);
   }
 
   const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
@@ -671,7 +673,8 @@ const CashierDashboard = ({ onLogout }) => {
           id: txn.id,
           orderId: txn.orderId || null,
           txnNumber: txn.txnNumber || null,
-          displayId: formatBillNumber(txn.txnDate, txn.txnNumber),
+          billNumber: txn.billNumber || null,
+          displayId: formatBillNumber(txn),
           kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
           amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
           grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
@@ -704,11 +707,20 @@ const CashierDashboard = ({ onLogout }) => {
         return RESTAURANT_SOURCES.has(txn.source);
       });
 
-      setPastTransactions(isolated);
+      // Sort by billNumber numerically (ascending) when viewing a specific date; fall back to paidAt for legacy records
+      const sorted = [...isolated].sort((a, b) => {
+        const aBill = a.billNumber != null ? parseInt(a.billNumber, 10) : null;
+        const bBill = b.billNumber != null ? parseInt(b.billNumber, 10) : null;
+        if (aBill != null && bBill != null) return aBill - bBill;
+        if (aBill != null) return -1;
+        if (bBill != null) return 1;
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      });
+      setPastTransactions(sorted);
       
       // Only cache today's data + add version stamp
       if (filter === 'today') {
-        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(isolated));
+        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(sorted));
         localStorage.setItem(`${TX_CACHE_KEY}_version`, Date.now().toString());
       }
     } catch (err) {
@@ -857,6 +869,23 @@ const CashierDashboard = ({ onLogout }) => {
       }
     };
 
+    const mergeOrderItems = (existing = [], incoming = []) => {
+      const map = new Map(existing.map(i => [i.id, i]));
+      incoming.forEach(i => map.set(i.id, { ...(map.get(i.id) || {}), ...i }));
+      return Array.from(map.values());
+    };
+
+    const dedupKotHistory = (existing = [], incoming = []) => {
+      const map = new Map();
+      [...existing, ...incoming].forEach(k => {
+        const existingK = map.get(k.id);
+        if (!existingK || (k.createdAt || 0) > (existingK.createdAt || 0)) {
+          map.set(k.id, k);
+        }
+      });
+      return Array.from(map.values());
+    };
+
     const mergeOrder = (incoming, existing) => {
       if (!existing) return incoming;
       const incomingItems = incoming?.items || [];
@@ -927,13 +956,9 @@ const CashierDashboard = ({ onLogout }) => {
           }
         }
 
-        // FIX #4: Merge kotHistory — never lose KOTs already in local state
-        const mergedKotHistory = (() => {
-          const existing = t.kotHistory || [];
-          const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
-          if (incoming.length >= existing.length) return incoming;
-          return existing;
-        })();
+        const mergedKotHistory = isIncomingFree
+          ? []
+          : dedupKotHistory(t.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
         // When merging an occupied table:updated event, preserve existing activeOrder.items
         // if the incoming payload has no orders array (partial update)
         const incomingHasOrders = Array.isArray(table.orders) && table.orders.length > 0;
@@ -974,16 +999,14 @@ const CashierDashboard = ({ onLogout }) => {
             return prev;
           }
 
-          const mergedKotHistory = (() => {
-            const existing = prev.kotHistory || [];
-            const incoming = Array.isArray(table.kotHistory) ? table.kotHistory : [];
-            return incoming.length >= existing.length ? incoming : existing;
-          })();
           const isTableFree = (table.workflowStatus || table.status) === 'Free';
           const isTableSettled = settledTableIdsRef.current.has(prev.backendId);
-          // Only clear kotHistory if table is actually settled by this cashier tab
-          const shouldClearKotHistory = isTableFree && isTableSettled;
+          // Always clear kotHistory when table becomes Free — a Free table must have zero KOT history
+          const shouldClearKotHistory = isTableFree;
           const incomingHasOrdersSel = Array.isArray(table.orders) && table.orders.length > 0;
+          const mergedKotHistory = isTableFree
+            ? []
+            : dedupKotHistory(prev.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
@@ -1451,6 +1474,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (billFinderBillNo.trim()) {
           const search = billFinderBillNo.trim().toLowerCase();
           matches = matches && (
+            String(txn.billNumber || '').toLowerCase().includes(search) ||
             String(txn.displayId || '').toLowerCase().includes(search) ||
             String(txn.txnNumber || '').toLowerCase().includes(search)
           );
@@ -1499,7 +1523,7 @@ const CashierDashboard = ({ onLogout }) => {
         }),
       });
       if (!response.ok) throw new Error('Print request failed');
-      addNotification('Re-print Sent', `Bill #${txn.displayId} sent to printer.`, 'success');
+      addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
     } catch (error) {
       console.error('[Bill Finder] Re-print error:', error);
       addNotification('Re-print Failed', error.message || 'Failed to re-print bill', 'error');
@@ -1635,7 +1659,10 @@ const CashierDashboard = ({ onLogout }) => {
         }));
       }
 
-      // Step 2: Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
+      // Step 2: Snapshot billable items before print-bill so we can detect item loss
+      billItemsSnapshotRef.current = getBillableItems(selectedTable);
+
+      // Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
         const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
@@ -1645,6 +1672,12 @@ const CashierDashboard = ({ onLogout }) => {
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
           throw new Error(errBody.error || `Server returned ${response.status}`);
+        }
+        const responseData = await response.json().catch(() => ({}));
+        const returnedItems = responseData?.order?.items || responseData?.items || [];
+        const snapshotCount = billItemsSnapshotRef.current.length;
+        if (returnedItems.length > 0 && returnedItems.length < snapshotCount) {
+          console.warn(`[handleFinalBill] Backend returned ${returnedItems.length} items but snapshot had ${snapshotCount}. NOT updating local state with reduced set.`);
         }
       }
 
@@ -3602,7 +3635,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 <tbody className="divide-y divide-gray-100">
                                   {billFinderResults.map((txn) => (
                                     <tr key={txn.id} className="hover:bg-gray-50">
-                                      <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.displayId || '—'}</td>
+                                      <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.billNumber || txn.displayId || '—'}</td>
                                       <td className="px-4 py-3 text-xs font-bold text-gray-600">
                                         {new Date(txn.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                                         {' '}
@@ -5228,6 +5261,10 @@ const CashierDashboard = ({ onLogout }) => {
               ? crypto.randomUUID()
               : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
+            // Snapshot pre-cancel state so we can rollback on error
+            const preCancelItems = selectedTable?.activeOrder?.items ? [...selectedTable.activeOrder.items] : [];
+            const preCancelKotHistory = selectedTable?.kotHistory ? [...selectedTable.kotHistory] : [];
+
             try {
               // ONE API call → ONE CANCEL_KOT socket event → ONE printed slip
               await cancelOrderItems(
@@ -5240,7 +5277,7 @@ const CashierDashboard = ({ onLogout }) => {
               clearTimeout(cancelTimeout);
 
               const cancelledIdSet = new Set(resolvedIds);
-              setSelectedTable(prev => {
+              const applyCancelOptimistic = (prev) => {
                 if (!prev) return prev;
                 const updatedOrder = prev.activeOrder ? {
                   ...prev.activeOrder,
@@ -5248,7 +5285,6 @@ const CashierDashboard = ({ onLogout }) => {
                     cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
                   ),
                 } : prev.activeOrder;
-                // Also patch kotHistory so getAllOrderItems() shows cancellation instantly
                 const updatedKotHistory = (prev.kotHistory || []).map(kot => ({
                   ...kot,
                   items: (kot.items || []).map(kotItem =>
@@ -5259,7 +5295,8 @@ const CashierDashboard = ({ onLogout }) => {
                   ),
                 }));
                 return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
-              });
+              };
+              setSelectedTable(applyCancelOptimistic);
 
               const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
               const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
@@ -5279,7 +5316,39 @@ const CashierDashboard = ({ onLogout }) => {
               );
             } catch (err) {
               console.error('[CancelBatch]', err.message);
-              addNotification(err.message?.toLowerCase().includes('already') ? 'Items already cancelled' : `Cancel failed: ${err.message}`, 'error');
+              const isAlreadyCancelled = err.message?.toLowerCase().includes('already') || err.status === 409 || err.code === 409;
+              if (isAlreadyCancelled) {
+                // 409 or "already cancelled" — treat as success and apply optimistic update anyway
+                const cancelledIdSet = new Set(resolvedIds);
+                setSelectedTable(prev => {
+                  if (!prev) return prev;
+                  const updatedOrder = prev.activeOrder ? {
+                    ...prev.activeOrder,
+                    items: (prev.activeOrder.items || []).map(i =>
+                      cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
+                    ),
+                  } : prev.activeOrder;
+                  const updatedKotHistory = (prev.kotHistory || []).map(kot => ({
+                    ...kot,
+                    items: (kot.items || []).map(kotItem =>
+                      (kotItem.orderItemId && cancelledIdSet.has(kotItem.orderItemId)) ||
+                      (kotItem.id && cancelledIdSet.has(kotItem.id))
+                        ? { ...kotItem, s: 'Cancelled', q: 0 }
+                        : kotItem
+                    ),
+                  }));
+                  return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
+                });
+                addNotification('Items already cancelled', 'success');
+              } else {
+                // Roll back: restore pre-cancel state
+                setSelectedTable(prev => prev ? {
+                  ...prev,
+                  activeOrder: prev.activeOrder ? { ...prev.activeOrder, items: preCancelItems } : prev.activeOrder,
+                  kotHistory: preCancelKotHistory,
+                } : prev);
+                addNotification(`Cancel failed: ${err.message}`, 'error');
+              }
             } finally {
               const clearLoading = {};
               resolvedIds.forEach(id => { clearLoading[id] = false; });
