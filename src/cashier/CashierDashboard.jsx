@@ -2133,6 +2133,8 @@ const CashierDashboard = ({ onLogout }) => {
 
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
 
+    const isBarVenueContext = outlet === 'bar' && Boolean(currentVenueId);
+
     // DEBUG: Log venue price application
     if (isBarVenueContext && Object.keys(venueSpecificPrices).length > 0) {
       console.log('[DEBUG] currentVenueId:', currentVenueId);
@@ -2140,8 +2142,6 @@ const CashierDashboard = ({ onLogout }) => {
       console.log('[DEBUG] First barMenuItem ID:', itemsToFilter[0]?.id);
       console.log('[DEBUG] Price for first item:', venueSpecificPrices[itemsToFilter[0]?.id]);
     }
-
-    const isBarVenueContext = outlet === 'bar' && Boolean(currentVenueId);
 
     const mapped = itemsToFilter.map(item => {
       const overridePrice = venueSpecificPrices[item.id];
