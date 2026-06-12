@@ -58,7 +58,7 @@ export default function VenueSectionView({
     );
   }
 
-  // Single mode (Conference, Parcel, Rooms)
+  // Single mode (Conference, Owner, Rooms)
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {sectionTables.map((table) => (

@@ -2,10 +2,10 @@
  * VenueDashboard.jsx
  *
  * Venue outlet panel for the Cashier, displayed when outlet === 'venue'.
- * Supports: Conference Hall, PDR, Rooms, Parcel(vijay).
+ * Supports: Conference Hall, PDR, Rooms, Owner(vijay).
  *
  * Features:
- * - Section tabs (Conference Hall / PDR / Rooms / Parcel)
+ * - Section tabs (Conference Hall / PDR / Rooms / Owner)
  * - Table selection per section
  * - Menu with venue-specific pricing
  * - KOT send (food → kitchen printer)
@@ -28,12 +28,12 @@ import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const SECTION_ORDER = ['Conference Hall', 'PDR', 'Rooms', 'Parcel(vijay)'];
+const SECTION_ORDER = ['Conference Hall', 'PDR', 'Rooms', 'Owner(vijay)'];
 const SECTION_COLORS = {
   'Conference Hall':   { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', active: 'bg-[#4527A0]' },
   'PDR':              { bg: 'bg-teal-50',   border: 'border-teal-300',   text: 'text-teal-700',   active: 'bg-[#00695C]' },
   'Rooms':            { bg: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-700', active: 'bg-[#6A1B9A]' },
-  'Parcel(vijay)':    { bg: 'bg-amber-50',  border: 'border-amber-300',  text: 'text-amber-700',  active: 'bg-[#E65100]' },
+  'Owner(vijay)':    { bg: 'bg-amber-50',  border: 'border-amber-300',  text: 'text-amber-700',  active: 'bg-[#E65100]' },
 };
 
 function getVenueId(sectionName) {
@@ -44,7 +44,7 @@ function getTableLabel(sectionName, tableNumber) {
   if (sectionName === 'Conference Hall') return 'C1';
   if (sectionName === 'PDR') return 'PDR';
   if (sectionName === 'Rooms') return `R${tableNumber}`;
-  if (sectionName === 'Parcel(vijay)') return 'P1';
+  if (sectionName === 'Owner(vijay)') return 'P1';
   return `V${tableNumber}`;
 }
 

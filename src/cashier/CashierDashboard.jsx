@@ -202,7 +202,7 @@ const CashierDashboard = ({ onLogout }) => {
     const saved = localStorage.getItem('softshape_selected_subcategory');
     if (saved) return saved;
     return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
-  }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel', restaurant: 'family-restaurant' | 'parcel'
+  }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel', restaurant: 'family-restaurant' | 'owner'
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
     const saved = localStorage.getItem('cashier_selected_pdr_room');
     return saved ? Number(saved) : null;
@@ -219,7 +219,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [passwordError, setPasswordError] = useState('');
 
   const handleTabSwitch = (tabId) => {
-    // Check if switching between family-restaurant and parcel in restaurant outlet
+    // Check if switching between family-restaurant and owner in restaurant outlet
     const isSwitchingProtected = outlet === 'restaurant' &&
       ((tableSubCategory === 'family-restaurant' && tabId === 'parcel') ||
        (tableSubCategory === 'parcel' && tabId === 'family-restaurant'));
@@ -2803,8 +2803,8 @@ const CashierDashboard = ({ onLogout }) => {
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
                           ? (outlet === 'bar'
-                            ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'Parcel')
-                            : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'Parcel'))
+                            ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'Owner')
+                            : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'Owner'))
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
                     </div>
@@ -2820,11 +2820,11 @@ const CashierDashboard = ({ onLogout }) => {
                                   { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
                                   { id: 'bar-pdr', label: 'PDR', emoji: '' },
                                   { id: 'bar-rooms', label: 'Rooms', emoji: '' },
-                                  { id: 'bar-parcel', label: 'Parcel', emoji: '' },
+                                  { id: 'bar-parcel', label: 'Owner', emoji: '' },
                                 ]
                               : [
                                   { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
-                                  { id: 'parcel', label: 'Parcel', emoji: '' },
+                                  { id: 'parcel', label: 'Owner', emoji: '' },
                                 ]),
                           ].map(tab => (
                             <button
@@ -3046,7 +3046,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {outlet === 'bar' && tableSubCategory === 'bar-parcel' && (
                           <VenueSectionView
                             venueId="venue-bar-parcel"
-                            sectionName="Bar Parcel"
+                            sectionName="Bar Owner"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}

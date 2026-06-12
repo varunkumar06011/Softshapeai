@@ -642,7 +642,7 @@ export default function CaptainApp({ onLogout }) {
 
     return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
 
-  }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-parcel', restaurant: 'family-restaurant'|'parcel'
+  }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-parcel', restaurant: 'family-restaurant'|'owner'
 
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
 
@@ -3448,7 +3448,7 @@ export default function CaptainApp({ onLogout }) {
 
                         { id: 'bar-rooms', label: 'Rooms' },
 
-                        { id: 'bar-parcel', label: 'Parcel' },
+                        { id: 'bar-parcel', label: 'Owner' },
 
                       ]
 
@@ -3456,7 +3456,7 @@ export default function CaptainApp({ onLogout }) {
 
                         { id: 'family-restaurant', label: 'Family Restaurant' },
 
-                        { id: 'parcel', label: 'Parcel' },
+                        { id: 'parcel', label: 'Owner' },
 
                       ]),
 
@@ -3688,9 +3688,9 @@ export default function CaptainApp({ onLogout }) {
 
                    tableSubCategory === 'bar-rooms' ? 'Rooms' :
 
-                   tableSubCategory === 'bar-parcel' ? 'Parcel' : 'Bar AC Hall')
+                   tableSubCategory === 'bar-parcel' ? 'Owner' : 'Bar AC Hall')
 
-                : (tableSubCategory === 'parcel' ? 'Parcel' : 'Family Restaurant')
+                : (tableSubCategory === 'parcel' ? 'Owner' : 'Family Restaurant')
 
             }
 

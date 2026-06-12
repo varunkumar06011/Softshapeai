@@ -266,7 +266,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     : (sectionTag === 'venue-restaurant-parcel'
 
-        ? 'PARCEL(FAMILY RESTAURANT)'
+        ? 'OWNER(FAMILY RESTAURANT)'
 
         : (sectionName ? sectionName.toUpperCase() : 'MAIN HALL'));
 
@@ -386,7 +386,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
     : (sectionTag === 'venue-restaurant-parcel'
 
-        ? 'PARCEL(FAMILY RESTAURANT)'
+        ? 'OWNER(FAMILY RESTAURANT)'
 
         : (sectionName ? sectionName.toUpperCase() : 'N/A'));
 
@@ -518,7 +518,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
     : (sectionTag === 'venue-restaurant-parcel'
 
-        ? 'PARCEL(FAMILY RESTAURANT)'
+        ? 'OWNER(FAMILY RESTAURANT)'
 
         : (sectionName ? sectionName.toUpperCase() : 'N/A'));
 
@@ -1001,7 +1001,7 @@ export default function PrintStation() {
 
               if (data.escposDataCounter && data.escposDataCounter.length > 0) {
 
-                // Parcel counter items go to KOT_PRINTER (parcel printer), not billing printer
+                // Owner counter items go to KOT_PRINTER (owner printer), not billing printer
 
                 const counterPrinter = (data.sectionTag === 'venue-restaurant-parcel' || data.sectionTag === 'venue-bar-parcel')
 
@@ -1612,7 +1612,7 @@ export default function PrintStation() {
 
             { type: 'DINE',    label: 'Dine in Bill Printer', name: DINE_IN_BILL_PRINTER },
 
-            { type: 'PARCEL',  label: 'KOT Printer (Parcel)', name: KOT_PRINTER },
+            { type: 'PARCEL',  label: 'KOT Printer (Owner)', name: KOT_PRINTER },
 
           ].map(({ type, label, name }) => (
 

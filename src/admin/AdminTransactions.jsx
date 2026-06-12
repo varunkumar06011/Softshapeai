@@ -188,7 +188,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
               { key: 'conference1', label: 'Conf 1' },
               { key: 'conference2', label: 'Conf 2' },
               { key: 'pdr', label: 'PDR' },
-              { key: 'parcel', label: 'Parcel' },
+              { key: 'parcel', label: 'Owner' },
             ].map(f => (
               <button
                 key={f.key}
@@ -299,7 +299,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                         </td>
                         <td className="p-4">
                           <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-gray-100 text-gray-600">
-                            {txn.source === 'bar' ? 'Bar' : txn.source === 'conference1' ? 'Conf 1' : txn.source === 'conference2' ? 'Conf 2' : txn.source === 'pdr' ? 'PDR' : txn.source === 'parcel' ? 'Parcel' : txn.source}
+                            {txn.source === 'bar' ? 'Bar' : txn.source === 'conference1' ? 'Conf 1' : txn.source === 'conference2' ? 'Conf 2' : txn.source === 'pdr' ? 'PDR' : txn.source === 'parcel' ? 'Owner' : txn.source}
                           </span>
                         </td>
                         <td className="p-4">
