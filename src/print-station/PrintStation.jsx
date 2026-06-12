@@ -112,6 +112,10 @@ const SIZE_HEIGHT = '\x1D\x21\x01';
 
 const SIZE_SMALL = '\x1D\x21\x20';
 
+const SIZE_3X = '\x1D\x21\x22'; // triple height + double width
+
+const SIZE_4X = '\x1D\x21\x33'; // quad height + quad width — maximum ESC/POS size (~75% bigger than SIZE_3X)
+
 const CUT = '\x1D\x56\x42\x00';
 
 
@@ -219,17 +223,13 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
 
 
-  const SIZE_3X = '\x1D\x21\x22'; // triple height + double width (approx 150%+ bigger than SIZE_2X)
-
-
-
   (items || []).forEach(item => {
     cmds.push(
       SIZE_2X,           // Qty number at double size — big and clear
       BOLD_ON,
       `${item.quantity}`,
       BOLD_OFF,
-      SIZE_3X,           // Item name at triple size — ~40% bigger, no merging
+      SIZE_4X,           // 75% bigger than previous SIZE_3X
       BOLD_ON,
       `${item.name.toUpperCase()}\n`,
       BOLD_OFF,
@@ -343,7 +343,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`;
     cmds.push(
       CENTER,
-      SIZE_3X,
+      SIZE_4X,
       BOLD_ON,
       itemLine + "\n",
       BOLD_OFF,
@@ -375,7 +375,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
     separator("-"),
 
-    SIZE_3X,
+    SIZE_4X,
     BOLD_ON,
     '** CANCELLED **\n',
     BOLD_OFF,
@@ -462,7 +462,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       CENTER,
-      SIZE_3X,
+      SIZE_4X,
       BOLD_ON,
       itemLine + "\n",
       BOLD_OFF,
@@ -493,7 +493,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
     separator("-"),
 
-    SIZE_3X,
+    SIZE_4X,
     BOLD_ON,
     '** CANCELLED **\n',
     BOLD_OFF,
@@ -686,6 +686,19 @@ export default function PrintStation() {
   const printedKotIds = useRef(new Set());
 
   const hasJoinedRef = useRef(false);
+
+  // ── Load printedKotIds from sessionStorage on mount ───────────────────────
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('ps_printed_ids');
+      if (stored) {
+        const ids = JSON.parse(stored);
+        printedKotIds.current = new Set(ids);
+      }
+    } catch (err) {
+      console.warn('[PrintStation] Failed to load printedKotIds from sessionStorage:', err);
+    }
+  }, []);
 
 
 
@@ -887,12 +900,12 @@ export default function PrintStation() {
 
         const { type, data, eventId: envelopeEventId } = envelope;
 
+        const stableEventId = envelopeEventId || data?.eventId; // declared outside try so catch can reference it
         pushLog(`Received print_job [${type}] — Table ${data?.tableNumber ?? '?'}`);
 
         try {
 
           let cmds, printer;
-          let stableEventId = envelopeEventId || data?.eventId; // moved up — needed after print for print:ack
 
           // ── Deduplication for ALL print types ───────────────────────────────────
 
@@ -920,6 +933,13 @@ export default function PrintStation() {
 
             printedKotIds.current.add(dedupKey);
 
+            // Save to sessionStorage for persistence across refreshes
+            try {
+              sessionStorage.setItem('ps_printed_ids', JSON.stringify([...printedKotIds.current]));
+            } catch (err) {
+              console.warn('[PrintStation] Failed to save printedKotIds to sessionStorage:', err);
+            }
+
             if (printedKotIds.current.size > 200) {
 
               const entries = [...printedKotIds.current];
@@ -927,6 +947,13 @@ export default function PrintStation() {
               entries.splice(0, 100);
 
               printedKotIds.current = new Set(entries);
+
+              // Update sessionStorage after truncation
+              try {
+                sessionStorage.setItem('ps_printed_ids', JSON.stringify([...printedKotIds.current]));
+              } catch (err) {
+                console.warn('[PrintStation] Failed to save truncated printedKotIds to sessionStorage:', err);
+              }
 
             }
 
@@ -948,10 +975,11 @@ export default function PrintStation() {
 
               if (data.escposData && data.escposData.length > 0) {
 
-                printTasks.push({
-                  printer: data.sectionTag === 'venue-bar-parcel' ? KITCHEN_PRINTER : KOT_FAMILY_PRINTER,
-                  cmds: data.escposData
-                });
+                const foodPrinter =
+                  data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
+                  data.sectionTag === 'venue-bar-parcel'        ? KITCHEN_PRINTER :
+                  KOT_FAMILY_PRINTER;
+                printTasks.push({ printer: foodPrinter, cmds: data.escposData });
 
               }
 
@@ -990,15 +1018,14 @@ export default function PrintStation() {
                 const counterItems = (data.items || []).filter(i => isCounterItem(i));
 
                 if (kitchenItems.length > 0) {
-
+                  const fallbackFoodPrinter =
+                    data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
+                    data.sectionTag === 'venue-bar-parcel'        ? KITCHEN_PRINTER :
+                    KOT_FAMILY_PRINTER;
                   printTasks.push({
-
-                    printer: data.sectionTag === 'venue-bar-parcel' ? KITCHEN_PRINTER : KOT_FAMILY_PRINTER,
-
+                    printer: fallbackFoodPrinter,
                     cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
-
                   });
-
                 }
 
                 if (counterItems.length > 0) {
@@ -1114,40 +1141,33 @@ export default function PrintStation() {
             printTasks.push({ printer, cmds });
 
           } else if (type === 'CANCEL_KOT') {
-            // Use multi-item builder when batch cancel sends data.items array (2+ items)
-            cmds = (data.items && data.items.length > 1)
-              ? buildFullCancelCommands(data)
-              : buildCancelKOTCommands(data);
+            // Split cancelled items by type: food → kitchen, bar/liquor → bar printer
+            const allCancelItems = data.items && data.items.length > 0 ? data.items : (data.item ? [data.item] : []);
+            const foodCancelItems = allCancelItems.filter(i => i.menuType !== 'BAR' && i.menuType !== 'LIQUOR');
+            const barCancelItems  = allCancelItems.filter(i => i.menuType === 'BAR'  || i.menuType === 'LIQUOR');
 
-            if (data.restaurantId === 'venue-001') {
+            if (foodCancelItems.length > 0) {
+              const foodCmds = foodCancelItems.length === 1
+                ? buildCancelKOTCommands({ ...data, item: foodCancelItems[0] })
+                : buildFullCancelCommands({ ...data, items: foodCancelItems });
 
-              // Route based on printerTarget set in admin menu page
-
-              if (data.printerTarget === 'BAR_PRINTER') {
-
-                printer = data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER : DINE_IN_BILL_PRINTER;
-
+              let foodPrinter;
+              if (data.restaurantId === 'venue-001') {
+                foodPrinter = (data.sectionTag === 'venue-restaurant-parcel') ? KOT_PRINTER : KOT_FAMILY_PRINTER;
               } else {
-
-                printer = KOT_FAMILY_PRINTER;    // food items (KOT_PRINTER or null)
-
+                foodPrinter = KITCHEN_PRINTER;
               }
-
-            } else if (data.sectionTag === 'venue-family-restaurant') {
-
-              printer = KOT_FAMILY_PRINTER;
-
-            } else if (data.sectionTag === 'venue-restaurant-parcel') {
-
-              printer = KOT_PRINTER;
-
-            } else {
-
-              printer = data.item?.menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
-
+              printTasks.push({ printer: foodPrinter, cmds: foodCmds });
             }
 
-            printTasks.push({ printer, cmds });
+            if (barCancelItems.length > 0) {
+              const barCmds = barCancelItems.length === 1
+                ? buildCancelKOTCommands({ ...data, item: barCancelItems[0] })
+                : buildFullCancelCommands({ ...data, items: barCancelItems });
+
+              const barPrinter = BAR_PRINTER;
+              printTasks.push({ printer: barPrinter, cmds: barCmds });
+            }
 
           } else if (type === 'CANCEL_ORDER') {
 

@@ -1134,6 +1134,16 @@ const CashierDashboard = ({ onLogout }) => {
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables]);
 
+  // ── Periodic re-sync poll: safety net for missed socket events ────────────
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (outlet === 'bar') refetchBarTables();
+      else if (outlet === 'venue') refetchVenueTables();
+      else refetchRestaurantTables();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables]);
+
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
     txnDateFilterRef.current = txnDateFilter;
@@ -1244,6 +1254,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeTables, venueTables, selectedTable, billPrintedTableIds]);
 
   useEffect(() => {
+    if (!selectedTable?.backendId) return;
     if (selectedTable?.discount && Number(selectedTable.discount) > 0) {
       // Only auto-fill if cashier hasn't already typed something
       setRawDiscountInput(prev => {
@@ -1253,8 +1264,17 @@ const CashierDashboard = ({ onLogout }) => {
         }
         return prev;
       });
+      return;
     }
-  }, [selectedTable?.discount]);
+    // Fallback: restore from localStorage if server discount is missing
+    try {
+      const stored = localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.value) setRawDiscountInput(parsed.value);
+      }
+    } catch { /* ignore */ }
+  }, [selectedTable?.backendId, selectedTable?.discount]);
 
   useEffect(() => {
     setSelectedCategory('All');
@@ -1877,7 +1897,7 @@ const CashierDashboard = ({ onLogout }) => {
       // FIX 1 & 3: mark table as settled and update cache immediately
       if (selectedTable?.backendId && !selectedTable.isExtra) {
         setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-        syncPauseUntilRef.current = Date.now() + 5000;
+        syncPauseUntilRef.current = Date.now() + 2000;
         const cacheKey = outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : outlet === 'venue' ? 'softshape_venue_tables_cache_v1' : 'softshape_tables_cache_v6';
         try {
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
@@ -1942,10 +1962,10 @@ const CashierDashboard = ({ onLogout }) => {
           // Mark as settled locally to prevent retries
           setSettledOrderIds(prev => new Set([...prev, orderId]));
 
-          // FIX 1 & 5: mark table backendId as settled and pause sync for 5s
+          // FIX 1 & 5: mark table backendId as settled and pause sync for 2s
           if (selectedTable?.backendId) {
             setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-            syncPauseUntilRef.current = Date.now() + 5000;
+            syncPauseUntilRef.current = Date.now() + 2000;
           }
         }
 
@@ -2078,6 +2098,11 @@ const CashierDashboard = ({ onLogout }) => {
         acc[itemId] = Math.max(1, Math.round(Number(billEditQuantities[itemId] ?? 1)));
         return acc;
       }, {});
+      // Defensive: recompute expected total from live items before calling backend
+      const liveItems = (selectedTable?.activeOrder?.items || [])
+        .filter(item => !billRemovals.includes(item.id) && !item.removedFromBill)
+        .map(item => ({ ...item, quantity: editQuantities[item.id] ?? item.quantity ?? item.q ?? 1 }));
+      const liveCalc = calculateOrderTotal([...liveItems, ...billAdditions], discountPercent);
       const updatedOrder = await editBill(selectedTable.activeOrder.id, {
         removedItemIds: billRemovals,
         editQuantities,
@@ -3952,9 +3977,16 @@ const CashierDashboard = ({ onLogout }) => {
 
                     <div className="flex-grow overflow-y-auto p-4.5 space-y-4 custom-scrollbar bg-white">
                       {(() => {
-                        const sessionItems = selectedTable
-                          ? (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })))
-                          : [];
+                        const sessionItems = (() => {
+                          if (!selectedTable) return [];
+                          const order = selectedTable.activeOrder || selectedTable.orders?.[0];
+                          if (order?.items?.length > 0) {
+                            return order.items
+                              .filter(i => !i.removedFromBill)
+                              .map(i => ({ ...i, n: i.name ?? i.n, p: Number(i.price ?? i.p ?? 0), q: Number(i.quantity ?? i.q ?? 1), isKotSent: true }));
+                          }
+                          return (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })));
+                        })();
                         const pendingItems = cart.map(i => ({ ...i, isKotSent: false }));
                         const displayCart = [...sessionItems, ...pendingItems];
 
