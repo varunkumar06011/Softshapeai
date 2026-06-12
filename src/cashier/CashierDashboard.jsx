@@ -358,6 +358,7 @@ const CashierDashboard = ({ onLogout }) => {
   const getCartStorageKey = (table) => {
     if (!table) return 'cashier_cart_none';
     if (table.isWalkIn || !table.backendId) return 'cashier_cart_walkin';
+    if (table.isExtra) return `cashier_cart_extra_${table.id}`;
     return `cashier_cart_${table.backendId}`;
   };
 
@@ -365,6 +366,9 @@ const CashierDashboard = ({ onLogout }) => {
     localStorage.removeItem('cashier_selected_table');
     if (table?.backendId) {
       localStorage.removeItem(`cashier_cart_${table.backendId}`);
+    }
+    if (table?.isExtra) {
+      localStorage.removeItem(`cashier_cart_extra_${table.id}`);
     }
     localStorage.removeItem('cashier_cart_walkin');
     localStorage.removeItem('cashier_cart');
@@ -1505,7 +1509,7 @@ const CashierDashboard = ({ onLogout }) => {
     : Number(selectedTable?.currentBill || 0);
 
   const handleFinalBill = async () => {
-    if (!selectedTable || !selectedTable.backendId) {
+    if (!selectedTable || (!selectedTable.backendId && !selectedTable.isExtra)) {
       addNotification('Error', 'Invalid table selected.', 'error');
       return;
     }
@@ -1534,10 +1538,10 @@ const CashierDashboard = ({ onLogout }) => {
       lastKnownBillRef.current = 0; // Reset bill ref before print to allow recalculation
 
       // ── BILL-PRINT GUARD: arm BEFORE the async call so the button locks immediately ──
-      const tableBackendId = selectedTable.backendId;
+      const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
       setBillPrintedTableIds(prev => {
         const next = new Set(prev);
-        next.add(tableBackendId);
+        next.add(tableId);
         // Persist so the flag survives component remount
         try {
           localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next]));
@@ -1547,31 +1551,38 @@ const CashierDashboard = ({ onLogout }) => {
       // Update selectedTable status optimistically right now
       setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
       // Start 5-second per-table socket cooldown
-      billPrintCooldownRef.current.set(tableBackendId, Date.now() + 5000);
+      billPrintCooldownRef.current.set(tableId, Date.now() + 5000);
       // Update the table list cache immediately to 'Waiting Bill'
-      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
-      const updateBillStatus = (prev) =>
-        prev.map((t) =>
-          t.backendId === tableBackendId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
-        );
-      if (isVenueTable) {
-        if (setVenueTables) setVenueTables(updateBillStatus);
+      if (selectedTable.isExtra) {
+        // Update extra table in extraTables state
+        setExtraTables(prev => prev.map(et =>
+          et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
+        ));
       } else {
-        setActiveTables(updateBillStatus);
+        const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+        const updateBillStatus = (prev) =>
+          prev.map((t) =>
+            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+          );
+        if (isVenueTable) {
+          if (setVenueTables) setVenueTables(updateBillStatus);
+        } else {
+          setActiveTables(updateBillStatus);
+        }
+        // Also persist 'bill_printed' in the table localStorage cache
+        try {
+          const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1' : outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+          const updatedCache = cached.map(t =>
+            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+          );
+          localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+        } catch {}
       }
-      // Also persist 'bill_printed' in the table localStorage cache
-      try {
-        const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1' : outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
-        const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-        const updatedCache = cached.map(t =>
-          t.backendId === tableBackendId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
-        );
-        localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
-      } catch {}
       // ── END GUARD SETUP ──
 
-      // Step 1: Update table discount if entered
-      if (discountPercent > 0) {
+      // Step 1: Update table discount if entered (skip for extra tables - they don't have backendId)
+      if (discountPercent > 0 && !selectedTable.isExtra) {
         await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -1610,15 +1621,20 @@ const CashierDashboard = ({ onLogout }) => {
       console.error('Final bill error:', error);
       addNotification('Error', error.message || 'Failed to print bill.', 'error');
       // On error, roll back the bill-printed flag
-      const tableBackendId = selectedTable?.backendId;
-      if (tableBackendId) {
+      const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
+      if (tableId) {
         setBillPrintedTableIds(prev => {
           const next = new Set(prev);
-          next.delete(tableBackendId);
+          next.delete(tableId);
           try { localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next])); } catch {}
           return next;
         });
-        billPrintCooldownRef.current.delete(tableBackendId);
+        billPrintCooldownRef.current.delete(tableId);
+        if (selectedTable.isExtra) {
+          setExtraTables(prev => prev.map(et =>
+            et.id === tableId ? { ...et, status: 'Occupied', workflowStatus: 'Occupied' } : et
+          ));
+        }
         setSelectedTable(prev => prev ? { ...prev, status: 'Occupied', workflowStatus: 'Occupied' } : prev);
       }
     } finally {
@@ -1785,31 +1801,37 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Optimistic update: table becomes free
     const optimisticFn = () => {
-      setTargetTables((prev) =>
-        prev.map((t) =>
-          t.backendId === selectedTable.backendId
-            ? {
-                ...t,
-                status: 'Free',
-                workflowStatus: 'Free',
-                activeOrder: null,
-                orders: [],
-                items: [],
-                captainId: null,
-                kotHistory: [],
-                currentBill: 0,
-                guests: 0,
-                time: null
-              }
-            : t
-        )
-      );
+      if (selectedTable.isExtra) {
+        // Extra table: remove from extraTables state
+        setExtraTables(prev => prev.filter(et => et.id !== selectedTable.id));
+      } else {
+        // Regular table: update in tables state
+        setTargetTables((prev) =>
+          prev.map((t) =>
+            t.backendId === selectedTable.backendId
+              ? {
+                  ...t,
+                  status: 'Free',
+                  workflowStatus: 'Free',
+                  activeOrder: null,
+                  orders: [],
+                  items: [],
+                  captainId: null,
+                  kotHistory: [],
+                  currentBill: 0,
+                  guests: 0,
+                  time: null
+                }
+              : t
+          )
+        );
+      }
 
       // Clear billing alerts for this table
       setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== selectedTable.backendId));
 
       // ── Release bill-printed lock on settlement ──
-      const settledId = selectedTable.backendId;
+      const settledId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
       if (settledId) {
         setBillPrintedTableIds(prev => {
           const next = new Set(prev);
@@ -1853,7 +1875,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // FIX 1 & 3: mark table as settled and update cache immediately
-      if (selectedTable?.backendId) {
+      if (selectedTable?.backendId && !selectedTable.isExtra) {
         setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
         syncPauseUntilRef.current = Date.now() + 5000;
         const cacheKey = outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : outlet === 'venue' ? 'softshape_venue_tables_cache_v1' : 'softshape_tables_cache_v6';
@@ -1866,12 +1888,8 @@ const CashierDashboard = ({ onLogout }) => {
           );
           localStorage.setItem(cacheKey, JSON.stringify(updated));
         } catch {}
-
-        // Bug 1: Remove extra table when settled
-        if (selectedTable.isExtra) {
-          setExtraTables(prev => prev.filter(et => et.id !== selectedTable.id));
-        }
       }
+      // Extra tables are already removed in optimisticFn above
 
       // Reset loading state immediately after optimistic UI update
       setIsPrintingBill(false);
@@ -1879,11 +1897,19 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Rollback function: restore previous table state
     const rollbackFn = () => {
-      setTargetTables((prev) =>
-        prev.map((t) =>
-          t.backendId === previousTableState.backendId ? previousTableState : t
-        )
-      );
+      if (previousTableState.isExtra) {
+        // Restore extra table in extraTables state
+        setExtraTables(prev => prev.map(et =>
+          et.id === previousTableState.id ? previousTableState : et
+        ));
+      } else {
+        // Restore regular table in tables state
+        setTargetTables((prev) =>
+          prev.map((t) =>
+            t.backendId === previousTableState.backendId ? previousTableState : t
+          )
+        );
+      }
       setSelectedTable(previousTableState);
       addNotification('Settlement Failed', 'Please try again', 'error');
     };
@@ -1900,7 +1926,11 @@ const CashierDashboard = ({ onLogout }) => {
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentMethod: method, discountPercent })
+              body: JSON.stringify({ 
+                paymentMethod: method, 
+                discountPercent,
+                tableNumber: selectedTable.isExtra ? selectedTable.number : undefined // Pass extra table number for transaction record
+              })
             }
           );
 
@@ -2464,25 +2494,44 @@ const CashierDashboard = ({ onLogout }) => {
       const existingItems = selectedTable.activeOrder?.items || [];
       const mergedItems = [...existingItems, ...newOptimisticItems];
 
-      const updater = prev => prev.map(t => {
-        if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
-          return {
-            ...t,
-            status: t.status === 'Free' ? 'Occupied' : t.status,
-            kotHistory: [...(t.kotHistory || []), ...kotsToCreate],
-            currentBill: newTotalBill,
-            activeOrder: t.activeOrder
-              ? { ...t.activeOrder, items: mergedItems }
-              : { id: null, items: mergedItems, totalAmount: newTotalBill },
-          };
-        }
-        return t;
-      });
-
-      if (selectedTable.section?.restaurantId === 'venue-001' || selectedTable.restaurantId === 'venue-001') {
-        setVenueTables(updater);
+      if (selectedTable.isExtra) {
+        // Update extra table in extraTables state
+        setExtraTables(prev => prev.map(et => {
+          if (et.id === selectedTable.id) {
+            return {
+              ...et,
+              status: et.status === 'Free' ? 'Occupied' : et.status,
+              kotHistory: [...(et.kotHistory || []), ...kotsToCreate],
+              currentBill: newTotalBill,
+              activeOrder: et.activeOrder
+                ? { ...et.activeOrder, items: mergedItems }
+                : { id: null, items: mergedItems, totalAmount: newTotalBill },
+            };
+          }
+          return et;
+        }));
       } else {
-        setActiveTables(updater);
+        // Update regular table in tables state
+        const updater = prev => prev.map(t => {
+          if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
+            return {
+              ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              kotHistory: [...(t.kotHistory || []), ...kotsToCreate],
+              currentBill: newTotalBill,
+              activeOrder: t.activeOrder
+                ? { ...t.activeOrder, items: mergedItems }
+                : { id: null, items: mergedItems, totalAmount: newTotalBill },
+            };
+          }
+          return t;
+        });
+
+        if (selectedTable.section?.restaurantId === 'venue-001' || selectedTable.restaurantId === 'venue-001') {
+          setVenueTables(updater);
+        } else {
+          setActiveTables(updater);
+        }
       }
 
       // Snapshot items and patch selectedTable so modal shows items immediately
@@ -2512,12 +2561,38 @@ const CashierDashboard = ({ onLogout }) => {
     // Run API call in background without blocking UI
     (async () => {
       try {
-        if (selectedTable?.backendId) {
-          if (selectedTable.activeOrder?.id) {
-            // Subsequent KOT — append new items to existing order
+        if (selectedTable?.backendId || selectedTable?.isExtra) {
+          if (selectedTable.isExtra) {
+            // Extra table: use walk-in pattern with localOrderId
+            const orderId = selectedTable.localOrderId || selectedTable.activeOrder?.id;
+            if (orderId) {
+              // Subsequent KOT for extra table — append to existing order
+              await updateOrderItems(orderId, apiItems, requestId, 'Cashier');
+            } else {
+              // First KOT for extra table — create standalone order (walk-in pattern)
+              const orderResponse = await createOrder({
+                tableId: null, // Not tied to a DB table row
+                tableNumber: selectedTable.number, // Extra table number (e.g., "1-X")
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: 'Cashier',
+                isWalkIn: true, // Use walk-in pattern for extra tables
+              });
+              // Store the returned real orderId in the extra table's activeOrder
+              if (orderResponse?.id) {
+                setExtraTables(prev => prev.map(et => 
+                  et.id === selectedTable.id 
+                    ? { ...et, activeOrder: { id: orderResponse.id, items: newOptimisticItems, totalAmount: newTotalBill } }
+                    : et
+                ));
+              }
+            }
+          } else if (selectedTable.activeOrder?.id) {
+            // Regular table: Subsequent KOT — append new items to existing order
             await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier');
           } else {
-            // First KOT — create a brand-new order row
+            // Regular table: First KOT — create a brand-new order row
             await createOrder({
               tableId: selectedTable.backendId,
               tableNumber: selectedTable.number || selectedTable.id,
@@ -2898,12 +2973,14 @@ const CashierDashboard = ({ onLogout }) => {
                                           // Generate sequential extra ID: B1-X, B1-X2, B1-X3...
                                           const existingCount = extraTables.filter(et => et.baseBackendId === table.backendId).length;
                                           const extraId = existingCount === 0 ? `${table.number}-X` : `${table.number}-X${existingCount + 1}`;
+                                          const localOrderId = `extra-${extraId}-${Date.now()}`;
                                           setExtraTables(prev => [...prev, {
                                             id: extraId,
                                             number: extraId,
                                             backendId: table.backendId,
                                             baseBackendId: table.backendId,
                                             isExtra: true,
+                                            localOrderId,
                                             status: 'Free',
                                             sectionId: table.sectionId,
                                             section: table.section,
