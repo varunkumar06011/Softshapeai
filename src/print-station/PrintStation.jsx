@@ -208,12 +208,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     separator("-"),
 
+    SIZE_2X,
     BOLD_ON,
-
     "Qty  Item\n",
-
     BOLD_OFF,
-
+    SIZE_NORMAL,
     separator("-"),
 
   ];
@@ -225,35 +224,21 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
 
   (items || []).forEach(item => {
-
     cmds.push(
-
-      SIZE_NORMAL,
-
-      `${item.quantity}  `,  // Qty at normal size
-
-      SIZE_2X,              // Switch to 2x size (double width + double height)
-
-      BOLD_ON,              // Bold
-
-      `${item.name.toUpperCase()}\n`,  // Name at 2x bold
-
-      BOLD_OFF,             // Reset bold
-
-      SIZE_NORMAL,          // Reset size
-
+      SIZE_2X,           // Qty number at double size — big and clear
+      BOLD_ON,
+      `${item.quantity}`,
+      BOLD_OFF,
+      SIZE_3X,           // Item name at triple size — ~40% bigger, no merging
+      BOLD_ON,
+      `${item.name.toUpperCase()}\n`,
+      BOLD_OFF,
+      SIZE_NORMAL,       // Reset after each item
+      `\n`,              // Blank line between items — prevents crowding
     );
-
     if (item.notes && item.notes.trim()) {
-
-      cmds.push(
-
-        `     * ${item.notes.trim()}\n`,
-
-      );
-
+      cmds.push(`     * ${item.notes.trim()}\n`);
     }
-
   });
 
 
@@ -355,27 +340,17 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
 
   if (item) {
-
     const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`;
-
     cmds.push(
-
       CENTER,
-
-      SIZE_HEIGHT,
-
+      SIZE_3X,
       BOLD_ON,
-
       itemLine + "\n",
-
       BOLD_OFF,
-
       SIZE_NORMAL,
-
+      `\n`,              // spacing after cancel item
       `Type  : ${itemType}\n`
-
     );
-
   }
 
 
@@ -400,14 +375,10 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
     separator("-"),
 
-    SIZE_HEIGHT,
-
+    SIZE_3X,
     BOLD_ON,
-
     '** CANCELLED **\n',
-
     BOLD_OFF,
-
     SIZE_NORMAL,
 
     '\n\n\n',
@@ -476,12 +447,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
     separator("-"),
 
+    SIZE_2X,
     BOLD_ON,
-
     "Qty  Item\n",
-
     BOLD_OFF,
-
+    SIZE_NORMAL,
     separator("-"),
 
   ];
@@ -489,25 +459,16 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
 
   (items || []).forEach(item => {
-
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
-
     cmds.push(
-
       CENTER,
-
-      SIZE_HEIGHT,
-
+      SIZE_3X,
       BOLD_ON,
-
       itemLine + "\n",
-
       BOLD_OFF,
-
       SIZE_NORMAL,
-
+      `\n`,              // blank line between items — prevents merging
     );
-
   });
 
 
@@ -532,14 +493,10 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
     separator("-"),
 
-    SIZE_HEIGHT,
-
+    SIZE_3X,
     BOLD_ON,
-
     '** CANCELLED **\n',
-
     BOLD_OFF,
-
     SIZE_NORMAL,
 
     '\n\n\n',
@@ -935,14 +892,13 @@ export default function PrintStation() {
         try {
 
           let cmds, printer;
+          let stableEventId = envelopeEventId || data?.eventId; // moved up — needed after print for print:ack
 
           // ── Deduplication for ALL print types ───────────────────────────────────
 
           {
 
             const itemCount = data.items?.length || 0;
-
-            const stableEventId = envelopeEventId || data?.eventId;
 
             const dedupKey = stableEventId
 
