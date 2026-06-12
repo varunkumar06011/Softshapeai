@@ -2108,26 +2108,27 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     // Determine current venue ID from selected table or sub-category
+    // Prioritize tableSubCategory over selectedTable section
     let currentVenueId = null;
-    if (selectedTable) {
-      const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
-      if (sectionName.includes('family restaurant')) {
-        currentVenueId = 'venue-family-restaurant';
-      } else if (sectionName.includes('parcel')) {
-        currentVenueId = outlet === 'bar' ? 'venue-bar-parcel' : 'venue-restaurant-parcel';
-      } else if (outlet === 'bar') {
-        currentVenueId = 'venue-bar-ac-hall';
+    if (outlet === 'bar') {
+      if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
+      else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
+      else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
+      else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
+      else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
+      else if (selectedTable) {
+        const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
+        if (sectionName.includes('parcel')) {
+          currentVenueId = 'venue-bar-parcel';
+        } else {
+          currentVenueId = 'venue-bar-ac-hall';
+        }
       }
     } else {
-      if (outlet === 'bar') {
-        if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
-        else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
-        else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
-        else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
-        else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
-      } else {
-        if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
-        else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
+      if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
+      else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
+      else if (selectedTable?.section?.restaurantId === 'venue-001') {
+        currentVenueId = 'venue-family-restaurant';
       }
     }
 
