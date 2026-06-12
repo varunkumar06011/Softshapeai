@@ -2133,6 +2133,14 @@ const CashierDashboard = ({ onLogout }) => {
 
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
 
+    // DEBUG: Log venue price application
+    if (isBarVenueContext && Object.keys(venueSpecificPrices).length > 0) {
+      console.log('[DEBUG] currentVenueId:', currentVenueId);
+      console.log('[DEBUG] venueSpecificPrices keys:', Object.keys(venueSpecificPrices).slice(0, 5));
+      console.log('[DEBUG] First barMenuItem ID:', itemsToFilter[0]?.id);
+      console.log('[DEBUG] Price for first item:', venueSpecificPrices[itemsToFilter[0]?.id]);
+    }
+
     const isBarVenueContext = outlet === 'bar' && Boolean(currentVenueId);
 
     const mapped = itemsToFilter.map(item => {
