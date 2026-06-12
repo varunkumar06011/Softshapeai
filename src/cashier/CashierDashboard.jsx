@@ -343,6 +343,7 @@ const CashierDashboard = ({ onLogout }) => {
   const billPrintCooldownRef = useRef(new Map()); // Map<tableBackendId, number>
   const lastKnownBillRef = useRef(0); // monotonically increasing — never go backwards
   const billItemsSnapshotRef = useRef([]); // snapshot of billable items before print-bill
+  const cancelInProgressRef = useRef(false); // blocks print-bill while cancel API is in flight
   const lsWriteTimerRef = useRef(null);
 
   function shallowEqualSelectedTable(prev, next) {
@@ -943,14 +944,17 @@ const CashierDashboard = ({ onLogout }) => {
         const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
         const incomingIsAvailable = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
-          // Only clear if table is actually settled by this cashier tab
-          if (!settledTableIdsRef.current.has(t.backendId)) {
-            console.warn('[CashierDashboard] Skipping stale AVAILABLE event for occupied table (not settled)', t.number);
+          // Distinguish legitimate auto-free (all items cancelled) from stale/race event
+          const incomingHasLiveData = Array.isArray(table.orders) && table.orders.length > 0 && table.orders[0]?.items?.length > 0;
+          const incomingHasBill = (table.currentBill ?? 0) > 0;
+          if (incomingHasLiveData || incomingHasBill) {
+            console.warn('[CashierDashboard] Skipping stale AVAILABLE event — table still has data', t.number);
             return t;
           }
+          // Otherwise it's a legitimate free (all items cancelled or settled) — allow it
         }
 
-        const mergedKotHistory = isIncomingFree
+        const mergedKotHistory = incomingIsAvailable
           ? []
           : dedupKotHistory(t.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
         // When merging an occupied table:updated event, preserve existing activeOrder.items
@@ -989,8 +993,12 @@ const CashierDashboard = ({ onLogout }) => {
           const incomingStatusSel = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : prev.status);
           const incomingIsAvailableSel = incomingStatusSel === 'Free' || incomingStatusSel === 'AVAILABLE' || table.status === 'AVAILABLE';
           if (incomingIsAvailableSel && prev.activeOrder) {
-            console.warn('[CashierDashboard] Skipping stale AVAILABLE event for selected occupied table', prev.number);
-            return prev;
+            const incomingHasLiveDataSel = Array.isArray(table.orders) && table.orders.length > 0 && table.orders[0]?.items?.length > 0;
+            const incomingHasBillSel = (table.currentBill ?? 0) > 0;
+            if (incomingHasLiveDataSel || incomingHasBillSel) {
+              console.warn('[CashierDashboard] Skipping stale AVAILABLE event for selected occupied table', prev.number);
+              return prev;
+            }
           }
 
           const isTableFree = (table.workflowStatus || table.status) === 'Free';
@@ -1575,6 +1583,13 @@ const CashierDashboard = ({ onLogout }) => {
     // Ref guard - synchronous check to prevent race condition
     if (isPrintingBillRef.current) return;
     isPrintingBillRef.current = true;
+
+    // Guard: block print if a cancel is in progress (prevents race where bill includes item being cancelled)
+    if (cancelInProgressRef.current) {
+      isPrintingBillRef.current = false;
+      addNotification('Cancel in progress', 'Please wait for cancel to complete before printing.', 'warning');
+      return;
+    }
 
     // Check if order is already paid
     if (selectedTable?.activeOrder?.status === 'PAID') {
@@ -5188,6 +5203,7 @@ const CashierDashboard = ({ onLogout }) => {
         const handleCancelSelected = async () => {
           if (selectedCount === 0) return;
 
+          cancelInProgressRef.current = true;
           setCancelBatchLoading(true);
 
           const cancelTimeout = setTimeout(() => {
@@ -5353,6 +5369,7 @@ const CashierDashboard = ({ onLogout }) => {
             setShowCancelModal(false);
           } finally {
             clearTimeout(cancelTimeout);
+            cancelInProgressRef.current = false;
             setCancelBatchLoading(false);
           }
         };

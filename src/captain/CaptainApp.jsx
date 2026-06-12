@@ -1396,8 +1396,12 @@ export default function CaptainApp({ onLogout }) {
 
         const incomingIsAvailable = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
-          console.warn('[CaptainApp] Skipping stale AVAILABLE event for occupied table', t.number);
-          return t;
+          const incomingHasLiveData = Array.isArray(table.orders) && table.orders.length > 0 && table.orders[0]?.items?.length > 0;
+          const incomingHasBill = (table.currentBill ?? 0) > 0;
+          if (incomingHasLiveData || incomingHasBill) {
+            console.warn('[CaptainApp] Skipping stale AVAILABLE event — table still has data', t.number);
+            return t;
+          }
         }
 
         const incomingOrder = table.orders?.[0] || table.activeOrder;
