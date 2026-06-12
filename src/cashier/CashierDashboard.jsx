@@ -869,12 +869,6 @@ const CashierDashboard = ({ onLogout }) => {
       }
     };
 
-    const mergeOrderItems = (existing = [], incoming = []) => {
-      const map = new Map(existing.map(i => [i.id, i]));
-      incoming.forEach(i => map.set(i.id, { ...(map.get(i.id) || {}), ...i }));
-      return Array.from(map.values());
-    };
-
     const dedupKotHistory = (existing = [], incoming = []) => {
       const map = new Map();
       [...existing, ...incoming].forEach(k => {

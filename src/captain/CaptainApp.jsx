@@ -1363,8 +1363,17 @@ export default function CaptainApp({ onLogout }) {
     };
 
     const mergeOrderItems = (existing = [], incoming = []) => {
-      const map = new Map(existing.map(i => [i.id, i]));
+      const map = new Map();
+      const incomingByName = new Map(incoming.map(i => [i.name ?? i.n, i]).filter(([k]) => !!k));
+      // Add all incoming items by real id
       incoming.forEach(i => map.set(i.id, { ...(map.get(i.id) || {}), ...i }));
+      // Add existing items only if they aren't shadowed by an incoming item
+      existing.forEach(i => {
+        const name = i.name ?? i.n;
+        // Drop optimistic items (no id) whose name matches a real incoming item
+        if (!i.id && name && incomingByName.has(name)) return;
+        if (!map.has(i.id)) map.set(i.id, i);
+      });
       return Array.from(map.values());
     };
 
