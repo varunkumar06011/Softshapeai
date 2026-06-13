@@ -6,7 +6,6 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
 import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
 
-const ALLOWED_CATEGORIES = ['Soups', 'Biryanis', 'Biryani & Rice', 'Today Special', 'Today Specials', 'Desserts', 'Dessert'];
 
 export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
@@ -20,7 +19,7 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   // Fetch unified menu
   useEffect(() => {
     setUnifiedLoading(true);
-    fetchUnifiedMenu('restaurant')
+    fetchUnifiedMenu('family-restaurant')
       .then(data => {
         setUnifiedMenu(data);
         setUnifiedLoading(false);
@@ -58,11 +57,10 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
 
   const categories = useMemo(() => {
     if (unifiedMenu && unifiedMenu.categories) {
-      const visibleCats = unifiedMenu.categories.filter(c => ALLOWED_CATEGORIES.includes(c.name));
+      const visibleCats = unifiedMenu.categories;
       return ['All', ...visibleCats.map(cat => cat.name)].filter(Boolean);
     }
-    const visibleLegacyCats = legacyCategories.filter(c => ALLOWED_CATEGORIES.includes(c));
-    return visibleLegacyCats;
+    return ['All', ...legacyCategories].filter(Boolean);
   }, [unifiedMenu, legacyCategories]);
 
   const loading = unifiedLoading || legacyLoading;
