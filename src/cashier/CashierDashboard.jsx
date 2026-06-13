@@ -2710,8 +2710,9 @@ const CashierDashboard = ({ onLogout }) => {
       try {
         if (selectedTable?.backendId || selectedTable?.isExtra) {
           if (selectedTable.isExtra) {
-            // Extra table: use walk-in pattern with localOrderId
-            const orderId = selectedTable.localOrderId || selectedTable.activeOrder?.id;
+            // Extra table: only use the real DB order id (set after createOrder resolves).
+            // localOrderId is a fake client-side key — never use it as a DB order id.
+            const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
               // Subsequent KOT for extra table — append to existing order
               await updateOrderItems(orderId, apiItems, requestId, 'Cashier');
