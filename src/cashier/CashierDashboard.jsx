@@ -100,7 +100,7 @@ const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
 }));
 
 // Source sets for outlet-level data isolation
-const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel']);
+const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']);
 const RESTAURANT_SOURCES = new Set(['restaurant', 'family-restaurant', 'restaurant-parcel']);
 
 const isSubsequence = (q, text) => {
@@ -699,7 +699,9 @@ const CashierDashboard = ({ onLogout }) => {
                         ? 'bar-rooms'
                         : txn.sectionTag === 'venue-bar-ac-hall'
                           ? 'bar-ac-hall'
-                          : 'venue'
+                          : txn.sectionTag === 'venue-bar-gobox'
+                            ? 'bar-gobox'
+                            : 'venue'
           )
           : txn._sourceRestaurantId === 'restaurant-001'
             ? 'restaurant'
@@ -2292,7 +2294,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
-    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === 'venue-001');
+    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === 'venue-001');
 
     if (outlet === 'restaurant') {
       itemsToFilter = menuItems.filter(item => item.isAvailable !== false);
@@ -2309,6 +2311,7 @@ const CashierDashboard = ({ onLogout }) => {
       else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
       else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
       else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
+      else if (tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
       else if (selectedTable) {
         const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
         if (sectionName.includes('parcel')) {
@@ -3141,6 +3144,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   { id: 'bar-pdr', label: 'PDR', emoji: '' },
                                   { id: 'bar-rooms', label: 'Rooms', emoji: '' },
                                   { id: 'bar-parcel', label: 'Owner', emoji: '' },
+                                  { id: 'bar-gobox', label: 'GoBox', emoji: '' },
                                 ]
                               : [
                                   { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
@@ -3378,6 +3382,19 @@ const CashierDashboard = ({ onLogout }) => {
                             isSyncing={venueTablesLoading}
                           />
                         )}
+                        {outlet === 'bar' && tableSubCategory === 'bar-gobox' && (
+                          <VenueSectionView
+                            key="bar-gobox"
+                            venueId="venue-bar-gobox"
+                            sectionName="GoBox"
+                            restaurantId="venue-001"
+                            roomMode="single"
+                            onTableSelect={handleTableSelect}
+                            onOrderPlaced={() => { }}
+                            venueTables={venueTables}
+                            isSyncing={venueTablesLoading}
+                          />
+                        )}
 
                         {/* ── RESTAURANT VENUE VIEWS ── */}
                         {outlet === 'restaurant' && tableSubCategory === 'family-restaurant' && (
@@ -3462,7 +3479,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   { key: 'bar-conference', label: 'Conference' },
                                   { key: 'bar-pdr', label: 'PDR' },
                                   { key: 'bar-rooms', label: 'Rooms' },
-                                  { key: 'bar-parcel', label: 'Parcel' },
+                                  { key: 'bar-parcel', label: 'GoBox' },
                                 ]
                               : [
                                   { key: 'all', label: 'All' },
