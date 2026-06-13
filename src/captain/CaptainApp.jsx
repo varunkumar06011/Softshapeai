@@ -533,6 +533,7 @@ export default function CaptainApp({ onLogout }) {
 
   const isSubmittingKotRef = useRef(false);
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
+  const lastAnyItemAddedRef = useRef(0);
   const isVenueTableRef = useRef(false);
 
 
@@ -1986,6 +1987,13 @@ export default function CaptainApp({ onLogout }) {
     if (now - lastAdd < 2000) return; // 2-second cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
+    // Global 2s cooldown — any item add blocks all other item adds
+    const existingInCart = (tableCarts[activeTableId] ?? []).find(i => i.n === item.n);
+    if (!existingInCart) {
+      if (now - lastAnyItemAddedRef.current < 2000) return;
+      lastAnyItemAddedRef.current = now;
+    }
+
     const finalPrice = variant ? Number(variant.price) : item.p;
 
 
@@ -2159,6 +2167,7 @@ export default function CaptainApp({ onLogout }) {
     // This guarantees the UI shows empty/clean state first even if the fetch is slow.
     activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
+    lastAnyItemAddedRef.current = 0;
     setKotError(null);
     setSendingKOT(false);
     isSubmittingKotRef.current = false;
@@ -2455,6 +2464,7 @@ export default function CaptainApp({ onLogout }) {
       const committedSoFar = getTableItems(activeTable);
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
       setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
+      lastAnyItemAddedRef.current = 0;
       addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
 
       // Background listener for print confirmation (non-blocking)

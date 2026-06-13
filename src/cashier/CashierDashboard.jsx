@@ -344,6 +344,7 @@ const CashierDashboard = ({ onLogout }) => {
   const lastKnownBillRef = useRef(0); // monotonically increasing — never go backwards
   const billItemsSnapshotRef = useRef([]); // snapshot of billable items before print-bill
   const cancelInProgressRef = useRef(false); // blocks print-bill while cancel API is in flight
+  const lastAnyItemAddedRef = useRef(0); // global 2s cooldown across all item adds
   const lsWriteTimerRef = useRef(null);
 
   function shallowEqualSelectedTable(prev, next) {
@@ -2338,6 +2339,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (table.isExtra) {
       clearCashierTableCache(selectedTable);
       lastKnownBillRef.current = 0;
+      lastAnyItemAddedRef.current = 0;
       setSelectedTable(table);
       setCart([]);
       setSelectedOrder(null);
@@ -2357,6 +2359,7 @@ const CashierDashboard = ({ onLogout }) => {
     // Defensive: clear any previous table's cart from localStorage before switching
     clearCashierTableCache(selectedTable);
     lastKnownBillRef.current = 0; // Reset bill ref when selecting a new table
+    lastAnyItemAddedRef.current = 0;
     setSelectedTable(table);
     setCart([]);
     setSelectedOrder(null);
@@ -2490,6 +2493,12 @@ const CashierDashboard = ({ onLogout }) => {
       setActiveTab('tables');
       localStorage.setItem('cashier_active_tab', 'tables');
       return;
+    }
+    const now = Date.now();
+    const existingInCart = cart.find(i => i.n === item.n);
+    if (!existingInCart) {
+      if (now - lastAnyItemAddedRef.current < 2000) return;
+      lastAnyItemAddedRef.current = now;
     }
     setCart(prev => {
       const existing = prev.find(i => i.n === item.n);
@@ -2665,6 +2674,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     setCart([]);
+    lastAnyItemAddedRef.current = 0;
     setExpandedNoteItemId(null);
     setIsKotSuccess(true);
     addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
