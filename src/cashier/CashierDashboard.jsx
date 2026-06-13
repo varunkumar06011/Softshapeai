@@ -866,10 +866,11 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      console.log('[CashierDashboard] Received order:created for table:', order.tableId);
+      console.log('[CashierDashboard] Received order:created for table:', order.tableId, 'isExtra:', payload?.isExtraTable);
       // NOTE: no shouldBlockTableUpdate here — item additions must never be suppressed by the bill-print cooldown
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
-      if (selectedTable?.backendId === order.tableId) {
+      // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
+      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => prev ? {
           ...prev,
           activeOrder: order,
@@ -878,6 +879,8 @@ const CashierDashboard = ({ onLogout }) => {
           currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
         } : prev);
       }
+      // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
+      if (payload?.isExtraTable) return;
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
@@ -941,9 +944,12 @@ const CashierDashboard = ({ onLogout }) => {
       if (!order?.tableId) return;
       // NOTE: no shouldBlockTableUpdate here — item updates (captain adding items) must always be visible
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
+      // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
+      // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
+      if (payload?.isExtraTable) return;
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
@@ -1060,22 +1066,25 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const onOrderPaid = (payload) => {
-      const { tableId } = payload;
+      const { tableId, isExtraTable } = payload;
       if (shouldBlockTableUpdate(tableId, 'AVAILABLE')) return;
 
-      // Clear table status to Free in activeTables and venueTables
-      const clearTable = (prev) => prev.map(t =>
-        t.backendId === tableId
-          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
-          : t
-      );
-      setActiveTables(clearTable, { skipPersist: true });
-      if (setVenueTables) setVenueTables(clearTable, { skipPersist: true });
+      // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
+      if (!isExtraTable) {
+        // Clear table status to Free in activeTables and venueTables
+        const clearTable = (prev) => prev.map(t =>
+          t.backendId === tableId
+            ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+            : t
+        );
+        setActiveTables(clearTable, { skipPersist: true });
+        if (setVenueTables) setVenueTables(clearTable, { skipPersist: true });
 
-      // Remove from billing alerts
-      setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
-      // Clear selectedTable if it was the paid one
-      if (selectedTable?.backendId === tableId) {
+        // Remove from billing alerts
+        setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
+      }
+      // Clear selectedTable only if it's the actual paid table (not an extra table that shares backendId)
+      if (selectedTable?.backendId === tableId && !selectedTable?.isExtra) {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
