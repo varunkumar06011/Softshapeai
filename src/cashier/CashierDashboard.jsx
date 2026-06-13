@@ -1248,6 +1248,11 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
+    // Extra tables share backendId with their parent table. The parent may be AVAILABLE
+    // (already settled), which would cause this effect to null out the extra table's
+    // selectedTable state and close the modal. Skip sync entirely for extra tables —
+    // their state is managed exclusively via extraTables / setExtraTables.
+    if (selectedTable?.isExtra) return;
 
     // FIX: once a table is marked settled, ignore sync updates that try to revert it
     if (settledTableIdsRef.current.has(selectedTable.backendId)) return;
@@ -1946,8 +1951,10 @@ const CashierDashboard = ({ onLogout }) => {
     // Optimistic update: table becomes free
     const optimisticFn = () => {
       if (selectedTable.isExtra) {
-        // Extra table: remove from extraTables state
+        // Extra table: remove from extraTables state and return user to tables view
         setExtraTables(prev => prev.filter(et => et.id !== selectedTable.id));
+        setActiveTab('tables');
+        localStorage.setItem('cashier_active_tab', 'tables');
       } else {
         // Regular table: update in tables state
         setTargetTables((prev) =>
@@ -2419,8 +2426,9 @@ const CashierDashboard = ({ onLogout }) => {
       const hasBill = Number(freshExtra.currentBill || 0) > 0;
       const isFreeExtra = (!freshExtra.status || freshExtra.status === 'Free') && !hasItems && !hasBill;
       // Pre-populate discount if this extra table already has one stored
-      if (freshExtra.discountPercent > 0) {
-        setRawDiscountInput(String(freshExtra.discountPercent));
+      if (freshExtra.discountPercent && Number(freshExtra.discountPercent) > 0) {
+        setDiscountMode('percent');
+        setRawDiscountInput(String(Number(freshExtra.discountPercent)));
       } else {
         setRawDiscountInput('');
       }
@@ -2785,6 +2793,11 @@ const CashierDashboard = ({ onLogout }) => {
                     ? { ...et, kotHistory: updatedOrderResponse.order.kotHistory }
                     : et
                 ));
+                setSelectedTable(prev =>
+                  prev?.isExtra && prev.id === selectedTable.id
+                    ? { ...prev, kotHistory: updatedOrderResponse.order.kotHistory }
+                    : prev
+                );
               }
             } else {
               // First KOT for extra table — create order tied to the parent DB table
@@ -2811,7 +2824,7 @@ const CashierDashboard = ({ onLogout }) => {
                 // Immediately patch selectedTable so handleFinalBill can find the orderId
                 setSelectedTable(prev =>
                   prev?.isExtra && prev.id === selectedTable.id
-                    ? { ...prev, activeOrder: { ...(prev.activeOrder || {}), id: orderResponse.id } }
+                    ? { ...prev, activeOrder: { ...(prev.activeOrder || {}), id: orderResponse.id }, kotHistory: orderResponse.kotHistory || prev.kotHistory }
                     : prev
                 );
               }
