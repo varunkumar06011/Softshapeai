@@ -2328,7 +2328,6 @@ const CashierDashboard = ({ onLogout }) => {
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = (table) => {
-    // Bug 1: Extra table — open directly to POS, same as a new free table
     if (table.isExtra) {
       clearCashierTableCache(selectedTable);
       lastKnownBillRef.current = 0;
@@ -2337,8 +2336,14 @@ const CashierDashboard = ({ onLogout }) => {
       setSelectedOrder(null);
       lastConfirmedItemsRef.current = [];
       setExpandedNoteItemId(null);
-      setActiveTab('pos');
-      localStorage.setItem('cashier_active_tab', 'pos');
+
+      const isFreeExtra = !table.status || table.status === 'Free';
+      if (isFreeExtra) {
+        setActiveTab('pos');
+        localStorage.setItem('cashier_active_tab', 'pos');
+      } else {
+        setShowTableModal(true);
+      }
       return;
     }
 
