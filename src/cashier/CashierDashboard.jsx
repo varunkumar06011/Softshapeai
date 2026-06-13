@@ -413,6 +413,24 @@ const CashierDashboard = ({ onLogout }) => {
     try { localStorage.setItem('cashier_extra_tables', JSON.stringify(extraTables)); } catch {}
   }, [extraTables]);
 
+  // Keep selectedTable in sync with extraTables — extra table state (activeOrder.id, items, status)
+  // is updated via setExtraTables (e.g. after createOrder resolves), but selectedTable is a separate
+  // snapshot. Without this sync, handleFinalBill can't find the real orderId and modal shows stale data.
+  useEffect(() => {
+    if (!selectedTable?.isExtra) return;
+    const fresh = extraTables.find(et => et.id === selectedTable.id);
+    if (!fresh) return;
+    // Only update if something meaningful changed to avoid infinite loops
+    if (
+      fresh.activeOrder?.id !== selectedTable.activeOrder?.id ||
+      fresh.status !== selectedTable.status ||
+      fresh.currentBill !== selectedTable.currentBill ||
+      (fresh.activeOrder?.items?.length ?? 0) !== (selectedTable.activeOrder?.items?.length ?? 0)
+    ) {
+      setSelectedTable(fresh);
+    }
+  }, [extraTables]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
     // --- Bill-print cooldown: ignore all sync for 5s after printing ---
@@ -2337,16 +2355,19 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleTableSelect = (table) => {
     if (table.isExtra) {
+      // Always use the fresh version from extraTables state — the grid snapshot may be stale
+      // (e.g. activeOrder.id not yet set before createOrder resolved)
+      const freshExtra = extraTables.find(et => et.id === table.id) || table;
       clearCashierTableCache(selectedTable);
       lastKnownBillRef.current = 0;
       lastAnyItemAddedRef.current = 0;
-      setSelectedTable(table);
+      setSelectedTable(freshExtra);
       setCart([]);
       setSelectedOrder(null);
       lastConfirmedItemsRef.current = [];
       setExpandedNoteItemId(null);
 
-      const isFreeExtra = !table.status || table.status === 'Free';
+      const isFreeExtra = !freshExtra.status || freshExtra.status === 'Free';
       if (isFreeExtra) {
         setActiveTab('pos');
         localStorage.setItem('cashier_active_tab', 'pos');
@@ -2701,13 +2722,19 @@ const CashierDashboard = ({ onLogout }) => {
                 captainName: 'Cashier',
                 isWalkIn: true, // Use walk-in pattern for extra tables
               });
-              // Store the returned real orderId in the extra table's activeOrder
+              // Store the returned real orderId in both extraTables and selectedTable
               if (orderResponse?.id) {
                 setExtraTables(prev => prev.map(et => 
                   et.id === selectedTable.id 
                     ? { ...et, activeOrder: { id: orderResponse.id, items: newOptimisticItems, totalAmount: newTotalBill } }
                     : et
                 ));
+                // Immediately patch selectedTable so handleFinalBill can find the orderId
+                setSelectedTable(prev =>
+                  prev?.isExtra && prev.id === selectedTable.id
+                    ? { ...prev, activeOrder: { ...(prev.activeOrder || {}), id: orderResponse.id } }
+                    : prev
+                );
               }
             }
           } else if (selectedTable.activeOrder?.id) {
