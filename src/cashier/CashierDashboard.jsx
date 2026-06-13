@@ -197,6 +197,7 @@ const HighlightedText = ({ text, highlight }) => {
 };
 
 const CashierDashboard = ({ onLogout }) => {
+  console.log('[BUILD] CashierDashboard loaded — version 2025-06-13-v2');
   const { outlet } = useOutlet();
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
   const [tableSubCategory, setTableSubCategory] = useState(() => {
