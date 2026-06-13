@@ -1681,18 +1681,25 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // ── END GUARD SETUP ──
 
-      // Step 1: Update table discount if entered (skip for extra tables - they don't have backendId)
-      if (discountPercent > 0 && !selectedTable.isExtra) {
-        await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ discount: discountPercent })
-        });
-        // Persist discount so it survives modal close/reopen until settlement
-        localStorage.setItem(`cashier_table_discount_${selectedTable.backendId}`, JSON.stringify({
-          value: String(discountPercent),
-          mode: 'percent'
-        }));
+      // Step 1: Update table discount if entered
+      if (discountPercent > 0) {
+        if (!selectedTable.isExtra) {
+          await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ discount: discountPercent })
+          });
+          // Persist discount so it survives modal close/reopen until settlement
+          localStorage.setItem(`cashier_table_discount_${selectedTable.backendId}`, JSON.stringify({
+            value: String(discountPercent),
+            mode: 'percent'
+          }));
+        } else {
+          // Extra table: store discount on the extraTables entry (no DB table to patch)
+          setExtraTables(prev => prev.map(et =>
+            et.id === selectedTable.id ? { ...et, discountPercent } : et
+          ));
+        }
       }
 
       // Step 2: Snapshot billable items before print-bill so we can detect item loss
@@ -1702,8 +1709,11 @@ const CashierDashboard = ({ onLogout }) => {
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
         const printBillRestaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
+        const extraDiscountPercent = selectedTable.isExtra
+          ? (discountPercent || selectedTable.discountPercent || 0)
+          : 0;
         const printBillUrl = selectedTable.isExtra
-          ? `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${encodeURIComponent(selectedTable.number)}`
+          ? `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${encodeURIComponent(selectedTable.number)}${extraDiscountPercent > 0 ? `&discountPercent=${extraDiscountPercent}` : ''}`
           : `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}`;
         const response = await fetch(printBillUrl, {
           method: 'POST',
@@ -2041,8 +2051,11 @@ const CashierDashboard = ({ onLogout }) => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
                 paymentMethod: method, 
-                discountPercent,
-                tableNumber: selectedTable.isExtra ? selectedTable.number : undefined // Pass extra table number for transaction record
+                discountPercent: selectedTable.isExtra
+                  ? (discountPercent || selectedTable.discountPercent || 0)
+                  : discountPercent,
+                tableNumber: selectedTable.isExtra ? selectedTable.number : undefined,
+                isExtraTable: selectedTable.isExtra ? true : undefined,
               })
             }
           );
