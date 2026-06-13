@@ -390,7 +390,9 @@ const CashierDashboard = ({ onLogout }) => {
   const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
-  const [extraTables, setExtraTables] = useState([]); // Bug 1: Extra tables for overflow sessions
+  const [extraTables, setExtraTables] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('cashier_extra_tables') || '[]'); } catch { return []; }
+  });
 
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
@@ -404,6 +406,11 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => { activeTablesRef.current = activeTables; }, [activeTables]);
   const venueTablesRef = useRef(venueTables);
   useEffect(() => { venueTablesRef.current = venueTables; }, [venueTables]);
+
+  // Persist extraTables to localStorage so they survive page refresh
+  useEffect(() => {
+    try { localStorage.setItem('cashier_extra_tables', JSON.stringify(extraTables)); } catch {}
+  }, [extraTables]);
 
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
@@ -914,7 +921,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (!order?.tableId) return;
       // NOTE: no shouldBlockTableUpdate here — item updates (captain adding items) must always be visible
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
-      if (selectedTable?.backendId === order.tableId) {
+      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
       }
       const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
@@ -986,7 +993,7 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         setActiveTables(applyTableUpdate, { skipPersist: true });
       }
-      if (selectedTable?.backendId === table.id) {
+      if (selectedTable?.backendId === table.id && !selectedTable?.isExtra) {
         setSelectedTable(prev => {
           if (!prev) return prev;
 
@@ -4451,10 +4458,11 @@ const CashierDashboard = ({ onLogout }) => {
                   </button>
                   {/* Primary source of truth: billPrintedTableIds then socket status */}
                   {(() => {
+                    const tableKey = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
                     // If bill was printed and not yet settled → always show Settlement (ignore stale sync)
-                    if (billPrintedTableIds.has(selectedTable.backendId)) return true;
+                    if (billPrintedTableIds.has(tableKey)) return true;
                     // Settled this session → treat as done
-                    if (settledTableIds.has(selectedTable.backendId)) return false;
+                    if (settledTableIds.has(tableKey)) return false;
                     // Fall back to socket-driven status
                     const s = selectedTable.status;
                     return s === 'Waiting Bill' || s === 'BILLING_REQUESTED';
