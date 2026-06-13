@@ -32,10 +32,11 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null, captainName = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null, captainName = null, isExtraTable = false }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
+  if (isExtraTable) { orderData.isExtraTable = true; }
 
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));
@@ -78,12 +79,14 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null) {
   return withRetry(
     async () => {
       const body = { items: toOrderItems(items) };
       if (requestId) body.requestId = requestId;
       if (captainName) body.captainName = captainName;
+      if (isExtraTable) { body.isExtraTable = true; }
+      if (tableNumber) { body.tableNumber = tableNumber; }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 45000);

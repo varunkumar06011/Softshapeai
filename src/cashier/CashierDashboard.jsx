@@ -2723,11 +2723,13 @@ const CashierDashboard = ({ onLogout }) => {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
               // Subsequent KOT for extra table — append to existing order
-              await updateOrderItems(orderId, apiItems, requestId, 'Cashier');
+              // isExtraTable=true tells backend to skip parent table mutation
+              await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number);
             } else {
               // First KOT for extra table — create order tied to the parent DB table
               // tableId must be a real DB table id (schema constraint); tableNumber carries
               // the extra table display name (e.g. "1-X") for KOT/bill printing
+              // isExtraTable=true tells backend to skip parent table mutation
               const orderResponse = await createOrder({
                 tableId: selectedTable.backendId, // Parent DB table id — required by schema
                 tableNumber: selectedTable.number, // Extra table label shown on bill/KOT
@@ -2735,6 +2737,7 @@ const CashierDashboard = ({ onLogout }) => {
                 items: apiItems,
                 requestId,
                 captainName: 'Cashier',
+                isExtraTable: true,
               });
               // Store the returned real orderId in both extraTables and selectedTable
               if (orderResponse?.id) {
