@@ -2387,6 +2387,14 @@ const CashierDashboard = ({ onLogout }) => {
       // Always use the fresh version from extraTables state — the grid snapshot may be stale
       // (e.g. activeOrder.id not yet set before createOrder resolved)
       const freshExtra = extraTables.find(et => et.id === table.id) || table;
+      console.log('[ExtraTable] handleTableSelect:', freshExtra.id, {
+        hasActiveOrder: !!freshExtra.activeOrder,
+        itemCount: freshExtra.activeOrder?.items?.length ?? 0,
+        kotHistoryCount: freshExtra.kotHistory?.length ?? 0,
+        currentBill: freshExtra.currentBill,
+        status: freshExtra.status,
+        firstItem: freshExtra.activeOrder?.items?.[0] ?? null,
+      });
       clearCashierTableCache(selectedTable);
       lastKnownBillRef.current = 0;
       lastAnyItemAddedRef.current = 0;
@@ -2678,7 +2686,7 @@ const CashierDashboard = ({ onLogout }) => {
         // Update extra table in extraTables state
         setExtraTables(prev => prev.map(et => {
           if (et.id === selectedTable.id) {
-            return {
+            const updated = {
               ...et,
               status: et.status === 'Free' ? 'Occupied' : et.status,
               kotHistory: [...(et.kotHistory || []), ...kotsToCreate],
@@ -2687,6 +2695,8 @@ const CashierDashboard = ({ onLogout }) => {
                 ? { ...et.activeOrder, items: mergedItems }
                 : { id: null, items: mergedItems, totalAmount: newTotalBill },
             };
+            console.log('[ExtraTable] KOT optimistic update:', et.id, { itemCount: updated.activeOrder.items.length, currentBill: updated.currentBill });
+            return updated;
           }
           return et;
         }));
@@ -2750,6 +2760,7 @@ const CashierDashboard = ({ onLogout }) => {
             if (orderId) {
               // Subsequent KOT for extra table — append to existing order
               // isExtraTable=true tells backend to skip parent table mutation
+              console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
               await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number);
             } else {
               // First KOT for extra table — create order tied to the parent DB table
@@ -2767,6 +2778,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
               // Store the returned real orderId in both extraTables and selectedTable
               if (orderResponse?.id) {
+                console.log('[ExtraTable] createOrder success:', orderResponse.id, 'setting items:', newOptimisticItems.length);
                 setExtraTables(prev => prev.map(et => 
                   et.id === selectedTable.id 
                     ? { ...et, activeOrder: { id: orderResponse.id, items: newOptimisticItems, totalAmount: newTotalBill } }
