@@ -2396,7 +2396,9 @@ const CashierDashboard = ({ onLogout }) => {
       lastConfirmedItemsRef.current = [];
       setExpandedNoteItemId(null);
 
-      const isFreeExtra = !freshExtra.status || freshExtra.status === 'Free';
+      const hasItems = (freshExtra.activeOrder?.items?.length || 0) > 0 || (freshExtra.kotHistory?.length || 0) > 0;
+      const hasBill = Number(freshExtra.currentBill || 0) > 0;
+      const isFreeExtra = (!freshExtra.status || freshExtra.status === 'Free') && !hasItems && !hasBill;
       if (isFreeExtra) {
         setActiveTab('pos');
         localStorage.setItem('cashier_active_tab', 'pos');
