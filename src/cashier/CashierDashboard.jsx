@@ -1700,7 +1700,11 @@ const CashierDashboard = ({ onLogout }) => {
       // Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
-        const response = await fetch(`${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`, {
+        const printBillRestaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
+        const printBillUrl = selectedTable.isExtra
+          ? `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${encodeURIComponent(selectedTable.number)}`
+          : `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}`;
+        const response = await fetch(printBillUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -2712,15 +2716,16 @@ const CashierDashboard = ({ onLogout }) => {
               // Subsequent KOT for extra table — append to existing order
               await updateOrderItems(orderId, apiItems, requestId, 'Cashier');
             } else {
-              // First KOT for extra table — create standalone order (walk-in pattern)
+              // First KOT for extra table — create order tied to the parent DB table
+              // tableId must be a real DB table id (schema constraint); tableNumber carries
+              // the extra table display name (e.g. "1-X") for KOT/bill printing
               const orderResponse = await createOrder({
-                tableId: null, // Not tied to a DB table row
-                tableNumber: selectedTable.number, // Extra table number (e.g., "1-X")
+                tableId: selectedTable.backendId, // Parent DB table id — required by schema
+                tableNumber: selectedTable.number, // Extra table label shown on bill/KOT
                 restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
                 items: apiItems,
                 requestId,
                 captainName: 'Cashier',
-                isWalkIn: true, // Use walk-in pattern for extra tables
               });
               // Store the returned real orderId in both extraTables and selectedTable
               if (orderResponse?.id) {
