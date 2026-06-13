@@ -905,6 +905,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
       } else {
         setActiveTables(updateTables, { skipPersist: true });
+        if (outlet === 'bar' && setBarTables) setBarTables(updateTables, { skipPersist: true });
       }
     };
 
@@ -972,6 +973,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
       } else {
         setActiveTables(updateTables, { skipPersist: true });
+        if (outlet === 'bar' && setBarTables) setBarTables(updateTables, { skipPersist: true });
       }
     };
 
@@ -1087,6 +1089,7 @@ const CashierDashboard = ({ onLogout }) => {
         );
         setActiveTables(clearTable, { skipPersist: true });
         if (setVenueTables) setVenueTables(clearTable, { skipPersist: true });
+        if (outlet === 'bar' && setBarTables) setBarTables(clearTable, { skipPersist: true });
 
         // Remove from billing alerts
         setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
@@ -1207,7 +1210,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
     };
-  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables]);
+  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables, setBarTables]);
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
@@ -1233,6 +1236,7 @@ const CashierDashboard = ({ onLogout }) => {
         const freshOrder = await response.json();
         return freshOrder || null;
       }
+      console.warn(`[fetchFreshOrderData] Server returned ${response.status} for table ${tableBackendId}`);
     } catch (error) {
       console.warn('Failed to fetch fresh order data:', error);
     }
@@ -4609,7 +4613,12 @@ const CashierDashboard = ({ onLogout }) => {
                       Settlement
                     </button>
                   ) : (
-                    getBillableItems(selectedTable).length > 0 ? (
+                    isModalDataLoading ? (
+                      <div className="py-2.5 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center shadow-sm flex items-center justify-center gap-2">
+                        <Loader2 size={12} className="animate-spin text-gray-400" />
+                        Loading items…
+                      </div>
+                    ) : getBillableItems(selectedTable).length > 0 ? (
                       <button
                         onClick={handleFinalBill}
                         disabled={isPrintingBill || printCooldown}
