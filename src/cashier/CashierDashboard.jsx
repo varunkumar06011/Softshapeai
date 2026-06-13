@@ -299,6 +299,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   const [showTableModal, setShowTableModal] = useState(false);
+  const [isModalDataLoading, setIsModalDataLoading] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelSelected, setCancelSelected] = useState({});
   const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
@@ -1650,7 +1651,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Update selectedTable status optimistically right now
       setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
       // Start 5-second per-table socket cooldown
-      billPrintCooldownRef.current.set(tableId, Date.now() + 5000);
+      billPrintCooldownRef.current.set(tableId, Date.now() + 1000);
       // Update the table list cache immediately to 'Waiting Bill'
       if (selectedTable.isExtra) {
         // Update extra table in extraTables state
@@ -2358,6 +2359,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = (table) => {
+    setIsModalDataLoading(false);
     if (table.isExtra) {
       // Always use the fresh version from extraTables state — the grid snapshot may be stale
       // (e.g. activeOrder.id not yet set before createOrder resolved)
@@ -2397,6 +2399,9 @@ const CashierDashboard = ({ onLogout }) => {
     } else {
       // Open modal immediately — don't block on network
       setShowTableModal(true);
+      if (outlet === 'bar') refetchBarTables();
+      else if (outlet === 'venue') refetchVenueTables();
+      else refetchRestaurantTables();
       // Restore saved discount for this table if one exists
       const savedDiscount = localStorage.getItem(`cashier_table_discount_${table.backendId}`);
       if (savedDiscount) {
@@ -2414,6 +2419,7 @@ const CashierDashboard = ({ onLogout }) => {
     // Does NOT block the modal from opening — silently patches in the data
     const isOccupied = table.status && table.status !== 'Free' && table.status !== 'AVAILABLE';
     if (table.backendId && isOccupied) {
+      setIsModalDataLoading(true);
       fetchFreshOrderData(table.backendId).then(freshOrder => {
         if (freshOrder) {
           setSelectedTable(prev => {
@@ -2421,8 +2427,10 @@ const CashierDashboard = ({ onLogout }) => {
             return { ...prev, activeOrder: freshOrder };
           });
         }
+        setIsModalDataLoading(false);
       }).catch(() => {
         // Silent — stale cached data is still better than nothing
+        setIsModalDataLoading(false);
       });
     }
   };
@@ -4359,46 +4367,52 @@ const CashierDashboard = ({ onLogout }) => {
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
-                  {groupOrderItems(getAllOrderItems(selectedTable))
-                    .map((item, idx) => {
-                      const isCancelled = item.quantity === 0;
-                      return (
-                        <div key={`${item.n}-${idx}`} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
-                          <div className="flex items-start gap-3">
-                            <span className={`min-w-[32px] h-7 rounded-lg border shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                              {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
-                            </span>
-                            <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
+                  {isModalDataLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 size={20} className="animate-spin text-gray-400" />
+                    </div>
+                  ) : (
+                    groupOrderItems(getAllOrderItems(selectedTable))
+                      .map((item, idx) => {
+                        const isCancelled = item.quantity === 0;
+                        return (
+                          <div key={`${item.n}-${idx}`} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
+                            <div className="flex items-start gap-3">
+                              <span className={`min-w-[32px] h-7 rounded-lg border shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
+                              </span>
+                              <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
+                            </div>
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                ₹{Number(item.p * item.q).toFixed(0)}
+                              </span>
+                              {isCancelled ? (
+                                <span className="text-[9px] font-black text-red-400 uppercase tracking-widest">Cancelled</span>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowCancelModal(true);
+                                    if (item.originalIds.length === 1) {
+                                      setCancelSelected({ [item.originalIds[0]]: 1 });
+                                    } else {
+                                      const selection = {};
+                                      item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
+                                      setCancelSelected(selection);
+                                    }
+                                  }}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
+                                  title="Cancel Item"
+                                >
+                                  <X size={16} strokeWidth={3} />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 sm:gap-3">
-                            <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                              ₹{Number(item.p * item.q).toFixed(0)}
-                            </span>
-                            {isCancelled ? (
-                              <span className="text-[9px] font-black text-red-400 uppercase tracking-widest">Cancelled</span>
-                            ) : (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShowCancelModal(true);
-                                  if (item.originalIds.length === 1) {
-                                    setCancelSelected({ [item.originalIds[0]]: 1 });
-                                  } else {
-                                    const selection = {};
-                                    item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
-                                    setCancelSelected(selection);
-                                  }
-                                }}
-                                className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
-                                title="Cancel Item"
-                              >
-                                <X size={16} strokeWidth={3} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                  )}
                 </div>
               </div>
 
