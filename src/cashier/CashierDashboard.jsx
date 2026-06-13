@@ -1729,8 +1729,12 @@ const CashierDashboard = ({ onLogout }) => {
         const extraDiscountPercent = selectedTable.isExtra
           ? (discountPercent || selectedTable.discountPercent || 0)
           : 0;
+        const extraKotIds = (selectedTable.kotHistory || [])
+          .map(k => k.id)
+          .filter(Boolean)
+          .join(',');
         const printBillUrl = selectedTable.isExtra
-          ? `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${encodeURIComponent(selectedTable.number)}${extraDiscountPercent > 0 ? `&discountPercent=${extraDiscountPercent}` : ''}`
+          ? `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${encodeURIComponent(selectedTable.number)}${extraDiscountPercent > 0 ? `&discountPercent=${extraDiscountPercent}` : ''}${extraKotIds ? `&kotNumbers=${encodeURIComponent(extraKotIds)}` : ''}`
           : `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}`;
         const response = await fetch(printBillUrl, {
           method: 'POST',
@@ -2414,6 +2418,12 @@ const CashierDashboard = ({ onLogout }) => {
       const hasItems = (freshExtra.activeOrder?.items?.length || 0) > 0 || (freshExtra.kotHistory?.length || 0) > 0;
       const hasBill = Number(freshExtra.currentBill || 0) > 0;
       const isFreeExtra = (!freshExtra.status || freshExtra.status === 'Free') && !hasItems && !hasBill;
+      // Pre-populate discount if this extra table already has one stored
+      if (freshExtra.discountPercent > 0) {
+        setRawDiscountInput(String(freshExtra.discountPercent));
+      } else {
+        setRawDiscountInput('');
+      }
       if (isFreeExtra) {
         setActiveTab('pos');
         localStorage.setItem('cashier_active_tab', 'pos');
@@ -2768,7 +2778,14 @@ const CashierDashboard = ({ onLogout }) => {
               // Subsequent KOT for extra table — append to existing order
               // isExtraTable=true tells backend to skip parent table mutation
               console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-              await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number);
+              const updatedOrderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number);
+              if (updatedOrderResponse?.order?.kotHistory) {
+                setExtraTables(prev => prev.map(et =>
+                  et.id === selectedTable.id
+                    ? { ...et, kotHistory: updatedOrderResponse.order.kotHistory }
+                    : et
+                ));
+              }
             } else {
               // First KOT for extra table — create order tied to the parent DB table
               // tableId must be a real DB table id (schema constraint); tableNumber carries
@@ -2788,7 +2805,7 @@ const CashierDashboard = ({ onLogout }) => {
                 console.log('[ExtraTable] createOrder success:', orderResponse.id, 'setting items:', newOptimisticItems.length);
                 setExtraTables(prev => prev.map(et => 
                   et.id === selectedTable.id 
-                    ? { ...et, activeOrder: { id: orderResponse.id, items: newOptimisticItems, totalAmount: newTotalBill } }
+                    ? { ...et, activeOrder: { id: orderResponse.id, items: newOptimisticItems, totalAmount: newTotalBill }, kotHistory: orderResponse.kotHistory || et.kotHistory }
                     : et
                 ));
                 // Immediately patch selectedTable so handleFinalBill can find the orderId
