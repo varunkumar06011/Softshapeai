@@ -2437,15 +2437,16 @@ const CashierDashboard = ({ onLogout }) => {
       }
     }
 
-    // Background refresh: fetch fresh order data for ALL occupied tables so items appear in modal
+    // Background refresh: fetch fresh order data for occupied regular tables only
     // Does NOT block the modal from opening — silently patches in the data
+    // Skip for extra tables: they share backendId with parent; fetchFreshOrderData would return parent order
     const isOccupied = table.status && table.status !== 'Free' && table.status !== 'AVAILABLE';
-    if (table.backendId && isOccupied) {
+    if (table.backendId && isOccupied && !table.isExtra) {
       setIsModalDataLoading(true);
       fetchFreshOrderData(table.backendId).then(freshOrder => {
         if (freshOrder) {
           setSelectedTable(prev => {
-            if (!prev || prev.backendId !== table.backendId) return prev; // user moved on
+            if (!prev || prev.backendId !== table.backendId || prev.isExtra) return prev; // user moved on or extra table
             return { ...prev, activeOrder: freshOrder };
           });
         }
@@ -5308,8 +5309,10 @@ const CashierDashboard = ({ onLogout }) => {
           }, 30000);
 
           try {
-            // Always fetch fresh order data first so we use the correct live orderId and item IDs
-            const freshOrder = await fetchFreshOrderData(selectedTable.backendId);
+            // For extra tables: fetchFreshOrderData returns parent order (wrong) — use activeOrder directly
+            const freshOrder = selectedTable.isExtra
+              ? null
+              : await fetchFreshOrderData(selectedTable.backendId);
             const liveOrder = freshOrder || selectedTable.activeOrder;
 
             if (!liveOrder?.id) {
