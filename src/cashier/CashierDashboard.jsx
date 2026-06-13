@@ -433,6 +433,13 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [extraTables]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // DEBUG: trace modal render state for extra tables
+  useEffect(() => {
+    if (!showTableModal || !selectedTable?.isExtra) return;
+    const items = getAllOrderItems(selectedTable);
+    console.log('[DebugModal] selectedTable.id:', selectedTable.id, 'activeOrder?.id:', selectedTable.activeOrder?.id, 'items.length:', items.length, 'firstItem:', items[0] || null, 'currentBill:', selectedTable.currentBill);
+  }, [showTableModal, selectedTable?.activeOrder?.id, selectedTable?.activeOrder?.items?.length, selectedTable?.currentBill]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
     // --- Bill-print cooldown: ignore all sync for 5s after printing ---
