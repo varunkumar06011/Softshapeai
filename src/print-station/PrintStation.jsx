@@ -224,17 +224,13 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
 
   (items || []).forEach(item => {
+    const line = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_2X,           // Qty number at double size — big and clear
+      SIZE_2X,
       BOLD_ON,
-      `${item.quantity}`,
+      line + '\n',
       BOLD_OFF,
-      SIZE_4X,           // 75% bigger than previous SIZE_3X
-      BOLD_ON,
-      `${item.name.toUpperCase()}\n`,
-      BOLD_OFF,
-      SIZE_NORMAL,       // Reset after each item
-      `\n`,              // Blank line between items — prevents crowding
+      SIZE_NORMAL,
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(`     * ${item.notes.trim()}\n`);
@@ -340,15 +336,14 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
 
   if (item) {
-    const itemLine = `${item.quantity}x ${item.name.toUpperCase()}`;
+    const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      CENTER,
-      SIZE_4X,
+      LEFT,
+      SIZE_2X,
       BOLD_ON,
-      itemLine + "\n",
+      itemLine + '\n',
       BOLD_OFF,
       SIZE_NORMAL,
-      `\n`,              // spacing after cancel item
       `Type  : ${itemType}\n`
     );
   }
@@ -461,13 +456,12 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
   (items || []).forEach(item => {
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      CENTER,
-      SIZE_4X,
+      LEFT,
+      SIZE_2X,
       BOLD_ON,
-      itemLine + "\n",
+      itemLine + '\n',
       BOLD_OFF,
       SIZE_NORMAL,
-      `\n`,              // blank line between items — prevents merging
     );
   });
 
