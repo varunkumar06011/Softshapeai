@@ -1366,14 +1366,21 @@ export default function CaptainApp({ onLogout }) {
     const mergeOrderItems = (existing = [], incoming = []) => {
       const map = new Map();
       const incomingByName = new Map(incoming.map(i => [i.name ?? i.n, i]).filter(([k]) => !!k));
-      // Add all incoming items by real id
+      // Add all incoming items — incoming is authoritative for cancellation state
       incoming.forEach(i => map.set(i.id, { ...(map.get(i.id) || {}), ...i }));
-      // Add existing items only if they aren't shadowed by an incoming item
+      // Add existing items only if not already covered by incoming
       existing.forEach(i => {
         const name = i.name ?? i.n;
         // Drop optimistic items (no id) whose name matches a real incoming item
         if (!i.id && name && incomingByName.has(name)) return;
-        if (!map.has(i.id)) map.set(i.id, i);
+        if (map.has(i.id)) {
+          // Incoming is authoritative — if incoming says removedFromBill, honour it
+          const incomingItem = map.get(i.id);
+          if (incomingItem.removedFromBill) return; // keep incoming's cancelled state
+          map.set(i.id, { ...i, ...incomingItem }); // incoming wins on all fields
+        } else {
+          map.set(i.id, i);
+        }
       });
       return Array.from(map.values());
     };
