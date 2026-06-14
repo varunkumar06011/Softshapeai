@@ -752,6 +752,11 @@ const CashierDashboard = ({ onLogout }) => {
         if (aBill != null && bBill != null) return aBill - bBill;
         if (aBill != null) return -1;
         if (bBill != null) return 1;
+        const aTxn = a.txnNumber != null ? Number(a.txnNumber) : null;
+        const bTxn = b.txnNumber != null ? Number(b.txnNumber) : null;
+        if (aTxn != null && bTxn != null) return aTxn - bTxn;
+        if (aTxn != null) return -1;
+        if (bTxn != null) return 1;
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
       setPastTransactions(sorted);
@@ -791,7 +796,9 @@ const CashierDashboard = ({ onLogout }) => {
         (txn.displayId || '').toLowerCase().includes(q) ||
         (txn.captainName || '').toLowerCase().includes(q) ||
         String(txn.tableNumber || '').toLowerCase().includes(q) ||
-        String(txn.grandTotal ?? txn.amount ?? '').includes(q)
+        String(txn.grandTotal ?? txn.amount ?? '').includes(q) ||
+        String(txn.billNumber || '').toLowerCase().includes(q) ||
+        String(txn.txnNumber || '').toLowerCase().includes(q)
       );
     }
 
@@ -1079,7 +1086,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onOrderPaid = (payload) => {
       const { tableId, isExtraTable } = payload;
-      if (shouldBlockTableUpdate(tableId, 'AVAILABLE')) return;
+      // Terminal event — must always clear table, never blocked by cooldown.
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
       if (!isExtraTable) {
@@ -3662,11 +3669,11 @@ const CashierDashboard = ({ onLogout }) => {
                                                   <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(0)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                                  <span>CGST</span>
+                                                  <span>CGST (2.5%)</span>
                                                   <span className="text-gray-800">₹{Number(txn.cgst ?? 0).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                                  <span>SGST</span>
+                                                  <span>SGST (2.5%)</span>
                                                   <span className="text-gray-800">₹{Number(txn.sgst ?? 0).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
