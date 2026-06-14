@@ -22,7 +22,7 @@ import { useTableSync } from '../services/tableSyncService';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
 
-import { calculateSessionBill, calculateOrderTotal, getTableItems } from '../shared/utils/billing';
+import { calculateSessionBill, calculateOrderTotal, getTableItems, getBillableItems } from '../shared/utils/billing';
 
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
@@ -1067,7 +1067,7 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    const committedItems = getTableItems(activeTable);
+    const committedItems = getBillableItems(activeTable);
 
 
 
