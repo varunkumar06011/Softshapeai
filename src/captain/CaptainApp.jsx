@@ -4625,7 +4625,7 @@ export default function CaptainApp({ onLogout }) {
 
                           {kot.items.map((item, iIdx) => {
 
-                            const isCancelled = item.s === 'Cancelled';
+                            const isCancelled = item.s === 'Cancelled' || item.removedFromBill === true;
 
                             const isLoading   = cancelLoading[item.orderItemId];
 
