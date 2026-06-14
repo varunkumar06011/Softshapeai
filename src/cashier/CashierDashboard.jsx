@@ -840,6 +840,8 @@ const CashierDashboard = ({ onLogout }) => {
       } else {
         refetchRestaurantTables();
       }
+      // Refresh transactions so history stays current after a disconnect gap
+      loadTransactions(txnDateFilterRef.current);
     };
 
     socket.on('connect', onConnect);
