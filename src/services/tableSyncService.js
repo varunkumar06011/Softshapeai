@@ -72,11 +72,31 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const incomingOrder = row.orders?.[0] || row.activeOrder || null;
   const existingOrder = existing?.activeOrder;
   let activeOrder = incomingOrder;
+
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
     const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
     const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
+    const incomingItems = incomingOrder.items || [];
+    const existingItems = existingOrder.items || [];
+
     if (existingUpdated >= incomingUpdated) {
-      activeOrder = existingOrder;
+      // Existing is newer or same — keep existing but merge in any incoming items
+      // that incoming has and existing does not (additive merge, never drop)
+      const existingIds = new Set(existingItems.map(i => i.id).filter(Boolean));
+      const newFromIncoming = incomingItems.filter(i => i.id && !existingIds.has(i.id));
+      activeOrder = {
+        ...existingOrder,
+        items: [...existingItems, ...newFromIncoming],
+      };
+    } else {
+      // Incoming is newer — use it but keep any existing items not in incoming
+      // (prevents item loss if incoming is a partial response)
+      const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
+      const missingFromIncoming = existingItems.filter(i => i.id && !incomingIds.has(i.id));
+      activeOrder = {
+        ...incomingOrder,
+        items: [...incomingItems, ...missingFromIncoming],
+      };
     }
   }
 
