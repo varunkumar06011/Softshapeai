@@ -92,7 +92,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
       // Incoming is newer — use it but keep any existing items not in incoming
       // (prevents item loss if incoming is a partial response)
       const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
-      const missingFromIncoming = existingItems.filter(i => i.id && !incomingIds.has(i.id));
+      const missingFromIncoming = existingItems.filter(
+        i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
+      );
       activeOrder = {
         ...incomingOrder,
         items: [...incomingItems, ...missingFromIncoming],
