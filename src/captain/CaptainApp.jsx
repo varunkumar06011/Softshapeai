@@ -532,6 +532,7 @@ export default function CaptainApp({ onLogout }) {
   const kotRequestIdRef = useRef(null);
 
   const isSubmittingKotRef = useRef(false);
+  const kotSubmitStartRef = useRef(0); // timestamp guard against stuck submissions
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const lastAnyItemAddedRef = useRef(0);
   const isVenueTableRef = useRef(false);
@@ -2233,7 +2234,17 @@ export default function CaptainApp({ onLogout }) {
     // Cancel any pending print timeout from a previous KOT before any early return
     clearTimeout(printTimeoutRef.current);
 
-    if (sendingKOT || isSubmittingKotRef.current) return; // Prevent duplicate clicks
+    // Stuck-guard: if a previous submission has been running for >30s, force-reset
+    if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 30000) {
+      console.warn('[KOT] Stuck submission detected (>30s), forcing reset');
+      isSubmittingKotRef.current = false;
+      setSendingKOT(false);
+    }
+
+    if (sendingKOT || isSubmittingKotRef.current) {
+      console.warn('[KOT] Blocked — already submitting. sendingKOT=', sendingKOT, 'ref=', isSubmittingKotRef.current);
+      return;
+    }
 
     if (currentSessionItems.length === 0) return;
 
@@ -2250,6 +2261,7 @@ export default function CaptainApp({ onLogout }) {
 
 
     isSubmittingKotRef.current = true;
+    kotSubmitStartRef.current = Date.now();
 
     setSendingKOT(true);
 
