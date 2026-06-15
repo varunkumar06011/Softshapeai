@@ -184,7 +184,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     CENTER,
 
-    SIZE_HEIGHT,
+    SIZE_2X,
 
     BOLD_ON,
 
@@ -192,7 +192,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     BOLD_OFF,
 
-    SIZE_NORMAL,
+    SIZE_2X,
 
     LEFT,
 
@@ -212,11 +212,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     separator("-"),
 
-    SIZE_2X,
+    SIZE_4X,
     BOLD_ON,
     "Qty  Item\n",
     BOLD_OFF,
-    SIZE_NORMAL,
+    SIZE_2X,
     separator("-"),
 
   ];
@@ -226,11 +226,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   (items || []).forEach(item => {
     const line = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_2X,
+      SIZE_4X,
       BOLD_ON,
       line + '\n',
       BOLD_OFF,
-      SIZE_NORMAL,
+      SIZE_2X,
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(`     * ${item.notes.trim()}\n`);
@@ -339,11 +339,11 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      SIZE_2X,
+      SIZE_4X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
-      SIZE_NORMAL,
+      SIZE_2X,
       `Type  : ${itemType}\n`
     );
   }
@@ -374,7 +374,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     BOLD_ON,
     '** CANCELLED **\n',
     BOLD_OFF,
-    SIZE_NORMAL,
+    SIZE_2X,
 
     '\n\n\n',
 
@@ -442,11 +442,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
     separator("-"),
 
-    SIZE_2X,
+    SIZE_4X,
     BOLD_ON,
     "Qty  Item\n",
     BOLD_OFF,
-    SIZE_NORMAL,
+    SIZE_2X,
     separator("-"),
 
   ];
@@ -457,11 +457,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      SIZE_2X,
+      SIZE_4X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
-      SIZE_NORMAL,
+      SIZE_2X,
     );
   });
 
@@ -491,7 +491,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     BOLD_ON,
     '** CANCELLED **\n',
     BOLD_OFF,
-    SIZE_NORMAL,
+    SIZE_2X,
 
     '\n\n\n',
 
@@ -616,6 +616,8 @@ function buildTableSwapCommands({ fromTableNumber, toTableNumber, swappedBy, tim
   const cmds = [
 
     INIT,
+
+    SIZE_2X,
 
     CENTER,
 
