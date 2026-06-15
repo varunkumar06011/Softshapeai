@@ -327,6 +327,15 @@ const CashierDashboard = ({ onLogout }) => {
   const [settledTableIds, setSettledTableIds] = useState(() => new Set());
   const settledTableIdsRef = useRef(settledTableIds);
   useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
+  const recentlyTerminatedRef = useRef((() => {
+    try {
+      const raw = localStorage.getItem('cashier_recently_terminated');
+      const map = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      Object.keys(map).forEach(k => { if (now - map[k] > 30000) delete map[k]; });
+      return map;
+    } catch { return {}; }
+  })());
   const terminatedTableIdsRef = useRef(new Set());
   const syncPauseUntilRef = useRef(0);
   // --- Bill-printed guard ---
@@ -445,6 +454,10 @@ const CashierDashboard = ({ onLogout }) => {
     // --- Bill-print cooldown: ignore all sync for 5s after printing ---
     const billCooldownUntil = billPrintCooldownRef.current.get(tableId) || 0;
     if (Date.now() < billCooldownUntil) return true;
+
+    // --- Recently terminated (survives hard refresh via localStorage for 30s) ---
+    const termTs = recentlyTerminatedRef.current[tableId];
+    if (termTs && Date.now() - termTs < 30000) return true;
 
     // --- Bill printed but not yet settled: block any status that would revert to non-Waiting-Bill ---
     if (billPrintedTableIdsRef.current.has(tableId)) {
@@ -885,6 +898,8 @@ const CashierDashboard = ({ onLogout }) => {
       console.log('[CashierDashboard] Received order:created for table:', order.tableId, 'isExtra:', payload?.isExtraTable);
       // NOTE: no shouldBlockTableUpdate here — item additions must never be suppressed by the bill-print cooldown
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
+      const termTs1 = recentlyTerminatedRef.current[order.tableId];
+      if (termTs1 && Date.now() - termTs1 < 30000) return;
       // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => prev ? {
@@ -961,6 +976,8 @@ const CashierDashboard = ({ onLogout }) => {
       if (!order?.tableId) return;
       // NOTE: no shouldBlockTableUpdate here — item updates (captain adding items) must always be visible
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
+      const termTs2 = recentlyTerminatedRef.current[order.tableId];
+      if (termTs2 && Date.now() - termTs2 < 30000) return;
       // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
@@ -2143,6 +2160,10 @@ const CashierDashboard = ({ onLogout }) => {
     // Guard against socket events reviving the just-terminated table
     if (tableSnap.backendId) {
       terminatedTableIdsRef.current.add(tableSnap.backendId);
+      recentlyTerminatedRef.current[tableSnap.backendId] = Date.now();
+      try {
+        localStorage.setItem('cashier_recently_terminated', JSON.stringify(recentlyTerminatedRef.current));
+      } catch {}
       setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.backendId), 6000);
     }
     setIsTerminating(true);
@@ -2215,6 +2236,15 @@ const CashierDashboard = ({ onLogout }) => {
       setRemovedItemIds([]);
       setShowTableModal(false);
       // Clean up persisted discount on terminate
+
+      // Step 5: Evict terminated table from localStorage cache so hard refresh never shows it again
+      const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1'
+        : (outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6');
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        const filtered = cached.filter(t => t.backendId !== tableSnap.backendId);
+        localStorage.setItem(cacheKey, JSON.stringify(filtered));
+      } catch { /* ignore */ }
       if (tableSnap?.backendId) {
         localStorage.removeItem(`cashier_table_discount_${tableSnap.backendId}`);
       }
@@ -3049,7 +3079,12 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       </div>
 
-                      {activeTables.filter(t => t.status && t.status !== 'Free').length === 0 ? (
+                      {activeTables.filter(t => {
+                        if (!t.status || t.status === 'Free') return false;
+                        const termTs = recentlyTerminatedRef.current[t.backendId];
+                        if (termTs && Date.now() - termTs < 30000) return false;
+                        return true;
+                      }).length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-24 text-center">
                           <Table2 size={52} className="text-gray-200 mb-4" />
                           <p className="text-base font-black uppercase tracking-widest text-gray-300">All Tables Free</p>
@@ -3058,7 +3093,12 @@ const CashierDashboard = ({ onLogout }) => {
                       ) : (
                         <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                           {activeTables
-                            .filter(t => t.status && t.status !== 'Free')
+                            .filter(t => {
+                              if (!t.status || t.status === 'Free') return false;
+                              const termTs = recentlyTerminatedRef.current[t.backendId];
+                              if (termTs && Date.now() - termTs < 30000) return false;
+                              return true;
+                            })
                             .sort((a, b) => {
                               if (a.status === 'Waiting Bill' && b.status !== 'Waiting Bill') return -1;
                               if (a.status !== 'Waiting Bill' && b.status === 'Waiting Bill') return 1;
