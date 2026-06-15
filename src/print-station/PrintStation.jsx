@@ -1079,29 +1079,22 @@ export default function PrintStation() {
 
             } else {
 
-              // Non-venue-001: old restaurant or bar-venue
+              // Non-venue-001: check sectionTag first so parcel/PDR/Rooms still route correctly
+              const nonVenuePrinter =
+                data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
+                BAR_VENUE_SECTION_TAGS.has(data.sectionTag)   ? BAR_PRINTER :
+                data.restaurantId === 'restaurant-001'        ? RESTAURANT_KITCHEN_PRINTER :
+                KITCHEN_PRINTER;
 
               if (data.escposData && data.escposData.length > 0) {
 
-                printTasks.push({
-
-                  printer: data.restaurantId === 'restaurant-001' ? RESTAURANT_KITCHEN_PRINTER : KITCHEN_PRINTER,
-
-                  cmds: data.escposData,
-
-                });
+                printTasks.push({ printer: nonVenuePrinter, cmds: data.escposData });
 
               } else {
 
                 cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag: data.sectionTag });
 
-                printer = data.restaurantId === 'restaurant-001'
-
-                  ? RESTAURANT_KITCHEN_PRINTER
-
-                  : KITCHEN_PRINTER;
-
-                printTasks.push({ printer, cmds });
+                printTasks.push({ printer: nonVenuePrinter, cmds });
 
               }
 
