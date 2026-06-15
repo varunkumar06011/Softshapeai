@@ -10,8 +10,26 @@ function isRecentlyTerminated(tableId) {
     const raw = localStorage.getItem('cashier_recently_terminated');
     const map = raw ? JSON.parse(raw) : {};
     const ts = map[tableId];
-    return ts && Date.now() - ts < 30000;
+    return ts && Date.now() - ts < 300000; // 5 minutes
   } catch { return false; }
+}
+
+/** Force a table to Free state — used when backend still returns stale data for a terminated table */
+function sanitizeTerminatedTable(table) {
+  return {
+    ...table,
+    status: 'Free',
+    workflowStatus: 'Free',
+    dbStatus: 'AVAILABLE',
+    activeOrder: null,
+    orders: [],
+    items: [],
+    kotHistory: [],
+    currentBill: 0,
+    guests: 0,
+    captainId: null,
+    time: null,
+  };
 }
 
 export const VENUE_TABLE_STATUS = {
@@ -325,12 +343,14 @@ export function useVenueTableSync() {
       const flat = flattenSections(sections);
       console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
       setTablesState((current) => {
-        const merged = flat
-          .filter((row) => !isRecentlyTerminated(row.id))
-          .map((row) => {
+        const merged = flat.map((row) => {
             const existing = current.find((t) => t.backendId === row.id);
-            const after = mapBackendTable(row, existing);
+            let after = mapBackendTable(row, existing);
             if (existing) validateTableIntegrity('venueTableSync.mergeTablesFromApi', existing, after);
+            // If backend still returns stale data for a recently terminated table, sanitize it
+            if (isRecentlyTerminated(row.id)) {
+              after = sanitizeTerminatedTable(after);
+            }
             return after;
           });
         // Deduplicate by backendId to prevent duplicate cards
@@ -399,7 +419,11 @@ export function useVenueTableSync() {
               return t;
             }
             const before = t;
-            const after = mapBackendTable(updatedTable, t);
+            let after = mapBackendTable(updatedTable, t);
+            // If backend still returns stale data for a recently terminated table, sanitize it
+            if (isRecentlyTerminated(updatedTable.id)) {
+              after = sanitizeTerminatedTable(after);
+            }
             validateTableIntegrity('venueTableSync', before, after);
             return after;
           });
