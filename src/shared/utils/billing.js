@@ -99,11 +99,39 @@ export const getAllOrderItems = (table) => {
       menuType: item.menuType || item.menuItem?.menuType || null,
     }));
 
-    // Merge in any kotHistory items that are NOT already present in dbItems.
-    // This handles partial socket payloads where activeOrder.items only has the latest KOT.
-    const dbNames = new Set(dbItems.map(i => (i.n || '').trim().toLowerCase()));
-    const kotOnlyItems = kotItems.filter(i => !dbNames.has((i.n || '').trim().toLowerCase()));
-    return [...dbItems, ...kotOnlyItems];
+    // Build total quantity per item name from both sources
+    const dbQtyByName = {};
+    dbItems.forEach(i => {
+      const key = (i.n || '').trim().toLowerCase();
+      dbQtyByName[key] = (dbQtyByName[key] || 0) + Number(i.q || 1);
+    });
+    const kotQtyByName = {};
+    kotItems.forEach(i => {
+      const key = (i.n || '').trim().toLowerCase();
+      kotQtyByName[key] = (kotQtyByName[key] || 0) + Number(i.q || 1);
+    });
+
+    const result = [...dbItems];
+
+    // For each item name, if kotHistory has MORE total qty than DB (stale/partial payload),
+    // supplement with the extra quantity so the cashier sees the correct count.
+    Object.keys(kotQtyByName).forEach(name => {
+      const kotQty = kotQtyByName[name];
+      const dbQty = dbQtyByName[name] || 0;
+      if (kotQty > dbQty) {
+        const extraQty = kotQty - dbQty;
+        const sample = kotItems.find(i => (i.n || '').trim().toLowerCase() === name);
+        if (sample) {
+          result.push({ ...sample, id: null, q: extraQty, quantity: extraQty });
+        }
+      } else if (dbQty === 0) {
+        // Item exists in kotHistory but not in DB at all — add it
+        const sample = kotItems.find(i => (i.n || '').trim().toLowerCase() === name);
+        if (sample) result.push(sample);
+      }
+    });
+
+    return result;
   }
 
   // 2. Fall back to kotHistory (legacy JSON blob — kept for KOT timeline display)
