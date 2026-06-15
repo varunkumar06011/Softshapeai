@@ -2478,8 +2478,10 @@ const CashierDashboard = ({ onLogout }) => {
 
       let finalPrice;
       if (isBarVenueContext) {
-        // Bar venue: only show items with an explicit venue price > 0 (no base-price fallback)
-        finalPrice = overridePrice !== undefined ? Number(overridePrice) : 0;
+        // Venue override if explicitly set, otherwise fall back to base item price
+        finalPrice = (overridePrice != null && Number(overridePrice) > 0)
+          ? Number(overridePrice)
+          : Number(item.p || item.price || 0);
       } else {
         // Restaurant / main floor: venue override if set and > 0, else base price
         finalPrice = (overridePrice != null && Number(overridePrice) > 0)
