@@ -818,6 +818,10 @@ const CashierDashboard = ({ onLogout }) => {
   const filteredTransactions = useMemo(() => {
     let list = pastTransactions;
 
+    // TEMPORARY: hide today's transactions for fresh start (UI-only, no DB delete)
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
+    list = list.filter(txn => txn.date !== todayStr);
+
     if (txnSourceFilter !== 'all') {
       list = list.filter(txn => txn.source === txnSourceFilter);
     }
@@ -1527,11 +1531,17 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeTableOrders]);
 
   const todaysSales = useMemo(() => {
-    return pastTransactions.reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
+    return pastTransactions
+      .filter(txn => txn.date !== todayStr)
+      .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [pastTransactions]);
 
   const todaysDiscount = useMemo(() => {
-    return pastTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
+    return pastTransactions
+      .filter(txn => txn.date !== todayStr)
+      .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
   }, [pastTransactions]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
@@ -2941,8 +2951,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${pastTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${pastTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
+    { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
     { label: "Net", value: `₹${Number(todaysSales - todaysDiscount).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${activeTableOrders.length}/${activeTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
