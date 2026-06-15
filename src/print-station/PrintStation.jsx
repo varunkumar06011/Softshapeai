@@ -1175,15 +1175,14 @@ export default function PrintStation() {
               return items.length > 1 ? buildFullCancelCommands(payload) : buildCancelKOTCommands(payload);
             };
 
-            const resolveCancelPrinter = (menuType) => {
-              if (data.restaurantId === 'venue-001') {
-                return menuType === 'BAR'
-                  ? (data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER : DINE_IN_BILL_PRINTER)
-                  : KOT_FAMILY_PRINTER;
-              }
-              if (data.sectionTag === 'venue-family-restaurant') return KOT_FAMILY_PRINTER;
+            const resolveCancelPrinter = (_menuType) => {
+              // sectionTag takes priority — parcel always uses KOT_PRINTER
               if (data.sectionTag === 'venue-restaurant-parcel') return KOT_PRINTER;
-              return menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
+              if (data.sectionTag === 'venue-family-restaurant')  return KOT_FAMILY_PRINTER;
+              // venue-001 tables that are neither parcel nor family: use family printer
+              if (data.restaurantId === 'venue-001') return KOT_FAMILY_PRINTER;
+              // Non-venue: route by item type
+              return _menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
             };
 
             if (foodItems.length > 0) printTasks.push({ printer: resolveCancelPrinter('FOOD'), cmds: buildSlip(foodItems) });

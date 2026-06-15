@@ -15,10 +15,12 @@ export const calculateOrderTotal = (items, discountPercent = 0) => {
     const price = Number(item.p ?? item.price ?? 0);
     const qty = Number(item.q ?? item.quantity ?? 1);
     
-    // Detect liquor by checking all possible field shapes from captain cart,
+    // Detect liquor/bar items by checking all possible field shapes from captain cart,
     // DB order items, and legacy kotHistory items.
+    // BAR items (water bottles, packaged drinks, beer) are treated same as LIQUOR — no food GST.
     const rawType = item.menuType || item.menuItem?.menuType || item.type || '';
-    const type = rawType.toString().toUpperCase() === 'LIQUOR' ? 'liquor' : 'food';
+    const typeUpper = rawType.toString().toUpperCase();
+    const type = (typeUpper === 'LIQUOR' || typeUpper === 'BAR') ? 'liquor' : 'food';
     
     if (type === 'liquor') {
       liquorSubtotal += price * qty;
