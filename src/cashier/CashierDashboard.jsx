@@ -294,7 +294,15 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedTable, setSelectedTable] = useState(() => {
     try {
       const saved = localStorage.getItem('cashier_selected_table');
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      // NEVER restore activeOrder/items from localStorage — prevents stale/wrong items on refresh
+      return {
+        ...parsed,
+        activeOrder: parsed.activeOrder ? { id: parsed.activeOrder.id, totalAmount: parsed.activeOrder.totalAmount } : null,
+        kotHistory: [],
+        currentBill: 0,
+      };
     } catch {
       return null;
     }
@@ -527,11 +535,19 @@ const CashierDashboard = ({ onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Persist selections to localStorage (debounced to avoid micro-stutters)
+  // NEVER save activeOrder/items — prevents stale/wrong items from leaking on refresh
   useEffect(() => {
     if (lsWriteTimerRef.current) clearTimeout(lsWriteTimerRef.current);
     if (selectedTable) {
       lsWriteTimerRef.current = setTimeout(() => {
-        localStorage.setItem('cashier_selected_table', JSON.stringify(selectedTable));
+        const { activeOrder, items, kotHistory, ...identityOnly } = selectedTable;
+        const toSave = {
+          ...identityOnly,
+          activeOrder: activeOrder ? { id: activeOrder.id, totalAmount: activeOrder.totalAmount } : null,
+          kotHistory: [],
+          currentBill: 0,
+        };
+        localStorage.setItem('cashier_selected_table', JSON.stringify(toSave));
       }, 300);
     } else {
       localStorage.removeItem('cashier_selected_table');

@@ -387,6 +387,7 @@ export function useVenueTableSync() {
       onOrderCreated: (payload) => {
         const order = payload?.order || payload;
         if (!order?.tableId) return;
+        if (payload?.isExtraTable) return; // extra-table orders must never leak into venue tables
         if (isRecentlyTerminated(order.tableId)) return;
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         setTablesState((prev) => {
@@ -409,6 +410,7 @@ export function useVenueTableSync() {
       onOrderUpdated: (payload) => {
         const order = payload?.order || payload;
         if (!order?.tableId) return;
+        if (payload?.isExtraTable) return; // extra-table orders must never leak into venue tables
         if (isRecentlyTerminated(order.tableId)) return;
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         setTablesState((prev) => {
