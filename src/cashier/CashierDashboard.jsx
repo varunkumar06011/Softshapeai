@@ -956,7 +956,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => prev ? {
           ...prev,
-          activeOrder: order,
+          activeOrder: mergeOrder(order, prev.activeOrder),
           status: prev.status === 'Free' ? 'Occupied' : prev.status,
           workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
           currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
@@ -969,7 +969,7 @@ const CashierDashboard = ({ onLogout }) => {
         t.backendId === order.tableId
           ? {
               ...t,
-              activeOrder: order,
+              activeOrder: mergeOrder(order, t.activeOrder),
               status: t.status === 'Free' ? 'Occupied' : t.status,
               workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),

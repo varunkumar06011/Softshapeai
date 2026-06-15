@@ -121,7 +121,12 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
     time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
-    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory ?? [])),
+    kotHistory: (() => {
+      if (isFreeWorkflow) return [];
+      const inc = Array.isArray(row.kotHistory) ? row.kotHistory : [];
+      const exc = existing?.kotHistory ?? [];
+      return inc.length >= exc.length ? inc : exc;
+    })(),
     currentBill: isFreeWorkflow ? 0 : (row.currentBill ?? existing?.currentBill ?? 0),
     activeOrder: isFreeWorkflow ? null : activeOrder,
   };

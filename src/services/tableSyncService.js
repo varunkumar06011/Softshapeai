@@ -102,7 +102,28 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     }
   }
 
+  // Fall back to existing if no incoming order and table is not free (prevents wipe on partial payloads)
   const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
+  if (!activeOrder && existing?.activeOrder && !isFreeWorkflow) {
+    activeOrder = existing.activeOrder;
+  }
+
+  // kotHistory: keep whichever has more entries (incoming payloads can be partial)
+  const incomingKot = Array.isArray(row.kotHistory)
+    ? row.kotHistory.map((kot, ki) => {
+        const existingKot = existing?.kotHistory?.[ki];
+        return {
+          ...kot,
+          items: kot.items ? kot.items.map((item, ii) => ({
+            ...item,
+            orderItemId: existingKot?.items?.[ii]?.orderItemId ?? item.orderItemId,
+          })) : [],
+        };
+      })
+    : [];
+  const existingKot = existing?.kotHistory ?? [];
+  const mergedKotHistory = isFreeWorkflow ? []
+    : (incomingKot.length >= existingKot.length ? incomingKot : existingKot);
 
   const base = {
     backendId: row.id,
@@ -116,18 +137,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
     time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
-    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kotHistory)
-      ? row.kotHistory.map((kot, ki) => {
-          const existingKot = existing?.kotHistory?.[ki];
-          return {
-            ...kot,
-            items: kot.items ? kot.items.map((item, ii) => ({
-              ...item,
-              orderItemId: existingKot?.items?.[ii]?.orderItemId ?? item.orderItemId,
-            })) : [],
-          };
-        })
-      : []),
+    kotHistory: mergedKotHistory,
     currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
     activeOrder: isFreeWorkflow ? null : activeOrder,
   };
