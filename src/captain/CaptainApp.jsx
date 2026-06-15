@@ -2369,6 +2369,7 @@ export default function CaptainApp({ onLogout }) {
 
           requestId,
           captainName: currentCaptain?.name || undefined,
+          sectionTag: activeTable?.sectionTag || undefined,
 
         });
 

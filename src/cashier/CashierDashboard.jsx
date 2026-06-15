@@ -2190,6 +2190,7 @@ const CashierDashboard = ({ onLogout }) => {
                   : discountPercent,
                 tableNumber: selectedTable.isExtra ? selectedTable.number : undefined,
                 isExtraTable: selectedTable.isExtra ? true : undefined,
+                sectionTag: selectedTable.sectionTag || undefined,
               })
             }
           );
@@ -2944,6 +2945,7 @@ const CashierDashboard = ({ onLogout }) => {
                 requestId,
                 captainName: 'Cashier',
                 isExtraTable: true,
+                sectionTag: selectedTable.sectionTag || undefined,
               });
               // Store the returned real orderId in both extraTables and selectedTable
               if (orderResponse?.id) {
@@ -2973,6 +2975,7 @@ const CashierDashboard = ({ onLogout }) => {
               items: apiItems,
               requestId,
               captainName: 'Cashier',
+              sectionTag: selectedTable.sectionTag || undefined,
             });
           }
         }

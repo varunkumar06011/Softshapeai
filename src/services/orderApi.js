@@ -32,11 +32,12 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null, captainName = null, isExtraTable = false }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null, captainName = null, isExtraTable = false, sectionTag = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
   if (isExtraTable) { orderData.isExtraTable = true; }
+  if (sectionTag) { orderData.sectionTag = sectionTag; }
 
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));
