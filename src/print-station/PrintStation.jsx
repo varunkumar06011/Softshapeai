@@ -56,6 +56,9 @@ let DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Di
 
 let KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
 
+// Venue sections that follow bar KOT process → print to BAR_PRINTER
+const BAR_VENUE_SECTION_TAGS = new Set(['venue-bar-pdr', 'venue-bar-rooms', 'venue-bar-ac-hall']);
+
 
 
 // ── localStorage printer overrides (admin settings) ──────────────────────────
@@ -1000,6 +1003,7 @@ export default function PrintStation() {
               if (data.escposData && data.escposData.length > 0) {
 
                 const foodPrinter =
+                  BAR_VENUE_SECTION_TAGS.has(data.sectionTag)   ? BAR_PRINTER :
                   data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
                   data.sectionTag === 'venue-bar-parcel'        ? KITCHEN_PRINTER :
                   KOT_FAMILY_PRINTER;
@@ -1043,6 +1047,7 @@ export default function PrintStation() {
 
                 if (kitchenItems.length > 0) {
                   const fallbackFoodPrinter =
+                    BAR_VENUE_SECTION_TAGS.has(data.sectionTag)   ? BAR_PRINTER :
                     data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
                     data.sectionTag === 'venue-bar-parcel'        ? KITCHEN_PRINTER :
                     KOT_FAMILY_PRINTER;
@@ -1176,7 +1181,8 @@ export default function PrintStation() {
             };
 
             const resolveCancelPrinter = (_menuType) => {
-              // sectionTag takes priority — parcel always uses KOT_PRINTER
+              // sectionTag takes priority
+              if (BAR_VENUE_SECTION_TAGS.has(data.sectionTag))   return BAR_PRINTER;
               if (data.sectionTag === 'venue-restaurant-parcel') return KOT_PRINTER;
               if (data.sectionTag === 'venue-family-restaurant')  return KOT_FAMILY_PRINTER;
               // venue-001 tables that are neither parcel nor family: use family printer
