@@ -116,6 +116,8 @@ const SIZE_3X = '\x1D\x21\x22'; // triple height + double width
 
 const SIZE_4X = '\x1D\x21\x33'; // quad height + quad width — maximum ESC/POS size (~75% bigger than SIZE_3X)
 
+const SIZE_8X = '\x1D\x21\x77'; // 8x height + 8x width — MAXIMUM ESC/POS size for largest readable text
+
 const SIZE_5X = '\x1D\x21\x52'; // 5x height + 2x width — massive readable text
 
 const SIZE_TALL = '\x1D\x21\x30'; // 4x height, 1x width — tall readable text that fits on 58mm paper without wrapping
@@ -234,7 +236,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
     const line = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       FONT_A,
-      SIZE_5X,
+      SIZE_8X,
       BOLD_ON,
       line + '\n',
       BOLD_OFF,
@@ -348,7 +350,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     cmds.push(
       LEFT,
       FONT_A,
-      SIZE_5X,
+      SIZE_8X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
@@ -467,7 +469,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     cmds.push(
       LEFT,
       FONT_A,
-      SIZE_5X,
+      SIZE_8X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
