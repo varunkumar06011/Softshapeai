@@ -533,6 +533,7 @@ export default function CaptainApp({ onLogout }) {
 
   const isSubmittingKotRef = useRef(false);
   const kotSubmitStartRef = useRef(0); // timestamp guard against stuck submissions
+  const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const lastAnyItemAddedRef = useRef(0);
   const isVenueTableRef = useRef(false);
