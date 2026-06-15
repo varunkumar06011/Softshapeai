@@ -4,6 +4,15 @@ import { fetchVenueSections, VENUE_ID, updateVenueTableSession } from "./venueTa
 
 const TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
 
+function isRecentlyTerminated(tableId) {
+  try {
+    const raw = localStorage.getItem('cashier_recently_terminated');
+    const map = raw ? JSON.parse(raw) : {};
+    const ts = map[tableId];
+    return ts && Date.now() - ts < 30000;
+  } catch { return false; }
+}
+
 export const VENUE_TABLE_STATUS = {
   FREE: "Free",
   OCCUPIED: "Occupied",
@@ -243,12 +252,14 @@ export function useVenueTableSync() {
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
     if (cached.length > 0) {
-      return cached.map(t => {
-        if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
-          return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
-        }
-        return t;
-      });
+      return cached
+        .filter(t => !isRecentlyTerminated(t.backendId))
+        .map(t => {
+          if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
+            return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
+          }
+          return t;
+        });
     }
     return [];
   });
@@ -280,10 +291,12 @@ export function useVenueTableSync() {
       const flat = flattenSections(sections);
       console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
       setTablesState((current) => {
-        const merged = flat.map((row) => {
-          const existing = current.find((t) => t.backendId === row.id);
-          return mapBackendTable(row, existing);
-        });
+        const merged = flat
+          .filter((row) => !isRecentlyTerminated(row.id))
+          .map((row) => {
+            const existing = current.find((t) => t.backendId === row.id);
+            return mapBackendTable(row, existing);
+          });
         // Deduplicate by backendId to prevent duplicate cards
         const deduped = merged.filter((table, index, self) =>
           index === self.findIndex(t => t.backendId === table.backendId)
@@ -313,6 +326,10 @@ export function useVenueTableSync() {
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         const updatedTable = payload?.table || payload;
         if (!updatedTable?.id) return;
+        if (isRecentlyTerminated(updatedTable.id)) {
+          console.warn('[VenueTableSync] Ignoring update for recently terminated table', updatedTable.id);
+          return;
+        }
 
         // Detect settled/terminated tables and emit clear event to frontend
         const isSettledOrTerminated = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free' || updatedTable.status === 'TERMINATED';
@@ -366,6 +383,7 @@ export function useVenueTableSync() {
       onOrderCreated: (payload) => {
         const order = payload?.order || payload;
         if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         setTablesState((prev) => {
           const next = prev.map((t) =>
@@ -387,6 +405,7 @@ export function useVenueTableSync() {
       onOrderUpdated: (payload) => {
         const order = payload?.order || payload;
         if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         setTablesState((prev) => {
           const next = prev.map((t) =>
