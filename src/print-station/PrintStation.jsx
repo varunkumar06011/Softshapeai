@@ -116,6 +116,8 @@ const SIZE_3X = '\x1D\x21\x22'; // triple height + double width
 
 const SIZE_4X = '\x1D\x21\x33'; // quad height + quad width — maximum ESC/POS size (~75% bigger than SIZE_3X)
 
+const SIZE_TALL = '\x1D\x21\x30'; // 4x height, 1x width — tall readable text that fits on 58mm paper without wrapping
+
 const CUT = '\x1D\x56\x42\x00';
 
 
@@ -212,11 +214,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     separator("-"),
 
-    SIZE_4X,
+    SIZE_2X,
     BOLD_ON,
     "Qty  Item\n",
     BOLD_OFF,
-    SIZE_2X,
+    SIZE_NORMAL,
     separator("-"),
 
   ];
@@ -226,11 +228,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   (items || []).forEach(item => {
     const line = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_4X,
+      SIZE_TALL,
       BOLD_ON,
       line + '\n',
       BOLD_OFF,
-      SIZE_2X,
+      SIZE_NORMAL,
     );
     if (item.notes && item.notes.trim()) {
       cmds.push(`     * ${item.notes.trim()}\n`);
@@ -339,11 +341,11 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      SIZE_4X,
+      SIZE_TALL,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
-      SIZE_2X,
+      SIZE_NORMAL,
       `Type  : ${itemType}\n`
     );
   }
@@ -442,11 +444,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
     separator("-"),
 
-    SIZE_4X,
+    SIZE_2X,
     BOLD_ON,
     "Qty  Item\n",
     BOLD_OFF,
-    SIZE_2X,
+    SIZE_NORMAL,
     separator("-"),
 
   ];
@@ -457,11 +459,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      SIZE_4X,
+      SIZE_TALL,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
-      SIZE_2X,
+      SIZE_NORMAL,
     );
   });
 
