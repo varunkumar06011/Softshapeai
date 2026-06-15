@@ -2495,9 +2495,15 @@ const CashierDashboard = ({ onLogout }) => {
 
       const remappedVariants = item.variants?.map(v => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
-        return variantOverride !== undefined
-          ? { ...v, price: Number(variantOverride) }
-          : v;
+        if (variantOverride !== undefined) {
+          return { ...v, price: Number(variantOverride) };
+        }
+        // If no variant-specific override but variant has no price, use item's venue price
+        const variantBasePrice = v.price || v.p || 0;
+        if (variantBasePrice === 0 && finalPrice > 0) {
+          return { ...v, price: finalPrice };
+        }
+        return v;
       }) ?? item.variants;
 
       return {
