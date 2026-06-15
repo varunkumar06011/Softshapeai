@@ -3697,7 +3697,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <button
                               key={f.key}
                               onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
-                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key
+                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key && !txnCustomDate
                                 ? 'bg-[#E53935] text-white shadow-sm'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                                 }`}
@@ -3705,6 +3705,24 @@ const CashierDashboard = ({ onLogout }) => {
                               {f.label}
                             </button>
                           ))}
+                          <input
+                            type="date"
+                            value={txnCustomDate}
+                            max={new Date().toISOString().slice(0, 10)}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setTxnCustomDate(val);
+                              if (val) {
+                                setTxnDateFilter('custom');
+                                loadTransactions('custom', val);
+                              }
+                            }}
+                            className={`px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold border-2 outline-none transition-colors cursor-pointer ${
+                              txnCustomDate
+                                ? 'border-[#E53935] text-[#E53935] bg-red-50'
+                                : 'border-gray-200 text-gray-600 bg-white hover:border-gray-400'
+                            }`}
+                          />
                           <button
                             onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                             className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
