@@ -118,6 +118,9 @@ const SIZE_4X = '\x1D\x21\x33'; // quad height + quad width — maximum ESC/POS 
 
 const SIZE_TALL = '\x1D\x21\x30'; // 4x height, 1x width — tall readable text that fits on 58mm paper without wrapping
 
+const FONT_A = '\x1B\x4D\x00'; // default 12x24 font (chunky)
+const FONT_B = '\x1B\x4D\x01'; // 9x17 font (cleaner, sharper, more modern look)
+
 const CUT = '\x1D\x56\x42\x00';
 
 
@@ -228,10 +231,12 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   (items || []).forEach(item => {
     const line = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      SIZE_TALL,
+      FONT_B,
+      SIZE_2X,
       BOLD_ON,
       line + '\n',
       BOLD_OFF,
+      FONT_A,
       SIZE_NORMAL,
     );
     if (item.notes && item.notes.trim()) {
@@ -341,10 +346,12 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      SIZE_TALL,
+      FONT_B,
+      SIZE_2X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
+      FONT_A,
       SIZE_NORMAL,
       `Type  : ${itemType}\n`
     );
@@ -459,10 +466,12 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      SIZE_TALL,
+      FONT_B,
+      SIZE_2X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
+      FONT_A,
       SIZE_NORMAL,
     );
   });
