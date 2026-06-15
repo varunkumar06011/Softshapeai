@@ -13,6 +13,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems } from '../services/orderApi';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
+import { validateTableIntegrity } from '../utils/syncInvariant';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
@@ -954,13 +955,19 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs1 && Date.now() - termTs1 < 30000) return;
       // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
-        setSelectedTable(prev => prev ? {
-          ...prev,
-          activeOrder: mergeOrder(order, prev.activeOrder),
-          status: prev.status === 'Free' ? 'Occupied' : prev.status,
-          workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
-          currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-        } : prev);
+        setSelectedTable(prev => {
+          if (!prev) return prev;
+          const before = prev;
+          const nextVal = {
+            ...prev,
+            activeOrder: mergeOrder(order, prev.activeOrder),
+            status: prev.status === 'Free' ? 'Occupied' : prev.status,
+            workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
+            currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+          };
+          validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
+          return nextVal;
+        });
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
@@ -1032,7 +1039,13 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs2 && Date.now() - termTs2 < 30000) return;
       // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
-        setSelectedTable(prev => prev ? { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) } : prev);
+        setSelectedTable(prev => {
+          if (!prev) return prev;
+          const before = prev;
+          const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) };
+          validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
+          return nextVal;
+        });
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
@@ -1146,6 +1159,7 @@ const CashierDashboard = ({ onLogout }) => {
               ? null
               : (incomingHasOrdersSel ? table.orders[0] : prev.activeOrder),  // preserve if no incoming orders
           };
+          validateTableIntegrity('CashierDashboard.onTableUpdated', prev, nextVal);
           if (shallowEqualSelectedTable(prev, nextVal)) return prev; // bail out if nothing changed
           return nextVal;
         });

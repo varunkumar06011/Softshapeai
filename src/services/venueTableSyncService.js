@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchVenueSections, VENUE_ID, updateVenueTableSession } from "./venueTableApi";
+import { validateTableIntegrity } from "../utils/syncInvariant";
 
 const TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
 
@@ -328,7 +329,9 @@ export function useVenueTableSync() {
           .filter((row) => !isRecentlyTerminated(row.id))
           .map((row) => {
             const existing = current.find((t) => t.backendId === row.id);
-            return mapBackendTable(row, existing);
+            const after = mapBackendTable(row, existing);
+            if (existing) validateTableIntegrity('venueTableSync.mergeTablesFromApi', existing, after);
+            return after;
           });
         // Deduplicate by backendId to prevent duplicate cards
         const deduped = merged.filter((table, index, self) =>
@@ -395,7 +398,10 @@ export function useVenueTableSync() {
               console.warn('[VenueTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
               return t;
             }
-            return mapBackendTable(updatedTable, t);
+            const before = t;
+            const after = mapBackendTable(updatedTable, t);
+            validateTableIntegrity('venueTableSync', before, after);
+            return after;
           });
           writeCache(next);
           return next;

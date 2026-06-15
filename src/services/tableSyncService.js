@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
+import { validateTableIntegrity } from "../utils/syncInvariant";
 
 
 
@@ -178,7 +179,9 @@ function mergeTablesFromApi(apiTables, currentTables) {
 
   return flat.map((row) => {
     const existing = currentTables.find((t) => t.backendId === row.id || (row.id.startsWith("local-") && t.number === row.number));
-    return mapBackendTable(row, existing);
+    const after = mapBackendTable(row, existing);
+    if (existing) validateTableIntegrity('tableSync.mergeTablesFromApi', existing, after);
+    return after;
   });
 }
 
@@ -417,7 +420,10 @@ export function useTableSync() {
               console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
               return t;
             }
-            return mapBackendTable(updatedTable, t);
+            const before = t;
+            const after = mapBackendTable(updatedTable, t);
+            validateTableIntegrity('tableSync', before, after);
+            return after;
           });
           writeCache(next);
           return next;

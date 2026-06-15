@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
+import { validateTableIntegrity } from "../utils/syncInvariant";
 
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
@@ -393,7 +394,10 @@ export function useBarTableSync() {
                 return t;
               }
             }
-            return mapBackendTable(updatedTable, t);
+            const before = t;
+            const after = mapBackendTable(updatedTable, t);
+            validateTableIntegrity('barTableSync', before, after);
+            return after;
           });
           writeCache(next);
           return next;
