@@ -2616,7 +2616,16 @@ const CashierDashboard = ({ onLogout }) => {
         if (freshOrder) {
           setSelectedTable(prev => {
             if (!prev || prev.backendId !== table.backendId || prev.isExtra) return prev; // user moved on or extra table
-            return { ...prev, activeOrder: freshOrder };
+            // Merge fresh order items with existing — never drop items that exist locally
+            const existingItems = prev.activeOrder?.items || [];
+            const freshItems = freshOrder.items || [];
+            const freshIds = new Set(freshItems.map(i => i.id).filter(Boolean));
+            const localOnlyItems = existingItems.filter(i => i.id && !freshIds.has(i.id) && !i.removedFromBill);
+            const mergedItems = [...freshItems, ...localOnlyItems];
+            return {
+              ...prev,
+              activeOrder: { ...freshOrder, items: mergedItems },
+            };
           });
         }
         setIsModalDataLoading(false);

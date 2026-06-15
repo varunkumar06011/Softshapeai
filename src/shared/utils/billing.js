@@ -68,8 +68,24 @@ export const getAllOrderItems = (table) => {
 
   // 1. Prefer DB-backed Order items (set by useTableSync when orders relation is included)
   const activeOrder = table.activeOrder || (table.orders && table.orders[0]);
-  if (activeOrder && activeOrder.items) {
-    return activeOrder.items.map(item => ({
+
+  // Flatten kotHistory items (all KOTs captain has sent — always complete)
+  const kotItems = (table.kotHistory && table.kotHistory.length > 0)
+    ? table.kotHistory.flatMap(kot => (kot.items || []).map(i => ({
+        id: i.id ?? null,
+        n: i.n ?? i.name ?? '',
+        p: Number(i.p ?? i.price ?? 0),
+        q: Number(i.q ?? i.quantity ?? 1),
+        quantity: Number(i.q ?? i.quantity ?? 1),
+        notes: i.notes || null,
+        removedFromBill: i.removedFromBill ?? false,
+        menuType: i.menuType || null,
+        _fromKot: true,
+      })))
+    : [];
+
+  if (activeOrder && activeOrder.items && activeOrder.items.length > 0) {
+    const dbItems = activeOrder.items.map(item => ({
       id: item.id,
       n: item.name ?? item.n,
       p: Number(item.price ?? item.p ?? 0),
@@ -80,14 +96,19 @@ export const getAllOrderItems = (table) => {
       originalQuantity: item.originalQuantity ?? null,
       cancelledQuantity: Number(item.cancelledQuantity ?? 0),
       editedQuantity: Number(item.editedQuantity ?? 0),
-      // Preserve menuType so calculateOrderTotal can correctly apply 0% GST for liquor
       menuType: item.menuType || item.menuItem?.menuType || null,
     }));
+
+    // Merge in any kotHistory items that are NOT already present in dbItems.
+    // This handles partial socket payloads where activeOrder.items only has the latest KOT.
+    const dbNames = new Set(dbItems.map(i => (i.n || '').trim().toLowerCase()));
+    const kotOnlyItems = kotItems.filter(i => !dbNames.has((i.n || '').trim().toLowerCase()));
+    return [...dbItems, ...kotOnlyItems];
   }
 
   // 2. Fall back to kotHistory (legacy JSON blob — kept for KOT timeline display)
-  if (table.kotHistory && table.kotHistory.length > 0) {
-    return table.kotHistory.flatMap(kot => kot.items || []);
+  if (kotItems.length > 0) {
+    return kotItems;
   }
 
   return [];
