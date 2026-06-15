@@ -424,6 +424,18 @@ const CashierDashboard = ({ onLogout }) => {
     try { localStorage.setItem('cashier_extra_tables', JSON.stringify(extraTables)); } catch {}
   }, [extraTables]);
 
+  // On mount: purge any extra tables that were recently terminated but survived in localStorage
+  useEffect(() => {
+    setExtraTables(prev => {
+      const filtered = prev.filter(et => {
+        const termTs = recentlyTerminatedRef.current[et.id];
+        return !(termTs && Date.now() - termTs < 30000);
+      });
+      return filtered;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Keep selectedTable in sync with extraTables — extra table state (activeOrder.id, items, status)
   // is updated via setExtraTables (e.g. after createOrder resolves), but selectedTable is a separate
   // snapshot. Without this sync, handleFinalBill can't find the real orderId and modal shows stale data.
@@ -2158,7 +2170,14 @@ const CashierDashboard = ({ onLogout }) => {
 
     const tableSnap = { ...selectedTable }; // snapshot before any state mutation
     // Guard against socket events reviving the just-terminated table
-    if (tableSnap.backendId) {
+    if (tableSnap.isExtra && tableSnap.id) {
+      terminatedTableIdsRef.current.add(tableSnap.id);
+      recentlyTerminatedRef.current[tableSnap.id] = Date.now();
+      try {
+        localStorage.setItem('cashier_recently_terminated', JSON.stringify(recentlyTerminatedRef.current));
+      } catch {}
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.id), 6000);
+    } else if (tableSnap.backendId) {
       terminatedTableIdsRef.current.add(tableSnap.backendId);
       recentlyTerminatedRef.current[tableSnap.backendId] = Date.now();
       try {
@@ -2226,7 +2245,12 @@ const CashierDashboard = ({ onLogout }) => {
           : t
       ));
 
-      // Step 4: Clear UI selections
+      // Step 4: For extra tables — remove from extraTables so they vanish from UI immediately
+      if (tableSnap.isExtra) {
+        setExtraTables(prev => prev.filter(et => et.id !== tableSnap.id));
+      }
+
+      // Step 5: Clear UI selections
       setSelectedTable(null);
       setSelectedOrder(null);
       setCart([]);
@@ -2237,7 +2261,7 @@ const CashierDashboard = ({ onLogout }) => {
       setShowTableModal(false);
       // Clean up persisted discount on terminate
 
-      // Step 5: Evict terminated table from localStorage cache so hard refresh never shows it again
+      // Step 6: Evict terminated table from localStorage cache so hard refresh never shows it again
       const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1'
         : (outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6');
       try {
@@ -3235,7 +3259,12 @@ const CashierDashboard = ({ onLogout }) => {
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
                                 return sectionName.includes('bar');
                               }).sort((a, b) => Number(a.number || a.id) - Number(b.number || b.id)),
-                              ...extraTables.sort((a, b) => String(a.number).localeCompare(String(b.number)))
+                              ...extraTables
+                                .filter(et => {
+                                  const termTs = recentlyTerminatedRef.current[et.id];
+                                  return !(termTs && Date.now() - termTs < 30000);
+                                })
+                                .sort((a, b) => String(a.number).localeCompare(String(b.number)))
                             ]
                               .map((table) => {
                                 const isFree = (table.status === 'Free' || !table.status)
