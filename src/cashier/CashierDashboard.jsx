@@ -25,7 +25,7 @@ import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { BAR_ID } from '../services/barApiConfig';
-import { updateBarTableSession } from '../services/barTableApi';
+import { updateBarTableSession, deleteBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
@@ -2284,18 +2284,21 @@ const CashierDashboard = ({ onLogout }) => {
         }
 
         // Step 2: Backend confirmed success — now safe to clear local state
-        const resetSessionPayload = {
-          status: 'Free',
-          kotHistory: [],
-          currentBill: 0,
-          captainId: null,
-          guests: 0,
-        };
-
         if (outlet === 'bar' && !isVenueTable) {
-          updateBarTableSession(tableSnap.backendId, resetSessionPayload)
-            .catch(err => console.warn('[Terminate] resetBarSession failed:', err.message));
+          // Use DELETE for bar tables — fully wipes session including activeOrder on backend
+          deleteBarTableSession(tableSnap.backendId)
+            .catch(err => console.warn('[Terminate] deleteBarSession failed:', err.message));
         } else {
+          const resetSessionPayload = {
+            status: 'Free',
+            kotHistory: [],
+            currentBill: 0,
+            captainId: null,
+            guests: 0,
+            activeOrder: null,
+            orders: [],
+            items: [],
+          };
           updateTableSession(tableSnap.backendId, resetSessionPayload)
             .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
         }
