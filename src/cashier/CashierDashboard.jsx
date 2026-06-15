@@ -478,10 +478,7 @@ const CashierDashboard = ({ onLogout }) => {
       items = cart;
     } else if (selectedTable) {
       const committedItems = getTableItems(selectedTable);
-      const itemsForTotal = committedItems.length > 0
-        ? committedItems
-        : lastConfirmedItemsRef.current;
-      items = [...itemsForTotal, ...cart];
+      items = [...committedItems, ...cart];
     }
     return items.filter(i => !i.removedFromBill).reduce((acc, item) => acc + (Number(item.p || 0) * Number(item.q || 1)), 0);
   }, [selectedTable, activeTab, cart]);
@@ -1602,10 +1599,7 @@ const CashierDashboard = ({ onLogout }) => {
   const activeOrderCalc = useMemo(() => {
     if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
     const committedItems = getBillableItems(selectedTable);
-    const itemsForTotal = committedItems.length > 0
-      ? committedItems
-      : lastConfirmedItemsRef.current;
-    const items = itemsForTotal.map(i =>
+    const items = committedItems.map(i =>
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
     return calculateOrderTotal([...items, ...cart], discountPercent);
@@ -1623,13 +1617,20 @@ const CashierDashboard = ({ onLogout }) => {
     // Only use calcTotal as the candidate — never backendTotal (which is raw subtotal only)
     const candidate = calcTotal;
 
+    // If no items remain, total must be 0 — clear stale ref so it doesn't show old value
+    const hasCommittedItems = selectedTable ? getBillableItems(selectedTable).length > 0 : false;
+    const hasCartItems = cart.length > 0;
+    if (!hasCommittedItems && !hasCartItems) {
+      lastKnownBillRef.current = 0;
+      return 0;
+    }
     // Prevent flash-to-zero: only update ref when we have a real value
     if (candidate > 0) {
       lastKnownBillRef.current = candidate; // do NOT use Math.max — allow discounts to reduce the value
     }
     return lastKnownBillRef.current > 0 ? lastKnownBillRef.current : candidate;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable?.activeOrder?.id, activeOrderCalc.grandTotal, activeOrderCalc.total, discountPercent]);
+  }, [selectedTable?.activeOrder?.id, activeOrderCalc.grandTotal, activeOrderCalc.total, discountPercent, cart.length]);
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
