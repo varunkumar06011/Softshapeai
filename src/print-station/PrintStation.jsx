@@ -56,8 +56,8 @@ let DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Di
 
 let KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
 
-// Venue sections that follow bar KOT process → print to BAR_PRINTER
-const BAR_VENUE_SECTION_TAGS = new Set(['venue-bar-pdr', 'venue-bar-rooms', 'venue-bar-ac-hall']);
+// Venue sections where ALL KOTs (food + bar) print to BAR_PRINTER (PDR, Rooms follow full bar process)
+const BAR_VENUE_SECTION_TAGS = new Set(['venue-bar-pdr', 'venue-bar-rooms']);
 
 
 
