@@ -30,7 +30,7 @@ import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
 import { useVenuePrices } from '../hooks/useVenuePrices';
-import { useVenueTableSync } from '../services/venueTableSyncService';
+import { useVenueTableSync, getVenueTableLabel } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -765,9 +765,29 @@ const CashierDashboard = ({ onLogout }) => {
           items: txn.itemCount || 0,
           itemsList: txn.items || [],
           captainId: txn.captainId || 'CASHIER',
-          captainName: CAPTAINS.find(c => c.id === txn.captainId)?.name || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
+          // Prefer backend captainName, then CAPTAINS lookup, then captainId itself, then fallback
+          captainName: txn.captainName
+            || CAPTAINS.find(c => c.id === txn.captainId)?.name
+            || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
           method: txn.method || 'UPI',
           tableNumber: txn.tableNumber || null,
+          // Derive venue-style display name (BP1, B1, F1, etc.) — falls back to raw number
+          tableDisplayName: (() => {
+            const num = txn.tableNumber;
+            if (!num) return '—';
+            const sectionMap = {
+              'bar-ac-hall': 'bar',
+              'bar-conference': 'conference',
+              'bar-pdr': 'pdr',
+              'bar-rooms': 'rooms',
+              'bar-parcel': 'bar parcel',
+              'bar-gobox': 'bar parcel',
+              'restaurant-parcel': 'parcel',
+              'family-restaurant': 'family restaurant',
+            };
+            const secName = sectionMap[source];
+            return secName ? getVenueTableLabel(secName, num) : `T${num}`;
+          })(),
           source,
           restaurantId: txn._sourceRestaurantId,
         };
@@ -837,7 +857,7 @@ const CashierDashboard = ({ onLogout }) => {
       list = list.filter(txn =>
         (txn.displayId || '').toLowerCase().includes(q) ||
         (txn.captainName || '').toLowerCase().includes(q) ||
-        String(txn.tableNumber || '').toLowerCase().includes(q) ||
+        String(txn.tableDisplayName || txn.tableNumber || '').toLowerCase().includes(q) ||
         String(txn.grandTotal ?? txn.amount ?? '').includes(q) ||
         String(txn.billNumber || '').toLowerCase().includes(q) ||
         String(txn.txnNumber || '').toLowerCase().includes(q)
@@ -1598,7 +1618,14 @@ const CashierDashboard = ({ onLogout }) => {
           );
         }
         if (billFinderTableNo.trim()) {
-          matches = matches && String(txn.tableNumber) === billFinderTableNo.trim();
+          const searchNo = billFinderTableNo.trim();
+          const num = txn.tableNumber;
+          const secName = (txn.sectionTag || '').toLowerCase();
+          const displayName = num ? getVenueTableLabel(secName, num) : '—';
+          matches = matches && (
+            String(txn.tableNumber) === searchNo ||
+            String(displayName) === searchNo
+          );
         }
         return matches;
       });
@@ -1620,7 +1647,15 @@ const CashierDashboard = ({ onLogout }) => {
         return matches;
       });
 
-      setBillFinderResults(isolated);
+      // Enrich results with tableDisplayName for rendering
+      const enriched = isolated.map(txn => {
+        const num = txn.tableNumber;
+        const secName = (txn.sectionTag || '').toLowerCase();
+        const tableDisplayName = num ? getVenueTableLabel(secName, num) : '—';
+        return { ...txn, tableDisplayName };
+      });
+
+      setBillFinderResults(enriched);
     } catch (error) {
       console.error('[Bill Finder] Search error:', error);
       addNotification('Search Failed', 'Failed to search for bills', 'error');
@@ -3706,7 +3741,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       {/* FIX 6: Table Number */}
                                       <td className="p-4">
                                         <span className="text-xs md:text-sm font-black text-gray-700">
-                                          {txn.tableNumber ? `T-${txn.tableNumber}` : '—'}
+                                          {txn.tableDisplayName || '—'}
                                         </span>
                                       </td>
                                       {/* FIX 6: Captain */}
@@ -3917,7 +3952,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         {' '}
                                         {new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                                       </td>
-                                      <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableNumber || '—'}</td>
+                                      <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableDisplayName || '—'}</td>
                                       <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
                                           txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
