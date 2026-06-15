@@ -1157,7 +1157,7 @@ const CashierDashboard = ({ onLogout }) => {
             workflowStatus: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
             activeOrder: (isTableFree && isTableSettled)
               ? null
-              : (incomingHasOrdersSel ? table.orders[0] : prev.activeOrder),  // preserve if no incoming orders
+              : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder),  // merge, never replace
           };
           validateTableIntegrity('CashierDashboard.onTableUpdated', prev, nextVal);
           if (shallowEqualSelectedTable(prev, nextVal)) return prev; // bail out if nothing changed

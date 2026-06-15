@@ -18,6 +18,10 @@ export function recordItemLoss(source, tableId, beforeCount, afterCount, details
 
 export function validateTableIntegrity(source, before, after) {
   if (!before || !after) return;
+  // Legitimate settlement: a Free/AVAILABLE table SHOULD have zero items and kotHistory
+  const isLegitimatelyFree = after.status === 'Free' || after.status === 'AVAILABLE' || after.workflowStatus === 'Free' || after.dbStatus === 'AVAILABLE';
+  if (isLegitimatelyFree) return;
+
   const beforeItems = getItemCount(before);
   const afterItems = getItemCount(after);
   if (afterItems < beforeItems) {
@@ -26,7 +30,7 @@ export function validateTableIntegrity(source, before, after) {
   }
   const beforeKots = before.kotHistory?.length ?? 0;
   const afterKots = after.kotHistory?.length ?? 0;
-  if (afterKots < beforeKots && after.status !== 'Free' && after.status !== 'AVAILABLE') {
+  if (afterKots < beforeKots) {
     recordItemLoss(source, after.backendId || after.id, beforeKots, afterKots, 'kotHistory shrunk on occupied table');
   }
 }
