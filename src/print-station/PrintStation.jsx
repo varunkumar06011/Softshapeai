@@ -231,12 +231,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
   (items || []).forEach(item => {
     const line = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
-      FONT_B,
-      SIZE_2X,
+      FONT_A,
+      SIZE_3X,
       BOLD_ON,
       line + '\n',
       BOLD_OFF,
-      FONT_A,
       SIZE_NORMAL,
     );
     if (item.notes && item.notes.trim()) {
@@ -346,12 +345,11 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      FONT_B,
-      SIZE_2X,
+      FONT_A,
+      SIZE_3X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
-      FONT_A,
       SIZE_NORMAL,
       `Type  : ${itemType}\n`
     );
@@ -466,12 +464,11 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
     const itemLine = `${item.quantity}    ${item.name.toUpperCase()}`;
     cmds.push(
       LEFT,
-      FONT_B,
-      SIZE_2X,
+      FONT_A,
+      SIZE_3X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
-      FONT_A,
       SIZE_NORMAL,
     );
   });
