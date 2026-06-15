@@ -4624,7 +4624,7 @@ const CashierDashboard = ({ onLogout }) => {
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
-                  {isModalDataLoading ? (
+                  {(isModalDataLoading && getAllOrderItems(selectedTable).length === 0) ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 size={20} className="animate-spin text-gray-400" />
                     </div>
@@ -4788,7 +4788,7 @@ const CashierDashboard = ({ onLogout }) => {
                       Settlement
                     </button>
                   ) : (
-                    isModalDataLoading ? (
+                    (isModalDataLoading && getBillableItems(selectedTable).length === 0) ? (
                       <div className="py-2.5 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center shadow-sm flex items-center justify-center gap-2">
                         <Loader2 size={12} className="animate-spin text-gray-400" />
                         Loading items…
