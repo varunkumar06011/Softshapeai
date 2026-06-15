@@ -772,22 +772,27 @@ const CashierDashboard = ({ onLogout }) => {
             || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
           method: txn.method || 'UPI',
           tableNumber: txn.tableNumber || null,
-          // Derive venue-style display name (BP1, B1, F1, etc.) — falls back to raw number
+          // Derive display label: B=bar, C=conference, R=rooms, PDR=pdr, P=parcel/owner, BP=bar-parcel, F=family, T=restaurant
           tableDisplayName: (() => {
             const num = txn.tableNumber;
             if (!num) return '—';
-            const sectionMap = {
-              'bar-ac-hall': 'bar',
-              'bar-conference': 'conference',
-              'bar-pdr': 'pdr',
-              'bar-rooms': 'rooms',
-              'bar-parcel': 'bar parcel',
-              'bar-gobox': 'bar parcel',
-              'restaurant-parcel': 'parcel',
-              'family-restaurant': 'family restaurant',
-            };
-            const secName = sectionMap[source];
-            return secName ? getVenueTableLabel(secName, num) : `T${num}`;
+            const tag = (txn.sectionTag || '').toLowerCase();
+            const rid = txn._sourceRestaurantId;
+            // Parcel (owner) — check before generic bar to avoid wrong prefix
+            if (tag.includes('bar-parcel') || tag.includes('gobox')) return `BP${num}`;
+            if (tag.includes('restaurant-parcel') || source === 'restaurant-parcel') return `P${num}`;
+            // Conference hall
+            if (tag.includes('conference') || source === 'bar-conference') return `C${num}`;
+            // PDR
+            if (tag.includes('pdr') || source === 'bar-pdr') return `PDR${num}`;
+            // Rooms
+            if (tag.includes('rooms') || source === 'bar-rooms') return `R${num}`;
+            // Bar (venue or bar-001)
+            if (tag.includes('bar') || source === 'bar-ac-hall' || source === 'bar' || rid === 'bar-001') return `B${num}`;
+            // Family restaurant / venue dine-in
+            if (tag.includes('family') || source === 'family-restaurant') return `F${num}`;
+            // Default: restaurant table → T prefix
+            return `T${num}`;
           })(),
           source,
           restaurantId: txn._sourceRestaurantId,
