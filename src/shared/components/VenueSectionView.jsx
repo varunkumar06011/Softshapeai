@@ -18,6 +18,16 @@ export default function VenueSectionView({
   const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
   const targetName = (sectionName || '').trim().toLowerCase();
 
+  const recentlyTerminated = (() => {
+    try {
+      const raw = localStorage.getItem('cashier_recently_terminated');
+      const map = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      Object.keys(map).forEach(k => { if (now - map[k] > 30000) delete map[k]; });
+      return map;
+    } catch { return {}; }
+  })();
+
   const sectionTables = (venueTables || []).filter((table) => {
     if (targetSectionId) {
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
@@ -25,7 +35,10 @@ export default function VenueSectionView({
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
     const tableName = currentName;
     const target = targetName;
-    return tableName === target || tableName.includes(target) || target.includes(tableName);
+    const nameMatch = tableName === target || tableName.includes(target) || target.includes(tableName);
+    if (!nameMatch) return false;
+    const termTs = recentlyTerminated[table.backendId];
+    return !(termTs && Date.now() - termTs < 30000);
   });
 
   if (isSyncing && (!sectionTables || sectionTables.length === 0)) {

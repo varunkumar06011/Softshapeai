@@ -361,6 +361,10 @@ export function useVenueTableSync() {
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         const newTable = payload?.table || payload;
         if (!newTable?.id) return;
+        if (isRecentlyTerminated(newTable.id)) {
+          console.warn('[VenueTableSync] Ignoring create for recently terminated table', newTable.id);
+          return;
+        }
         setTablesState((prev) => {
           if (findTableIndex(prev, newTable.id) !== -1) return prev;
           const next = [...prev, mapBackendTable(newTable)];
