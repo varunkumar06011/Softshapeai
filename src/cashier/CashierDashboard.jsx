@@ -2989,7 +2989,13 @@ const CashierDashboard = ({ onLogout }) => {
           }
         }
       } catch (err) {
-        console.warn('[BG] order write failed:', err.message);
+        console.error('[KOT] API failed after retries:', err.message);
+        // Notify cashier so they can resend — kitchen never received this KOT
+        addNotification(
+          'KOT Not Sent to Kitchen',
+          `Please re-add items and send again. (${err.message || 'Network error'})`,
+          'error'
+        );
       } finally {
         isSubmittingKotRef.current = false;
         setIsKotSending(false);

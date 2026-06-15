@@ -42,25 +42,29 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   console.log("=== ORDER PAYLOAD ===");
   console.log(JSON.stringify(orderData, null, 2));
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
-
-  try {
-    const res = await fetch(apiUrl("/api/orders"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(orderData),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return parseResponse(res);
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error("KOT request timed out — please retry");
-    }
-    throw error;
-  }
+  return withRetry(
+    async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      try {
+        const res = await fetch(apiUrl("/api/orders"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(orderData),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return parseResponse(res);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error("KOT request timed out — please retry");
+        }
+        throw error;
+      }
+    },
+    RETRY_CONFIG.KOT
+  );
 }
 
 export async function fetchOrders({ restaurantId = RESTAURANT_ID, status } = {}) {
