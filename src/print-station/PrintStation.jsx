@@ -529,7 +529,13 @@ function padRight(left, right, width = LINE_NORMAL) {
 
 
 
-function buildBillCommands({ tableNumber, items, totalAmount }) {
+function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag }) {
+
+  const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+    ? 'V GRAND FAMILY RESTAURANT'
+    : (restaurantId === 'bar-001' ? 'BAR ORDER'
+      : (restaurantId === 'venue-001' ? 'V GRAND FAMILY RESTAURANT'
+        : 'SOFTSHAPE RESTAURANT'));
 
   const cmds = [
 
@@ -539,9 +545,19 @@ function buildBillCommands({ tableNumber, items, totalAmount }) {
 
     BOLD_ON,
 
+    `${venueLabel}\n`,
+
+    BOLD_OFF,
+
+    SIZE_2X,
+
+    BOLD_ON,
+
     'BILL RECEIPT\n',
 
     BOLD_OFF,
+
+    SIZE_NORMAL,
 
     separator(),
 
