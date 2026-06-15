@@ -130,10 +130,23 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
 
 /**
  * Flatten sections API response → flat array of table objects.
+ * Handles: wrapped { sections: [...] }, flat [...], and tables already flattened.
  */
-function flattenSections(sections) {
-  if (!Array.isArray(sections)) return [];
-  if (sections.length > 0 && Array.isArray(sections[0]?.tables)) {
+function flattenSections(raw) {
+  // Unwrap common response wrappers
+  let sections = raw;
+  if (!Array.isArray(sections) && sections && typeof sections === 'object') {
+    if (Array.isArray(sections.sections)) sections = sections.sections;
+    else if (Array.isArray(sections.data)) sections = sections.data;
+    else if (Array.isArray(sections.tables)) sections = sections.tables;
+    else if (sections.data && Array.isArray(sections.data.sections)) sections = sections.data.sections;
+  }
+  if (!Array.isArray(sections)) {
+    console.warn('[VenueTableSync] flattenSections: input is not an array after unwrapping', raw);
+    return [];
+  }
+  if (sections.length === 0) return [];
+  if (Array.isArray(sections[0]?.tables)) {
     return sections.flatMap((sec) =>
       (sec.tables || []).map((t) => ({
         ...t,
@@ -142,7 +155,11 @@ function flattenSections(sections) {
       }))
     );
   }
-  return sections;
+  // Already flat array of tables — ensure each has a section name
+  return sections.map(t => ({
+    ...t,
+    section: t.section || { name: t.sectionName || t.sectionTag || '' },
+  }));
 }
 
 function findTableIndex(tables, backendId) {
@@ -274,7 +291,7 @@ export function useVenueTableSync() {
     tablesRef.current = tables;
   }, [tables]);
 
-  const loadTables = useCallback(async () => {
+  const loadTables = useCallback(async (isRetry = false) => {
     if (isFetchingRef.current) {
       console.log('[VenueTableSync] Fetch already in progress, skipping');
       return;
@@ -304,11 +321,22 @@ export function useVenueTableSync() {
         writeCache(deduped);
         return deduped;
       });
+
+      // Auto-retry once if result is empty and this wasn't already a retry
+      if (flat.length === 0 && !isRetry) {
+        console.warn('[VenueTableSync] Empty result — retrying in 2s');
+        setTimeout(() => loadTables(true), 2000);
+      }
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         console.log('[VenueTableSync] Fetch aborted');
       } else {
         console.error("[VenueTableSync] Fetch failed:", err);
+        // Auto-retry once on failure
+        if (!isRetry) {
+          console.warn('[VenueTableSync] Fetch error — retrying in 3s');
+          setTimeout(() => loadTables(true), 3000);
+        }
       }
     } finally {
       isFetchingRef.current = false;

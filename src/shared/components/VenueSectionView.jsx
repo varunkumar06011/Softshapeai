@@ -12,7 +12,8 @@ export default function VenueSectionView({
   captainId,
   onOrderPlaced,
   venueTables = [],
-  isSyncing = false
+  isSyncing = false,
+  refetch = null
 }) {
 
   const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
@@ -41,6 +42,12 @@ export default function VenueSectionView({
     return !(termTs && Date.now() - termTs < 30000);
   });
 
+  // Debug: log available section names when no match
+  if ((!sectionTables || sectionTables.length === 0) && venueTables.length > 0) {
+    const availableNames = venueTables.map(t => (t.sectionName || t.section?.name || 'NO_NAME')).filter(Boolean);
+    console.warn('[VenueSectionView] No tables matched for section:', targetName, '| Available section names:', [...new Set(availableNames)]);
+  }
+
   if (isSyncing && (!sectionTables || sectionTables.length === 0)) {
     return (
       <div className="p-8 text-center">
@@ -52,8 +59,18 @@ export default function VenueSectionView({
 
   if (!sectionTables || sectionTables.length === 0) {
     return (
-      <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">
-        No tables found for {sectionName}
+      <div className="p-8 text-center">
+        <p className="text-gray-500 font-bold uppercase tracking-widest mb-4">
+          No tables found for {sectionName}
+        </p>
+        {refetch && (
+          <button
+            onClick={refetch}
+            className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase tracking-widest text-sm hover:bg-red-700 transition-colors"
+          >
+            Refresh Tables
+          </button>
+        )}
       </div>
     );
   }

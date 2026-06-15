@@ -932,7 +932,7 @@ export default function CaptainApp({ onLogout }) {
 
   }, [outlet, tableSubCategory]);
 
-  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading } = useVenueTableSync();
+  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
   const venuePrices = useVenuePrices();
 
   const outletFilteredMenuItems = useMemo(() => {
@@ -951,6 +951,8 @@ export default function CaptainApp({ onLogout }) {
       else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
 
       else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
+
+      else if (tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
 
     } else {
 
@@ -1664,7 +1666,14 @@ export default function CaptainApp({ onLogout }) {
 
   }, [tableSubCategory]);
 
-
+  // Force venue table refetch when switching to a venue subcategory — prevents stale/empty data
+  const isVenueSubcategory = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox', 'parcel'].includes(tableSubCategory);
+  useEffect(() => {
+    if (isVenueSubcategory && refetchVenueTables) {
+      refetchVenueTables();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableSubCategory]);
 
   // Clean up stale cart keys when a table is deleted from the active list
 
@@ -3475,6 +3484,8 @@ export default function CaptainApp({ onLogout }) {
 
                         { id: 'bar-parcel', label: 'Owner' },
 
+                        { id: 'bar-gobox', label: 'GoBox' },
+
                       ]
 
                     : [
@@ -3697,7 +3708,9 @@ export default function CaptainApp({ onLogout }) {
 
                    tableSubCategory === 'bar-rooms' ? 'venue-bar-rooms' :
 
-                   tableSubCategory === 'bar-parcel' ? 'venue-bar-parcel' : 'venue-bar-ac-hall')
+                   tableSubCategory === 'bar-parcel' ? 'venue-bar-parcel' :
+
+                   tableSubCategory === 'bar-gobox' ? 'venue-bar-gobox' : 'venue-bar-ac-hall')
 
                 : (tableSubCategory === 'parcel' ? 'venue-restaurant-parcel' : 'venue-family-restaurant')
 
@@ -3713,7 +3726,9 @@ export default function CaptainApp({ onLogout }) {
 
                    tableSubCategory === 'bar-rooms' ? 'Rooms' :
 
-                   tableSubCategory === 'bar-parcel' ? 'Owner' : 'Bar AC Hall')
+                   tableSubCategory === 'bar-parcel' ? 'Owner' :
+
+                   tableSubCategory === 'bar-gobox' ? 'GoBox' : 'Bar AC Hall')
 
                 : (tableSubCategory === 'parcel' ? 'Owner' : 'Family Restaurant')
 
@@ -3735,6 +3750,7 @@ export default function CaptainApp({ onLogout }) {
 
             venueTables={venueTables}
             isSyncing={venueTablesLoading}
+            refetch={refetchVenueTables}
           />
 
         )}
