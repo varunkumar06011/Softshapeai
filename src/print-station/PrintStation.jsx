@@ -56,8 +56,21 @@ let DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Di
 
 let KOT_PRINTER          = import.meta.env.VITE_KOT_PRINTER_NAME           || 'KOT PRINTER';
 
-// Venue sections where ALL KOTs (food + bar) print to BAR_PRINTER (PDR, Rooms follow full bar process)
-const BAR_VENUE_SECTION_TAGS = new Set(['venue-bar-pdr', 'venue-bar-rooms']);
+// Helper: resolve food KOT printer by sectionTag
+function resolveFoodKotPrinter(sectionTag, restaurantId) {
+  if (sectionTag === 'venue-bar-pdr' || sectionTag === 'venue-bar-rooms') return KITCHEN_PRINTER;
+  if (sectionTag === 'venue-restaurant-parcel')                           return KOT_PRINTER;
+  if (sectionTag === 'venue-bar-parcel' || sectionTag === 'venue-bar-gobox') return KITCHEN_PRINTER;
+  if (restaurantId === 'venue-001')                                       return KOT_FAMILY_PRINTER;
+  if (restaurantId === 'restaurant-001')                                  return RESTAURANT_KITCHEN_PRINTER;
+  return KITCHEN_PRINTER;
+}
+// Helper: resolve counter/liquor KOT printer by sectionTag (escposDataCounter path)
+function resolveCounterKotPrinter(sectionTag) {
+  if (sectionTag === 'venue-bar-pdr' || sectionTag === 'venue-bar-rooms')      return BAR_PRINTER;
+  if (sectionTag === 'venue-restaurant-parcel' || sectionTag === 'venue-bar-parcel') return BAR_PRINTER;
+  return DINE_IN_BILL_PRINTER;
+}
 
 
 
@@ -1002,12 +1015,7 @@ export default function PrintStation() {
 
               if (data.escposData && data.escposData.length > 0) {
 
-                const foodPrinter =
-                  BAR_VENUE_SECTION_TAGS.has(data.sectionTag)   ? BAR_PRINTER :
-                  data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
-                  data.sectionTag === 'venue-bar-parcel'        ? KITCHEN_PRINTER :
-                  KOT_FAMILY_PRINTER;
-                printTasks.push({ printer: foodPrinter, cmds: data.escposData });
+                printTasks.push({ printer: resolveFoodKotPrinter(data.sectionTag, data.restaurantId), cmds: data.escposData });
 
               }
 
@@ -1015,13 +1023,7 @@ export default function PrintStation() {
 
                 // Owner counter items go to KOT_PRINTER (owner printer), not billing printer
 
-                const counterPrinter = (data.sectionTag === 'venue-restaurant-parcel' || data.sectionTag === 'venue-bar-parcel')
-
-                  ? BAR_PRINTER
-
-                  : DINE_IN_BILL_PRINTER;
-
-                printTasks.push({ printer: counterPrinter, cmds: data.escposDataCounter });
+                printTasks.push({ printer: resolveCounterKotPrinter(data.sectionTag), cmds: data.escposDataCounter });
 
               }
 
@@ -1046,11 +1048,7 @@ export default function PrintStation() {
                 const counterItems = (data.items || []).filter(i => isCounterItem(i));
 
                 if (kitchenItems.length > 0) {
-                  const fallbackFoodPrinter =
-                    BAR_VENUE_SECTION_TAGS.has(data.sectionTag)   ? BAR_PRINTER :
-                    data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
-                    data.sectionTag === 'venue-bar-parcel'        ? KITCHEN_PRINTER :
-                    KOT_FAMILY_PRINTER;
+                  const fallbackFoodPrinter = resolveFoodKotPrinter(data.sectionTag, data.restaurantId);
                   printTasks.push({
                     printer: fallbackFoodPrinter,
                     cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
@@ -1059,11 +1057,7 @@ export default function PrintStation() {
 
                 if (counterItems.length > 0) {
 
-                  const fallbackCounterPrinter = (data.sectionTag === 'venue-restaurant-parcel' || data.sectionTag === 'venue-bar-parcel')
-
-                    ? BAR_PRINTER
-
-                    : DINE_IN_BILL_PRINTER;
+                  const fallbackCounterPrinter = resolveCounterKotPrinter(data.sectionTag);
 
                   printTasks.push({
 
@@ -1080,11 +1074,7 @@ export default function PrintStation() {
             } else {
 
               // Non-venue-001: check sectionTag first so parcel/PDR/Rooms still route correctly
-              const nonVenuePrinter =
-                data.sectionTag === 'venue-restaurant-parcel' ? KOT_PRINTER :
-                BAR_VENUE_SECTION_TAGS.has(data.sectionTag)   ? BAR_PRINTER :
-                data.restaurantId === 'restaurant-001'        ? RESTAURANT_KITCHEN_PRINTER :
-                KITCHEN_PRINTER;
+              const nonVenuePrinter = resolveFoodKotPrinter(data.sectionTag, data.restaurantId);
 
               if (data.escposData && data.escposData.length > 0) {
 
@@ -1173,15 +1163,23 @@ export default function PrintStation() {
               return items.length > 1 ? buildFullCancelCommands(payload) : buildCancelKOTCommands(payload);
             };
 
-            const resolveCancelPrinter = (_menuType) => {
-              // sectionTag takes priority
-              if (BAR_VENUE_SECTION_TAGS.has(data.sectionTag))   return BAR_PRINTER;
-              if (data.sectionTag === 'venue-restaurant-parcel') return KOT_PRINTER;
-              if (data.sectionTag === 'venue-family-restaurant')  return KOT_FAMILY_PRINTER;
-              // venue-001 tables that are neither parcel nor family: use family printer
-              if (data.restaurantId === 'venue-001') return KOT_FAMILY_PRINTER;
-              // Non-venue: route by item type
-              return _menuType === 'BAR' ? BAR_PRINTER : KITCHEN_PRINTER;
+            const resolveCancelPrinter = (menuType) => {
+              const isLiquor = menuType === 'BAR' || menuType === 'LIQUOR';
+              // PDR / Rooms: liquor → BAR_PRINTER, food → KITCHEN_PRINTER
+              if (data.sectionTag === 'venue-bar-pdr' || data.sectionTag === 'venue-bar-rooms')
+                return isLiquor ? BAR_PRINTER : KITCHEN_PRINTER;
+              // Parcel / Owner: liquor → BAR_PRINTER, food → KOT_PRINTER
+              if (data.sectionTag === 'venue-restaurant-parcel')
+                return isLiquor ? BAR_PRINTER : KOT_PRINTER;
+              // Bar parcel / GoBox
+              if (data.sectionTag === 'venue-bar-parcel' || data.sectionTag === 'venue-bar-gobox')
+                return isLiquor ? BAR_PRINTER : KITCHEN_PRINTER;
+              // Family restaurant
+              if (data.sectionTag === 'venue-family-restaurant') return KOT_FAMILY_PRINTER;
+              // venue-001 generic
+              if (data.restaurantId === 'venue-001') return isLiquor ? BAR_PRINTER : KOT_FAMILY_PRINTER;
+              // Non-venue: bar items → bar, food → kitchen
+              return isLiquor ? BAR_PRINTER : KITCHEN_PRINTER;
             };
 
             if (foodItems.length > 0) printTasks.push({ printer: resolveCancelPrinter('FOOD'), cmds: buildSlip(foodItems) });
