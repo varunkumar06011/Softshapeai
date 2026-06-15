@@ -839,10 +839,6 @@ const CashierDashboard = ({ onLogout }) => {
   const filteredTransactions = useMemo(() => {
     let list = pastTransactions;
 
-    // TEMPORARY: hide today's transactions for fresh start (UI-only, no DB delete)
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
-    list = list.filter(txn => txn.date !== todayStr);
-
     if (txnSourceFilter !== 'all') {
       list = list.filter(txn => txn.source === txnSourceFilter);
     }
@@ -1567,14 +1563,14 @@ const CashierDashboard = ({ onLogout }) => {
   const todaysSales = useMemo(() => {
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
     return pastTransactions
-      .filter(txn => txn.date !== todayStr)
+      .filter(txn => txn.date === todayStr)
       .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [pastTransactions]);
 
   const todaysDiscount = useMemo(() => {
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
     return pastTransactions
-      .filter(txn => txn.date !== todayStr)
+      .filter(txn => txn.date === todayStr)
       .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
   }, [pastTransactions]);
 
