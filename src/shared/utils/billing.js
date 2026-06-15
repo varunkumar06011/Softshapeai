@@ -101,39 +101,25 @@ export const getAllOrderItems = (table) => {
       menuType: item.menuType || item.menuItem?.menuType || null,
     }));
 
-    // Build total quantity per item name from both sources
-    const dbQtyByName = {};
-    dbItems.forEach(i => {
-      const key = (i.n || '').trim().toLowerCase();
-      dbQtyByName[key] = (dbQtyByName[key] || 0) + Number(i.q || 1);
-    });
-    const kotQtyByName = {};
+    // DB activeOrder.items is the source of truth for quantities —
+    // mapBackendTable additive merge already ensures all items from all KOTs are present.
+    // kotHistory is only used here to recover items ENTIRELY absent from DB
+    // (e.g. optimistic local KOT not yet confirmed by backend).
+    // Do NOT use kotHistory to adjust quantities — retried/duplicate KOTs inflate the count.
+    const dbItemNames = new Set(
+      dbItems.map(i => (i.n || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const kotOnlyItems = [];
+    const seen = new Set();
     kotItems.forEach(i => {
-      const key = (i.n || '').trim().toLowerCase();
-      kotQtyByName[key] = (kotQtyByName[key] || 0) + Number(i.q || 1);
-    });
-
-    const result = [...dbItems];
-
-    // For each item name, if kotHistory has MORE total qty than DB (stale/partial payload),
-    // supplement with the extra quantity so the cashier sees the correct count.
-    Object.keys(kotQtyByName).forEach(name => {
-      const kotQty = kotQtyByName[name];
-      const dbQty = dbQtyByName[name] || 0;
-      if (kotQty > dbQty) {
-        const extraQty = kotQty - dbQty;
-        const sample = kotItems.find(i => (i.n || '').trim().toLowerCase() === name);
-        if (sample) {
-          result.push({ ...sample, id: null, q: extraQty, quantity: extraQty });
-        }
-      } else if (dbQty === 0) {
-        // Item exists in kotHistory but not in DB at all — add it
-        const sample = kotItems.find(i => (i.n || '').trim().toLowerCase() === name);
-        if (sample) result.push(sample);
+      const name = (i.n || '').trim().toLowerCase();
+      if (!dbItemNames.has(name) && !seen.has(name)) {
+        seen.add(name);
+        kotOnlyItems.push(i);
       }
     });
 
-    return result;
+    return [...dbItems, ...kotOnlyItems];
   }
 
   // 2. Fall back to kotHistory (legacy JSON blob — kept for KOT timeline display)
