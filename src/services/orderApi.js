@@ -27,7 +27,7 @@ export function toOrderItems(items) {
       price: Number(item.price ?? item.p ?? 0),
       quantity: Number(item.quantity ?? item.q ?? 1),
       notes: item.notes || null,
-      menuType: String(item.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+      menuType: ['LIQUOR', 'BAR'].includes(String(item.menuType || 'FOOD').toUpperCase()) ? 'LIQUOR' : 'FOOD',
     }))
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }

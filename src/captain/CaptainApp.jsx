@@ -2307,7 +2307,7 @@ export default function CaptainApp({ onLogout }) {
 
           notes: i.notes || null,
 
-          menuType: String(i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+          menuType: ['LIQUOR', 'BAR'].includes(String(i.menuType || 'FOOD').toUpperCase()) ? 'LIQUOR' : 'FOOD',
 
         }))
 
