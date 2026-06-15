@@ -80,14 +80,30 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
     const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
     const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
-    // Keep existing if it's newer OR has more items (items are never deleted from DB, only flagged)
-    if (existingUpdated >= incomingUpdated ||
-        (incomingOrder.items?.length ?? 0) < (existingOrder.items?.length ?? 0)) {
-      activeOrder = existingOrder;
+    const incomingItems = incomingOrder.items || [];
+    const existingItems = existingOrder.items || [];
+    if (existingUpdated >= incomingUpdated) {
+      // Existing is newer — keep it, but merge in any items from incoming not already present
+      const existingIds = new Set(existingItems.map(i => i.id).filter(Boolean));
+      const newFromIncoming = incomingItems.filter(i => i.id && !existingIds.has(i.id));
+      activeOrder = {
+        ...existingOrder,
+        items: [...existingItems, ...newFromIncoming],
+      };
+    } else {
+      // Incoming is newer — use it but keep any existing items missing from incoming (partial payloads)
+      const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
+      const missingFromIncoming = existingItems.filter(
+        i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
+      );
+      activeOrder = {
+        ...incomingOrder,
+        items: [...incomingItems, ...missingFromIncoming],
+      };
     }
-    // Preserve existing items if incoming has none (prevents wipe on partial socket payloads)
-    if ((!incomingOrder.items || incomingOrder.items.length === 0) && existingOrder.items?.length > 0) {
-      activeOrder = existingOrder;
+    // Preserve existing items if incoming has none (partial socket payloads)
+    if (incomingItems.length === 0 && existingItems.length > 0) {
+      activeOrder = { ...incomingOrder, items: existingItems };
     }
   }
   // Fall back to existing if no incoming order at all (prevents wipe on partial socket payloads)
