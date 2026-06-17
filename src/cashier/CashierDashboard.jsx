@@ -1307,13 +1307,14 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
+    const pollInterval = socket?.connected ? 30_000 : 5_000;
     const interval = setInterval(() => {
       if (outlet === 'bar') refetchBarTables();
       else if (outlet === 'venue') refetchVenueTables();
       else refetchRestaurantTables();
-    }, 30_000);
+    }, pollInterval);
     return () => clearInterval(interval);
-  }, [outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables]);
+  }, [outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables, socket?.connected]);
 
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -2955,7 +2956,8 @@ const CashierDashboard = ({ onLogout }) => {
               // Subsequent KOT for extra table — append to existing order
               // isExtraTable=true tells backend to skip parent table mutation
               console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-              const updatedOrderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number);
+              const extraLastUpdated = selectedTable.activeOrder?.updatedAt;
+              const updatedOrderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, extraLastUpdated);
               if (updatedOrderResponse?.order?.kotHistory) {
                 setExtraTables(prev => prev.map(et =>
                   et.id === selectedTable.id
@@ -3001,7 +3003,8 @@ const CashierDashboard = ({ onLogout }) => {
             }
           } else if (selectedTable.activeOrder?.id) {
             // Regular table: Subsequent KOT — append new items to existing order
-            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier');
+            const lastUpdatedAt = selectedTable.activeOrder?.updatedAt;
+            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, lastUpdatedAt);
           } else {
             // Regular table: First KOT — create a brand-new order row
             await createOrder({

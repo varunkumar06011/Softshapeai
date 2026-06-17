@@ -6,7 +6,7 @@
 // ── Retry with Exponential Backoff ─────────────────────────────────────
 export async function withRetry(
   fn,
-  { maxRetries = 3, baseDelayMs = 1000, maxDelayMs = 10000, onRetry = null } = {}
+  { maxRetries = 3, baseDelayMs = 1000, maxDelayMs = 10000, onRetry = null, shouldRetry = null } = {}
 ) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -18,14 +18,18 @@ export async function withRetry(
         console.error('[Resilience] Max retries exceeded:', error);
         throw error;
       }
-      
+
+      if (shouldRetry && !shouldRetry(error)) {
+        throw error;
+      }
+
       const delay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
       console.warn(`[Resilience] Retry ${attempt + 1}/${maxRetries} after ${delay}ms:`, error.message);
-      
+
       if (onRetry) {
         onRetry(attempt + 1, error, delay);
       }
-      
+
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }

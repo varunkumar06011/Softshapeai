@@ -204,7 +204,8 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           )
         );
       } else {
-        await updateOrderItems(orderId, cart, requestId);
+        const lastUpdatedAt = selectedTable.activeOrder?.updatedAt;
+        await updateOrderItems(orderId, cart, requestId, null, false, null, lastUpdatedAt);
       }
 
       // Build KOT entry

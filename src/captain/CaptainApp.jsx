@@ -2345,8 +2345,9 @@ export default function CaptainApp({ onLogout }) {
       if (existingOrderId) {
 
         // Subsequent KOT on same table — append items to existing order
-
-        const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined);
+        const activeTableEntry = [...activeTables, ...venueTables].find(t => t.id === activeTableId || t.backendId === activeTableId);
+        const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
+        const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt);
 
         savedOrder = response?.order || response;  // Handle both { order: {...} } and direct response
 
@@ -4991,6 +4992,26 @@ export default function CaptainApp({ onLogout }) {
 
                     </div>
 
+                  </div>
+
+                  {/* GST Breakdown */}
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Subtotal</span>
+                      <span className="block text-sm font-black text-gray-700">₹{sessionBill.subtotal}</span>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">CGST 2.5%</span>
+                      <span className="block text-sm font-black text-gray-700">₹{sessionBill.cgst}</span>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">SGST 2.5%</span>
+                      <span className="block text-sm font-black text-gray-700">₹{sessionBill.sgst}</span>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-2">
+                      <span className="block text-[9px] font-bold text-red-400 uppercase tracking-wider">Grand Total</span>
+                      <span className="block text-sm font-black text-red-700">₹{sessionBill.grandTotal}</span>
+                    </div>
                   </div>
 
                   <button

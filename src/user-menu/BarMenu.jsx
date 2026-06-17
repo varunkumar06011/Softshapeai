@@ -966,7 +966,8 @@ export default function BarMenu({ tableId }) {
         const reqId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        await updateOrderItems(activeOrderId, apiItems, reqId);
+        const lastUpdatedAt = matched.orders?.[0]?.updatedAt || matched.activeOrder?.updatedAt;
+        await updateOrderItems(activeOrderId, apiItems, reqId, null, false, null, lastUpdatedAt);
       } else {
 
         await createOrder({

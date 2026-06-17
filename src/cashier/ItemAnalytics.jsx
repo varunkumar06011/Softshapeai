@@ -21,14 +21,14 @@ function getRestaurantIdForSource(source) {
 }
 
 function getSectionNameForSource(source) {
-  if (source === 'bar-ac-hall') return 'ac hall';
-  if (source === 'bar-conference') return 'conference hall';
-  if (source === 'bar-pdr') return 'pdr';
-  if (source === 'bar-rooms') return 'rooms';
-  if (source === 'bar-parcel') return 'bar owner';
-  if (source === 'bar-gobox') return 'gobox';
-  if (source === 'family-restaurant') return 'family restaurant';
-  if (source === 'restaurant-parcel') return 'owner';
+  if (source === 'bar-ac-hall') return 'Bar AC Hall';
+  if (source === 'bar-conference') return 'Conference Hall';
+  if (source === 'bar-pdr') return 'PDR';
+  if (source === 'bar-rooms') return 'Rooms';
+  if (source === 'bar-parcel') return 'Bar Parcel';
+  if (source === 'bar-gobox') return 'GoBox';
+  if (source === 'family-restaurant') return 'Family Restaurant';
+  if (source === 'restaurant-parcel') return 'Parcel';
   return null;
 }
 

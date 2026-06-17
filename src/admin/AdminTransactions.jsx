@@ -17,10 +17,13 @@ function resolveSource(txn) {
   if (txn.restaurantId === BAR_ID) return 'bar';
   if (txn.restaurantId === RESTAURANT_ID) return 'restaurant';
   const tag = (txn.sectionTag || '').toLowerCase();
-  if (tag.includes('conference hall 1') || tag.includes('conf1')) return 'conference1';
-  if (tag.includes('conference hall 2') || tag.includes('conf2')) return 'conference2';
-  if (tag.includes('pdr')) return 'pdr';
-  if (tag.includes('parcel')) return 'parcel';
+  if (tag === 'venue-bar-ac-hall') return 'bar';
+  if (tag === 'venue-bar-conference') return 'conference';
+  if (tag === 'venue-bar-pdr') return 'pdr';
+  if (tag === 'venue-bar-rooms') return 'rooms';
+  if (tag === 'venue-bar-parcel') return 'parcel';
+  if (tag === 'venue-restaurant-parcel') return 'parcel';
+  if (tag === 'venue-family-restaurant') return 'family-restaurant';
   return 'venue';
 }
 
@@ -185,9 +188,9 @@ export default function AdminTransactions({ onStatsRefresh }) {
             {[
               { key: 'all', label: 'All' },
               { key: 'bar', label: 'Bar' },
-              { key: 'conference1', label: 'Conf 1' },
-              { key: 'conference2', label: 'Conf 2' },
+              { key: 'conference', label: 'Conf' },
               { key: 'pdr', label: 'PDR' },
+              { key: 'rooms', label: 'Rooms' },
               { key: 'parcel', label: 'Owner' },
             ].map(f => (
               <button

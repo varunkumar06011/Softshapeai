@@ -24,8 +24,8 @@ export function toOrderItems(items) {
     .map((item) => ({
       menuItemId: String(item.id || item.menuItemId || ''),  // never fall back to name
       name: item.name || item.n,
-      price: Number(item.price ?? item.p ?? 0),
-      quantity: Number(item.quantity ?? item.q ?? 1),
+      price: Number(item.p ?? item.price ?? 0),
+      quantity: Number(item.q ?? item.quantity ?? 1),
       notes: item.notes || null,
       menuType: ['LIQUOR', 'BAR'].includes(String(item.menuType || 'FOOD').toUpperCase()) ? 'LIQUOR' : 'FOOD',
     }))
@@ -84,7 +84,7 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null) {
   return withRetry(
     async () => {
       const body = { items: toOrderItems(items) };
@@ -92,6 +92,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       if (captainName) body.captainName = captainName;
       if (isExtraTable) { body.isExtraTable = true; }
       if (tableNumber) { body.tableNumber = tableNumber; }
+      if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 45000);
@@ -104,6 +105,13 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
+        if (res.status === 409) {
+          const data = await res.json().catch(() => ({}));
+          const err = new Error(data.error || "Order was modified by another user. Please refresh and try again.");
+          err.status = 409;
+          err.serverUpdatedAt = data.serverUpdatedAt;
+          throw err;
+        }
         return parseResponse(res);
       } catch (error) {
         clearTimeout(timeoutId);
@@ -113,7 +121,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         throw error;
       }
     },
-    RETRY_CONFIG.KOT
+    { ...RETRY_CONFIG.KOT, shouldRetry: (err) => err.status !== 409 }
   );
 }
 
@@ -157,7 +165,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
       });
       return parseResponse(res);
     },
-    RETRY_CONFIG.SETTLE
+    { ...RETRY_CONFIG.SETTLE, shouldRetry: (err) => err.status !== 409 }
   );
 }
 
@@ -229,7 +237,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       });
       return parseResponse(res);
     },
-    { maxRetries: 2, baseDelayMs: 600, maxDelayMs: 2000 }
+    { maxRetries: 2, baseDelayMs: 600, maxDelayMs: 2000, shouldRetry: (err) => err.status !== 409 }
   );
 }
 
@@ -296,6 +304,6 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       });
       return parseResponse(res);
     },
-    { maxRetries: 1, baseDelayMs: 600, maxDelayMs: 2000 }
+    { maxRetries: 1, baseDelayMs: 600, maxDelayMs: 2000, shouldRetry: (err) => err.status !== 409 }
   );
 }

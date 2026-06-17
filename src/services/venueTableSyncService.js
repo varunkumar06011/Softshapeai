@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchVenueSections, VENUE_ID, updateVenueTableSession } from "./venueTableApi";
 import { validateTableIntegrity } from "../utils/syncInvariant";
+import { apiUrl } from "./apiConfig";
 
 const TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
 
@@ -342,6 +343,12 @@ export function useVenueTableSync() {
       console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
       const flat = flattenSections(sections);
       console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
+      // Pre-compute merged tables for rehydration scan (uses current ref for consistency)
+      const mergedForRehydration = flat.map((row) => {
+        const existing = tablesRef.current.find((t) => t.backendId === row.id);
+        return mapBackendTable(row, existing);
+      });
+
       setTablesState((current) => {
         const merged = flat.map((row) => {
             const existing = current.find((t) => t.backendId === row.id);
@@ -365,6 +372,44 @@ export function useVenueTableSync() {
       if (flat.length === 0 && !isRetry) {
         console.warn('[VenueTableSync] Empty result — retrying in 2s');
         setTimeout(() => loadTables(true), 2000);
+      }
+
+      // Cold-load rehydration: if API returned occupied tables with no activeOrder,
+      // fetch the dedicated order endpoint to recover them (catches partial payloads on hard refresh)
+      const needsRehydration = mergedForRehydration.filter(t =>
+        t.dbStatus !== 'AVAILABLE' && !t.activeOrder && t.backendId && !String(t.backendId).startsWith('local-')
+      );
+      if (needsRehydration.length > 0) {
+        Promise.all(
+          needsRehydration.map(t =>
+            fetch(apiUrl(`/api/orders/table/${t.backendId}`), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+              .then(r => (r.ok ? r.json() : null))
+              .then(order => ({ tableId: t.backendId, order }))
+              .catch(err => {
+                console.warn('[VenueTableSync] Rehydration failed for table', t.number, err.message);
+                return null;
+              })
+          )
+        ).then(results => {
+          const recovered = results.filter(Boolean);
+          if (recovered.length > 0) {
+            setTablesState(prev => {
+              const next = prev.map(t => {
+                const rec = recovered.find(r => r.tableId === t.backendId);
+                if (rec && rec.order && !t.activeOrder) {
+                  return {
+                    ...t,
+                    activeOrder: rec.order,
+                    currentBill: rec.order.totalAmount ?? t.currentBill ?? 0,
+                  };
+                }
+                return t;
+              });
+              writeCache(next);
+              return next;
+            });
+          }
+        });
       }
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
@@ -488,16 +533,20 @@ export function useVenueTableSync() {
         if (isRecentlyTerminated(order.tableId)) return;
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         setTablesState((prev) => {
-          const next = prev.map((t) =>
-            t.backendId === order.tableId
-              ? {
-                  ...t,
-                  activeOrder: order,
-                  items: order.items || t.items || [],
-                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-                }
-              : t
-          );
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            // Guard: ignore stale order updates for tables already settled/available
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[VenueTableSync] Ignoring stale order:updated for settled table', t.number);
+              return t;
+            }
+            return {
+              ...t,
+              activeOrder: order,
+              items: order.items || t.items || [],
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            };
+          });
           writeCache(next);
           return next;
         });
