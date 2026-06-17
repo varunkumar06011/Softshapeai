@@ -118,18 +118,20 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
       const { startDate, endDate } = getDateRange();
 
       if (source === 'all') {
-        // Query all restaurant IDs relevant to this outlet and merge results
+        // Query each individual source so section filtering matches History Feed exactly
         const outletType = outlet === 'bar' ? 'bar' : 'restaurant';
-        const idsToQuery = outlet === 'bar'
-          ? [BAR_ID, VENUE_ID]
-          : [RESTAURANT_ID, VENUE_ID];
+        const sourcesToQuery = outlet === 'bar'
+          ? ['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']
+          : ['restaurant', 'family-restaurant', 'restaurant-parcel'];
 
         const results = await Promise.all(
-          idsToQuery.map(rid =>
-            fetch(`${API_BASE}/api/analytics/items-sold?restaurantId=${rid}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`)
-              .then(r => r.json())
-              .catch(() => ({ items: [], summary: null }))
-          )
+          sourcesToQuery.map(src => {
+            const rid = getRestaurantIdForSource(src);
+            const sname = getSectionNameForSource(src);
+            let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${rid}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`;
+            if (sname) url += `&sectionName=${encodeURIComponent(sname)}`;
+            return fetch(url).then(r => r.json()).catch(() => ({ items: [], summary: null }));
+          })
         );
 
         // Merge items by name+type, summing quantity, orders, revenue
