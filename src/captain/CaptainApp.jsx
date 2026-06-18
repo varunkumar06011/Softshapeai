@@ -2244,9 +2244,9 @@ export default function CaptainApp({ onLogout }) {
     // Cancel any pending print timeout from a previous KOT before any early return
     clearTimeout(printTimeoutRef.current);
 
-    // Stuck-guard: if a previous submission has been running for >30s, force-reset
-    if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 30000) {
-      console.warn('[KOT] Stuck submission detected (>30s), forcing reset');
+    // Stuck-guard: if a previous submission has been running for >15s, force-reset
+    if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 15000) {
+      console.warn('[KOT] Stuck submission detected (>15s), forcing reset');
       isSubmittingKotRef.current = false;
       setSendingKOT(false);
     }
@@ -2471,9 +2471,12 @@ export default function CaptainApp({ onLogout }) {
 
               items: kot.items.map(kotI => {
 
+                const kotMenuItemId = kotI.id || kotI.menuItemId;
                 const matched = savedItems.find(si =>
 
-                  si.name === (kotI.n || kotI.name) && !allPrevIds.has(si.id)
+                  si.menuItemId === kotMenuItemId &&
+                  (si.notes ?? null) === (kotI.notes ?? null) &&
+                  !allPrevIds.has(si.id)
 
                 );
 
