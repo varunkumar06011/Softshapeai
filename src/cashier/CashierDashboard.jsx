@@ -775,6 +775,7 @@ const CashierDashboard = ({ onLogout }) => {
           tableNumber: txn.tableNumber || null,
           // Derive display label: B=bar, C=conference, R=rooms, PDR=pdr, P=parcel/owner, BP=bar-parcel, F=family, T=restaurant
           tableDisplayName: (() => {
+            if (txn.tableLabel) return txn.tableLabel; // Extra table: "B5-X", "T3-X2"
             const num = txn.tableNumber;
             if (!num) return '—';
             const tag = (txn.sectionTag || '').toLowerCase();
