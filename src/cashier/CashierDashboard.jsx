@@ -898,9 +898,14 @@ const CashierDashboard = ({ onLogout }) => {
     if (!socket) return;
 
     // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
+    // Also join venue-001 when in bar mode so venue table real-time updates work
+    if (outlet === 'bar') {
+      socket.emit('join', 'venue-001');
+    }
     const onConnect = () => {
       if (outlet === 'bar') {
         refetchBarTables();
+        socket.emit('join', 'venue-001');
       } else if (outlet === 'venue') {
         refetchVenueTables();
       } else {
@@ -1303,6 +1308,9 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:items-transferred', onTableItemsTransferred);
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
+      if (outlet === 'bar') {
+        socket.emit('leave', 'venue-001');
+      }
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables, setBarTables]);
 
