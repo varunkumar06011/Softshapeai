@@ -3232,7 +3232,7 @@ export default function CaptainApp({ onLogout }) {
 
                     {assignment.assignedAt
 
-                      ? new Date(assignment.assignedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                      ? (() => { try { const d = new Date(assignment.assignedAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch { return '—'; } })()
 
                       : '—'}
 
@@ -3799,7 +3799,7 @@ export default function CaptainApp({ onLogout }) {
 
                     <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Timer size={10} /> {activeTable?.time
 
-                      ? new Date(activeTable.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                      ? (() => { try { const d = new Date(activeTable.time); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch { return '—'; } })()
 
                       : '—'}</span>
 
@@ -4653,7 +4653,7 @@ export default function CaptainApp({ onLogout }) {
 
                                 ? (kot.time.includes('T')
 
-                                    ? new Date(kot.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                                    ? (() => { try { const d = new Date(kot.time); return isNaN(d.getTime()) ? kot.time : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch { return kot.time; } })()
 
                                     : kot.time)
 

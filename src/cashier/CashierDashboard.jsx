@@ -761,9 +761,9 @@ const CashierDashboard = ({ onLogout }) => {
           discountAmount,
           cgst,
           sgst,
-          time: new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
-          date: new Date(txn.paidAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }),
-          timestamp: new Date(txn.paidAt).getTime(),
+          time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+          date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+          timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
           items: txn.itemCount || 0,
           itemsList: txn.items || [],
           captainId: txn.captainId || 'CASHIER',
@@ -4023,9 +4023,9 @@ const CashierDashboard = ({ onLogout }) => {
                                     <tr key={txn.id} className="hover:bg-gray-50">
                                       <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.billNumber || txn.displayId || '—'}</td>
                                       <td className="px-4 py-3 text-xs font-bold text-gray-600">
-                                        {new Date(txn.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        {(() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch { return '—'; } })()}
                                         {' '}
-                                        {new Date(txn.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                        {(() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }); } catch { return '—'; } })()}
                                       </td>
                                       <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableDisplayName || '—'}</td>
                                       <td className="px-4 py-3">
