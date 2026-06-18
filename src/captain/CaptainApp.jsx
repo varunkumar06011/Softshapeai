@@ -1325,11 +1325,17 @@ export default function CaptainApp({ onLogout }) {
 
     const socket = getSocket();
 
-    // Join only the currently active outlet room; leave is handled on cleanup
+    // Join the active outlet room; also join venue-001 for bar outlet so venue table real-time updates work
     socket.emit('join', activeRestaurantId);
+    if (outlet === 'bar') {
+      socket.emit('join', 'venue-001');
+    }
 
     const onConnect = () => {
       socket.emit('join', activeRestaurantId);
+      if (outlet === 'bar') {
+        socket.emit('join', 'venue-001');
+      }
     };
     socket.on('connect', onConnect);
 
@@ -1402,7 +1408,7 @@ export default function CaptainApp({ onLogout }) {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
-      if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
+      if (table.restaurantId && table.restaurantId !== activeRestaurantId && table.restaurantId !== 'venue-001') return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
 
@@ -1520,6 +1526,9 @@ export default function CaptainApp({ onLogout }) {
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:paid', onOrderPaid);
       socket.emit('leave', activeRestaurantId);
+      if (outlet === 'bar') {
+        socket.emit('leave', 'venue-001');
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRestaurantId]);
