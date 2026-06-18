@@ -961,8 +961,8 @@ function GSTReport({ dateFilter, onDownloadRef }) {
       { key: 'subtotal', label: 'Subtotal', format: 'money' },
       { key: 'discountAmount', label: 'Discount', format: 'money' },
       { key: 'taxableAmount', label: 'Taxable', format: 'money' },
-      { key: 'cgst', label: 'CGST (9%)', format: 'money' },
-      { key: 'sgst', label: 'SGST (9%)', format: 'money' },
+      { key: 'cgst', label: 'CGST (2.5%)', format: 'money' },
+      { key: 'sgst', label: 'SGST (2.5%)', format: 'money' },
       { key: 'totalTax', label: 'Total Tax', format: 'money' },
       { key: 'grandTotal', label: 'Grand Total', format: 'money' },
       { key: 'method', label: 'Method' },
@@ -979,8 +979,8 @@ function GSTReport({ dateFilter, onDownloadRef }) {
           { key: 'subtotal', label: 'Subtotal', format: 'money' },
           { key: 'discountAmount', label: 'Discount', format: 'money' },
           { key: 'taxableAmount', label: 'Taxable', format: 'money' },
-          { key: 'cgst', label: 'CGST (9%)', format: 'money' },
-          { key: 'sgst', label: 'SGST (9%)', format: 'money' },
+          { key: 'cgst', label: 'CGST (2.5%)', format: 'money' },
+          { key: 'sgst', label: 'SGST (2.5%)', format: 'money' },
           { key: 'totalTax', label: 'Total Tax', format: 'money' },
           { key: 'grandTotal', label: 'Grand Total', format: 'money' },
           { key: 'method', label: 'Method' },
@@ -1014,8 +1014,8 @@ function GSTReport({ dateFilter, onDownloadRef }) {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Taxable Amount" value={<Money value={data.summary.totalTaxableAmount} />} sub="After discount" icon={DollarSign} color="text-green-600" />
-        <StatCard label="Total CGST (9%)" value={<Money value={data.summary.totalCGST} />} sub="Central tax" icon={FileText} color="text-blue-600" />
-        <StatCard label="Total SGST (9%)" value={<Money value={data.summary.totalSGST} />} sub="State tax" icon={FileText} color="text-blue-600" />
+        <StatCard label="Total CGST (2.5%)" value={<Money value={data.summary.totalCGST} />} sub="Central tax" icon={FileText} color="text-blue-600" />
+        <StatCard label="Total SGST (2.5%)" value={<Money value={data.summary.totalSGST} />} sub="State tax" icon={FileText} color="text-blue-600" />
         <StatCard label="Total Tax Collected" value={<Money value={data.summary.totalTax} />} sub="CGST + SGST" icon={TrendingUp} color="text-amber-600" />
         <StatCard label="Grand Total" value={<Money value={data.summary.totalGrandTotal} />} sub="Inc. tax" icon={Package} color="text-purple-600" />
       </div>
