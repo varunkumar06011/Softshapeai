@@ -2217,6 +2217,12 @@ const CashierDashboard = ({ onLogout }) => {
                 tableNumber: selectedTable.isExtra ? selectedTable.number : undefined,
                 isExtraTable: selectedTable.isExtra ? true : undefined,
                 sectionTag: selectedTable.sectionTag || undefined,
+                // Send pre-calculated totals so backend uses exactly what was shown on the printed bill
+                grandTotal: Number(activeGrandTotal),
+                subtotal: Number(activeSubtotal),
+                discountAmount: Number(activeDiscountAmount),
+                cgst: Number(activeCgst),
+                sgst: Number(activeSgst),
               })
             }
           );
