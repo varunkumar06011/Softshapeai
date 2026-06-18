@@ -3,6 +3,15 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 
+function isRecentlyTerminated(tableId) {
+  try {
+    const raw = localStorage.getItem('cashier_recently_terminated');
+    const map = raw ? JSON.parse(raw) : {};
+    const ts = map[tableId];
+    return ts && Date.now() - ts < 300000; // 5 minutes
+  } catch { return false; }
+}
+
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
 const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v4";
@@ -384,8 +393,10 @@ export function useBarTableSync() {
             if (t.backendId !== updatedTable.id) return t;
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
+            // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
+            // legitimate settlement confirmation and must be accepted.
             const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
-            if (incomingIsAvailable) {
+            if (incomingIsAvailable && !isRecentlyTerminated(t.backendId)) {
               // Use tablesRef.current (synchronously updated) instead of prev (pre-commit state)
               // to correctly check if this table was just cleared by terminate/settle
               const refTable = tablesRef.current.find(rt => rt.backendId === updatedTable.id);

@@ -463,7 +463,9 @@ export function useVenueTableSync() {
             if (t.backendId !== updatedTable.id) return t;
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
-            if (incomingIsAvailable && t.activeOrder) {
+            // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
+            // legitimate settlement confirmation and must be accepted.
+            if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
               console.warn('[VenueTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
               return t;
             }

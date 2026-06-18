@@ -5,6 +5,15 @@ import { validateTableIntegrity } from "../utils/syncInvariant";
 
 
 
+function isRecentlyTerminated(tableId) {
+  try {
+    const raw = localStorage.getItem('cashier_recently_terminated');
+    const map = raw ? JSON.parse(raw) : {};
+    const ts = map[tableId];
+    return ts && Date.now() - ts < 300000; // 5 minutes
+  } catch { return false; }
+}
+
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
 const TABLES_CACHE_KEY = "softshape_tables_cache_v6";
 
@@ -415,8 +424,10 @@ export function useTableSync() {
             if (t.backendId !== updatedTable.id) return t;
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
+            // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
+            // legitimate settlement confirmation and must be accepted.
             const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
-            if (incomingIsAvailable && t.activeOrder) {
+            if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
               console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
               return t;
             }
