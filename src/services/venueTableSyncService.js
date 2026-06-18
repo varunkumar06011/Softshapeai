@@ -438,13 +438,18 @@ export function useVenueTableSync() {
         if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
         const updatedTable = payload?.table || payload;
         if (!updatedTable?.id) return;
-        if (isRecentlyTerminated(updatedTable.id)) {
-          console.warn('[VenueTableSync] Ignoring update for recently terminated table', updatedTable.id);
+
+        const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free' || updatedTable.status === 'TERMINATED';
+
+        // If table was recently terminated but backend now says AVAILABLE, accept it immediately
+        // (the settlement succeeded). Only skip if backend is trying to re-populate a settled table.
+        if (isRecentlyTerminated(updatedTable.id) && !incomingIsAvailable) {
+          console.warn('[VenueTableSync] Ignoring stale re-populate for recently terminated table', updatedTable.id);
           return;
         }
 
         // Detect settled/terminated tables and emit clear event to frontend
-        const isSettledOrTerminated = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free' || updatedTable.status === 'TERMINATED';
+        const isSettledOrTerminated = incomingIsAvailable;
         const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
         const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
         if (isSettledOrTerminated && hadActiveOrder) {
@@ -458,7 +463,6 @@ export function useVenueTableSync() {
             if (t.backendId !== updatedTable.id) return t;
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
-            const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
             if (incomingIsAvailable && t.activeOrder) {
               console.warn('[VenueTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
               return t;
