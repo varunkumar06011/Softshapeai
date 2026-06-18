@@ -129,7 +129,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     sectionId: row.sectionId,
     section: row.section,
     guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
-    time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? new Date(row.sessionStartedAt).toISOString() : null),
+    time: _persistingCount > 0 && existing ? existing.time : (row.sessionStartedAt ? (() => { try { const d = new Date(row.sessionStartedAt); return isNaN(d.getTime()) ? null : d.toISOString(); } catch { return null; } })() : null),
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
     kotHistory: (() => {
       if (isFreeWorkflow) return [];

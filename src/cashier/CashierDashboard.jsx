@@ -4653,7 +4653,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <div>
                   <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
                   <p className="text-base sm:text-lg font-black text-gray-900 mt-0.5 sm:mt-1">
-                    {selectedTable.time ? new Date(selectedTable.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'Just now'}
+                    {selectedTable.time ? (() => { try { const d = new Date(selectedTable.time); return isNaN(d.getTime()) ? 'Just now' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch { return 'Just now'; } })() : 'Just now'}
                   </p>
                 </div>
               </div>

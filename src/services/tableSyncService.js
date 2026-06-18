@@ -145,7 +145,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     sectionId: row.sectionId,
     section: row.section,
     guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
-    time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
+    time: (isFreeWorkflow || !row.sessionStartedAt) ? null : (() => { try { const d = new Date(row.sessionStartedAt); return isNaN(d.getTime()) ? null : d.toISOString(); } catch { return null; } })(),
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
     kotHistory: mergedKotHistory,
     currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
