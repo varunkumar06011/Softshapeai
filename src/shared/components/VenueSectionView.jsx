@@ -33,13 +33,26 @@ export default function VenueSectionView({
     if (targetSectionId) {
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
-    const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
-    const tableName = currentName;
-    const target = targetName;
-    const nameMatch = tableName === target;
-    if (!nameMatch) return false;
+    
+    // Check recently terminated guard
     const termTs = recentlyTerminated[table.backendId];
-    return !(termTs && Date.now() - termTs < 30000);
+    if (termTs && Date.now() - termTs < 30000) return false;
+
+    const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
+    const target = targetName;
+    
+    // Exact name match first (most reliable)
+    if (currentName === target) return true;
+    
+    // sectionTag match: 'venue-bar-gobox' contains 'gobox', 'venue-bar-conference' contains 'conference'
+    const tag = (table.sectionTag || '').toLowerCase();
+    const targetSlug = target.replace(/\s+/g, '-');
+    if (tag.endsWith(`-${targetSlug}`) || tag === `venue-${targetSlug}`) return true;
+    
+    // Loose includes only if target is long enough to avoid false positives (e.g. avoid 'parcel' matching 'gobox')
+    if (target.length > 4 && currentName.includes(target)) return true;
+    
+    return false;
   });
 
   // Debug: log available section names when no match

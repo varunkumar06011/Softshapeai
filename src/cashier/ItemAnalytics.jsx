@@ -121,7 +121,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         // Query each individual source so section filtering matches History Feed exactly
         const outletType = outlet === 'bar' ? 'bar' : 'restaurant';
         const sourcesToQuery = outlet === 'bar'
-          ? ['bar', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel']
+          ? ['bar', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']
           : ['restaurant', 'family-restaurant', 'restaurant-parcel'];
 
         const results = await Promise.all(
