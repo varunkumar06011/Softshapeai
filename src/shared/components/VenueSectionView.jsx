@@ -36,7 +36,7 @@ export default function VenueSectionView({
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
     const tableName = currentName;
     const target = targetName;
-    const nameMatch = tableName === target || tableName.includes(target) || target.includes(tableName);
+    const nameMatch = tableName === target;
     if (!nameMatch) return false;
     const termTs = recentlyTerminated[table.backendId];
     return !(termTs && Date.now() - termTs < 30000);
