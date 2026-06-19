@@ -12,7 +12,7 @@ export function getTableSectionLabel(table) {
   const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
   const num = table.number || table.id || 1;
 
-  if (sectionName.includes('bar parcel')) return `BP${num}`;
+  if (sectionName.includes('gobox') || sectionName.includes('bar parcel')) return `GB${num}`;
   if (sectionName.includes('bar')) return `B${num}`;
   if (sectionName.includes('family restaurant')) return `F${num}`;
   if (sectionName.includes('conference')) return `C${num}`;
@@ -33,7 +33,7 @@ export function getTableSectionLabel(table) {
 export function getSectionBadgeColor(table) {
   const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
 
-  if (sectionName.includes('bar parcel')) return 'bg-orange-500 text-white';
+  if (sectionName.includes('gobox') || sectionName.includes('bar parcel')) return 'bg-orange-500 text-white';
   if (sectionName.includes('bar')) return 'bg-purple-500 text-white';
   if (sectionName.includes('family restaurant')) return 'bg-indigo-500 text-white';
   if (sectionName.includes('conference')) return 'bg-teal-500 text-white';

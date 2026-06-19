@@ -3324,8 +3324,8 @@ const CashierDashboard = ({ onLogout }) => {
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
                           ? (outlet === 'bar'
-                            ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'Owner')
-                            : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'Owner'))
+                            ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'GoBox')
+                            : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'GoBox'))
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
                     </div>
@@ -3341,8 +3341,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
                                   { id: 'bar-pdr', label: 'PDR', emoji: '' },
                                   { id: 'bar-rooms', label: 'Rooms', emoji: '' },
-                                  { id: 'bar-parcel', label: 'Owner', emoji: '' },
-                                  { id: 'bar-gobox', label: 'GoBox', emoji: '' },
+                                  { id: 'bar-parcel', label: 'GoBox', emoji: '' },
                                 ]
                               : [
                                   { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
