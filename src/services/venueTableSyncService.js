@@ -77,7 +77,7 @@ function writeCache(tables) {
  */
 export function getVenueTableLabel(sectionName, tableNumber) {
   const name = (sectionName || '').toLowerCase();
-  if (name.includes('bar parcel')) return `BP${tableNumber}`;
+  if (name.includes('gobox') || name.includes('go box') || name.includes('bar parcel')) return `GB${tableNumber}`;
   if (name.includes('bar')) return `B${tableNumber}`;
   if (name.includes('family restaurant')) return `F${tableNumber}`;
   if (name.includes('conference')) return `C${tableNumber}`;
