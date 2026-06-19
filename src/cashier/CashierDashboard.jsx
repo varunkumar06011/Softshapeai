@@ -3575,7 +3575,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {outlet === 'bar' && tableSubCategory === 'bar-parcel' && (
                           <VenueSectionView
                             venueId="venue-bar-parcel"
-                            sectionName="Bar Parcel"
+                            sectionName="GoBox"
                             restaurantId="venue-001"
                             roomMode="single"
                             onTableSelect={handleTableSelect}

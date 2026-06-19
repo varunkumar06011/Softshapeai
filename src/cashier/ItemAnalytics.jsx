@@ -25,8 +25,7 @@ function getSectionNameForSource(source) {
   if (source === 'bar-conference') return 'Conference Hall';
   if (source === 'bar-pdr') return 'PDR';
   if (source === 'bar-rooms') return 'Rooms';
-  if (source === 'bar-parcel') return 'Bar Parcel';
-  if (source === 'bar-gobox') return 'GoBox';
+  if (source === 'bar-parcel' || source === 'bar-gobox') return 'GoBox';
   if (source === 'family-restaurant') return 'Family Restaurant';
   if (source === 'restaurant-parcel') return 'Parcel';
   return null;
@@ -121,7 +120,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         // Query each individual source so section filtering matches History Feed exactly
         const outletType = outlet === 'bar' ? 'bar' : 'restaurant';
         const sourcesToQuery = outlet === 'bar'
-          ? ['bar', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel']
+          ? ['bar', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']
           : ['restaurant', 'family-restaurant', 'restaurant-parcel'];
 
         const results = await Promise.all(
