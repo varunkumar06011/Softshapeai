@@ -1924,6 +1924,26 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
+  // ── Reprint KOT (for restaurant Family Restaurant tables) ──────────────
+  const handleReprintKOT = async () => {
+    if (!selectedTable?.activeOrder?.id) {
+      addNotification('Error', 'No active order to reprint KOT.', 'error');
+      return;
+    }
+    try {
+      const restaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
+      const response = await fetch(
+        `${API_BASE}/api/orders/${selectedTable.activeOrder.id}/reprint-kot?restaurantId=${restaurantId}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      );
+      if (!response.ok) throw new Error('KOT reprint failed');
+      addNotification('KOT Reprinted', 'Kitchen copy sent to printer.', 'success');
+    } catch (error) {
+      console.error('KOT reprint error:', error);
+      addNotification('Error', error.message || 'Failed to reprint KOT.', 'error');
+    }
+  };
+
   const handleWalkinFinalBill = async () => {
     if (cart.length === 0) return;
 
@@ -4856,17 +4876,50 @@ const CashierDashboard = ({ onLogout }) => {
                         Loading items…
                       </div>
                     ) : getBillableItems(selectedTable).length > 0 ? (
-                      <button
-                        onClick={handleFinalBill}
-                        disabled={isPrintingBill || printCooldown}
-                        className={`py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
-                          ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
-                          : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
-                          }`}
-                      >
-                        {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
-                        {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
-                      </button>
+                      (() => {
+                        // Determine section context for restaurant outlet
+                        const sectionTag = (selectedTable?.sectionTag || '').toLowerCase();
+                        const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || (selectedTable?.section?.name || '').toLowerCase().includes('family');
+                        const isParcel = sectionTag === 'venue-restaurant-parcel' || (selectedTable?.section?.name || '').toLowerCase().includes('parcel');
+                        const isRestaurantSection = isFamilyRestaurant || isParcel;
+
+                        return isRestaurantSection ? (
+                          <div className="flex gap-2">
+                            {isFamilyRestaurant && (
+                              <button
+                                onClick={handleReprintKOT}
+                                className="py-2.5 rounded-lg border border-green-300 bg-green-50 text-green-800 text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-green-100 transition-all duration-150 shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                              >
+                                <Printer size={12} />
+                                KOT
+                              </button>
+                            )}
+                            <button
+                              onClick={handleFinalBill}
+                              disabled={isPrintingBill || printCooldown}
+                              className={`flex-1 py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                                ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
+                                : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
+                                }`}
+                            >
+                              {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
+                              {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Direct Bill'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={handleFinalBill}
+                            disabled={isPrintingBill || printCooldown}
+                            className={`py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                              ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
+                              : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
+                              }`}
+                          >
+                            {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
+                            {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
+                          </button>
+                        );
+                      })()
                     ) : (
                       <div className="py-2.5 rounded-lg border border-gray-300 bg-gray-200 text-gray-500 text-xs sm:text-sm font-black uppercase tracking-wider text-center cursor-not-allowed shadow-sm">
                         No Items

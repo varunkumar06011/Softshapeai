@@ -1162,12 +1162,14 @@ export default function PrintStation() {
 
             cmds = Array.isArray(data.escposData) ? data.escposData : [data.escposData];
 
-            if (data.sectionTag === 'venue-family-restaurant' || data.sectionTag === 'venue-restaurant-parcel') {
+            if (data.sectionTag === 'venue-family-restaurant') {
 
               printer = DINE_IN_BILL_PRINTER;
 
             } else if (data.sectionTag === 'venue-restaurant-parcel') {
-              printer = KOT_PRINTER;           // Parcel final bill → same printer as Parcel KOTs
+
+              printer = KOT_PRINTER;           // Parcel direct bill → kitchen printer in final bill format
+
             } else {
 
               printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
