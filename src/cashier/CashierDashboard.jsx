@@ -1517,6 +1517,23 @@ const CashierDashboard = ({ onLogout }) => {
       });
   }, [activeTables]);
 
+  // ── Dashboard floor tables: combine regular tables + venue tables for the current outlet ──
+  // This ensures the dashboard "Live Floor Status" and stats show ALL active tables,
+  // including venue sections (Family Restaurant, Parcel, GoBox, etc.) without leaking
+  // across outlets (bar venue tables don't show in restaurant dashboard).
+  const dashboardFloorTables = useMemo(() => {
+    const relevantVenueTables = (venueTables || []).filter(t => {
+      const tag = (t.sectionTag || '').toLowerCase();
+      if (outlet === 'bar') {
+        return tag.startsWith('venue-bar-');
+      } else if (outlet === 'restaurant') {
+        return tag === 'venue-family-restaurant' || tag === 'venue-restaurant-parcel';
+      }
+      return false;
+    });
+    return [...activeTables, ...relevantVenueTables];
+  }, [activeTables, venueTables, outlet]);
+
   const itemSwapItems = useMemo(() => {
     return (selectedTable?.activeOrder?.items || []).filter(item => !item.removedFromBill && item.id);
   }, [selectedTable?.activeOrder?.items]);
@@ -3072,7 +3089,7 @@ const CashierDashboard = ({ onLogout }) => {
     { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
     { label: "Net", value: `₹${Number(todaysSales - todaysDiscount).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Active Tables", value: `${activeTableOrders.length}/${activeTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
   return (
@@ -3237,7 +3254,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <Table2 size={18} className="text-[#E53935]" />
                           Live Floor Status
                           <span className="bg-[#E53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
-                            {activeTables.filter(t => t.status && t.status !== 'Free').length} Running
+                            {dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length} Running
                           </span>
                         </h3>
                         <div className="flex gap-4">
@@ -3247,7 +3264,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       </div>
 
-                      {activeTables.filter(t => {
+                      {dashboardFloorTables.filter(t => {
                         if (!t.status || t.status === 'Free') return false;
                         const termTs = recentlyTerminatedRef.current[t.backendId];
                         if (termTs && Date.now() - termTs < 30000) return false;
@@ -3260,7 +3277,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       ) : (
                         <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                          {activeTables
+                          {dashboardFloorTables
                             .filter(t => {
                               if (!t.status || t.status === 'Free') return false;
                               const termTs = recentlyTerminatedRef.current[t.backendId];
