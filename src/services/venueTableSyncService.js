@@ -432,6 +432,12 @@ export function useVenueTableSync() {
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         console.log('[VenueTableSync] Fetch aborted');
+        // Abort can leave tables empty if no retry happens (e.g., socket reconnect
+        // during mount, or React Strict Mode double-mount). Retry once quickly.
+        if (!isRetry) {
+          console.warn('[VenueTableSync] Fetch aborted — retrying in 1.5s');
+          setTimeout(() => loadTables(true), 1500);
+        }
       } else {
         console.error("[VenueTableSync] Fetch failed:", err);
         // Auto-retry once on failure
