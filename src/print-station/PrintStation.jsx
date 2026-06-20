@@ -68,7 +68,7 @@ function resolveFoodKotPrinter(sectionTag, restaurantId) {
 // Helper: resolve counter/liquor KOT printer by sectionTag (escposDataCounter path)
 function resolveCounterKotPrinter(sectionTag) {
   if (sectionTag === 'venue-bar-pdr' || sectionTag === 'venue-bar-rooms')      return BAR_PRINTER;
-  if (sectionTag === 'venue-restaurant-parcel' || sectionTag === 'venue-bar-parcel') return BAR_PRINTER;
+  if (sectionTag === 'venue-restaurant-parcel' || sectionTag === 'venue-bar-parcel' || sectionTag === 'venue-bar-gobox') return BAR_PRINTER;
   return DINE_IN_BILL_PRINTER;
 }
 
