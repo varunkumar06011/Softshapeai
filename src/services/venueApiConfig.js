@@ -10,6 +10,7 @@ export const VENUE_SUB_IDS = {
   "PDR": "venue-bar-pdr",
   "Rooms": "venue-bar-rooms",
   "Parcel": "venue-bar-parcel",
+  "GoBox": "venue-bar-gobox",
   // Restaurant venues
   "Family Restaurant": "venue-family-restaurant",
   "Parcel(Restaurant)": "venue-restaurant-parcel",
@@ -21,6 +22,7 @@ export const BAR_VENUE_PRICE_COLUMNS = [
   { id: "venue-bar-pdr", label: "PDR" },
   { id: "venue-bar-rooms", label: "Rooms" },
   { id: "venue-bar-parcel", label: "Parcel" },
+  { id: "venue-bar-gobox", label: "GoBox" },
 ];
 
 export const RESTAURANT_VENUE_PRICE_COLUMNS = [
