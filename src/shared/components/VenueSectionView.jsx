@@ -13,7 +13,10 @@ export default function VenueSectionView({
   onOrderPlaced,
   venueTables = [],
   isSyncing = false,
-  refetch = null
+  refetch = null,
+  extraTables = [],
+  onAddExtraTable = null,
+  onRemoveExtraTable = null,
 }) {
 
   const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
@@ -101,11 +104,46 @@ export default function VenueSectionView({
     );
   }
 
-  // Single mode (Conference, Owner, Rooms)
+  // Single mode (Conference, Owner, Rooms, Family Restaurant, Parcel, GoBox)
+  // Include extra tables that belong to this section
+  const sectionExtraTables = (extraTables || []).filter(et => {
+    const parent = sectionTables.find(st => st.backendId === et.baseBackendId);
+    return !!parent;
+  });
+
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {sectionTables.map((table) => (
-        <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+        <div key={table.backendId || table.id} className="relative">
+          <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+          {/* Add Extra (+) button — only on free regular tables */}
+          {onAddExtraTable && (table.status === 'Free' || table.status === 'AVAILABLE' || !table.status) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddExtraTable(table);
+              }}
+              className="absolute top-1 left-1 w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-green-600 z-20 shadow"
+              title={`Add extra session for table ${table.number}`}
+            >+</button>
+          )}
+        </div>
+      ))}
+      {sectionExtraTables.map((table) => (
+        <div key={`extra-${table.id}`} className="relative">
+          <VenueTableCard table={{ ...table, status: table.status || 'Free', isExtra: true }} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+          {/* Remove Extra (−) button */}
+          {onRemoveExtraTable && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemoveExtraTable(table);
+              }}
+              className="absolute top-1 left-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-red-600 z-20 shadow"
+              title="Remove extra session"
+            >−</button>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -117,18 +155,21 @@ function VenueTableCard({ table, sectionName, onClick }) {
   const isBilling = status === 'Waiting Bill' || status === 'BILLING_REQUESTED';
   const isReady = status === 'Ready';
   const isBusy = !isFree && !isBilling && !isReady;
+  const isExtra = table.isExtra;
 
   return (
     <button
       onClick={onClick}
       className={`aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
-        isFree
-          ? 'bg-white border-gray-100 hover:border-gray-300'
-          : isBilling
-            ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100'
-            : isReady
-              ? 'bg-green-50 border-green-200 text-green-700'
-              : 'bg-red-50 border-red-100 text-red-600'
+        isExtra
+          ? 'bg-blue-50 border-dashed border-blue-300 text-blue-600 hover:border-blue-400 shadow-sm'
+          : isFree
+            ? 'bg-white border-gray-100 hover:border-gray-300'
+            : isBilling
+              ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100'
+              : isReady
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-red-50 border-red-100 text-red-600'
       }`}
     >
       {/* Section Badge - Top Left */}

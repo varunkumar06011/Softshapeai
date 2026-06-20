@@ -1961,6 +1961,72 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
+  // ── Venue extra table helpers (shared between bar and restaurant sections) ──
+  const handleAddVenueExtraTable = (parentTable) => {
+    const existingCount = extraTables.filter(et => et.baseBackendId === parentTable.backendId).length;
+    const prefix = (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('family') ? 'F' :
+                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('parcel') ? 'P' :
+                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('gobox') ? 'GB' :
+                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('conference') ? 'C' :
+                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('room') ? 'R' :
+                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('pdr') ? 'PDR' :
+                   'V';
+    const extraId = existingCount === 0 ? `${prefix}${parentTable.number}-X` : `${prefix}${parentTable.number}-X${existingCount + 1}`;
+    const localOrderId = `extra-${extraId}-${Date.now()}`;
+    setExtraTables(prev => [...prev, {
+      id: extraId,
+      number: extraId,
+      backendId: parentTable.backendId,
+      baseBackendId: parentTable.backendId,
+      isExtra: true,
+      localOrderId,
+      status: 'Free',
+      sectionId: parentTable.sectionId,
+      section: parentTable.section,
+      sectionName: parentTable.sectionName,
+      sectionTag: parentTable.sectionTag,
+      kotHistory: [],
+      currentBill: 0,
+      activeOrder: null,
+      captainId: null,
+      guests: 0,
+      time: null,
+    }]);
+  };
+
+  const handleRemoveVenueExtraTable = (extraTable) => {
+    const extraItems = getAllOrderItems(extraTable);
+    if (extraItems.length > 0) {
+      // Merge items back into parent table's activeOrder visually
+      const parentTable = [...activeTables, ...venueTables].find(t => t.backendId === extraTable.baseBackendId);
+      if (parentTable?.activeOrder) {
+        const mainItems = parentTable.activeOrder.items || [];
+        const extraKotHistory = extraTable.kotHistory || [];
+        const mergedItems = [...mainItems, ...extraItems.map(i => ({
+          id: null,
+          n: i.n || i.name,
+          name: i.n || i.name,
+          p: Number(i.p ?? i.price ?? 0),
+          price: Number(i.p ?? i.price ?? 0),
+          q: Number(i.q ?? i.quantity ?? 1),
+          quantity: Number(i.q ?? i.quantity ?? 1),
+          menuType: (i.menuType || 'FOOD').toUpperCase(),
+          removedFromBill: false,
+          notes: i.notes || null,
+        }))];
+        const mergedKotHistory = [...(parentTable.kotHistory || []), ...extraKotHistory];
+        const updateTables = (prev) => prev.map(t =>
+          t.backendId === extraTable.baseBackendId
+            ? { ...t, activeOrder: { ...t.activeOrder, items: mergedItems }, kotHistory: mergedKotHistory, currentBill: (t.currentBill || 0) + (extraTable.currentBill || 0) }
+            : t
+        );
+        setActiveTables(updateTables, { skipPersist: true });
+        setVenueTables(updateTables, { skipPersist: true });
+      }
+    }
+    setExtraTables(prev => prev.filter(et => et.id !== extraTable.id));
+  };
+
   const handleWalkinFinalBill = async () => {
     if (cart.length === 0) return;
 
@@ -3646,6 +3712,9 @@ const CashierDashboard = ({ onLogout }) => {
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                             isSyncing={venueTablesLoading}
+                            extraTables={extraTables}
+                            onAddExtraTable={handleAddVenueExtraTable}
+                            onRemoveExtraTable={handleRemoveVenueExtraTable}
                           />
                         )}
                         {outlet === 'restaurant' && tableSubCategory === 'parcel' && (
