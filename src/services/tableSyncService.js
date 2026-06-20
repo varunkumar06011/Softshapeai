@@ -10,7 +10,7 @@ function isRecentlyTerminated(tableId) {
     const raw = localStorage.getItem('cashier_recently_terminated');
     const map = raw ? JSON.parse(raw) : {};
     const ts = map[tableId];
-    return ts && Date.now() - ts < 300000; // 5 minutes
+    return ts && Date.now() - ts < 30000; // 30 seconds — same as VenueSectionView
   } catch { return false; }
 }
 
