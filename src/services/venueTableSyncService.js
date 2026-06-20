@@ -56,10 +56,23 @@ function readCache() {
   try {
     const raw = localStorage.getItem(TABLES_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
     // Deduplicate cached tables to prevent duplicate cards on load
-    return parsed.filter((table, index, self) =>
+    const deduped = parsed.filter((table, index, self) =>
       index === self.findIndex(t => t.backendId === table.backendId)
     );
+    // Detect stale/incomplete cache (e.g., old bug filtered out terminated tables permanently).
+    // Family Restaurant should have 40 tables. If cache is missing many, discard it.
+    const familyTables = deduped.filter(t => {
+      const name = (t.sectionName || t.section?.name || '').toLowerCase();
+      return name.includes('family');
+    });
+    if (familyTables.length > 0 && familyTables.length < 35) {
+      console.warn('[VenueTableSync] Incomplete cache detected (Family tables:', familyTables.length, '), clearing cache');
+      localStorage.removeItem(TABLES_CACHE_KEY);
+      return [];
+    }
+    return deduped;
   } catch {
     return [];
   }
