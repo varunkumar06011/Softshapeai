@@ -336,10 +336,8 @@ export function useVenueTableSync() {
   });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
-  const cancelledRef = useRef(false);
   const isFetchingRef = useRef(false);
   const fetchStartTimeRef = useRef(0);
-  const mountedRef = useRef(false);
   const abortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -347,6 +345,11 @@ export function useVenueTableSync() {
   }, [tables]);
 
   const loadTables = useCallback(async (isRetry = false) => {
+    // Cancel any previous in-flight fetch before starting a new one.
+    // This prevents stale responses from overwriting fresh data.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     // Auto-reset if a previous fetch got stuck (e.g. zombie promise, uncaught exception)
     if (isFetchingRef.current && Date.now() - fetchStartTimeRef.current > 20000) {
       console.warn('[VenueTableSync] Fetch lock stuck for >20s, forcing reset');
@@ -359,14 +362,12 @@ export function useVenueTableSync() {
     isFetchingRef.current = true;
     fetchStartTimeRef.current = Date.now();
     abortControllerRef.current = new AbortController();
-    cancelledRef.current = false;
     setIsSyncing(true);
     try {
       console.log('[VenueTableSync] Fetching /api/venue/sections ...');
       const sections = await fetchVenueSections(abortControllerRef.current.signal);
-      // Don't bail just because component unmounted briefly (Strict Mode, tab switch).
-      // If we got valid data, use it. cancelledRef is the only intentional stop signal.
-      if (cancelledRef.current) return;
+      // Always use valid data even if component briefly unmounted (React Strict Mode).
+      // React safely ignores state updates on unmounted components.
       console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
       const flat = flattenSections(sections);
       console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
@@ -441,10 +442,7 @@ export function useVenueTableSync() {
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         console.log('[VenueTableSync] Fetch aborted');
-        if (!isRetry) {
-          console.warn('[VenueTableSync] Fetch aborted — retrying in 1.5s');
-          setTimeout(() => loadTables(true), 1500);
-        }
+        // Don't retry on abort — a new fetch is already scheduled by fallback
       } else {
         console.error("[VenueTableSync] Fetch failed:", err);
         if (!isRetry) {
@@ -455,13 +453,12 @@ export function useVenueTableSync() {
     } finally {
       isFetchingRef.current = false;
       fetchStartTimeRef.current = 0;
-      abortControllerRef.current = null;
+      // Don't null out abortControllerRef — cleanup may need it
       setIsSyncing(false);
     }
   }, []);
 
   useEffect(() => {
-    mountedRef.current = true;
     loadTables();
 
     const releaseSocket = acquireSocket({
@@ -621,9 +618,9 @@ export function useVenueTableSync() {
     }, 5000);
 
     return () => {
-      mountedRef.current = false;
-      cancelledRef.current = true;
-      abortControllerRef.current?.abort();
+      // Don't abort in-flight fetches on unmount — React Strict Mode causes
+      // mount/unmount cycles and aborting leads to infinite fetch loops.
+      // React safely ignores state updates on unmounted components.
       clearInterval(fallbackInterval);
       releaseSocket();
       socket.off("connect", onReconnect);
