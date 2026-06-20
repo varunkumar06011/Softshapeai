@@ -338,6 +338,7 @@ export function useVenueTableSync() {
   const tablesRef = useRef(tables);
   const cancelledRef = useRef(false);
   const isFetchingRef = useRef(false);
+  const fetchStartTimeRef = useRef(0);
   const mountedRef = useRef(false);
   const abortControllerRef = useRef(null);
 
@@ -346,18 +347,26 @@ export function useVenueTableSync() {
   }, [tables]);
 
   const loadTables = useCallback(async (isRetry = false) => {
+    // Auto-reset if a previous fetch got stuck (e.g. zombie promise, uncaught exception)
+    if (isFetchingRef.current && Date.now() - fetchStartTimeRef.current > 20000) {
+      console.warn('[VenueTableSync] Fetch lock stuck for >20s, forcing reset');
+      isFetchingRef.current = false;
+    }
     if (isFetchingRef.current) {
       console.log('[VenueTableSync] Fetch already in progress, skipping');
       return;
     }
     isFetchingRef.current = true;
+    fetchStartTimeRef.current = Date.now();
     abortControllerRef.current = new AbortController();
     cancelledRef.current = false;
     setIsSyncing(true);
     try {
       console.log('[VenueTableSync] Fetching /api/venue/sections ...');
       const sections = await fetchVenueSections(abortControllerRef.current.signal);
-      if (!mountedRef.current || cancelledRef.current) return;
+      // Don't bail just because component unmounted briefly (Strict Mode, tab switch).
+      // If we got valid data, use it. cancelledRef is the only intentional stop signal.
+      if (cancelledRef.current) return;
       console.log('[VenueTableSync] Received sections:', sections?.length ?? 0, sections);
       const flat = flattenSections(sections);
       console.log('[VenueTableSync] Flattened tables:', flat?.length ?? 0, flat);
@@ -432,15 +441,12 @@ export function useVenueTableSync() {
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         console.log('[VenueTableSync] Fetch aborted');
-        // Abort can leave tables empty if no retry happens (e.g., socket reconnect
-        // during mount, or React Strict Mode double-mount). Retry once quickly.
         if (!isRetry) {
           console.warn('[VenueTableSync] Fetch aborted — retrying in 1.5s');
           setTimeout(() => loadTables(true), 1500);
         }
       } else {
         console.error("[VenueTableSync] Fetch failed:", err);
-        // Auto-retry once on failure
         if (!isRetry) {
           console.warn('[VenueTableSync] Fetch error — retrying in 3s');
           setTimeout(() => loadTables(true), 3000);
@@ -448,8 +454,9 @@ export function useVenueTableSync() {
       }
     } finally {
       isFetchingRef.current = false;
+      fetchStartTimeRef.current = 0;
       abortControllerRef.current = null;
-      if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
+      setIsSyncing(false);
     }
   }, []);
 
@@ -604,10 +611,20 @@ export function useVenueTableSync() {
     };
     socket.on("connect", onReconnect);
 
+    // Fallback: if tables stay empty (e.g. all fetches aborted by Strict Mode),
+    // retry every 5 seconds until we get data.
+    const fallbackInterval = setInterval(() => {
+      if (tablesRef.current.length === 0 && !isFetchingRef.current) {
+        console.warn('[VenueTableSync] Tables still empty — forcing refetch');
+        loadTables(true);
+      }
+    }, 5000);
+
     return () => {
       mountedRef.current = false;
       cancelledRef.current = true;
       abortControllerRef.current?.abort();
+      clearInterval(fallbackInterval);
       releaseSocket();
       socket.off("connect", onReconnect);
     };
