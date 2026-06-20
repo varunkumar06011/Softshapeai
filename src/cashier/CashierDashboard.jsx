@@ -341,8 +341,8 @@ const CashierDashboard = ({ onLogout }) => {
       const raw = localStorage.getItem('cashier_recently_terminated');
       const map = raw ? JSON.parse(raw) : {};
       const now = Date.now();
-      // 5-minute TTL: prevents terminated tables from reappearing on refresh
-      Object.keys(map).forEach(k => { if (now - map[k] > 300000) delete map[k]; });
+      // 30-second TTL: keeps terminated tables hidden briefly to prevent flicker
+      Object.keys(map).forEach(k => { if (now - map[k] > 30000) delete map[k]; });
       return map;
     } catch { return {}; }
   })());
@@ -443,6 +443,15 @@ const CashierDashboard = ({ onLogout }) => {
       });
       return filtered;
     });
+    // Also clean up stale entries in localStorage itself so they don't grow forever
+    try {
+      const raw = localStorage.getItem('cashier_recently_terminated');
+      const map = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      let changed = false;
+      Object.keys(map).forEach(k => { if (now - map[k] > 30000) { delete map[k]; changed = true; } });
+      if (changed) localStorage.setItem('cashier_recently_terminated', JSON.stringify(map));
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

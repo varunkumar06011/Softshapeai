@@ -37,9 +37,14 @@ export default function VenueSectionView({
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
     
-    // Check recently terminated guard
-    const termTs = recentlyTerminated[table.backendId];
-    if (termTs && Date.now() - termTs < 30000) return false;
+    // Check recently terminated guard — ONLY for occupied tables.
+    // Free tables must always show so they can be re-used immediately.
+    const tableStatus = (table.status || '').toLowerCase();
+    const isFree = tableStatus === 'free' || tableStatus === 'available';
+    if (!isFree) {
+      const termTs = recentlyTerminated[table.backendId];
+      if (termTs && Date.now() - termTs < 30000) return false;
+    }
 
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
     const target = targetName;
