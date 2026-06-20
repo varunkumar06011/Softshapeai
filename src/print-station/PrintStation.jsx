@@ -36,6 +36,42 @@ import { API_BASE } from '../services/apiConfig.js';
 
 import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
 
+// ── Configurable print rooms (for running separate PrintStations per outlet) ──
+// Usage: /print-station?rooms=bar-001,venue-001   (only bar + venue)
+//        /print-station?rooms=restaurant-001       (only restaurant)
+// Default: all three rooms
+const urlRooms = new URLSearchParams(window.location.search).get('rooms');
+const PRINT_ROOMS = urlRooms
+  ? urlRooms.split(',').map(s => s.trim()).filter(Boolean)
+  : ['restaurant-001', 'bar-001', 'venue-001'];
+
+// ── Per-printer sequential queue ─────────────────────────────────────────────
+// Prevents printer overload when many orders fire simultaneously.
+// Each printer processes jobs one at a time in FIFO order.
+const printerQueues = new Map(); // printerName -> { queue: Array, processing: boolean }
+
+async function enqueuePrint(printerName, cmds) {
+  if (!printerQueues.has(printerName)) {
+    printerQueues.set(printerName, { queue: [], processing: false });
+  }
+  const pq = printerQueues.get(printerName);
+  pq.queue.push(cmds);
+
+  if (pq.processing) return; // already processing, job is queued
+
+  pq.processing = true;
+  while (pq.queue.length > 0) {
+    const task = pq.queue.shift();
+    try {
+      await sendToPrinter(printerName, task);
+    } catch (err) {
+      console.error(`[PrintQueue] Failed on ${printerName}:`, err.message);
+      // Don't rethrow — log and continue to next job so one bad job doesn't block the queue
+    }
+  }
+  pq.processing = false;
+}
+
 
 
 let KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
@@ -870,15 +906,11 @@ export default function PrintStation() {
 
           setTimeout(() => {
 
-            socket.emit('join:print', 'restaurant-001');
-
-            socket.emit('join:print', 'bar-001');
-
-            socket.emit('join:print', 'venue-001');
+            PRINT_ROOMS.forEach(room => socket.emit('join:print', room));
 
             hasJoinedRef.current = true;
 
-            pushLog('Socket connected — joined print rooms ✓');
+            pushLog(`Socket connected — joined print rooms: ${PRINT_ROOMS.join(', ')} ✓`);
 
           }, 500);
 
@@ -892,13 +924,9 @@ export default function PrintStation() {
 
           setTimeout(() => {
 
-            socket.emit('join:print', 'restaurant-001');
+            PRINT_ROOMS.forEach(room => socket.emit('join:print', room));
 
-            socket.emit('join:print', 'bar-001');
-
-            socket.emit('join:print', 'venue-001');
-
-            pushLog('Socket reconnected — rejoined print rooms ✓');
+            pushLog(`Socket reconnected — rejoined print rooms: ${PRINT_ROOMS.join(', ')} ✓`);
 
           }, 500);
 
@@ -914,13 +942,9 @@ export default function PrintStation() {
 
         setTimeout(() => {
 
-          socket.emit('join:print', 'restaurant-001');
+          PRINT_ROOMS.forEach(room => socket.emit('join:print', room));
 
-          socket.emit('join:print', 'bar-001');
-
-          socket.emit('join:print', 'venue-001');
-
-          pushLog('Socket reconnected — rejoined print rooms ✓', true);
+          pushLog(`Socket reconnected — rejoined print rooms: ${PRINT_ROOMS.join(', ')} ✓`, true);
 
         }, 500);
 
@@ -1229,21 +1253,21 @@ export default function PrintStation() {
 
 
 
-          // Execute all print tasks simultaneously
-
-          await Promise.all(printTasks.map(async (task) => {
-
-            // Guard against truly invalid printer names (empty or undefined only)
+          // Execute print tasks through per-printer queues (sequential per printer,
+          // parallel across different printers). Prevents one printer from being
+          // flooded by many simultaneous orders.
+          for (const task of printTasks) {
             if (!task.printer || task.printer.trim() === '') {
               pushLog(`✗ Skipped print — no printer configured for this job type`, false);
-              return;
+              continue;
             }
-
-            await sendToPrinter(task.printer, task.cmds);
-
-            pushLog(`✓ Printed [${type}] → ${task.printer} (Table ${data?.tableNumber ?? '?'})`);
-
-          }));
+            // Fire into queue asynchronously — don't await so multiple printers run in parallel
+            enqueuePrint(task.printer, task.cmds).then(() => {
+              pushLog(`✓ Printed [${type}] → ${task.printer} (Table ${data?.tableNumber ?? '?'})`);
+            }).catch(err => {
+              pushLog(`✗ Print failed [${type}] → ${task.printer}: ${err.message}`, false);
+            });
+          }
 
 
 
