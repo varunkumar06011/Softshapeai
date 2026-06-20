@@ -306,7 +306,12 @@ export function useVenueTableSync() {
     const cached = readCache();
     if (cached.length > 0) {
       return cached
-        .filter(t => !isRecentlyTerminated(t.backendId))
+        .filter(t => {
+          // Only hide occupied tables that were recently terminated.
+          // Free tables must always show so they can be reused immediately.
+          const isFree = t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE';
+          return isFree || !isRecentlyTerminated(t.backendId);
+        })
         .map(t => {
           if (t.status === 'Free' || t.status === 'AVAILABLE' || t.dbStatus === 'AVAILABLE') {
             return { ...t, kotHistory: [], currentBill: 0, activeOrder: null, guests: 0, time: null };
@@ -459,25 +464,36 @@ export function useVenueTableSync() {
         }
 
         setTablesState((prev) => {
-          const next = prev.map((t) => {
-            if (t.backendId !== updatedTable.id) return t;
-            // Guard: if socket says AVAILABLE but local table has an active order,
-            // skip this update — it's a stale/race event. Wait for the correct one.
-            // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
-            // legitimate settlement confirmation and must be accepted.
-            if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
-              console.warn('[VenueTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
-              return t;
-            }
-            const before = t;
-            let after = mapBackendTable(updatedTable, t);
-            // If backend still returns stale data for a recently terminated table, sanitize it
+          const hasTable = prev.some((t) => t.backendId === updatedTable.id);
+          let next;
+          if (hasTable) {
+            next = prev.map((t) => {
+              if (t.backendId !== updatedTable.id) return t;
+              // Guard: if socket says AVAILABLE but local table has an active order,
+              // skip this update — it's a stale/race event. Wait for the correct one.
+              // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
+              // legitimate settlement confirmation and must be accepted.
+              if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
+                console.warn('[VenueTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+                return t;
+              }
+              const before = t;
+              let after = mapBackendTable(updatedTable, t);
+              // If backend still returns stale data for a recently terminated table, sanitize it
+              if (isRecentlyTerminated(updatedTable.id)) {
+                after = sanitizeTerminatedTable(after);
+              }
+              validateTableIntegrity('venueTableSync', before, after);
+              return after;
+            });
+          } else {
+            // Table missing from state (e.g., filtered on mount) — add it now
+            let after = mapBackendTable(updatedTable, null);
             if (isRecentlyTerminated(updatedTable.id)) {
               after = sanitizeTerminatedTable(after);
             }
-            validateTableIntegrity('venueTableSync', before, after);
-            return after;
-          });
+            next = [...prev, after];
+          }
           writeCache(next);
           return next;
         });
