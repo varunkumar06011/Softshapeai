@@ -104,6 +104,20 @@ const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
 const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']);
 const RESTAURANT_SOURCES = new Set(['restaurant', 'family-restaurant', 'restaurant-parcel']);
 
+// Map raw DB sectionTag values to the source keys used by BAR_SOURCES / RESTAURANT_SOURCES
+const SECTION_TAG_TO_SOURCE = {
+  'venue-bar-ac-hall':       'bar-ac-hall',
+  'venue-bar-conference':    'bar-conference',
+  'venue-bar-pdr':           'bar-pdr',
+  'venue-bar-rooms':         'bar-rooms',
+  'venue-bar-parcel':        'bar-parcel',
+  'venue-bar-gobox':         'bar-gobox',
+  'venue-family-restaurant': 'family-restaurant',
+  'venue-restaurant-parcel': 'restaurant-parcel',
+  'bar':                     'bar',
+  'restaurant':              'restaurant',
+};
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -1624,7 +1638,14 @@ const CashierDashboard = ({ onLogout }) => {
   const [billFinderTableNo, setBillFinderTableNo] = useState('');
   const [billFinderResults, setBillFinderResults] = useState([]);
   const [billFinderLoading, setBillFinderLoading] = useState(false);
+  const [billFinderSearched, setBillFinderSearched] = useState(false);
   const [isReprintingFoundBill, setIsReprintingFoundBill] = useState(false);
+
+  // Reset bill finder state when switching outlets to prevent stale empty state
+  useEffect(() => {
+    setBillFinderResults([]);
+    setBillFinderSearched(false);
+  }, [outlet]);
 
   const handleDashboardDateChange = (date) => {
     if (date) {
@@ -1640,6 +1661,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleBillSearch = async () => {
+    setBillFinderSearched(false);
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
@@ -1684,19 +1706,18 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
-        // If sectionTag is null/undefined, include the transaction (fallback for older data)
+        // If no sectionTag, derive from restaurantId as fallback.
+        // venue-001 contains BOTH bar and restaurant tables, so we can only
+        // safely include it when sectionTag is present. Without sectionTag,
+        // include only direct restaurant IDs (bar-001 / restaurant-001).
         if (!txn.sectionTag) {
-          return true;
+          const rid = txn._sourceRestaurantId || '';
+          if (outlet === 'bar') return rid === 'bar-001';
+          return rid === 'restaurant-001';
         }
-        
-        if (outlet === 'bar') {
-          // Bar sees ONLY bar-sourced transactions — never any restaurant source
-          const matches = BAR_SOURCES.has(txn.sectionTag);
-          return matches;
-        }
-        // Restaurant sees ONLY restaurant-sourced transactions — never bar or unknown venue
-        const matches = RESTAURANT_SOURCES.has(txn.sectionTag);
-        return matches;
+        const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
+        if (outlet === 'bar') return BAR_SOURCES.has(mappedSource);
+        return RESTAURANT_SOURCES.has(mappedSource);
       });
 
       // Enrich results with tableDisplayName for rendering
@@ -1707,6 +1728,7 @@ const CashierDashboard = ({ onLogout }) => {
         return { ...txn, tableDisplayName };
       });
 
+      setBillFinderSearched(true);
       setBillFinderResults(enriched);
     } catch (error) {
       console.error('[Bill Finder] Search error:', error);
@@ -4073,7 +4095,8 @@ const CashierDashboard = ({ onLogout }) => {
                               <input
                                 type="date"
                                 value={billFinderDate}
-                                onChange={(e) => setBillFinderDate(e.target.value)}
+                                onChange={(e) => { setBillFinderDate(e.target.value); setBillFinderSearched(false); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
                                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
                               />
                             </div>
@@ -4083,7 +4106,8 @@ const CashierDashboard = ({ onLogout }) => {
                                 type="text"
                                 placeholder="Enter bill number..."
                                 value={billFinderBillNo}
-                                onChange={(e) => setBillFinderBillNo(e.target.value)}
+                                onChange={(e) => { setBillFinderBillNo(e.target.value); setBillFinderSearched(false); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
                                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
                               />
                             </div>
@@ -4093,7 +4117,8 @@ const CashierDashboard = ({ onLogout }) => {
                                 type="text"
                                 placeholder="Enter table number..."
                                 value={billFinderTableNo}
-                                onChange={(e) => setBillFinderTableNo(e.target.value)}
+                                onChange={(e) => { setBillFinderTableNo(e.target.value); setBillFinderSearched(false); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
                                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
                               />
                             </div>
@@ -4117,7 +4142,7 @@ const CashierDashboard = ({ onLogout }) => {
                           </button>
                         </div>
 
-                        {billFinderResults.length === 0 && !billFinderLoading && (
+                        {billFinderResults.length === 0 && !billFinderLoading && billFinderSearched && (
                           <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm text-center">
                             <Search size={32} className="text-gray-300 mx-auto mb-2" />
                             <p className="text-sm font-black text-gray-400 uppercase tracking-widest">No bills found</p>
@@ -4133,6 +4158,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Bill #</th>
                                     <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Date/Time</th>
                                     <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Table</th>
+                                    <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Source</th>
                                     <th className="px-4 py-3 text-left text-xs font-black uppercase text-gray-600">Method</th>
                                     <th className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600">Total</th>
                                     <th className="px-4 py-3 text-center text-xs font-black uppercase text-gray-600">Actions</th>
@@ -4148,6 +4174,15 @@ const CashierDashboard = ({ onLogout }) => {
                                         {(() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }); } catch { return '—'; } })()}
                                       </td>
                                       <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableDisplayName || '—'}</td>
+                                      <td className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">
+                                        {(() => {
+                                          const mapped = SECTION_TAG_TO_SOURCE[txn.sectionTag];
+                                          if (mapped) return mapped.replace(/-/g, ' ');
+                                          if (txn._sourceRestaurantId === 'bar-001') return 'bar ac hall';
+                                          if (txn._sourceRestaurantId === 'restaurant-001') return 'restaurant';
+                                          return '—';
+                                        })()}
+                                      </td>
                                       <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
                                           txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
