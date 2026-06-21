@@ -865,13 +865,16 @@ export default function CaptainApp({ onLogout }) {
 
     const todayDateISO = new Date().toISOString().slice(0, 10);
 
-    // Fetch from both outlets and sum — captain may serve both
+    // Fetch from all three outlets and sum — captain may serve regular restaurant,
+    // bar, AND venue tables (Family Restaurant, Parcel, Conference, etc.)
 
     const restaurantFetch = fetchTransactions(RESTAURANT_ID, 500, todayDateISO);
 
     const barFetch = fetchTransactions(BAR_ID, 500, todayDateISO);
 
-    Promise.allSettled([restaurantFetch, barFetch]).then(results => {
+    const venueFetch = fetchTransactions('venue-001', 500, todayDateISO);
+
+    Promise.allSettled([restaurantFetch, barFetch, venueFetch]).then(results => {
 
       const allTxns = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 
@@ -1123,19 +1126,33 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+  // Determine which table array is actually being displayed based on subcategory
+
+  const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox', 'family-restaurant', 'parcel'];
+
+  const displayTables = useMemo(() => {
+
+    const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
+
+    return isVenueSubcategory ? venueTables : activeTables;
+
+  }, [activeTables, venueTables, tableSubCategory]);
+
+
+
   // Filtered tables based on filter selection
 
   const filteredTables = useMemo(() => {
 
-    let baseTables = activeTables;
+    let baseTables = displayTables;
 
 
 
-    // When in bar outlet, show only bar section tables
+    // When in bar outlet bar-ac-hall, further narrow to bar-section tables
 
     if (outlet === 'bar' && tableSubCategory === 'bar-ac-hall') {
 
-      const barTables = activeTables.filter(t => {
+      const barTables = displayTables.filter(t => {
 
         const sec = (t.sectionName || t.section?.name || '').toLowerCase();
 
@@ -1143,7 +1160,7 @@ export default function CaptainApp({ onLogout }) {
 
       });
 
-      baseTables = barTables.length > 0 ? barTables : activeTables;
+      baseTables = barTables.length > 0 ? barTables : displayTables;
 
     }
 
@@ -1153,25 +1170,25 @@ export default function CaptainApp({ onLogout }) {
 
     return baseTables.filter(t => t.captainId === currentCaptain?.id);
 
-  }, [activeTables, tableFilter, currentCaptain?.id, outlet, tableSubCategory]);
+  }, [displayTables, tableFilter, currentCaptain?.id, outlet, tableSubCategory]);
 
 
 
-  const freeCount = useMemo(() => activeTables.filter(t => t.status === TABLE_STATUS.FREE).length, [activeTables]);
+  const freeCount = useMemo(() => displayTables.filter(t => t.status === TABLE_STATUS.FREE).length, [displayTables]);
 
-  const busyCount = useMemo(() => activeTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [activeTables]);
+  const busyCount = useMemo(() => displayTables.filter(t => t.status !== TABLE_STATUS.FREE).length, [displayTables]);
 
 
 
   const myTablesCount = useMemo(() => {
 
-    return activeTables.filter(t => t.captainId === currentCaptain?.id).length;
+    return displayTables.filter(t => t.captainId === currentCaptain?.id).length;
 
-  }, [activeTables, currentCaptain?.id]);
+  }, [displayTables, currentCaptain?.id]);
 
 
 
-  const allTablesCount = useMemo(() => activeTables.length, [activeTables]);
+  const allTablesCount = useMemo(() => displayTables.length, [displayTables]);
 
 
 
@@ -1325,15 +1342,18 @@ export default function CaptainApp({ onLogout }) {
 
     const socket = getSocket();
 
-    // Join the active outlet room; also join venue-001 for bar outlet so venue table real-time updates work
+    // Join the active outlet room; also join venue-001 whenever captain is on a
+    // venue subcategory so real-time updates reach Family Restaurant / Parcel / etc.
+    const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox', 'family-restaurant', 'parcel'];
+    const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
     socket.emit('join', activeRestaurantId);
-    if (outlet === 'bar') {
+    if (isVenueSubcategory) {
       socket.emit('join', 'venue-001');
     }
 
     const onConnect = () => {
       socket.emit('join', activeRestaurantId);
-      if (outlet === 'bar') {
+      if (isVenueSubcategory) {
         socket.emit('join', 'venue-001');
       }
     };
@@ -1526,12 +1546,12 @@ export default function CaptainApp({ onLogout }) {
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:paid', onOrderPaid);
       socket.emit('leave', activeRestaurantId);
-      if (outlet === 'bar') {
+      if (isVenueSubcategory) {
         socket.emit('leave', 'venue-001');
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRestaurantId]);
+  }, [activeRestaurantId, tableSubCategory]);
 
 
 

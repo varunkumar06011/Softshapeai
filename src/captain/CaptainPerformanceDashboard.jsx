@@ -35,6 +35,7 @@ export default function CaptainPerformanceDashboard() {
     Promise.allSettled([
       fetchTransactions(RESTAURANT_ID, limit, dateParam, monthParam),
       fetchTransactions(BAR_ID, limit, dateParam, monthParam),
+      fetchTransactions('venue-001', limit, dateParam, monthParam),
     ]).then(results => {
       const all = results.flatMap(r => (r.status === "fulfilled" && Array.isArray(r.value) ? r.value : []));
       setTransactions(all);
