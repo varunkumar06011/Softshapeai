@@ -104,6 +104,20 @@ const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
 const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']);
 const RESTAURANT_SOURCES = new Set(['restaurant', 'family-restaurant', 'restaurant-parcel']);
 
+// Map raw DB sectionTag values to the source keys used by BAR_SOURCES / RESTAURANT_SOURCES
+const SECTION_TAG_TO_SOURCE = {
+  'venue-bar-ac-hall':       'bar-ac-hall',
+  'venue-bar-conference':    'bar-conference',
+  'venue-bar-pdr':           'bar-pdr',
+  'venue-bar-rooms':         'bar-rooms',
+  'venue-bar-parcel':        'bar-parcel',
+  'venue-bar-gobox':         'bar-gobox',
+  'venue-family-restaurant': 'family-restaurant',
+  'venue-restaurant-parcel': 'restaurant-parcel',
+  'bar':                     'bar',
+  'restaurant':              'restaurant',
+};
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -1627,6 +1641,12 @@ const CashierDashboard = ({ onLogout }) => {
   const [billFinderSearched, setBillFinderSearched] = useState(false);
   const [isReprintingFoundBill, setIsReprintingFoundBill] = useState(false);
 
+  // Reset bill finder state when switching outlets to prevent stale empty state
+  useEffect(() => {
+    setBillFinderResults([]);
+    setBillFinderSearched(false);
+  }, [outlet]);
+
   const handleDashboardDateChange = (date) => {
     if (date) {
       setDashboardDate(date);
@@ -1641,6 +1661,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleBillSearch = async () => {
+    setBillFinderSearched(false);
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
@@ -1683,28 +1704,16 @@ const CashierDashboard = ({ onLogout }) => {
         return matches;
       });
 
-      // Map raw sectionTag DB values to the source keys used by BAR_SOURCES / RESTAURANT_SOURCES
-      const SECTION_TAG_TO_SOURCE = {
-        'venue-bar-ac-hall':    'bar-ac-hall',
-        'venue-bar-conference': 'bar-conference',
-        'venue-bar-pdr':        'bar-pdr',
-        'venue-bar-rooms':      'bar-rooms',
-        'venue-bar-parcel':     'bar-parcel',
-        'venue-bar-gobox':      'bar-gobox',
-        'venue-family-restaurant': 'family-restaurant',
-        'venue-restaurant-parcel': 'restaurant-parcel',
-        // bar-001 direct transactions (sectionTag stored as raw restaurantId prefix)
-        'bar':                  'bar',
-        'restaurant':           'restaurant',
-      };
-
       // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
-        // If no sectionTag, derive from restaurantId as fallback
+        // If no sectionTag, derive from restaurantId as fallback.
+        // venue-001 contains BOTH bar and restaurant tables, so we can only
+        // safely include it when sectionTag is present. Without sectionTag,
+        // include only direct restaurant IDs (bar-001 / restaurant-001).
         if (!txn.sectionTag) {
           const rid = txn._sourceRestaurantId || '';
-          if (outlet === 'bar') return rid === 'bar-001' || rid === 'venue-001';
-          return rid === 'restaurant-001' || rid === 'venue-001';
+          if (outlet === 'bar') return rid === 'bar-001';
+          return rid === 'restaurant-001';
         }
         const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
         if (outlet === 'bar') return BAR_SOURCES.has(mappedSource);
@@ -4166,9 +4175,13 @@ const CashierDashboard = ({ onLogout }) => {
                                       </td>
                                       <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableDisplayName || '—'}</td>
                                       <td className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">
-                                        {txn.sectionTag
-                                          ? txn.sectionTag.replace('venue-bar-', '').replace('venue-', '').replace(/-/g, ' ')
-                                          : txn._sourceRestaurantId === 'bar-001' ? 'bar ac hall' : '—'}
+                                        {(() => {
+                                          const mapped = SECTION_TAG_TO_SOURCE[txn.sectionTag];
+                                          if (mapped) return mapped.replace(/-/g, ' ');
+                                          if (txn._sourceRestaurantId === 'bar-001') return 'bar ac hall';
+                                          if (txn._sourceRestaurantId === 'restaurant-001') return 'restaurant';
+                                          return '—';
+                                        })()}
                                       </td>
                                       <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
