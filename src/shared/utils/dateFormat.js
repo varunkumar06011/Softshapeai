@@ -45,12 +45,8 @@ export function formatDateDisplay(value) {
 }
 
 export function formatTxnDisplayId(txnDate, txnNumber) {
-  if (!txnDate || !txnNumber) return '\u2014';
-
-  const [year, month, day] = String(txnDate).split('-');
-  if (!year || !month || !day) return '\u2014';
-
-  return `${day}/${month}/${year.slice(-2)}-${String(txnNumber).padStart(3, '0')}`;
+  if (!txnNumber) return '\u2014';
+  return `TXN-${String(txnNumber).padStart(6, '0')}`;
 }
 
 export { KOLKATA_TIME_ZONE };

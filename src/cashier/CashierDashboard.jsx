@@ -1816,8 +1816,11 @@ const CashierDashboard = ({ onLogout }) => {
     // Prevent flash-to-zero: only update ref when we have a real value
     if (candidate > 0) {
       lastKnownBillRef.current = candidate; // do NOT use Math.max — allow discounts to reduce the value
+    } else if (candidate === 0) {
+      // All items cancelled — reset stale ref so it doesn't show old value
+      lastKnownBillRef.current = 0;
     }
-    return lastKnownBillRef.current > 0 ? lastKnownBillRef.current : candidate;
+    return lastKnownBillRef.current;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTable?.activeOrder?.id, activeOrderCalc.grandTotal, activeOrderCalc.total, discountPercent, cart.length]);
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
