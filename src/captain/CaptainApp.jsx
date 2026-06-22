@@ -22,7 +22,7 @@ import { useTableSync } from '../services/tableSyncService';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
 
-import { calculateSessionBill, calculateOrderTotal, getTableItems, getBillableItems } from '../shared/utils/billing';
+import { calculateSessionBill, calculateOrderTotal, calculateTableBill, getTableItems, getBillableItems } from '../shared/utils/billing';
 
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
@@ -3712,7 +3712,7 @@ export default function CaptainApp({ onLogout }) {
 
                         {table.status !== TABLE_STATUS.FREE && (
 
-                          <span className="text-[10px] font-black opacity-60">₹{table.currentBill}</span>
+                          <span className="text-[10px] font-black opacity-60">₹{calculateTableBill(table).grandTotal}</span>
 
                         )}
 
