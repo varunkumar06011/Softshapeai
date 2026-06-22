@@ -402,7 +402,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
     cmds.push(
       LEFT,
       FONT_A,
-      SIZE_8X,
+      SIZE_2X,
       BOLD_ON,
       itemLine + '\n',
       BOLD_OFF,
@@ -433,7 +433,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
     separator("-"),
 
-    SIZE_4X,
+    SIZE_HEIGHT,
     BOLD_ON,
     '** CANCELLED **\n',
     BOLD_OFF,
