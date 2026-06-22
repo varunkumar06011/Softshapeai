@@ -77,9 +77,14 @@ function unwrapTableEvent(payload) {
 }
 
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
-  const dbStatus = row.status;
+  // Staleness guard: if existing has a newer updatedAt, keep existing status/currentBill
+  const incomingTableUpdated = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+  const existingTableUpdated = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+  const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
+
+  const dbStatus = isStale && existing ? existing.dbStatus : row.status;
   const isFreeWorkflow = dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
-  const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
+  const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
   const mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
 
   const incomingOrder = row.orders?.[0] || row.activeOrder || null;
@@ -137,7 +142,8 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
       const exc = existing?.kotHistory ?? [];
       return inc.length >= exc.length ? inc : exc;
     })(),
-    currentBill: isFreeWorkflow ? 0 : (row.currentBill ?? existing?.currentBill ?? 0),
+    currentBill: isFreeWorkflow ? 0 : (isStale && existing ? existing.currentBill : (row.currentBill ?? existing?.currentBill ?? 0)),
+    updatedAt: row.updatedAt || existing?.updatedAt || null,
     activeOrder: isFreeWorkflow ? null : activeOrder,
   };
 

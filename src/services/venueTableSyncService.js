@@ -100,8 +100,13 @@ export function getVenueTableLabel(sectionName, tableNumber) {
   return `V${tableNumber}`;
 }
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
-  const dbStatus = row.status;
-  const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
+  // Staleness guard: if existing has a newer updatedAt, keep existing status/currentBill
+  const incomingTableUpdated = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+  const existingTableUpdated = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+  const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
+
+  const dbStatus = isStale && existing ? existing.dbStatus : row.status;
+  const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
   const sectionName = row.section?.name ?? existing?.sectionName ?? "";
   const section = row.section ?? existing?.section;
   const sectionId = row.sectionId ?? existing?.sectionId;
@@ -170,7 +175,8 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
     kotHistory: mergedKotHistory,
     items: activeOrder?.items || existing?.items || [],
-    currentBill: dbStatus === 'AVAILABLE' ? 0 : Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
+    currentBill: dbStatus === 'AVAILABLE' ? 0 : (isStale && existing ? existing.currentBill : Math.max(_persistingCount > 0 && existing ? existing.currentBill : (row.currentBill ?? 0), activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0)),
+    updatedAt: row.updatedAt || existing?.updatedAt || null,
     activeOrder: dbStatus === 'AVAILABLE' ? null : activeOrder,
   };
 
