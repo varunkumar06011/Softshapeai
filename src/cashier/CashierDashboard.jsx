@@ -1826,10 +1826,8 @@ const CashierDashboard = ({ onLogout }) => {
   const activeDiscountAmount = activeOrderCalc.discountAmount ?? 0;
   const activeCgst = activeOrderCalc.cgst ?? 0;
   const activeSgst = activeOrderCalc.sgst ?? 0;
-  // currentBill on the table is also raw subtotal — prefer calcTotal for display
-  const fallbackTotal = activeOrderCalc.grandTotal > 0
-    ? activeOrderCalc.grandTotal
-    : Number(selectedTable?.currentBill || 0);
+  // Always use the calculated value; never fall back to stale backend field
+  const fallbackTotal = activeOrderCalc.grandTotal;
 
   const handleFinalBill = async () => {
     if (!selectedTable || (!selectedTable.backendId && !selectedTable.isExtra)) {
@@ -4990,7 +4988,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {discountPercent > 0 ? 'Final' : 'Total'}
                       </span>
                       <span className="text-xl sm:text-2xl font-black text-[#E53935] tracking-tight leading-none">
-                        ₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}
+                        ₹{Number(activeGrandTotal).toFixed(0)}
                       </span>
                     </div>
                   </div>
@@ -5443,7 +5441,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
-                <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}</p>
+                <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeGrandTotal).toFixed(0)}</p>
               </div>
               <button
                 onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
@@ -5503,7 +5501,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
               <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
               <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal).toFixed(0)}</p>
+              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{Number(activeGrandTotal).toFixed(0)}</p>
               <div className="space-y-3">
                 <div className="flex justify-between border-b border-gray-200 pb-1">
                   <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>
