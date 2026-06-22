@@ -334,6 +334,7 @@ const CashierDashboard = ({ onLogout }) => {
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const kotRequestIdRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
+  const loadTxnsGenerationRef = useRef(0);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
@@ -682,6 +683,7 @@ const CashierDashboard = ({ onLogout }) => {
   }
 
   const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
+    const myGeneration = ++loadTxnsGenerationRef.current; // increment BEFORE any await
     setTxnsLoading(true);
     try {
       let dateParam = null;
@@ -848,20 +850,25 @@ const CashierDashboard = ({ onLogout }) => {
         if (bTxn != null) return 1;
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
+      // ONLY apply result if this is still the latest call
+      if (myGeneration !== loadTxnsGenerationRef.current) return; // stale, discard
       setPastTransactions(sorted);
-      
+
       // Only cache today's data + add version stamp
       if (filter === 'today') {
         localStorage.setItem(TX_CACHE_KEY, JSON.stringify(sorted));
         localStorage.setItem(`${TX_CACHE_KEY}_version`, Date.now().toString());
       }
     } catch (err) {
+      if (myGeneration !== loadTxnsGenerationRef.current) return; // stale error, discard
       console.error('[Transactions] Critical fetch failure:', err);
       // Fallback to cache
       const cached = localStorage.getItem(TX_CACHE_KEY);
       if (cached) setPastTransactions(JSON.parse(cached));
     } finally {
-      setTxnsLoading(false);
+      if (myGeneration === loadTxnsGenerationRef.current) {
+        setTxnsLoading(false);
+      }
     }
   }, [outlet, txnCustomDate]);
 
@@ -1055,9 +1062,21 @@ const CashierDashboard = ({ onLogout }) => {
       // Add back any existing items NOT present in incoming (additive — never drop items)
       const localOnlyItems = existingItems.filter(i => !incomingMap.has(i.id) && i.id);
 
+      // Remove id:null placeholders whose name matches a real-id item (server confirmed them)
+      const realItemNames = new Set(
+        mergedByIncoming.filter(i => i.id).map(i => (i.name ?? i.n ?? '').toLowerCase().trim())
+      );
+      const cleanedLocal = localOnlyItems.filter(i => {
+        if (!i.id) {
+          // Drop orphan placeholder if server already returned a real version
+          return !realItemNames.has((i.name ?? i.n ?? '').toLowerCase().trim());
+        }
+        return true;
+      });
+
       return {
         ...incoming,
-        items: [...mergedByIncoming, ...localOnlyItems],
+        items: [...mergedByIncoming, ...cleanedLocal],
       };
     };
 
@@ -2376,8 +2395,8 @@ const CashierDashboard = ({ onLogout }) => {
           }
         }
 
-        // Refresh transactions list to show the new transaction
-        loadTransactions(txnDateFilterRef.current);
+        // Refresh transactions list — small delay ensures DB write is visible
+        setTimeout(() => loadTransactions(txnDateFilterRef.current), 300);
       });
     };
 
@@ -3017,12 +3036,14 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (selectedTable) {
       const existingItems = selectedTable.activeOrder?.items || [];
-      // Prevent duplicate optimistic appends if KOT was double-submitted
-      const existingOptimisticNames = new Set(
-        existingItems.filter(i => !i.id).map(i => i.n || i.name)
+      // Prevent duplicate optimistic appends — check ALL existing items (both id:null optimistic
+      // and real-id server-confirmed), not just id:null ones. This stops the same item showing
+      // twice when the server has already confirmed the first KOT's items with real IDs.
+      const existingItemNames = new Set(
+        existingItems.map(i => (i.n || i.name || '').toLowerCase().trim())
       );
       const deduplicatedOptimistic = newOptimisticItems.filter(
-        i => !existingOptimisticNames.has(i.n || i.name)
+        i => !existingItemNames.has((i.n || i.name || '').toLowerCase().trim())
       );
       const mergedItems = [...existingItems, ...deduplicatedOptimistic];
 
@@ -3716,6 +3737,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                             isSyncing={venueTablesLoading}
+                            refetch={refetchVenueTables}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-gobox' && (
@@ -3729,6 +3751,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                             isSyncing={venueTablesLoading}
+                            refetch={refetchVenueTables}
                           />
                         )}
 

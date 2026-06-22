@@ -69,21 +69,24 @@ export default function VenueSectionView({
     console.warn('[VenueSectionView] No tables matched for section:', targetName, '| Available section names:', [...new Set(availableNames)]);
   }
 
-  if (isSyncing && (!sectionTables || sectionTables.length === 0)) {
-    return (
-      <div className="p-8 text-center">
-        <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-[#E53935] rounded-full animate-spin"></div>
-        <p className="mt-3 text-gray-500 font-bold uppercase tracking-widest text-sm">Loading {sectionName} tables...</p>
-      </div>
-    );
-  }
-
   if (!sectionTables || sectionTables.length === 0) {
+    // If venueTables has records but none matched this section, show no-match message.
+    // If venueTables is empty (still loading on slow device), show spinner + auto-retry hint.
+    const isStillLoading = (venueTables || []).length === 0;
     return (
       <div className="p-8 text-center">
-        <p className="text-gray-500 font-bold uppercase tracking-widest mb-4">
-          No tables found for {sectionName}
-        </p>
+        {isStillLoading ? (
+          <>
+            <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-[#E53935] rounded-full animate-spin mb-3"></div>
+            <p className="text-gray-500 font-bold uppercase tracking-widest text-sm mb-4">
+              Loading {sectionName} tables...
+            </p>
+          </>
+        ) : (
+          <p className="text-gray-500 font-bold uppercase tracking-widest mb-4">
+            NO TABLES FOUND FOR {sectionName.toUpperCase()}
+          </p>
+        )}
         {refetch && (
           <button
             onClick={refetch}
