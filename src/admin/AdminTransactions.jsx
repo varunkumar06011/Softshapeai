@@ -27,6 +27,19 @@ function resolveSource(txn) {
   return 'venue';
 }
 
+function formatTxnTableLabel(tableNumber, sectionTag) {
+  const tag = (sectionTag || '').toLowerCase();
+  if (tag.includes('bar-conference')) return `CONF-${tableNumber}`;
+  if (tag.includes('bar-pdr'))        return `PDR-${tableNumber}`;
+  if (tag.includes('bar-rooms'))      return `R${tableNumber}`;
+  if (tag.includes('bar-parcel'))     return `P${tableNumber}`;
+  if (tag.includes('bar-gobox'))      return `GB${tableNumber}`;
+  if (tag.includes('bar') || tag.includes('ac-hall')) return `B${tableNumber}`;
+  if (tag.includes('family-restaurant')) return `T${tableNumber}`;
+  if (tag.includes('restaurant-parcel')) return `P${tableNumber}`;
+  return `T${tableNumber}`;
+}
+
 export default function AdminTransactions({ onStatsRefresh }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -95,7 +108,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
         captainId: txn.captainId || 'CASHIER',
         captainName: CAPTAINS.find(c => c.id === txn.captainId)?.name || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
         method: txn.method || 'UPI',
-        tableNumber: txn.tableNumber || null,
+        tableNumber: txn.tableNumber ? formatTxnTableLabel(txn.tableNumber, txn.sectionTag) : null,
         source: resolveSource(txn),
         restaurantId: txn.restaurantId,
       }));
@@ -306,7 +319,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                           </span>
                         </td>
                         <td className="p-4">
-                          <span className="text-xs font-black text-gray-700">{txn.tableNumber ? `T-${txn.tableNumber}` : '—'}</span>
+                          <span className="text-xs font-black text-gray-700">{txn.tableNumber || '—'}</span>
                         </td>
                         <td className="p-4">
                           <span className="text-xs font-bold text-gray-500 uppercase">{txn.captainName}</span>
