@@ -1251,8 +1251,9 @@ const CashierDashboard = ({ onLogout }) => {
         setRemovedItemIds([]);
         setShowPaymentModal(false);
       }
-      // Refresh using the user's current date filter (not always 'today')
-      loadTransactions(txnDateFilterRef.current);
+      // NOTE: Do NOT call loadTransactions here — the settlement flow already triggers
+      // a reload after commitFn succeeds. Calling it here creates a race where the socket
+      // event fires BEFORE the backend has invalidated its cache, causing stale data.
     };
 
     const onTableSwapped = (payload) => {
@@ -2401,11 +2402,11 @@ const CashierDashboard = ({ onLogout }) => {
           }
         }
 
-        // Refresh transactions list — small delay ensures DB write is visible
+        // Refresh transactions list — 1.5s delay ensures DB write + cache invalidation are visible
         setTimeout(() => {
           console.log(`[Settlement] Triggering loadTransactions for orderId=${orderId}`);
           loadTransactions(txnDateFilterRef.current);
-        }, 300);
+        }, 1500);
       });
     };
 
@@ -2419,6 +2420,10 @@ const CashierDashboard = ({ onLogout }) => {
         addNotification('Settlement Failed', error.message || 'Payment could not be processed. Please retry.', 'error');
       }
     });
+
+    // Safety-net: once settlement succeeds, reload transactions one more time
+    // to ensure the new bill is visible even if the setTimeout race was lost
+    loadTransactions(txnDateFilterRef.current);
   };
 
   const terminateTableSession = async () => {

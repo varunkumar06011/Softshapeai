@@ -213,6 +213,8 @@ export async function fetchTransactions(restaurantId, limit = 2000, date = null,
   if (limit != null && limit > 0) qs.set('limit', String(limit));
   if (date)  qs.set('date',  date);   // 'YYYY-MM-DD'
   if (month) qs.set('month', month);  // 'YYYY-MM'
+  // Cache-bust so every request bypasses stale backend cache
+  qs.set('_cb', String(Date.now()));
   const res = await fetch(apiUrl(`/api/transactions?${qs}`), {
     cache: 'no-store',
   });
