@@ -851,7 +851,11 @@ const CashierDashboard = ({ onLogout }) => {
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
       // ONLY apply result if this is still the latest call
-      if (myGeneration !== loadTxnsGenerationRef.current) return; // stale, discard
+      if (myGeneration !== loadTxnsGenerationRef.current) {
+        console.log(`[Transactions] Discarding stale gen=${myGeneration}, current=${loadTxnsGenerationRef.current}`);
+        return;
+      }
+      console.log(`[Transactions] Applying gen=${myGeneration}, total=${sorted.length}`);
       setPastTransactions(sorted);
 
       // Only cache today's data + add version stamp
@@ -1217,7 +1221,8 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const onOrderPaid = (payload) => {
-      const { tableId, isExtraTable } = payload;
+      const { tableId, isExtraTable, orderId: paidOrderId } = payload;
+      console.log(`[Socket] order:paid received tableId=${tableId} orderId=${paidOrderId}`);
       // Terminal event — must always clear table, never blocked by cooldown.
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
@@ -2380,6 +2385,7 @@ const CashierDashboard = ({ onLogout }) => {
             }
           );
 
+          console.log(`[Settlement] orderId=${orderId} status=${response.status}`);
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.error || 'Settlement failed on server');
@@ -2396,7 +2402,10 @@ const CashierDashboard = ({ onLogout }) => {
         }
 
         // Refresh transactions list — small delay ensures DB write is visible
-        setTimeout(() => loadTransactions(txnDateFilterRef.current), 300);
+        setTimeout(() => {
+          console.log(`[Settlement] Triggering loadTransactions for orderId=${orderId}`);
+          loadTransactions(txnDateFilterRef.current);
+        }, 300);
       });
     };
 
@@ -2407,6 +2416,7 @@ const CashierDashboard = ({ onLogout }) => {
       commitFn,
       onError: (error) => {
         logCriticalError('handlePayment', error, { orderId, method, txnAmount });
+        addNotification('Settlement Failed', error.message || 'Payment could not be processed. Please retry.', 'error');
       }
     });
   };
