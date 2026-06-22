@@ -206,16 +206,20 @@ function acquireSocket(handlers) {
 
     sharedSocket.emit("join", BAR_ID);
 
-    const { onUpdated, onCreated, onDeleted } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
+    if (onOrderCreated) sharedSocket.on("order:created", onOrderCreated);
+    if (onOrderUpdated) sharedSocket.on("order:updated", onOrderUpdated);
     socketRefCount += 1;
 
     return () => {
       sharedSocket?.off("table:updated", onUpdated);
       sharedSocket?.off("table:created", onCreated);
       sharedSocket?.off("table:deleted", onDeleted);
+      if (onOrderCreated) sharedSocket?.off("order:created", onOrderCreated);
+      if (onOrderUpdated) sharedSocket?.off("order:updated", onOrderUpdated);
       socketRefCount = Math.max(0, socketRefCount - 1);
     };
   } catch (err) {
@@ -289,7 +293,7 @@ export function useBarTableSync() {
     }
     return []; // No local fakes — wait for real API data
   });
-  const [isSyncing, setIsSyncing] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(() => readCache().length === 0);
   const tablesRef = useRef(tables);
   const cancelledRef = useRef(false);
   const isFetchingRef = useRef(false);
@@ -309,6 +313,7 @@ export function useBarTableSync() {
     abortControllerRef.current = new AbortController();
     cancelledRef.current = false;
     setIsSyncing(true);
+    const thisFetchStartedAt = Date.now();
     let apiTables = null;
 
     try {
@@ -337,12 +342,14 @@ export function useBarTableSync() {
             if (!mountedRef.current || cancelledRef.current) return;
             const retryFlat = flattenSections(retryData);
             if (retryFlat.length > 0) {
-              const merged = mergeTablesFromApi(retryFlat, tablesRef.current);
-              const deduped = merged.filter((table, index, self) =>
-                index === self.findIndex(t => t.backendId === table.backendId)
-              );
-              writeCache(deduped);
-              setTablesState(deduped);
+              setTablesState((current) => {
+                const merged = mergeTablesFromApi(retryFlat, current);
+                const deduped = merged.filter((table, index, self) =>
+                  index === self.findIndex(t => t.backendId === table.backendId)
+                );
+                writeCache(deduped);
+                return deduped;
+              });
             }
           })
           .catch(err => console.warn('[BarTableSync] Retry fetch failed:', err.message));
@@ -354,7 +361,13 @@ export function useBarTableSync() {
     }
 
     setTablesState((current) => {
-      const merged = mergeTablesFromApi(apiTables, current);
+      const merged = mergeTablesFromApi(apiTables, current).map((row) => {
+        const existing = current.find(t => t.backendId === row.backendId);
+        if (existing && existing.lastUpdatedAt && existing.lastUpdatedAt > thisFetchStartedAt) {
+          return existing;
+        }
+        return row;
+      });
       // Deduplicate by backendId to prevent duplicate cards
       const deduped = merged.filter((table, index, self) =>
         index === self.findIndex(t => t.backendId === table.backendId)
@@ -407,6 +420,7 @@ export function useBarTableSync() {
             }
             const before = t;
             const after = mapBackendTable(updatedTable, t);
+            after.lastUpdatedAt = Date.now();
             validateTableIntegrity('barTableSync', before, after);
             return after;
           });
@@ -421,7 +435,9 @@ export function useBarTableSync() {
 
         setTablesState((prev) => {
           if (findTableIndex(prev, newTable.id) !== -1) return prev;
-          const next = [...prev, mapBackendTable(newTable)];
+          const after = mapBackendTable(newTable);
+          after.lastUpdatedAt = Date.now();
+          const next = [...prev, after];
           // Deduplicate by backendId to prevent duplicate cards
           const deduped = next.filter((table, index, self) =>
             index === self.findIndex(t => t.backendId === table.backendId)
@@ -434,6 +450,51 @@ export function useBarTableSync() {
         if (restaurantId && restaurantId !== BAR_ID) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderCreated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) =>
+            t.backendId === order.tableId
+              ? {
+                  ...t,
+                  status: t.status === 'Free' ? 'Occupied' : t.status,
+                  workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
+                  activeOrder: order,
+                  items: order.items || t.items || [],
+                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+                  lastUpdatedAt: Date.now(),
+                }
+              : t
+          );
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderUpdated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[BarTableSync] Ignoring stale order:updated for settled table', t.number);
+              return t;
+            }
+            return {
+              ...t,
+              activeOrder: order,
+              items: order.items || t.items || [],
+              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+              lastUpdatedAt: Date.now(),
+            };
+          });
           writeCache(next);
           return next;
         });

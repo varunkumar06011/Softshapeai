@@ -334,7 +334,7 @@ export function useVenueTableSync() {
     }
     return [];
   });
-  const [isSyncing, setIsSyncing] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(() => readCache().length === 0);
   const tablesRef = useRef(tables);
   const isFetchingRef = useRef(false);
   const fetchStartTimeRef = useRef(0);
@@ -361,6 +361,7 @@ export function useVenueTableSync() {
     }
     isFetchingRef.current = true;
     fetchStartTimeRef.current = Date.now();
+    const thisFetchStartedAt = fetchStartTimeRef.current;
     abortControllerRef.current = new AbortController();
     setIsSyncing(true);
     try {
@@ -380,6 +381,11 @@ export function useVenueTableSync() {
       setTablesState((current) => {
         const merged = flat.map((row) => {
             const existing = current.find((t) => t.backendId === row.id);
+            // Guard: if a socket event updated this table after this fetch started,
+            // preserve the newer local state rather than overwriting with stale fetch data
+            if (existing && existing.lastUpdatedAt && existing.lastUpdatedAt > thisFetchStartedAt) {
+              return existing;
+            }
             let after = mapBackendTable(row, existing);
             if (existing) validateTableIntegrity('venueTableSync.mergeTablesFromApi', existing, after);
             // If backend still returns stale data for a recently terminated table, sanitize it
@@ -506,6 +512,7 @@ export function useVenueTableSync() {
               if (isRecentlyTerminated(updatedTable.id)) {
                 after = sanitizeTerminatedTable(after);
               }
+              after.lastUpdatedAt = Date.now();
               validateTableIntegrity('venueTableSync', before, after);
               return after;
             });
@@ -531,7 +538,9 @@ export function useVenueTableSync() {
         }
         setTablesState((prev) => {
           if (findTableIndex(prev, newTable.id) !== -1) return prev;
-          const next = [...prev, mapBackendTable(newTable)];
+          const after = mapBackendTable(newTable);
+          after.lastUpdatedAt = Date.now();
+          const next = [...prev, after];
           // Deduplicate by backendId to prevent duplicate cards
           const deduped = next.filter((table, index, self) =>
             index === self.findIndex(t => t.backendId === table.backendId)
@@ -564,6 +573,7 @@ export function useVenueTableSync() {
                   activeOrder: order,
                   items: order.items || t.items || [],
                   currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+                  lastUpdatedAt: Date.now(),
                 }
               : t
           );
@@ -589,7 +599,8 @@ export function useVenueTableSync() {
               ...t,
               activeOrder: order,
               items: order.items || t.items || [],
-              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+              lastUpdatedAt: Date.now(),
             };
           });
           writeCache(next);

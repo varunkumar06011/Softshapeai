@@ -4617,7 +4617,7 @@ export default function CaptainApp({ onLogout }) {
 
                     <History size={18} className={`text-[#E53935] ${!isCartMinimized ? 'hidden lg:block' : ''}`} />
 
-                    <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">T{activeTable?.id} Activity</h3>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">{getTableSectionLabel(activeTable)} Activity</h3>
 
                   </div>
 

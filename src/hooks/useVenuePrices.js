@@ -59,8 +59,8 @@ export function useVenuePrices() {
     window.addEventListener("softshape_venue_prices_updated", handleVenuePriceUpdate);
 
     if (!cachedVenuePrices && !fetchPromise) loadPrices();
-
-    fetchPromise?.then((data) => setVenuePrices(data));
+    // NOTE: loadPrices already calls setVenuePrices in its .then chain;
+    // do NOT add a redundant .then here — it causes a double state update.
 
     return () => {
       window.removeEventListener("softshape_venue_prices_updated", handleVenuePriceUpdate);
