@@ -1486,7 +1486,7 @@ export default function CaptainApp({ onLogout }) {
           (t.kotHistory || []).map(kot => ({
             ...kot,
             items: kot.items.map(i =>
-              cancelledIds.has(i.orderItemId) ? { ...i, s: 'Cancelled' } : i
+              cancelledIds.has(i.orderItemId) ? { ...i, s: 'Cancelled', removedFromBill: true } : i
             )
           })),
           Array.isArray(order.kotHistory) ? order.kotHistory : []
@@ -2627,13 +2627,20 @@ export default function CaptainApp({ onLogout }) {
 
             items: kot.items.map(i =>
 
-              i.orderItemId === kotItem.orderItemId ? { ...i, s: 'Cancelled' } : i
+              i.orderItemId === kotItem.orderItemId ? { ...i, s: 'Cancelled', removedFromBill: true } : i
 
             ),
 
           };
 
         }),
+
+        activeOrder: t.activeOrder ? {
+          ...t.activeOrder,
+          items: (t.activeOrder.items || []).map(i =>
+            i.id === kotItem.orderItemId ? { ...i, removedFromBill: true } : i
+          ),
+        } : t.activeOrder,
 
         currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * (kotItem?.q ?? 1)),
 
@@ -2720,13 +2727,20 @@ export default function CaptainApp({ onLogout }) {
 
               items: kot.items.map(i =>
 
-                i.orderItemId === kotItem.orderItemId ? { ...i, s: 'KOT Sent' } : i
+                i.orderItemId === kotItem.orderItemId ? { ...i, s: 'KOT Sent', removedFromBill: false } : i
 
               ),
 
             };
 
           }),
+
+          activeOrder: t.activeOrder ? {
+            ...t.activeOrder,
+            items: (t.activeOrder.items || []).map(i =>
+              i.id === kotItem.orderItemId ? { ...i, removedFromBill: false } : i
+            ),
+          } : t.activeOrder,
 
           currentBill: (t.currentBill ?? 0) + (kotItem?.p ?? 0) * (kotItem?.q ?? 1),
 

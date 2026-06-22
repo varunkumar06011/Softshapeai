@@ -80,7 +80,7 @@ export const getAllOrderItems = (table) => {
         q: Number(i.q ?? i.quantity ?? 1),
         quantity: Number(i.q ?? i.quantity ?? 1),
         notes: i.notes || null,
-        removedFromBill: i.removedFromBill ?? false,
+        removedFromBill: i.removedFromBill || i.s === 'Cancelled' || false,
         menuType: i.menuType || null,
         _fromKot: true,
       })))
