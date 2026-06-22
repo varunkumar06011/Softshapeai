@@ -81,6 +81,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const incomingTableUpdated = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
   const existingTableUpdated = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
   const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
+  if (isStale && existing) console.warn('[mapBackendTable] stale guard fired for', row.id, 'incoming', incomingTableUpdated, 'existing', existingTableUpdated);
 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
   const isFreeWorkflow = dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
