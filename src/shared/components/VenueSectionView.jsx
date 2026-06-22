@@ -32,7 +32,8 @@ export default function VenueSectionView({
     } catch { return {}; }
   })();
 
-  const sectionTables = (venueTables || []).filter((table) => {
+  const cleanVenueTables = (venueTables || []).filter(Boolean);
+  const sectionTables = cleanVenueTables.filter((table) => {
     if (targetSectionId) {
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
@@ -64,15 +65,15 @@ export default function VenueSectionView({
   });
 
   // Debug: log available section names when no match
-  if ((!sectionTables || sectionTables.length === 0) && venueTables.length > 0) {
-    const availableNames = venueTables.map(t => (t.sectionName || t.section?.name || 'NO_NAME')).filter(Boolean);
+  if ((!sectionTables || sectionTables.length === 0) && cleanVenueTables.length > 0) {
+    const availableNames = cleanVenueTables.map(t => (t.sectionName || t.section?.name || 'NO_NAME')).filter(Boolean);
     console.warn('[VenueSectionView] No tables matched for section:', targetName, '| Available section names:', [...new Set(availableNames)]);
   }
 
   if (!sectionTables || sectionTables.length === 0) {
-    // If venueTables has records but none matched this section, show no-match message.
-    // If venueTables is empty (still loading on slow device), show spinner + auto-retry hint.
-    const isStillLoading = (venueTables || []).length === 0;
+    // If cleanVenueTables has records but none matched this section, show no-match message.
+    // If cleanVenueTables is empty (still loading on slow device), show spinner + auto-retry hint.
+    const isStillLoading = cleanVenueTables.length === 0;
     return (
       <div className="p-8 text-center">
         {isStillLoading ? (

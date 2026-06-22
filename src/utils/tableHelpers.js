@@ -9,6 +9,7 @@
  * @returns {string} - Section-prefixed table label (e.g., "C1", "PDR2", "R3")
  */
 export function getTableSectionLabel(table) {
+  if (!table) return 'T?';
   const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
   const num = table.number || table.id || 1;
 
@@ -31,6 +32,7 @@ export function getTableSectionLabel(table) {
  * @returns {string} - Tailwind CSS classes for badge styling
  */
 export function getSectionBadgeColor(table) {
+  if (!table) return 'bg-gray-500 text-white';
   const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
 
   if (sectionName.includes('gobox') || sectionName.includes('bar parcel')) return 'bg-orange-500 text-white';
@@ -50,5 +52,6 @@ export function getSectionBadgeColor(table) {
  * @returns {string} - Human-readable section name
  */
 export function getSectionDisplayName(table) {
+  if (!table) return 'Restaurant';
   return table.sectionName || table.section?.name || 'Restaurant';
 }
