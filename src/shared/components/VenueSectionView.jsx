@@ -113,7 +113,7 @@ export default function VenueSectionView({
     );
   }
 
-  // Single mode (Conference, Owner, Rooms, Family Restaurant, Parcel, GoBox)
+  // Single mode (Conference, GoBox, Rooms, Family Restaurant, Parcel)
   // Include extra tables that belong to this section
   const sectionExtraTables = (extraTables || []).filter(et => {
     const parent = sectionTables.find(st => st.backendId === et.baseBackendId);

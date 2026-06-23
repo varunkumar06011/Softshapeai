@@ -9,7 +9,6 @@ export const VENUE_SUB_IDS = {
   "Conference Hall": "venue-bar-conference",
   "PDR": "venue-bar-pdr",
   "Rooms": "venue-bar-rooms",
-  "Parcel": "venue-bar-parcel",
   "GoBox": "venue-bar-gobox",
   // Restaurant venues
   "Family Restaurant": "venue-family-restaurant",
@@ -21,13 +20,12 @@ export const BAR_VENUE_PRICE_COLUMNS = [
   { id: "venue-bar-conference", label: "Conference Hall" },
   { id: "venue-bar-pdr", label: "PDR" },
   { id: "venue-bar-rooms", label: "Rooms" },
-  { id: "venue-bar-parcel", label: "Parcel" },
   { id: "venue-bar-gobox", label: "GoBox" },
 ];
 
 export const RESTAURANT_VENUE_PRICE_COLUMNS = [
   { id: "venue-family-restaurant", label: "Family Restaurant" },
-  { id: "venue-restaurant-parcel", label: "Parcel" },
+  { id: "venue-restaurant-parcel", label: "GoBox" },
 ];
 
 // Kept for backwards compat with any code still importing VENUE_PRICE_COLUMNS

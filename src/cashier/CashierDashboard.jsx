@@ -219,7 +219,7 @@ const CashierDashboard = ({ onLogout }) => {
     const saved = localStorage.getItem('softshape_selected_subcategory');
     if (saved) return saved;
     return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
-  }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel', restaurant: 'family-restaurant' | 'owner'
+  }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel' | 'bar-gobox', restaurant: 'family-restaurant' | 'parcel'
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
     const saved = localStorage.getItem('cashier_selected_pdr_room');
     return saved ? Number(saved) : null;
@@ -236,7 +236,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [passwordError, setPasswordError] = useState('');
 
   const handleTabSwitch = (tabId) => {
-    // Check if switching between family-restaurant and owner in restaurant outlet
+    // Check if switching between family-restaurant and GoBox in restaurant outlet
     const isSwitchingProtected = outlet === 'restaurant' &&
       ((tableSubCategory === 'family-restaurant' && tabId === 'parcel') ||
        (tableSubCategory === 'parcel' && tabId === 'family-restaurant'));
@@ -802,14 +802,14 @@ const CashierDashboard = ({ onLogout }) => {
             || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
           method: txn.method || 'UPI',
           tableNumber: txn.tableNumber || null,
-          // Derive display label: B=bar, C=conference, R=rooms, PDR=pdr, P=parcel/owner, BP=bar-parcel, F=family, T=restaurant
+          // Derive display label: B=bar, C=conference, R=rooms, PDR=pdr, P=GoBox, BP=bar-parcel, F=family, T=restaurant
           tableDisplayName: (() => {
             if (txn.tableLabel) return txn.tableLabel; // Extra table: "B5-X", "T3-X2"
             const num = txn.tableNumber;
             if (!num) return '—';
             const tag = (txn.sectionTag || '').toLowerCase();
             const rid = txn._sourceRestaurantId;
-            // Parcel (owner) — check before generic bar to avoid wrong prefix
+            // GoBox (parcel) — check before generic bar to avoid wrong prefix
             if (tag.includes('bar-parcel') || tag.includes('gobox')) return `BP${num}`;
             if (tag.includes('restaurant-parcel') || source === 'restaurant-parcel') return `P${num}`;
             // Conference hall
@@ -2657,12 +2657,11 @@ const CashierDashboard = ({ onLogout }) => {
       else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
       else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
       else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
-      else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
-      else if (tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
+      else if (tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
       else if (selectedTable) {
         const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
-        if (sectionName.includes('parcel')) {
-          currentVenueId = 'venue-bar-parcel';
+        if (sectionName.includes('parcel') || sectionName.includes('gobox')) {
+          currentVenueId = 'venue-bar-gobox';
         } else {
           currentVenueId = 'venue-bar-ac-hall';
         }
@@ -3533,7 +3532,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 ]
                               : [
                                   { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
-                                  { id: 'parcel', label: 'Owner', emoji: '' },
+                                  { id: 'parcel', label: 'GoBox', emoji: '' },
                                 ]),
                           ].map(tab => (
                             <button
@@ -3883,7 +3882,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   { key: 'all', label: 'All' },
                                   { key: 'restaurant', label: 'Restaurant' },
                                   { key: 'family-restaurant', label: 'Family Restaurant' },
-                                  { key: 'restaurant-parcel', label: 'Parcel' },
+                                  { key: 'restaurant-parcel', label: 'GoBox' },
                                 ]
                             ),
                           ].map(f => (

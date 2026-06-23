@@ -552,7 +552,7 @@ export default function CaptainApp({ onLogout }) {
 
     return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
 
-  }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-parcel', restaurant: 'family-restaurant'|'owner'
+  }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-gobox', restaurant: 'family-restaurant'|'parcel'
 
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
 
@@ -953,9 +953,7 @@ export default function CaptainApp({ onLogout }) {
 
       else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
 
-      else if (tableSubCategory === 'bar-parcel') currentVenueId = 'venue-bar-parcel';
-
-      else if (tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
+      else if (tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
 
     } else {
 
@@ -1128,7 +1126,7 @@ export default function CaptainApp({ onLogout }) {
 
   // Determine which table array is actually being displayed based on subcategory
 
-  const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox', 'family-restaurant', 'parcel'];
+  const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'family-restaurant', 'parcel'];
 
   const displayTables = useMemo(() => {
 
@@ -1344,7 +1342,7 @@ export default function CaptainApp({ onLogout }) {
 
     // Join the active outlet room; also join venue-001 whenever captain is on a
     // venue subcategory so real-time updates reach Family Restaurant / Parcel / etc.
-    const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox', 'family-restaurant', 'parcel'];
+    const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'family-restaurant', 'parcel'];
     const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
     socket.emit('join', activeRestaurantId);
     if (isVenueSubcategory) {
@@ -1696,7 +1694,7 @@ export default function CaptainApp({ onLogout }) {
   }, [tableSubCategory]);
 
   // Force venue table refetch when switching to a venue subcategory — prevents stale/empty data
-  const isVenueSubcategory = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox', 'parcel'].includes(tableSubCategory);
+  const isVenueSubcategory = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'parcel'].includes(tableSubCategory);
   useEffect(() => {
     if (isVenueSubcategory && refetchVenueTables) {
       refetchVenueTables();
@@ -3530,8 +3528,6 @@ export default function CaptainApp({ onLogout }) {
 
                         { id: 'bar-rooms', label: 'Rooms' },
 
-                        { id: 'bar-parcel', label: 'Owner' },
-
                         { id: 'bar-gobox', label: 'GoBox' },
 
                       ]
@@ -3540,7 +3536,7 @@ export default function CaptainApp({ onLogout }) {
 
                         { id: 'family-restaurant', label: 'Family Restaurant' },
 
-                        { id: 'parcel', label: 'Owner' },
+                        { id: 'parcel', label: 'GoBox' },
 
                       ]),
 
@@ -3756,9 +3752,7 @@ export default function CaptainApp({ onLogout }) {
 
                    tableSubCategory === 'bar-rooms' ? 'venue-bar-rooms' :
 
-                   tableSubCategory === 'bar-parcel' ? 'venue-bar-parcel' :
-
-                   tableSubCategory === 'bar-gobox' ? 'venue-bar-gobox' : 'venue-bar-ac-hall')
+                   tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox' ? 'venue-bar-gobox' : 'venue-bar-ac-hall')
 
                 : (tableSubCategory === 'parcel' ? 'venue-restaurant-parcel' : 'venue-family-restaurant')
 
@@ -3774,11 +3768,9 @@ export default function CaptainApp({ onLogout }) {
 
                    tableSubCategory === 'bar-rooms' ? 'Rooms' :
 
-                   tableSubCategory === 'bar-parcel' ? 'Owner' :
+                   tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox' ? 'GoBox' : 'Bar AC Hall')
 
-                   tableSubCategory === 'bar-gobox' ? 'GoBox' : 'Bar AC Hall')
-
-                : (tableSubCategory === 'parcel' ? 'Owner' : 'Family Restaurant')
+                : (tableSubCategory === 'parcel' ? 'GoBox' : 'Family Restaurant')
 
             }
 

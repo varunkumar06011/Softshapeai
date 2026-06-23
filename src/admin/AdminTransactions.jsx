@@ -21,8 +21,8 @@ function resolveSource(txn) {
   if (tag === 'venue-bar-conference') return 'conference';
   if (tag === 'venue-bar-pdr') return 'pdr';
   if (tag === 'venue-bar-rooms') return 'rooms';
-  if (tag === 'venue-bar-parcel') return 'parcel';
-  if (tag === 'venue-restaurant-parcel') return 'parcel';
+  if (tag === 'venue-bar-parcel' || tag === 'venue-bar-gobox') return 'gobox';
+  if (tag === 'venue-restaurant-parcel') return 'r-parcel';
   if (tag === 'venue-family-restaurant') return 'family-restaurant';
   return 'venue';
 }
@@ -204,7 +204,8 @@ export default function AdminTransactions({ onStatsRefresh }) {
               { key: 'conference', label: 'Conf' },
               { key: 'pdr', label: 'PDR' },
               { key: 'rooms', label: 'Rooms' },
-              { key: 'parcel', label: 'Owner' },
+              { key: 'gobox', label: 'GoBox' },
+              { key: 'r-parcel', label: 'GoBox' },
             ].map(f => (
               <button
                 key={f.key}
@@ -315,7 +316,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                         </td>
                         <td className="p-4">
                           <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-gray-100 text-gray-600">
-                            {txn.source === 'bar' ? 'Bar' : txn.source === 'conference1' ? 'Conf 1' : txn.source === 'conference2' ? 'Conf 2' : txn.source === 'pdr' ? 'PDR' : txn.source === 'parcel' ? 'Owner' : txn.source}
+                            {txn.source === 'bar' ? 'Bar' : txn.source === 'conference1' ? 'Conf 1' : txn.source === 'conference2' ? 'Conf 2' : txn.source === 'pdr' ? 'PDR' : txn.source === 'gobox' ? 'GoBox' : txn.source === 'r-parcel' ? 'GoBox' : txn.source}
                           </span>
                         </td>
                         <td className="p-4">

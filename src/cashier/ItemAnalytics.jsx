@@ -27,7 +27,7 @@ function getSectionNameForSource(source) {
   if (source === 'bar-rooms') return 'Rooms';
   if (source === 'bar-parcel' || source === 'bar-gobox') return 'GoBox';
   if (source === 'family-restaurant') return 'Family Restaurant';
-  if (source === 'restaurant-parcel') return 'Parcel';
+  if (source === 'restaurant-parcel') return 'GoBox';
   return null;
 }
 
@@ -198,6 +198,43 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         return;
       }
 
+      // Restaurant GoBox tab — query both Parcel and GoBox section names
+      if (source === 'restaurant-parcel') {
+        const sectionNames = ['Parcel', 'GoBox'];
+        const results = await Promise.all(
+          sectionNames.map(sname => {
+            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=venue-001&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=restaurant`;
+            return fetch(url).then(r => r.json()).catch(() => ({ items: [], summary: null }));
+          })
+        );
+
+        const mergedMap = new Map();
+        for (const result of results) {
+          for (const item of (result.items || [])) {
+            const key = `${item.name}||${item.type}`;
+            if (mergedMap.has(key)) {
+              const existing = mergedMap.get(key);
+              existing.quantity += item.quantity || 0;
+              existing.orders += item.orders || 0;
+              existing.revenue += item.revenue || 0;
+            } else {
+              mergedMap.set(key, { ...item });
+            }
+          }
+        }
+
+        const mergedItems = Array.from(mergedMap.values());
+        const mergedSummary = {
+          totalItems: mergedItems.length,
+          totalQuantity: mergedItems.reduce((s, i) => s + (i.quantity || 0), 0),
+          totalRevenue: mergedItems.reduce((s, i) => s + (i.revenue || 0), 0),
+        };
+
+        setItemsData(mergedItems);
+        setSummary(mergedSummary);
+        return;
+      }
+
       // Single-source fetch (unchanged path)
       const restaurantId = getRestaurantIdForSource(source);
       const sectionName = getSectionNameForSource(source);
@@ -287,7 +324,7 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
       ]
     : [
         { id: 'family-restaurant', label: 'Family Restaurant' },
-        { id: 'restaurant-parcel', label: 'Owner' },
+        { id: 'restaurant-parcel', label: 'GoBox' },
       ];
 
   return (
