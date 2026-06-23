@@ -342,8 +342,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
-  const [lastPrintTime, setLastPrintTime] = useState(null);
-  const [printCooldown, setPrintCooldown] = useState(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
@@ -678,8 +676,10 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnPage, setTxnPage] = useState(1);
 
   function formatBillNumber(txn) {
+    // Bill No column: prefer billNumber ("1", "2"...), fall back to plain txnNumber (no TXN- prefix)
     if (txn?.billNumber) return txn.billNumber;
-    return formatTxnDisplayId(txn?.txnDate, txn?.txnNumber);
+    if (txn?.txnNumber) return String(txn.txnNumber);
+    return '—';
   }
 
   const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
@@ -1971,10 +1971,15 @@ const CashierDashboard = ({ onLogout }) => {
 
       window.dispatchEvent(new Event('softshape_order_updated'));
 
-      // Cooldown so cashier can't double-print immediately
-      setLastPrintTime(Date.now());
-      setPrintCooldown(true);
-      setTimeout(() => setPrintCooldown(false), 10000);
+      // Per-table cooldown: only block this specific table's button for 8s, not all tables
+      const printedTableKey = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
+      if (printedTableKey) {
+        billPrintCooldownRef.current.set(printedTableKey, Date.now() + 8000);
+        // Clear after 8 seconds so cashier can reprint if needed
+        setTimeout(() => {
+          billPrintCooldownRef.current.delete(printedTableKey);
+        }, 8000);
+      }
 
     } catch (error) {
       console.error('Final bill error:', error);
@@ -4001,7 +4006,9 @@ const CashierDashboard = ({ onLogout }) => {
                                         <span className="text-xs md:text-sm font-black text-[#E53935]">{txn.displayId || '—'}</span>
                                       </td>
                                       <td className="p-4">
-                                        <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || '—'}</span>
+                                        <span className="text-xs md:text-sm font-black text-gray-900">
+                                          {txn.txnNumber ? `TXN-${String(txn.txnNumber).padStart(3, '0')}` : '—'}
+                                        </span>
                                       </td>
                                       {/* FIX 6: Table Number */}
                                       <td className="p-4">
@@ -5084,27 +5091,27 @@ const CashierDashboard = ({ onLogout }) => {
                             )}
                             <button
                               onClick={handleFinalBill}
-                              disabled={isPrintingBill || printCooldown}
-                              className={`flex-1 py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                              disabled={isPrintingBill || (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())}
+                              className={`flex-1 py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())
                                 ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                                 : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
                                 }`}
                             >
                               {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
-                              {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Direct Bill'}
+                              {isPrintingBill ? 'Fetching…' : (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now()) ? 'Printed ✓' : 'Direct Bill'}
                             </button>
                           </div>
                         ) : (
                           <button
                             onClick={handleFinalBill}
-                            disabled={isPrintingBill || printCooldown}
-                            className={`py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || printCooldown
+                            disabled={isPrintingBill || (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())}
+                            className={`py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())
                               ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                               : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'
                               }`}
                           >
                             {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
-                            {isPrintingBill ? 'Fetching…' : printCooldown ? 'Printed ✓' : 'Final Bill'}
+                            {isPrintingBill ? 'Fetching…' : (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now()) ? 'Printed ✓' : 'Final Bill'}
                           </button>
                         );
                       })()
@@ -5123,7 +5130,7 @@ const CashierDashboard = ({ onLogout }) => {
                     disabled={isReprintingBill}
                     className={`mt-1.5 w-full py-2 rounded-lg border text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1.5 ${isReprintingBill
                       ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-                      : printCooldown
+                      : (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())
                         ? 'bg-blue-50 border-blue-300 text-blue-700 cursor-pointer shadow-sm'
                         : 'border-gray-300 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer shadow-sm'
                     }`}
