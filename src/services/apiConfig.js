@@ -18,4 +18,29 @@ export function apiUrl(path) {
   return `${API_BASE}${normalizedPath}`;
 }
 
+/** Fetch wrapper with Bearer token support */
+export async function apiFetch(path, options = {}) {
+  const token = localStorage.getItem('tenant_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(apiUrl(path), {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Network error' }));
+    throw new Error(error.error || 'Request failed');
+  }
+
+  return response.json();
+}
+
 console.log("[API] Backend base:", API_BASE);

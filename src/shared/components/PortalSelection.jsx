@@ -70,6 +70,12 @@ const PortalSelection = ({ onSelect }) => {
 
       <footer className="mt-16 flex flex-col items-center gap-4 z-10">
         <p className="text-[11px] font-black uppercase tracking-[0.5em] text-[#B71C1C] drop-shadow-sm">Powered by Vtech</p>
+        <a
+          href="/onboarding"
+          className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors flex items-center gap-2"
+        >
+          New Restaurant? Get Started →
+        </a>
       </footer>
     </div>
   );
