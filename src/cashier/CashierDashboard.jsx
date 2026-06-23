@@ -885,7 +885,13 @@ const CashierDashboard = ({ onLogout }) => {
     let list = pastTransactions;
 
     if (txnSourceFilter !== 'all') {
-      list = list.filter(txn => txn.source === txnSourceFilter);
+      if (txnSourceFilter === 'bar-parcel') {
+        // GoBox tab — match both the legacy 'bar-parcel' tag and the
+        // current 'bar-gobox' tag so historical + live data both show.
+        list = list.filter(txn => txn.source === 'bar-parcel' || txn.source === 'bar-gobox');
+      } else {
+        list = list.filter(txn => txn.source === txnSourceFilter);
+      }
     }
 
     // Method filter
