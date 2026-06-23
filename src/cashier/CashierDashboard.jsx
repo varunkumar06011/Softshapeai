@@ -789,7 +789,11 @@ const CashierDashboard = ({ onLogout }) => {
           time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
-          items: txn.itemCount || 0,
+          items: txn.itemCount > 0
+            ? txn.itemCount
+            : Array.isArray(txn.items) && txn.items.length > 0
+              ? txn.items.length
+              : 0,
           itemsList: txn.items || [],
           captainId: txn.captainId || 'CASHIER',
           // Prefer backend captainName, then CAPTAINS lookup, then captainId itself, then fallback
@@ -2403,11 +2407,13 @@ const CashierDashboard = ({ onLogout }) => {
           }
         }
 
-        // Refresh transactions list — 1.5s delay ensures DB write + cache invalidation are visible
+        // Immediate refresh (catches fast DB writes)
+        loadTransactions(txnDateFilterRef.current);
+        // Secondary refresh at 3s (catches delayed DB propagation + cache invalidation)
         setTimeout(() => {
-          console.log(`[Settlement] Triggering loadTransactions for orderId=${orderId}`);
+          console.log(`[Settlement] Secondary loadTransactions for orderId=${orderId}`);
           loadTransactions(txnDateFilterRef.current);
-        }, 1500);
+        }, 3000);
       });
     };
 
@@ -3992,7 +3998,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         <span className="text-xs md:text-sm font-black text-[#E53935]">{txn.displayId || '—'}</span>
                                       </td>
                                       <td className="p-4">
-                                        <span className="text-xs md:text-sm font-black text-gray-900">{txn.id}</span>
+                                        <span className="text-xs md:text-sm font-black text-gray-900">{txn.displayId || '—'}</span>
                                       </td>
                                       {/* FIX 6: Table Number */}
                                       <td className="p-4">
@@ -4037,7 +4043,17 @@ const CashierDashboard = ({ onLogout }) => {
                                             <>
                                               <div className="flex flex-col gap-2">
                                                 <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>
-                                                {txn.itemsList.map((item, idx) => (
+                                                {Object.values(
+                                                  (txn.itemsList || []).reduce((acc, item, idx) => {
+                                                    const key = item.name || item.n || idx;
+                                                    if (acc[key]) {
+                                                      acc[key] = { ...acc[key], quantity: (acc[key].quantity || acc[key].q || 1) + (item.quantity || item.q || 1) };
+                                                    } else {
+                                                      acc[key] = { ...item };
+                                                    }
+                                                    return acc;
+                                                  }, {})
+                                                ).map((item, idx) => (
                                                   <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
                                                     <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
                                                     <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
