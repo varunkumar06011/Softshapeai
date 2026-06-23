@@ -7,6 +7,8 @@ import CashierDashboard from "./cashier/CashierDashboard";
 import CaptainApp from "./captain/CaptainApp";
 import UserMenuApp from "./user-menu/UserMenuApp";
 import PrintStation from "./print-station/PrintStation";
+import OnboardingWizard from "./onboarding/OnboardingWizard";
+import { AuthProvider } from "./context/AuthContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
@@ -193,28 +195,34 @@ const KitchenView = () => {
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<PortalSelectionWrapper />} />
-          <Route path="/admin" element={<AdminLoginWrapper />} />
-          <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
-          <Route path="/cashier" element={<CashierLoginWrapper />} />
-          <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
-          <Route path="/captain/*" element={
-            <ErrorBoundary
-              showDetails={import.meta.env.DEV}
-              onRetry={() => window.location.reload()}
-            >
-              <CaptainAppWrapper />
-            </ErrorBoundary>
-          } />
-          <Route path="/kitchen" element={<KitchenView />} />
-          <Route path="/print-station" element={<PrintStation />} />
-          <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
-          <Route path="/user-menu/:tableId" element={<UserMenuApp />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<PortalSelectionWrapper />} />
+            <Route path="/onboarding" element={<OnboardingWizard />} />
+            <Route path="/admin" element={<AdminLoginWrapper />} />
+            <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
+            <Route path="/cashier" element={<CashierLoginWrapper />} />
+            <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
+            <Route path="/captain/*" element={
+              <ErrorBoundary
+                showDetails={import.meta.env.DEV}
+                onRetry={() => window.location.reload()}
+              >
+                <CaptainApp
+                  key="captain-app"
+                  onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }}
+                />
+              </ErrorBoundary>
+            } />
+            <Route path="/kitchen" element={<KitchenView />} />
+            <Route path="/print-station" element={<PrintStation />} />
+            <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
+            <Route path="/user-menu/:tableId" element={<UserMenuApp />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }
