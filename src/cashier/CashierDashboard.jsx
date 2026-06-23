@@ -5825,7 +5825,8 @@ const CashierDashboard = ({ onLogout }) => {
 
       {/* CANCEL ITEMS MODAL */}
       {showCancelModal && selectedTable && (() => {
-        const cancellableItems = getBillableItems(selectedTable);
+        const cancellableItems = groupOrderItems(getBillableItems(selectedTable));
+        const groupKey = (item) => `${item.n}::${item.p}`;
         const selectedCount = Object.keys(cancelSelected).length;
         const selectedQuantityTotal = Object.values(cancelSelected).reduce(
           (sum, entry) => sum + Math.max(1, Math.round(Number(entry.quantity ?? 1))),
@@ -5856,13 +5857,12 @@ const CashierDashboard = ({ onLogout }) => {
               return;
             }
 
-            // Build a map of item name → fresh orderItem so we match by name if IDs are stale
+            // Build a map of orderItemId → fresh orderItem
             const freshItemMap = {};
             if (freshOrder?.items) {
               for (const fi of freshOrder.items) {
                 if (!fi.removedFromBill) {
-                  freshItemMap[fi.id] = fi;              // by DB id
-                  freshItemMap[fi.name ?? fi.n] = fi;   // by name as fallback
+                  freshItemMap[fi.id] = fi;
                 }
               }
             }
@@ -5873,22 +5873,24 @@ const CashierDashboard = ({ onLogout }) => {
               if (!freshItemMap[li.id]) freshItemMap[li.id] = li;
             }
 
-            // Build batch items list, resolving fresh IDs
+            // Build batch items list, distributing cancel quantity across grouped originalIds
             const batchItems = [];
             const resolvedIds = [];
 
-            for (const [itemId, { quantity, item: cachedItem }] of Object.entries(cancelSelected)) {
-              const freshItem = freshItemMap[itemId]
-                || (cachedItem && freshItemMap[cachedItem.n ?? cachedItem.name])
-                || (cachedItem && freshItemMap[cachedItem.name ?? cachedItem.n]);
-              if (!freshItem) continue;
-
-              const cancelQuantity = Math.max(1, Math.min(
-                Number(freshItem.quantity ?? freshItem.q ?? 1),
-                Math.round(Number(quantity ?? 1))
-              ));
-              batchItems.push({ orderItemId: freshItem.id ?? itemId, cancelQuantity });
-              resolvedIds.push(freshItem.id ?? itemId);
+            for (const [, { quantity, item: cachedGroup }] of Object.entries(cancelSelected)) {
+              let remaining = Math.max(1, Math.round(Number(quantity ?? 1)));
+              for (const orderItemId of cachedGroup.originalIds || []) {
+                const freshItem = freshItemMap[orderItemId];
+                if (!freshItem) continue;
+                const avail = Number(freshItem.quantity ?? freshItem.q ?? 0);
+                const toCancel = Math.min(remaining, avail);
+                if (toCancel > 0) {
+                  batchItems.push({ orderItemId, cancelQuantity: toCancel });
+                  resolvedIds.push(orderItemId);
+                  remaining -= toCancel;
+                }
+                if (remaining <= 0) break;
+              }
             }
 
             if (batchItems.length === 0) {
@@ -6030,25 +6032,26 @@ const CashierDashboard = ({ onLogout }) => {
                   <p className="text-xs text-gray-400 font-bold text-center py-4">No cancellable items.</p>
                 ) : (
                   cancellableItems.map((item, idx) => {
-                    const isSelected = !!cancelSelected[item.id];
-                    const isLoading = cancelLoading[item.id];
+                    const gKey = groupKey(item);
+                    const isSelected = !!cancelSelected[gKey];
+                    const isLoading = (item.originalIds || []).some(id => cancelLoading[id]);
                     const cancelQuantity = Math.max(
                       1,
                       Math.min(
                         Number(item.q ?? 1),
-                        Math.round(Number(cancelSelected[item.id]?.quantity ?? 1))
+                        Math.round(Number(cancelSelected[gKey]?.quantity ?? 1))
                       )
                     );
                     const remainingQuantity = Math.max(0, Number(item.q ?? 0) - cancelQuantity);
                     return (
                       <button
-                        key={item.id || idx}
+                        key={gKey}
                         disabled={isLoading}
                         onClick={() => {
                           setCancelSelected(prev => {
                             const next = { ...prev };
-                            if (next[item.id]) delete next[item.id];
-                            else next[item.id] = { item, quantity: 1 };
+                            if (next[gKey]) delete next[gKey];
+                            else next[gKey] = { item, quantity: 1 };
                             return next;
                           });
                         }}
@@ -6089,9 +6092,9 @@ const CashierDashboard = ({ onLogout }) => {
                                   e.stopPropagation();
                                   setCancelSelected(prev => ({
                                     ...prev,
-                                    [item.id]: {
-                                      ...prev[item.id],
-                                      quantity: Math.max(1, Number(prev[item.id]?.quantity ?? 1) - 1),
+                                    [gKey]: {
+                                      ...prev[gKey],
+                                      quantity: Math.max(1, Number(prev[gKey]?.quantity ?? 1) - 1),
                                     },
                                   }));
                                 }}
@@ -6108,8 +6111,8 @@ const CashierDashboard = ({ onLogout }) => {
                                   const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
                                   setCancelSelected(prev => ({
                                     ...prev,
-                                    [item.id]: {
-                                      ...prev[item.id],
+                                    [gKey]: {
+                                      ...prev[gKey],
                                       quantity: nextValue,
                                     },
                                   }));
@@ -6123,9 +6126,9 @@ const CashierDashboard = ({ onLogout }) => {
                                   e.stopPropagation();
                                   setCancelSelected(prev => ({
                                     ...prev,
-                                    [item.id]: {
-                                      ...prev[item.id],
-                                      quantity: Math.min(Number(item.q ?? 1), Number(prev[item.id]?.quantity ?? 1) + 1),
+                                    [gKey]: {
+                                      ...prev[gKey],
+                                      quantity: Math.min(Number(item.q ?? 1), Number(prev[gKey]?.quantity ?? 1) + 1),
                                     },
                                   }));
                                 }}

@@ -355,19 +355,12 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
 
 
+  // For venue tables, use the already-formatted label as-is
+  // For bar/restaurant, strip the B/T prefix to show just the number
   const rawTable = (tableNumber || 'N/A').toString();
-
-  const cancelNumeric = rawTable.replace(/^[A-Z]/i, '') || rawTable;
-
-  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === 'venue-001';
-
-  const tableDisplay = isFamilyRestaurant
-
-    ? `F${cancelNumeric}`
-
-    : rawTable;
-
-
+  const tableDisplay = (sectionTag && sectionTag.startsWith('venue-'))
+    ? rawTable
+    : (/^[BT]\d+$/i.test(rawTable) ? rawTable.slice(1) : rawTable);
 
   const cmds = [
 
@@ -467,17 +460,12 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
 
 
+  // For venue tables, use the already-formatted label as-is
+  // For bar/restaurant, strip the B/T prefix to show just the number
   const rawTable = (tableNumber || 'N/A').toString();
-
-  const cancelNumeric = rawTable.replace(/^[A-Z]/i, '') || rawTable;
-
-  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === 'venue-001';
-
-  const tableDisplay = isFamilyRestaurant
-
-    ? `F${cancelNumeric}`
-
-    : rawTable;
+  const tableDisplay = (sectionTag && sectionTag.startsWith('venue-'))
+    ? rawTable
+    : (/^[BT]\d+$/i.test(rawTable) ? rawTable.slice(1) : rawTable);
 
 
 
