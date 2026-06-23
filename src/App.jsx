@@ -13,6 +13,7 @@ import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
+import { authService } from "./services/authService";
 
 
 // ─── Live Kitchen Display System ──────────────────────────────────────────────
@@ -233,54 +234,52 @@ function PortalSelectionWrapper() {
 
 function AdminLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('admin_auth') === 'true');
+  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && ['ADMIN','SUPER_ADMIN','MANAGER'].includes(authService.getUser()?.role));
   if (isLoggedIn) return <Navigate to="/admin/dashboard" replace />;
   return (
-    <LoginScreen role="admin" onLogin={(roleType) => { 
-      localStorage.setItem('admin_auth', 'true'); 
-      localStorage.setItem('admin_auth_role', roleType || 'admin');
-      setIsLoggedIn(true); 
+    <LoginScreen role="admin" onLogin={(roleType) => {
+      setIsLoggedIn(true);
     }} onBack={() => navigate('/')} />
   );
 }
 
 function AdminDashboardWrapper() {
   const navigate = useNavigate();
-  if (localStorage.getItem('admin_auth') !== 'true') return <Navigate to="/admin" replace />;
-  const role = localStorage.getItem('admin_auth_role') || 'admin';
-  return <AdminDashboard role={role} onLogout={() => { localStorage.removeItem('admin_auth'); localStorage.removeItem('admin_auth_role'); navigate('/admin'); }} />;
+  if (!(authService.isAuthenticated() && ['ADMIN','SUPER_ADMIN','MANAGER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
+  const role = authService.getUser()?.role || 'admin';
+  return <AdminDashboard role={role} onLogout={() => { authService.logout(); navigate('/admin'); }} />;
 }
 
 function CashierLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('cashier_auth') === 'true');
+  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && authService.getUser()?.role === 'CASHIER');
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
   return (
-    <LoginScreen role="cashier" onLogin={() => { localStorage.setItem('cashier_auth', 'true'); setIsLoggedIn(true); }} onBack={() => navigate('/')} />
+    <LoginScreen role="cashier" onLogin={() => { setIsLoggedIn(true); }} onBack={() => navigate('/')} />
   );
 }
 
 function CashierDashboardWrapper() {
   const navigate = useNavigate();
-  if (localStorage.getItem('cashier_auth') !== 'true') return <Navigate to="/cashier" replace />;
-  return <CashierDashboard onLogout={() => { localStorage.removeItem('cashier_auth'); navigate('/cashier'); }} />;
+  if (!(authService.isAuthenticated() && authService.getUser()?.role === 'CASHIER')) return <Navigate to="/cashier" replace />;
+  return <CashierDashboard onLogout={() => { authService.logout(); navigate('/cashier'); }} />;
 }
 
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('captain_auth') === 'true');
+  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && authService.getUser()?.role === 'CAPTAIN');
   if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
   return (
-    <LoginScreen role="captain" onLogin={() => { localStorage.setItem('captain_auth', 'true'); setIsLoggedIn(true); }} onBack={() => navigate('/')} />
+    <LoginScreen role="captain" onLogin={() => { setIsLoggedIn(true); }} onBack={() => navigate('/')} />
   );
 }
 
 function CaptainAppWrapper() {
   const navigate = useNavigate();
-  if (localStorage.getItem('captain_auth') !== 'true') return <Navigate to="/captain" replace />;
+  if (!(authService.isAuthenticated() && authService.getUser()?.role === 'CAPTAIN')) return <Navigate to="/captain" replace />;
   return (
-    <CaptainApp 
-      onLogout={() => { localStorage.removeItem('captain_auth'); navigate('/captain'); }} 
+    <CaptainApp
+      onLogout={() => { authService.logout(); navigate('/captain'); }}
     />
   );
 }
