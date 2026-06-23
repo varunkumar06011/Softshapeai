@@ -100,7 +100,18 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
   const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
-  const sectionName = row.section?.name ?? existing?.sectionName ?? "";
+  // Recover sectionName from sectionTag when section.name is absent (partial payloads / cold cache)
+  const rawSectionName = row.section?.name ?? existing?.sectionName ?? null;
+  const sectionTagFallback = (row.sectionTag ?? existing?.sectionTag ?? '').toLowerCase();
+  const sectionName = rawSectionName || (() => {
+    if (sectionTagFallback.includes('gobox') || sectionTagFallback.includes('bar-parcel')) return 'GoBox';
+    if (sectionTagFallback.includes('conference')) return 'Conference Hall';
+    if (sectionTagFallback.includes('family-restaurant')) return 'Family Restaurant';
+    if (sectionTagFallback.includes('-pdr')) return 'PDR';
+    if (sectionTagFallback.includes('-rooms')) return 'Rooms';
+    if (sectionTagFallback.includes('restaurant-parcel')) return 'Parcel';
+    return existing?.sectionName ?? '';
+  })();
   const section = row.section ?? existing?.section;
   const sectionId = row.sectionId ?? existing?.sectionId;
   const sectionTag = row.sectionTag ?? existing?.sectionTag ?? null;
@@ -348,6 +359,8 @@ export function useVenueTableSync() {
     // This prevents stale responses from overwriting fresh data.
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      // Give the aborted fetch's finally block one tick to reset isFetchingRef
+      await new Promise(r => setTimeout(r, 0));
     }
     // Auto-reset if a previous fetch got stuck (e.g. zombie promise, uncaught exception)
     if (isFetchingRef.current && Date.now() - fetchStartTimeRef.current > 20000) {
@@ -446,8 +459,13 @@ export function useVenueTableSync() {
       }
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-        console.log('[VenueTableSync] Fetch aborted');
-        // Don't retry on abort — a new fetch is already scheduled by fallback
+        console.log('[VenueTableSync] Fetch aborted — scheduling immediate retry');
+        // Retry immediately after a short tick so the aborting remount stabilizes first
+        setTimeout(() => {
+          if (tablesRef.current.length === 0 && !isFetchingRef.current) {
+            loadTables(true);
+          }
+        }, 300);
       } else {
         console.error("[VenueTableSync] Fetch failed:", err);
         if (!isRetry) {
@@ -625,7 +643,7 @@ export function useVenueTableSync() {
         console.warn('[VenueTableSync] Tables still empty — forcing refetch');
         loadTables(true);
       }
-    }, 5000);
+    }, 2000); // Reduced from 5s → 2s for faster recovery on slow devices
 
     return () => {
       // Don't abort in-flight fetches on unmount — React Strict Mode causes

@@ -3723,6 +3723,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                             isSyncing={venueTablesLoading}
+                            refetch={refetchVenueTables}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-pdr' && (
@@ -3735,6 +3736,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                             isSyncing={venueTablesLoading}
+                            refetch={refetchVenueTables}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-rooms' && (
@@ -3747,6 +3749,7 @@ const CashierDashboard = ({ onLogout }) => {
                             onOrderPlaced={() => { }}
                             venueTables={venueTables}
                             isSyncing={venueTablesLoading}
+                            refetch={refetchVenueTables}
                           />
                         )}
                         {outlet === 'bar' && tableSubCategory === 'bar-parcel' && (
