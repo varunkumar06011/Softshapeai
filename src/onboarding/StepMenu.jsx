@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import { Utensils, Plus, Trash2, Upload, Leaf, DollarSign } from 'lucide-react';
+import { Utensils, Plus, Trash2, Upload, Leaf } from 'lucide-react';
 
 const StepMenu = ({ data, onChange, onNext, onBack }) => {
   const [mode, setMode] = useState('manual'); // 'manual' or 'upload'
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const handleCategoryChange = (categoryIndex, field, value) => {
+    setHasInteracted(true);
     const newCategories = [...data.categories];
     newCategories[categoryIndex] = { ...newCategories[categoryIndex], [field]: value };
     onChange({ ...data, categories: newCategories });
   };
 
   const handleItemChange = (categoryIndex, itemIndex, field, value) => {
+    setHasInteracted(true);
     const newCategories = [...data.categories];
     newCategories[categoryIndex] = {
       ...newCategories[categoryIndex],
@@ -154,10 +157,10 @@ const StepMenu = ({ data, onChange, onNext, onBack }) => {
                         />
                       </div>
                       <div className="w-28 relative">
-                        <DollarSign size={16} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400">₹</span>
                         <input
                           type="number"
-                          value={item.price}
+                          value={item.price === 0 ? '' : item.price}
                           onChange={(e) => handleItemChange(categoryIndex, itemIndex, 'price', parseFloat(e.target.value) || 0)}
                           className="w-full pl-7 pr-2 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
                           placeholder="Price"
@@ -233,6 +236,12 @@ const StepMenu = ({ data, onChange, onNext, onBack }) => {
             </div>
           )}
         </div>
+      )}
+
+      {!isValid && hasInteracted && (
+        <p className="text-sm text-red-400 text-center">
+          Each category needs a name, and every item needs a name and a price greater than 0 before you can continue.
+        </p>
       )}
 
       <div className="flex gap-4">
