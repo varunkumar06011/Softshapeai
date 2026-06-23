@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
+import { authService } from "../services/authService";
 
 let socketInstance = null;
 let eventQueue = [];
@@ -23,6 +24,7 @@ export function getSocket() {
       // Prevent server-side timeout killing idle connections
       pingInterval: 25000,   // slightly under server's 30s
       pingTimeout: 60000,    // well under server's 120s — gives real time to recover
+      auth: { token: authService.getToken() },
     });
 
     // Queue pending events during disconnect
