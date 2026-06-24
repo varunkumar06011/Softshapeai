@@ -441,6 +441,8 @@ export default function CaptainApp({ onLogout }) {
 
   const [selectedProfile, setSelectedProfile] = useState(null);
 
+  const [captainSearchQuery, setCaptainSearchQuery] = useState('');
+
   const [view, setView] = useState(() => localStorage.getItem('captain_view') || 'tables'); // tables, session
 
   const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem('captain_activeTableId') || null);
@@ -2816,15 +2818,17 @@ export default function CaptainApp({ onLogout }) {
 
   };
 
-
+  const filteredCaptains = CAPTAINS.filter(p =>
+    p.name.toLowerCase().includes(captainSearchQuery.toLowerCase().trim())
+  );
 
   if (isLoginView) {
 
     return (
 
-      <div className="flex min-h-screen items-center justify-center bg-[#F4F4F5] p-4 sm:p-6 font-['Inter',sans-serif]">
+      <div className="flex min-h-screen items-start justify-center bg-[#F4F4F5] p-4 sm:p-6 font-['Inter',sans-serif] overflow-y-auto">
 
-        <div className="w-full max-w-lg bg-white rounded-[30px] sm:rounded-[40px] p-6 sm:p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100">
+        <div className="w-full max-w-lg bg-white rounded-[30px] sm:rounded-[40px] p-6 sm:p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100 my-auto">
 
           <div className="text-center mb-10">
 
@@ -2852,31 +2856,52 @@ export default function CaptainApp({ onLogout }) {
 
           {!selectedProfile ? (
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
 
-              {CAPTAINS.map(p => (
+              <div className="relative">
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={captainSearchQuery}
+                  onChange={(e) => setCaptainSearchQuery(e.target.value)}
+                  placeholder="Search captain..."
+                  className="w-full h-12 rounded-2xl border border-gray-100 bg-gray-50 pl-11 pr-4 text-sm font-black outline-none focus:border-gray-300 focus:bg-white transition-all"
+                />
+              </div>
 
-                <button
+              <div className="max-h-[360px] overflow-y-auto pr-1 -mr-1">
+                <div className="grid grid-cols-2 gap-4">
+                  {filteredCaptains.map(p => (
 
-                  key={p.id}
+                    <button
 
-                  onClick={() => handleProfileSelect(p)}
+                      key={p.id}
 
-                  className="flex flex-col items-center gap-4 p-6 rounded-[24px] border border-gray-100 bg-white hover:border-gray-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-300 group"
+                      onClick={() => handleProfileSelect(p)}
 
-                >
+                      className="flex flex-col items-center gap-4 p-6 rounded-[24px] border border-gray-100 bg-white hover:border-gray-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-300 group"
 
-                  <div className={`w-14 h-14 rounded-2xl ${p.color} flex items-center justify-center text-xl font-black tracking-tight shadow-sm group-hover:scale-110 transition-transform`}>
+                    >
 
-                    {p.initials}
+                      <div className={`w-14 h-14 rounded-2xl ${p.color} flex items-center justify-center text-xl font-black tracking-tight shadow-sm group-hover:scale-110 transition-transform`}>
 
-                  </div>
+                        {p.initials}
 
-                  <span className="text-[13px] font-bold text-gray-800 tracking-tight">{p.name}</span>
+                      </div>
 
-                </button>
+                      <span className="text-[13px] font-bold text-gray-800 tracking-tight">{p.name}</span>
 
-              ))}
+                    </button>
+
+                  ))}
+
+                </div>
+
+                {filteredCaptains.length === 0 && (
+                  <p className="text-center text-[12px] font-bold text-gray-400 py-8">No captains found</p>
+                )}
+
+              </div>
 
             </div>
 
