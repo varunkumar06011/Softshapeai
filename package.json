@@ -23,6 +23,7 @@
     "recharts": "^3.8.1",
     "socket.io-client": "^4.8.3",
     "papaparse": "^5.4.1",
+    "qrcode.react": "^4.2.0",
     "typescript": "^6.0.3",
     "xlsx": "^0.18.5"
   },
