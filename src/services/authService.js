@@ -1,5 +1,3 @@
-import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
-
 function getApiBase() {
   return (
     import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
@@ -17,34 +15,12 @@ export const authService = {
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials');
     }
-    // Remove stale un-scoped caches from any previous restaurant before storing new tenant
-    purgeLegacyCaches();
-    localStorage.setItem('tenant_token', data.token);
-    localStorage.setItem('tenant_user', JSON.stringify(data.user));
-    if (data.user?.restaurantId) {
-      localStorage.setItem('tenant_restaurantId', data.user.restaurantId);
-    }
-    if (data.restaurant?.slug) {
-      localStorage.setItem('tenant_slug', data.restaurant.slug);
-    }
-    if (data.user?.restaurantCode || data.restaurant?.restaurantCode) {
-      localStorage.setItem('tenant_restaurantCode', data.user?.restaurantCode || data.restaurant?.restaurantCode);
-    }
+    localStorage.setItem('ss_token', data.token);
+    localStorage.setItem('ss_user', JSON.stringify(data.user));
     if (data.restaurant) {
-      localStorage.setItem('tenant_restaurant_config', JSON.stringify({
-        logoUrl: data.restaurant.logoUrl ?? null,
-        receiptHeader: data.restaurant.receiptHeader ?? null,
-        receiptSubHeader: data.restaurant.receiptSubHeader ?? null,
-        themePrimary: data.restaurant.themePrimary ?? null,
-        printerConfig: data.restaurant.printerConfig ?? null,
-        barUnitMl: data.restaurant.barUnitMl ?? 30,
-        fullBottleMl: data.restaurant.fullBottleMl ?? 750,
-        plan: data.restaurant.plan ?? 'starter',
-        billingStatus: data.restaurant.billingStatus ?? 'trialing',
-        features: data.restaurant.features ?? null,
-      }));
+      localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
-    return data.user;
+    return data;
   },
 
   async captainLogin(restaurantId, userId, pin, restaurantCode) {
@@ -57,38 +33,16 @@ export const authService = {
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials');
     }
-    // Remove stale un-scoped caches from any previous restaurant before storing new tenant
-    purgeLegacyCaches();
-    localStorage.setItem('tenant_token', data.token);
-    localStorage.setItem('tenant_user', JSON.stringify(data.user));
-    if (data.user?.restaurantId) {
-      localStorage.setItem('tenant_restaurantId', data.user.restaurantId);
-    }
-    if (data.restaurant?.slug) {
-      localStorage.setItem('tenant_slug', data.restaurant.slug);
-    }
-    if (data.user?.restaurantCode || data.restaurant?.restaurantCode) {
-      localStorage.setItem('tenant_restaurantCode', data.user?.restaurantCode || data.restaurant?.restaurantCode);
-    }
+    localStorage.setItem('ss_token', data.token);
+    localStorage.setItem('ss_user', JSON.stringify(data.user));
     if (data.restaurant) {
-      localStorage.setItem('tenant_restaurant_config', JSON.stringify({
-        logoUrl: data.restaurant.logoUrl ?? null,
-        receiptHeader: data.restaurant.receiptHeader ?? null,
-        receiptSubHeader: data.restaurant.receiptSubHeader ?? null,
-        themePrimary: data.restaurant.themePrimary ?? null,
-        printerConfig: data.restaurant.printerConfig ?? null,
-        barUnitMl: data.restaurant.barUnitMl ?? 30,
-        fullBottleMl: data.restaurant.fullBottleMl ?? 750,
-        plan: data.restaurant.plan ?? 'starter',
-        billingStatus: data.restaurant.billingStatus ?? 'trialing',
-        features: data.restaurant.features ?? null,
-      }));
+      localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
-    return data.user;
+    return data;
   },
 
   async logout() {
-    const token = localStorage.getItem('tenant_token');
+    const token = localStorage.getItem('ss_token');
     try {
       if (token) {
         await fetch(`${getApiBase()}/api/auth/logout`, {
@@ -99,23 +53,18 @@ export const authService = {
     } catch {
       // ignore network errors on logout
     }
-    const tenantId = localStorage.getItem('tenant_restaurantId');
-    clearTenantCaches(tenantId);
-    localStorage.removeItem('tenant_token');
-    localStorage.removeItem('tenant_user');
-    localStorage.removeItem('tenant_restaurantId');
-    localStorage.removeItem('tenant_slug');
-    localStorage.removeItem('tenant_restaurantCode');
-    localStorage.removeItem('tenant_restaurant_config');
+    localStorage.removeItem('ss_token');
+    localStorage.removeItem('ss_user');
+    localStorage.removeItem('ss_restaurant');
   },
 
   getToken() {
-    return localStorage.getItem('tenant_token');
+    return localStorage.getItem('ss_token');
   },
 
   getUser() {
     try {
-      const raw = localStorage.getItem('tenant_user');
+      const raw = localStorage.getItem('ss_user');
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -123,7 +72,7 @@ export const authService = {
   },
 
   isAuthenticated() {
-    const token = localStorage.getItem('tenant_token');
+    const token = localStorage.getItem('ss_token');
     if (!token) return false;
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
@@ -135,7 +84,7 @@ export const authService = {
   },
 
   getAuthHeader() {
-    const token = localStorage.getItem('tenant_token');
+    const token = localStorage.getItem('ss_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
 

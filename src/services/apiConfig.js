@@ -16,7 +16,7 @@ export function apiUrl(path) {
 
 /** Returns auth headers object with Bearer token if available */
 export function getAuthHeaders() {
-  const token = localStorage.getItem('tenant_token');
+  const token = localStorage.getItem('ss_token');
   const headers = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -26,7 +26,7 @@ export function getAuthHeaders() {
 
 /** Fetch wrapper with Bearer token support */
 export async function apiFetch(path, options = {}) {
-  const token = localStorage.getItem('tenant_token');
+  const token = localStorage.getItem('ss_token');
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,

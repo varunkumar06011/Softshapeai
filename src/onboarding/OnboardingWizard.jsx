@@ -12,7 +12,7 @@ import StepPlan from './StepPlan';
 import StepPayment from './StepPayment';
 import StepOutlets from './StepOutlets';
 import StepConfirmation from './StepConfirmation';
-import { ChevronLeft, ChevronRight, CheckCircle2, Copy, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle2, Copy, ArrowRight, Store, ShieldCheck, Users, Layout, Utensils, CreditCard, Check } from 'lucide-react';
 
 const STORAGE_KEY = 'onboarding_wizard';
 
@@ -169,7 +169,8 @@ const OnboardingWizard = () => {
         name: data.restaurant.name,
         token: data.token,
         user: data.user,
-        slug: data.restaurant.slug
+        slug: data.restaurant.slug,
+        restaurant: data.restaurant
       });
     } catch (err) {
       setError(err.message || 'Failed to create restaurant');
@@ -180,14 +181,7 @@ const OnboardingWizard = () => {
 
   const handleGoToDashboard = () => {
     if (onboardResult?.token) {
-      purgeLegacyCaches();
-      setAuth(onboardResult.token, onboardResult.user, onboardResult.slug, onboardResult.restaurantCode);
-      if (onboardResult.user?.restaurantId) {
-        localStorage.setItem('tenant_restaurantId', onboardResult.user.restaurantId);
-      }
-      if (onboardResult.restaurantCode) {
-        localStorage.setItem('tenant_restaurantCode', onboardResult.restaurantCode);
-      }
+      setAuth({ token: onboardResult.token, user: onboardResult.user, restaurant: onboardResult.restaurant });
     }
     navigate('/admin/dashboard');
   };
@@ -249,40 +243,86 @@ const OnboardingWizard = () => {
   };
 
   if (onboardResult) {
-    return (
-      <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex items-center justify-center px-4">
-        <div className="max-w-lg w-full bg-white rounded-3xl p-10 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100 text-center">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-50 flex items-center justify-center">
-            <CheckCircle2 size={48} className="text-green-600" />
-          </div>
-          <h1 className="text-3xl font-bold mb-2">You're All Set!</h1>
-          <p className="text-gray-500 mb-8">
-            <span className="font-semibold text-gray-900">{onboardResult.name}</span> has been created successfully.
-          </p>
+    const totalTables = wizardData.tables.length + (wizardData.outlets || []).reduce((sum, o) => sum + o.tables.length, 0);
+    const totalMenuItems = wizardData.menu.categories.reduce((sum, cat) => sum + cat.items.length, 0);
 
-          <div className="bg-[#F8F9FA] border border-gray-200 rounded-2xl p-6 mb-8">
-            <p className="text-sm text-gray-500 mb-2">Your Restaurant ID</p>
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-2xl font-bold tracking-wide text-[#E53935]">{onboardResult.restaurantCode}</span>
-              <button
-                onClick={handleCopyCode}
-                className="p-2 rounded-lg hover:bg-gray-200 transition-all"
-                title="Copy Restaurant ID"
-              >
-                <Copy size={18} className={copied ? 'text-green-600' : 'text-gray-500'} />
-              </button>
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex items-center justify-center px-4 py-10">
+        <div className="max-w-xl w-full space-y-6">
+          {/* Welcome heading */}
+          <div className="bg-white rounded-3xl p-10 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100 text-center">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-50 flex items-center justify-center">
+              <CheckCircle2 size={48} className="text-green-600" />
             </div>
-            {copied && <p className="text-xs text-green-600 mt-2">Copied!</p>}
-            <p className="text-xs text-gray-400 mt-3">
-              Share this ID with your staff to log in. Keep it safe.
+            <h1 className="text-3xl font-bold mb-2">Welcome to Softshape, {onboardResult.name}!</h1>
+            <p className="text-gray-500">Your restaurant is live and ready to serve.</p>
+          </div>
+
+          {/* Credentials card */}
+          <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <ShieldCheck size={20} className="text-green-600" /> Your Credentials
+            </h2>
+            <div className="bg-[#F8F9FA] border border-gray-200 rounded-2xl p-6 mb-4">
+              <p className="text-sm text-gray-500 mb-2">Restaurant Code</p>
+              <div className="flex items-center justify-between">
+                <span className="text-3xl font-black tracking-widest text-[#E53935]">{onboardResult.restaurantCode}</span>
+                <button
+                  onClick={handleCopyCode}
+                  className="p-2 rounded-lg hover:bg-gray-200 transition-all"
+                  title="Copy Restaurant Code"
+                >
+                  <Copy size={18} className={copied ? 'text-green-600' : 'text-gray-500'} />
+                </button>
+              </div>
+              {copied && <p className="text-xs text-green-600 mt-2">Copied!</p>}
+            </div>
+            <div className="grid grid-cols-1 gap-3 text-sm">
+              <div><span className="text-gray-400">Owner Email:</span> <span className="font-medium">{wizardData.owner.email}</span></div>
+            </div>
+            <p className="text-xs text-gray-400 mt-4 bg-yellow-50 border border-yellow-100 rounded-lg p-3">
+              Share the Restaurant Code with your cashiers and captains — they need it to log in.
             </p>
           </div>
 
+          {/* App links */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <a href="/admin" className="bg-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all">
+              <Store size={24} className="text-[#E53935] mb-3" />
+              <h3 className="font-bold text-sm">Admin Panel</h3>
+              <p className="text-xs text-gray-400 mt-1">Manage menu, staff, reports, and settings.</p>
+            </a>
+            <a href="/cashier" className="bg-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all">
+              <ShieldCheck size={24} className="text-[#E53935] mb-3" />
+              <h3 className="font-bold text-sm">Cashier Login</h3>
+              <p className="text-xs text-gray-400 mt-1">Process bills, payments, and daily settlements.</p>
+            </a>
+            <a href="/captain" className="bg-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all">
+              <Users size={24} className="text-[#E53935] mb-3" />
+              <h3 className="font-bold text-sm">Captain Login</h3>
+              <p className="text-xs text-gray-400 mt-1">Take orders, manage tables, and send KOTs.</p>
+            </a>
+          </div>
+
+          {/* Setup checklist */}
+          <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
+            <h2 className="text-lg font-bold mb-4">What was created</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.captains.length} captains added</div>
+              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.cashiers.length} cashiers added</div>
+              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.sections.length} sections created</div>
+              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {totalTables} tables created</div>
+              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.menu.categories.length} menu categories</div>
+              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> Plan: {wizardData.selectedPlan}</div>
+            </div>
+          </div>
+
+          {/* CTA */}
           <button
             onClick={handleGoToDashboard}
-            className="w-full py-4 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2"
+            className="w-full py-4 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2"
           >
-            Go to Dashboard
+            Go to Admin Dashboard
             <ArrowRight size={20} />
           </button>
         </div>

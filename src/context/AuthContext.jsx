@@ -1,42 +1,45 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(() => localStorage.getItem('tenant_token'));
+  const [token, setToken] = useState(() => localStorage.getItem('ss_token'));
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('tenant_user');
+    const saved = localStorage.getItem('ss_user');
     return saved ? JSON.parse(saved) : null;
   });
-  const [restaurantSlug, setRestaurantSlug] = useState(() => localStorage.getItem('tenant_slug'));
-  const [restaurantCode, setRestaurantCode] = useState(() => localStorage.getItem('tenant_restaurantCode'));
+  const [restaurant, setRestaurantState] = useState(() => {
+    const saved = localStorage.getItem('ss_restaurant');
+    return saved ? JSON.parse(saved) : null;
+  });
 
-  const setAuth = (newToken, newUser, newSlug, newCode) => {
+  const setAuth = ({ token: newToken, user: newUser, restaurant: newRestaurant }) => {
     setToken(newToken);
     setUser(newUser);
-    setRestaurantSlug(newSlug);
-    setRestaurantCode(newCode);
-    if (newToken) localStorage.setItem('tenant_token', newToken);
-    if (newUser) localStorage.setItem('tenant_user', JSON.stringify(newUser));
-    if (newSlug) localStorage.setItem('tenant_slug', newSlug);
-    if (newUser?.restaurantId) localStorage.setItem('tenant_restaurantId', newUser.restaurantId);
-    if (newCode || newUser?.restaurantCode) localStorage.setItem('tenant_restaurantCode', newCode || newUser?.restaurantCode);
+    setRestaurantState(newRestaurant);
+    if (newToken) localStorage.setItem('ss_token', newToken);
+    if (newUser) localStorage.setItem('ss_user', JSON.stringify(newUser));
+    if (newRestaurant) localStorage.setItem('ss_restaurant', JSON.stringify(newRestaurant));
+  };
+
+  const setRestaurant = (updatedRestaurant) => {
+    setRestaurantState(updatedRestaurant);
+    if (updatedRestaurant) {
+      localStorage.setItem('ss_restaurant', JSON.stringify(updatedRestaurant));
+    }
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
-    setRestaurantSlug(null);
-    setRestaurantCode(null);
-    localStorage.removeItem('tenant_token');
-    localStorage.removeItem('tenant_user');
-    localStorage.removeItem('tenant_slug');
-    localStorage.removeItem('tenant_restaurantId');
-    localStorage.removeItem('tenant_restaurantCode');
+    setRestaurantState(null);
+    localStorage.removeItem('ss_token');
+    localStorage.removeItem('ss_user');
+    localStorage.removeItem('ss_restaurant');
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, restaurantSlug, restaurantCode, setAuth, logout }}>
+    <AuthContext.Provider value={{ token, user, restaurant, setAuth, setRestaurant, logout }}>
       {children}
     </AuthContext.Provider>
   );

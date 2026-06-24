@@ -3,6 +3,11 @@
   --font-sans: 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
 }
 
+:root {
+  --color-primary: #6366f1;
+  --color-secondary: #8b5cf6;
+}
+
 * {
   box-sizing: border-box;
 }

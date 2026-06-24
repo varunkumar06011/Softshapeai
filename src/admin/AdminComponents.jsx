@@ -5291,10 +5291,158 @@ export function Pricing() {
 }
 
 export function SettingsPage() {
-  return <div className="p-6 bg-white border rounded-xl font-sans">
-    <h2 className="text-xl font-bold mb-4">Global Settings</h2>
-    <p className="text-sm text-gray-600">Configure outlet details, printers, and user permissions.</p>
-  </div>;
+  const { restaurant, setRestaurant } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState(() => ({
+    name: restaurant?.name || '',
+    address: restaurant?.address || '',
+    phone: restaurant?.phone || '',
+    email: restaurant?.email || '',
+    gstin: restaurant?.gstin || '',
+    receiptHeader: restaurant?.receiptHeader || '',
+    receiptSubHeader: restaurant?.receiptSubHeader || '',
+    themePrimary: restaurant?.themePrimary || '#6366f1',
+    themeSecondary: restaurant?.themeSecondary || '#8b5cf6',
+    logoUrl: restaurant?.logoUrl || '',
+    barUnitMl: restaurant?.barUnitMl ?? 30,
+    fullBottleMl: restaurant?.fullBottleMl ?? 750,
+  }));
+
+  const updateField = (key, value) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('ss_token');
+      const res = await fetch(`${API_BASE}/api/restaurant/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      setRestaurant(data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      alert(err.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fieldClass = "w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-[#E53935] focus:bg-white transition-all";
+  const labelClass = "text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-1 block";
+
+  return (
+    <div className="p-6 bg-white border rounded-2xl font-sans max-w-3xl mx-auto space-y-8">
+      <div>
+        <h2 className="text-2xl font-bold mb-1">Restaurant Settings</h2>
+        <p className="text-sm text-gray-500">Update your restaurant profile, branding, and receipt config.</p>
+      </div>
+
+      {/* Basic Info */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Basic Information</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Restaurant Name</label>
+            <input className={fieldClass} value={form.name} onChange={e => updateField('name', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>Phone</label>
+            <input className={fieldClass} value={form.phone} onChange={e => updateField('phone', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>Email</label>
+            <input className={fieldClass} value={form.email} onChange={e => updateField('email', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>GSTIN</label>
+            <input className={fieldClass} value={form.gstin} onChange={e => updateField('gstin', e.target.value)} maxLength={15} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelClass}>Address</label>
+            <input className={fieldClass} value={form.address} onChange={e => updateField('address', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Receipt Branding */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Receipt Branding</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Receipt Header (Line 1)</label>
+            <input className={fieldClass} value={form.receiptHeader} onChange={e => updateField('receiptHeader', e.target.value)} placeholder="e.g. YOUR RESTAURANT NAME" />
+          </div>
+          <div>
+            <label className={labelClass}>Receipt Sub-Header (Line 2)</label>
+            <input className={fieldClass} value={form.receiptSubHeader} onChange={e => updateField('receiptSubHeader', e.target.value)} placeholder="e.g. Since 1990 | Fine Dining" />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelClass}>Logo URL</label>
+            <input className={fieldClass} value={form.logoUrl} onChange={e => updateField('logoUrl', e.target.value)} placeholder="https://..." />
+          </div>
+        </div>
+      </div>
+
+      {/* Theme Colors */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Theme Colors</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-center gap-4">
+            <input type="color" className="w-12 h-12 rounded-xl border border-gray-200 cursor-pointer" value={form.themePrimary} onChange={e => updateField('themePrimary', e.target.value)} />
+            <div>
+              <label className={labelClass}>Primary Color</label>
+              <input className={fieldClass} value={form.themePrimary} onChange={e => updateField('themePrimary', e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <input type="color" className="w-12 h-12 rounded-xl border border-gray-200 cursor-pointer" value={form.themeSecondary} onChange={e => updateField('themeSecondary', e.target.value)} />
+            <div>
+              <label className={labelClass}>Secondary Color</label>
+              <input className={fieldClass} value={form.themeSecondary} onChange={e => updateField('themeSecondary', e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bar Config */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Bar Configuration</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Bar Unit (ml)</label>
+            <input type="number" className={fieldClass} value={form.barUnitMl} onChange={e => updateField('barUnitMl', Number(e.target.value))} />
+          </div>
+          <div>
+            <label className={labelClass}>Full Bottle (ml)</label>
+            <input type="number" className={fieldClass} value={form.fullBottleMl} onChange={e => updateField('fullBottleMl', Number(e.target.value))} />
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-8 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-bold transition-all disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+        {saved && <span className="text-sm font-bold text-green-600">Saved successfully!</span>}
+      </div>
+    </div>
+  );
 }
 
 export function BarTables() {

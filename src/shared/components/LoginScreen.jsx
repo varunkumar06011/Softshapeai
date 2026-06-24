@@ -40,7 +40,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.login(email.trim(), password, restaurantCode.trim());
+      const { user } = await authService.login(email.trim(), password, restaurantCode.trim());
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid credentials');
@@ -88,7 +88,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
+      const { user } = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid PIN');
