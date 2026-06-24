@@ -69,9 +69,7 @@ import { playChimeTone, unlockAudioContext } from '../services/audioService';
 
 
 
-const BAR_UNIT_ML = 30;
-
-const FULL_BOTTLE_ML = 750;
+const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 
 
 
@@ -5682,6 +5680,7 @@ export default function CaptainApp({ onLogout }) {
   );
 
 }
+
 
 
 

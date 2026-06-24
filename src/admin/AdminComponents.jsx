@@ -67,9 +67,8 @@ import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
 
-const BAR_UNIT_ML = 30;
-const FULL_BOTTLE_ML = 750;
-const BAR_FULL_BOTTLE_MULTIPLIER = 25;
+const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
+const BAR_FULL_BOTTLE_MULTIPLIER = Math.round(FULL_BOTTLE_ML / BAR_UNIT_ML);
 
 // Helper function to determine ml per unit for liquor items based on item name
 function getLiquorMlPerUnit(itemName, bottleSize) {
@@ -6035,4 +6034,5 @@ export function BarMenuPage() {
     </div>
   );
 }
+
 

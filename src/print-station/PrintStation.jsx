@@ -38,6 +38,7 @@ import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getBarId } from '../services/barApiConfig';
 import { getVenueId } from '../services/venueApiConfig';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 // ── Configurable print rooms (for running separate PrintStations per outlet) ──
 // Usage: /print-station?rooms=bar-001,venue-001   (only bar + venue)
@@ -152,6 +153,28 @@ try {
 
 
 
+
+// ── Backend printer config override ──────────────────────────────────────────
+
+try {
+  const config = getRestaurantConfig();
+  if (config.printerConfig && typeof config.printerConfig === 'object') {
+    const pc = config.printerConfig;
+    if (pc.kitchen)           KITCHEN_PRINTER           = pc.kitchen;
+    if (pc.bar)               BAR_PRINTER               = pc.bar;
+    if (pc.billing)           BILLING_PRINTER           = pc.billing;
+    if (pc.restaurantKitchen) RESTAURANT_KITCHEN_PRINTER = pc.restaurantKitchen;
+    if (pc.kotFamily)         KOT_FAMILY_PRINTER        = pc.kotFamily;
+    if (pc.billing)           DINE_IN_BILL_PRINTER      = pc.billing;
+    if (pc.kotPrinter)        KOT_PRINTER               = pc.kotPrinter;
+  }
+} catch {
+  // ignore — fall back to env/localStorage values
+}
+
+// ── Receipt header from backend config ─────────────────────────────────────
+
+const RECEIPT_HEADER = getRestaurantConfig().receiptHeader || 'RESTAURANT';
 // ── ESC/POS constants ────────────────────────────────────────────────────────
 
 const INIT = '\x1B\x40';
@@ -229,11 +252,11 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
   const venueLabel = sectionTag === 'venue-family-restaurant'
 
-    ? 'V GRAND FAMILY RESTAURANT'
+    ? RECEIPT_HEADER
 
     : (sectionTag === 'venue-restaurant-parcel'
 
-        ? 'V GRAND FAMILY RESTAURANT'
+        ? RECEIPT_HEADER
 
         : label);
 
@@ -357,7 +380,7 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
 
-    ? 'V GRAND FAMILY RESTAURANT'
+    ? RECEIPT_HEADER
 
     : 'CANCEL ITEM';
 
@@ -462,7 +485,7 @@ function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, s
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
 
-    ? 'V GRAND FAMILY RESTAURANT'
+    ? RECEIPT_HEADER
 
     : 'CANCEL ORDER';
 
@@ -584,10 +607,10 @@ function padRight(left, right, width = LINE_NORMAL) {
 function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag }) {
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
-    ? 'V GRAND FAMILY RESTAURANT'
+    ? RECEIPT_HEADER
     : (restaurantId === getBarId() ? 'BAR ORDER'
-      : (restaurantId === getVenueId() ? 'V GRAND FAMILY RESTAURANT'
-        : 'SOFTSHAPE RESTAURANT'));
+      : (restaurantId === getVenueId() ? RECEIPT_HEADER
+        : RECEIPT_HEADER));
 
   const cmds = [
 
@@ -759,6 +782,9 @@ export default function PrintStation() {
 
   const hasJoinedRef = useRef(false);
 
+
+  const restaurantConfig = getRestaurantConfig();
+  const RECEIPT_HEADER = restaurantConfig.receiptHeader || 'RESTAURANT';
   // ── Load printedKotIds from sessionStorage on mount ───────────────────────
   useEffect(() => {
     try {
@@ -1727,4 +1753,5 @@ export default function PrintStation() {
   );
 
 }
+
 

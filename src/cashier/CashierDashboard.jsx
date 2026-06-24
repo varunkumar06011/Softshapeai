@@ -39,9 +39,9 @@ import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
-const BAR_UNIT_ML = 30;
-const FULL_BOTTLE_ML = 750;
+const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 const TXN_PAGE_SIZE = 100;
 
 // Background queue for final bill + inventory deduction

@@ -1,15 +1,11 @@
-const DEFAULT_API_BASE = "https://softshape-backend.onrender.com";
-
 /** Strip trailing slashes — avoids https://host.app//api/... (breaks DNS/fetch) */
 export function normalizeApiBase(url) {
-  if (!url || typeof url !== "string") return DEFAULT_API_BASE;
+  if (!url || typeof url !== "string") return "";
   return url.trim().replace(/\/+$/, "");
 }
 
 export const API_BASE = normalizeApiBase(
-  import.meta.env.VITE_API_URL ||
-    import.meta.env.VITE_BACKEND_URL ||
-    DEFAULT_API_BASE
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ""
 );
 
 /** Build API URL: base + path (path must start with /) */
@@ -53,4 +49,3 @@ export async function apiFetch(path, options = {}) {
   return response.json();
 }
 
-console.log("[API] Backend base:", API_BASE);

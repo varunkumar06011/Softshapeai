@@ -1,8 +1,6 @@
 function getApiBase() {
   return (
-    import.meta.env.VITE_API_URL ||
-    import.meta.env.VITE_BACKEND_URL ||
-    'https://softshape-backend.onrender.com'
+    import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
   );
 }
 
@@ -28,6 +26,20 @@ export const authService = {
     if (data.user?.restaurantCode || data.restaurant?.restaurantCode) {
       localStorage.setItem('tenant_restaurantCode', data.user?.restaurantCode || data.restaurant?.restaurantCode);
     }
+    if (data.restaurant) {
+      localStorage.setItem('tenant_restaurant_config', JSON.stringify({
+        logoUrl: data.restaurant.logoUrl ?? null,
+        receiptHeader: data.restaurant.receiptHeader ?? null,
+        receiptSubHeader: data.restaurant.receiptSubHeader ?? null,
+        themePrimary: data.restaurant.themePrimary ?? null,
+        printerConfig: data.restaurant.printerConfig ?? null,
+        barUnitMl: data.restaurant.barUnitMl ?? 30,
+        fullBottleMl: data.restaurant.fullBottleMl ?? 750,
+        plan: data.restaurant.plan ?? 'starter',
+        billingStatus: data.restaurant.billingStatus ?? 'trialing',
+        features: data.restaurant.features ?? null,
+      }));
+    }
     return data.user;
   },
 
@@ -52,6 +64,20 @@ export const authService = {
     if (data.user?.restaurantCode || data.restaurant?.restaurantCode) {
       localStorage.setItem('tenant_restaurantCode', data.user?.restaurantCode || data.restaurant?.restaurantCode);
     }
+    if (data.restaurant) {
+      localStorage.setItem('tenant_restaurant_config', JSON.stringify({
+        logoUrl: data.restaurant.logoUrl ?? null,
+        receiptHeader: data.restaurant.receiptHeader ?? null,
+        receiptSubHeader: data.restaurant.receiptSubHeader ?? null,
+        themePrimary: data.restaurant.themePrimary ?? null,
+        printerConfig: data.restaurant.printerConfig ?? null,
+        barUnitMl: data.restaurant.barUnitMl ?? 30,
+        fullBottleMl: data.restaurant.fullBottleMl ?? 750,
+        plan: data.restaurant.plan ?? 'starter',
+        billingStatus: data.restaurant.billingStatus ?? 'trialing',
+        features: data.restaurant.features ?? null,
+      }));
+    }
     return data.user;
   },
 
@@ -72,6 +98,7 @@ export const authService = {
     localStorage.removeItem('tenant_restaurantId');
     localStorage.removeItem('tenant_slug');
     localStorage.removeItem('tenant_restaurantCode');
+    localStorage.removeItem('tenant_restaurant_config');
   },
 
   getToken() {
