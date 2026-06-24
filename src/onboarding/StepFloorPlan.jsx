@@ -21,11 +21,10 @@ const StepFloorPlan = ({ sections, tables, onChange, onNext, onBack }) => {
   };
 
   const handleTableChange = (sectionIndex, tableIndex, field, value) => {
-    const newTables = [...tables];
-    const tableIdx = tables.findIndex(t => t.sectionIndex === sectionIndex && tables.filter((t, i) => t.sectionIndex === sectionIndex && i <= tableIndex).length - 1 === tableIndex);
-    if (tableIdx !== -1) {
-      newTables[tableIdx] = { ...newTables[tableIdx], [field]: value };
-      onChange(sections, newTables);
+    const sectionTables = tables.filter(t => t.sectionIndex === sectionIndex);
+    const tableToUpdate = sectionTables[tableIndex];
+    if (tableToUpdate) {
+      onChange(sections, tables.map(t => t === tableToUpdate ? { ...t, [field]: value } : t));
     }
   };
 
