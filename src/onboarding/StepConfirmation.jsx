@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText } from 'lucide-react';
+import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Receipt, XCircle } from 'lucide-react';
 
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
@@ -112,46 +112,124 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error }) => 
         </div>
       </div>
 
-      {/* KOT Print Preview */}
-      <div className="bg-white rounded-xl p-5 space-y-3 border-2 border-dashed border-gray-200">
+      {/* Print Previews */}
+      <div className="space-y-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Printer size={18} className="text-[#E53935]" /> Sample KOT Print Preview
+          <Printer size={18} className="text-[#E53935]" /> Sample Print Formats
         </div>
-        <div className="bg-white border border-gray-300 rounded-lg p-4 font-mono text-xs text-gray-900 mx-auto" style={{ maxWidth: '280px' }}>
-          <div className="text-center border-b border-dashed border-gray-300 pb-2 mb-2">
-            <div className="font-bold text-sm uppercase">{restaurant.name || 'Your Restaurant'}</div>
-            <div className="text-gray-500">{firstSection}</div>
-          </div>
-          <div className="flex justify-between mb-2">
-            <span>Table: <strong>T{firstTable}</strong></span>
-            <span>KOT #001</span>
-          </div>
-          <div className="flex justify-between mb-2 text-gray-500">
-            <span>{istDate}</span>
-            <span>{istTime}</span>
-          </div>
-          <div className="border-t border-dashed border-gray-300 pt-2">
-            <div className="flex justify-between font-semibold text-xs pb-1">
-              <span>Item</span>
-              <span>Qty</span>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* KOT Preview */}
+          <PrintPreview title="KOT" icon={<Printer size={14} />}>
+            <div className="text-center border-b border-dashed border-gray-300 pb-2 mb-2">
+              <div className="font-bold uppercase">{restaurant.name || 'Your Restaurant'}</div>
+              <div className="text-gray-500">{firstSection}</div>
             </div>
-            {sampleItems.map((item, i) => (
-              <div key={i} className="flex justify-between py-0.5">
-                <span className={item.isVeg ? 'text-green-700' : 'text-red-700'}>
-                  {item.isVeg ? 'V' : 'NV'} {item.name || `Item ${i + 1}`}
-                </span>
-                <span>1</span>
+            <div className="flex justify-between mb-2 text-xs">
+              <span>Table: <strong>T{firstTable}</strong></span>
+              <span>KOT #001</span>
+            </div>
+            <div className="flex justify-between mb-2 text-gray-500 text-xs">
+              <span>{istDate}</span>
+              <span>{istTime}</span>
+            </div>
+            <div className="border-t border-dashed border-gray-300 pt-2">
+              <div className="flex justify-between text-xs font-semibold pb-1">
+                <span>Item</span>
+                <span>Qty</span>
               </div>
-            ))}
-            {sampleItems.length === 0 && (
-              <div className="text-gray-400 text-center py-2">No items configured</div>
-            )}
-          </div>
-          <div className="border-t border-dashed border-gray-300 mt-2 pt-2 text-center text-gray-500">
-            --- Kitchen Order Ticket ---
-          </div>
+              {sampleItems.map((item, i) => (
+                <div key={i} className="flex justify-between text-xs py-0.5">
+                  <span className={item.isVeg ? 'text-green-700' : 'text-red-700'}>
+                    {item.isVeg ? 'V' : 'NV'} {item.name || `Item ${i + 1}`}
+                  </span>
+                  <span>1</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-dashed border-gray-300 mt-2 pt-2 text-center text-gray-500 text-xs">
+              --- Kitchen Order Ticket ---
+            </div>
+          </PrintPreview>
+
+          {/* Final Bill Preview */}
+          <PrintPreview title="Final Bill" icon={<Receipt size={14} />}>
+            <div className="text-center border-b border-dashed border-gray-300 pb-2 mb-2">
+              <div className="font-bold uppercase">{restaurant.name || 'Your Restaurant'}</div>
+              <div className="text-gray-500 text-xs">{restaurant.address || 'Restaurant Address'}</div>
+              <div className="text-gray-500 text-xs">GSTIN: {restaurant.gstin || 'N/A'}</div>
+            </div>
+            <div className="flex justify-between mb-2 text-xs text-gray-500">
+              <span>Table: T{firstTable}</span>
+              <span>{istDate} {istTime}</span>
+            </div>
+            <div className="border-t border-dashed border-gray-300 pt-2">
+              <div className="flex justify-between text-xs font-semibold pb-1">
+                <span>Item</span>
+                <span>Amount</span>
+              </div>
+              {sampleItems.map((item, i) => (
+                <div key={i} className="flex justify-between text-xs py-0.5">
+                  <span>{item.name || `Item ${i + 1}`} x 1</span>
+                  <span>₹{item.price || 0}</span>
+                </div>
+              ))}
+              <div className="border-t border-dashed border-gray-300 mt-2 pt-2 space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span>Subtotal</span>
+                  <span>₹{sampleItems.reduce((sum, item) => sum + (item.price || 0), 0)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span>GST (5%)</span>
+                  <span>₹{(sampleItems.reduce((sum, item) => sum + (item.price || 0), 0) * 0.05).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold">
+                  <span>Total</span>
+                  <span>₹{(sampleItems.reduce((sum, item) => sum + (item.price || 0), 0) * 1.05).toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-dashed border-gray-300 mt-2 pt-2 text-center text-gray-500 text-xs">
+              Thank you! Visit again.
+            </div>
+          </PrintPreview>
+
+          {/* Cancel Bill Preview */}
+          <PrintPreview title="Cancel Bill" icon={<XCircle size={14} />}>
+            <div className="text-center border-b border-dashed border-gray-300 pb-2 mb-2">
+              <div className="font-bold uppercase text-red-700">CANCELLED</div>
+              <div className="font-bold uppercase">{restaurant.name || 'Your Restaurant'}</div>
+            </div>
+            <div className="flex justify-between mb-2 text-xs text-gray-500">
+              <span>Table: T{firstTable}</span>
+              <span>{istDate} {istTime}</span>
+            </div>
+            <div className="border-t border-dashed border-gray-300 pt-2">
+              <div className="flex justify-between text-xs font-semibold pb-1">
+                <span>Voided Item</span>
+                <span>Qty</span>
+              </div>
+              {sampleItems.slice(0, 2).map((item, i) => (
+                <div key={i} className="flex justify-between text-xs py-0.5">
+                  <span className="line-through text-red-700">
+                    {item.name || `Item ${i + 1}`}
+                  </span>
+                  <span>1</span>
+                </div>
+              ))}
+              <div className="border-t border-dashed border-gray-300 mt-2 pt-2 text-xs text-center text-red-700">
+                Reason: Customer request
+              </div>
+              <div className="text-xs text-center text-gray-500 mt-1">
+                Cancelled by: {captains[0]?.name || 'Captain'}
+              </div>
+            </div>
+            <div className="border-t border-dashed border-gray-300 mt-2 pt-2 text-center text-gray-500 text-xs">
+              --- Void/Cancel Bill ---
+            </div>
+          </PrintPreview>
         </div>
-        <p className="text-xs text-gray-400 text-center">This is how your kitchen order tickets will appear when printed</p>
+        <p className="text-xs text-gray-400 text-center">These are how your kitchen, final, and cancel bills will appear when printed</p>
       </div>
 
       {/* Action Buttons */}
@@ -184,5 +262,19 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error }) => 
     </div>
   );
 };
+
+function PrintPreview({ title, icon, children }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+      <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-700">
+        <span className="text-[#E53935]">{icon}</span>
+        {title}
+      </div>
+      <div className="bg-white border border-gray-300 rounded-lg p-3 font-mono text-xs text-gray-900 mx-auto" style={{ maxWidth: '220px' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default StepConfirmation;
