@@ -1,5 +1,12 @@
 import React from 'react';
-import { Building2, Globe, Phone, Mail, FileText } from 'lucide-react';
+import { Building2, Globe, Phone, Mail, FileText, Store, Layers } from 'lucide-react';
+
+const RESTAURANT_TYPES = [
+  { value: 'DINE_IN', label: 'Dine-in Restaurant' },
+  { value: 'BAR_LOUNGE', label: 'Bar & Lounge' },
+  { value: 'CAFE', label: 'Cafe' },
+  { value: 'CLOUD_KITCHEN', label: 'Cloud Kitchen' },
+];
 
 const StepRestaurant = ({ data, onChange, onNext }) => {
   const handleChange = (field, value) => {
@@ -12,7 +19,8 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
   const slug = generateSlug(data.name || '');
 
-  const isValid = data.name.length >= 2 && data.phone.length >= 10;
+  const gstinValid = /^[0-9A-Z]{15}$/.test(data.gstin || '');
+  const isValid = data.name.length >= 2 && data.phone.length >= 10 && gstinValid && data.restaurantType && data.outletCount >= 1;
 
   return (
     <div className="space-y-6">
@@ -90,18 +98,64 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-2">
-            GSTIN
+            GSTIN *
           </label>
           <div className="relative">
             <FileText size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
             <input
               type="text"
               value={data.gstin}
-              onChange={(e) => handleChange('gstin', e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
+              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 uppercase"
               placeholder="e.g., 29ABCDE1234F1Z5"
+              maxLength={15}
             />
           </div>
+          {data.gstin && !gstinValid && (
+            <p className="text-xs text-red-600 mt-1">GSTIN must be exactly 15 alphanumeric characters</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-2">
+            Restaurant Type *
+          </label>
+          <div className="relative">
+            <Store size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+            <select
+              value={data.restaurantType || ''}
+              onChange={(e) => handleChange('restaurantType', e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+            >
+              <option value="">Select type...</option>
+              {RESTAURANT_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-2">
+            Number of Outlets *
+          </label>
+          <div className="relative">
+            <Layers size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+            <select
+              value={data.outletCount || 1}
+              onChange={(e) => handleChange('outletCount', parseInt(e.target.value))}
+              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                <option key={n} value={n}>{n} Outlet{n > 1 ? 's' : ''}</option>
+              ))}
+            </select>
+          </div>
+          {data.outletCount > 1 && (
+            <p className="text-xs text-gray-400 mt-1">
+              You'll configure each outlet's floor plan and menu in a later step.
+            </p>
+          )}
         </div>
       </div>
 

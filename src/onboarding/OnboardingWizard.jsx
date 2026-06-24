@@ -8,18 +8,21 @@ import StepStaff from './StepStaff';
 import StepFloorPlan from './StepFloorPlan';
 import StepMenu from './StepMenu';
 import StepPlan from './StepPlan';
+import StepOutlets from './StepOutlets';
+import StepConfirmation from './StepConfirmation';
 import { ChevronLeft, ChevronRight, CheckCircle2, Copy, ArrowRight } from 'lucide-react';
 
 const STORAGE_KEY = 'onboarding_wizard';
 
 const defaultWizardData = {
-  restaurant: { name: '', address: '', phone: '', email: '', gstin: '' },
+  restaurant: { name: '', address: '', phone: '', email: '', gstin: '', restaurantType: '', outletCount: 1 },
   owner: { name: '', email: '', password: '', confirmPassword: '' },
   captains: [{ name: '', pin: '' }],
   cashiers: [{ name: '', pin: '' }],
   sections: [{ name: '' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
+  outlets: [],
   selectedPlan: 'starter'
 };
 
@@ -49,21 +52,37 @@ const OnboardingWizard = () => {
     } catch { /* ignore */ }
   }, [currentStep, wizardData]);
 
-  const steps = [
-    { number: 1, title: 'Restaurant Info' },
-    { number: 2, title: 'Owner Account' },
-    { number: 3, title: 'Staff Setup' },
-    { number: 4, title: 'Floor Plan' },
-    { number: 5, title: 'Menu Setup' },
-    { number: 6, title: 'Choose Plan' }
-  ];
+  const hasMultipleOutlets = wizardData.restaurant.outletCount > 1;
+
+  const steps = hasMultipleOutlets
+    ? [
+        { number: 1, title: 'Restaurant Info' },
+        { number: 2, title: 'Owner Account' },
+        { number: 3, title: 'Staff Setup' },
+        { number: 4, title: 'Floor Plan' },
+        { number: 5, title: 'Menu Setup' },
+        { number: 6, title: 'Outlets' },
+        { number: 7, title: 'Choose Plan' },
+        { number: 8, title: 'Confirm' }
+      ]
+    : [
+        { number: 1, title: 'Restaurant Info' },
+        { number: 2, title: 'Owner Account' },
+        { number: 3, title: 'Staff Setup' },
+        { number: 4, title: 'Floor Plan' },
+        { number: 5, title: 'Menu Setup' },
+        { number: 6, title: 'Choose Plan' },
+        { number: 7, title: 'Confirm' }
+      ];
+
+  const maxStep = steps.length;
 
   const updateWizardData = (section, data) => {
     setWizardData(prev => ({ ...prev, [section]: data }));
   };
 
   const handleNext = () => {
-    if (currentStep < 6) {
+    if (currentStep < maxStep) {
       setCurrentStep(prev => prev + 1);
     }
   };
@@ -76,7 +95,7 @@ const OnboardingWizard = () => {
     }
   };
 
-  const handleSubmit = async (plan) => {
+  const handleSubmit = async () => {
     setLoading(true);
     setError(null);
 
@@ -100,6 +119,26 @@ const OnboardingWizard = () => {
       if (cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
       if (cleanMenu.categories.length === 0) { setError('Add at least one menu category with items'); setLoading(false); return; }
 
+      // Sanitize outlets if multi-outlet
+      let cleanOutlets = [];
+      if (wizardData.restaurant.outletCount > 1 && wizardData.outlets && wizardData.outlets.length > 0) {
+        cleanOutlets = wizardData.outlets.map(o => ({
+          name: o.name.trim(),
+          restaurantType: o.restaurantType,
+          sections: o.sections.filter(s => s.name.trim().length >= 1),
+          tables: o.tables,
+          menu: {
+            categories: o.menu.categories
+              .filter(cat => cat.name.trim().length >= 1)
+              .map(cat => ({
+                ...cat,
+                items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
+              }))
+              .filter(cat => cat.items.length > 0)
+          }
+        })).filter(o => o.sections.length > 0 && o.menu.categories.length > 0);
+      }
+
       const { confirmPassword, ...ownerData } = wizardData.owner;
 
       const data = await apiFetch('/api/onboard', {
@@ -112,13 +151,19 @@ const OnboardingWizard = () => {
           sections: cleanSections,
           tables: wizardData.tables,
           menu: cleanMenu,
-          plan
+          outlets: cleanOutlets.length > 0 ? cleanOutlets : undefined,
+          plan: wizardData.selectedPlan
         })
       });
 
       sessionStorage.removeItem(STORAGE_KEY);
-      setAuth(data.token, data.user, data.restaurant.slug);
-      navigate('/admin/qr-codes');
+      setOnboardResult({
+        restaurantCode: data.restaurant.restaurantCode,
+        name: data.restaurant.name,
+        token: data.token,
+        user: data.user,
+        slug: data.restaurant.slug
+      });
     } catch (err) {
       setError(err.message || 'Failed to create restaurant');
     } finally {
@@ -127,6 +172,9 @@ const OnboardingWizard = () => {
   };
 
   const handleGoToDashboard = () => {
+    if (onboardResult?.token) {
+      setAuth(onboardResult.token, onboardResult.user, onboardResult.slug);
+    }
     navigate('/admin/dashboard');
   };
 
@@ -139,21 +187,46 @@ const OnboardingWizard = () => {
   };
 
   const renderStep = () => {
-    switch (currentStep) {
-      case 1:
-        return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
-      case 2:
-        return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
-      case 3:
-        return <StepStaff captains={wizardData.captains} cashiers={wizardData.cashiers} onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }} onNext={handleNext} onBack={handleBack} />;
-      case 4:
-        return <StepFloorPlan sections={wizardData.sections} tables={wizardData.tables} onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }} onNext={handleNext} onBack={handleBack} />;
-      case 5:
-        return <StepMenu data={wizardData.menu} onChange={(data) => updateWizardData('menu', data)} onNext={handleNext} onBack={handleBack} />;
-      case 6:
-        return <StepPlan selectedPlan={wizardData.selectedPlan} onSelect={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
-      default:
-        return null;
+    if (hasMultipleOutlets) {
+      switch (currentStep) {
+        case 1:
+          return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
+        case 2:
+          return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
+        case 3:
+          return <StepStaff captains={wizardData.captains} cashiers={wizardData.cashiers} onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }} onNext={handleNext} onBack={handleBack} />;
+        case 4:
+          return <StepFloorPlan sections={wizardData.sections} tables={wizardData.tables} onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }} onNext={handleNext} onBack={handleBack} />;
+        case 5:
+          return <StepMenu data={wizardData.menu} onChange={(data) => updateWizardData('menu', data)} onNext={handleNext} onBack={handleBack} />;
+        case 6:
+          return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
+        case 7:
+          return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
+        case 8:
+          return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
+        default:
+          return null;
+      }
+    } else {
+      switch (currentStep) {
+        case 1:
+          return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
+        case 2:
+          return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
+        case 3:
+          return <StepStaff captains={wizardData.captains} cashiers={wizardData.cashiers} onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }} onNext={handleNext} onBack={handleBack} />;
+        case 4:
+          return <StepFloorPlan sections={wizardData.sections} tables={wizardData.tables} onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }} onNext={handleNext} onBack={handleBack} />;
+        case 5:
+          return <StepMenu data={wizardData.menu} onChange={(data) => updateWizardData('menu', data)} onNext={handleNext} onBack={handleBack} />;
+        case 6:
+          return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
+        case 7:
+          return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
+        default:
+          return null;
+      }
     }
   };
 
@@ -205,7 +278,7 @@ const OnboardingWizard = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-2">Set Up Your Restaurant</h1>
-          <p className="text-gray-500">Complete these 6 steps to get started</p>
+          <p className="text-gray-500">Complete these {maxStep} steps to get started</p>
         </div>
 
         {/* Progress Bar */}
@@ -218,7 +291,7 @@ const OnboardingWizard = () => {
                 }`}>
                   {currentStep > step.number ? '✓' : step.number}
                 </div>
-                {step.number < 6 && (
+                {step.number < maxStep && (
                   <div className={`w-16 h-1 mx-2 ${
                     currentStep > step.number ? 'bg-[#E53935]' : 'bg-gray-200'
                   }`} />
@@ -241,7 +314,7 @@ const OnboardingWizard = () => {
         </div>
 
         {/* Navigation (for steps that don't have their own) */}
-        {currentStep !== 6 && (
+        {currentStep !== maxStep && (
           <div className="flex justify-between mt-6">
             <button
               onClick={handleBack}
@@ -250,7 +323,7 @@ const OnboardingWizard = () => {
               <ChevronLeft size={20} />
               Back
             </button>
-            {currentStep !== 1 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && (
+            {currentStep !== 1 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && !(hasMultipleOutlets && currentStep === 6) && (
               <button
                 onClick={handleNext}
                 className="flex items-center gap-2 px-6 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl transition-all"
