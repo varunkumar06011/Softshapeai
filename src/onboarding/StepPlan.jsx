@@ -1,38 +1,68 @@
-import React, { useState } from 'react';
-import { CheckCircle, ArrowRight, Sparkles, Store } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
+import { apiUrl } from '../services/apiConfig';
 
 const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading, error }) => {
   const [localPlan, setLocalPlan] = useState(selectedPlan);
+  const [quotes, setQuotes] = useState({});
+
+  useEffect(() => {
+    const fetchQuotes = async () => {
+      try {
+        const [starterRes, proRes] = await Promise.all([
+          fetch(apiUrl('/api/onboard/pricing/quote'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: 'starter', numberOfOutlets: outletCount })
+          }).then(r => r.json()),
+          fetch(apiUrl('/api/onboard/pricing/quote'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: 'pro', numberOfOutlets: outletCount })
+          }).then(r => r.json()),
+        ]);
+        setQuotes({ starter: starterRes, pro: proRes });
+      } catch (err) {
+        setQuotes({});
+      }
+    };
+    fetchQuotes();
+  }, [outletCount]);
 
   const basePlans = [
     {
       id: 'starter',
       name: 'Starter',
-      basePrice: 999,
-      includedOutlets: 1,
       features: ['1 Outlet Included', '20 Tables', '3 Captains', 'Email Support']
     },
     {
       id: 'pro',
       name: 'Pro',
-      basePrice: 2499,
-      includedOutlets: 3,
-      features: ['3 Outlets Included', 'Unlimited Tables', 'Unlimited Captains', 'Priority Support']
+      features: ['Unlimited Tables', 'Unlimited Captains', 'Priority Support']
     },
     {
       id: 'enterprise',
       name: 'Enterprise',
-      basePrice: null,
-      includedOutlets: 999,
       features: ['Unlimited Outlets', 'Unlimited Tables', 'Unlimited Captains', 'Dedicated Support', 'Custom Pricing']
     }
   ];
 
-  const computePrice = (plan) => {
-    if (plan.basePrice === null) return 'Custom';
-    if (outletCount <= plan.includedOutlets) return `₹${plan.basePrice.toLocaleString('en-IN')}/mo`;
-    const extra = (outletCount - plan.includedOutlets) * 500;
-    return `₹${(plan.basePrice + extra).toLocaleString('en-IN')}/mo`;
+  const formatPrice = (planId) => {
+    if (planId === 'enterprise') return 'Custom';
+    const q = quotes[planId];
+    if (!q || q.isCustomQuote) return '—';
+    return `₹${q.totalMonthly.toLocaleString('en-IN')}/mo`;
+  };
+
+  const formatBreakdown = (planId) => {
+    if (planId === 'enterprise') return null;
+    const q = quotes[planId];
+    if (!q || q.isCustomQuote) return null;
+    if (q.extraOutlets > 0) {
+      const perExtra = q.extraOutletCost / q.extraOutlets;
+      return `Base ₹${q.basePrice.toLocaleString('en-IN')} + ${q.extraOutlets} extra × ₹${perExtra.toLocaleString('en-IN')}/mo`;
+    }
+    return 'Base price';
   };
 
   const handleSelect = (planId) => {
@@ -65,7 +95,8 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {basePlans.map((plan) => {
-          const price = computePrice(plan);
+          const price = formatPrice(plan.id);
+          const breakdown = formatBreakdown(plan.id);
           const isSelected = localPlan === plan.id;
           return (
             <div
@@ -86,10 +117,8 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
               <div className="text-center mb-6">
                 <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
                 <p className="text-2xl font-bold text-[#E53935]">{price}</p>
-                {plan.basePrice !== null && outletCount > plan.includedOutlets && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Base ₹{plan.basePrice.toLocaleString('en-IN')} + ₹{(outletCount - plan.includedOutlets) * 500}/outlet
-                  </p>
+                {breakdown && (
+                  <p className="text-xs text-gray-400 mt-1">{breakdown}</p>
                 )}
               </div>
 
@@ -136,7 +165,7 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
         >
           {loading ? 'Processing...' : (
             <>
-              Continue to Confirmation
+              Continue to Review
               <ArrowRight size={18} />
             </>
           )}

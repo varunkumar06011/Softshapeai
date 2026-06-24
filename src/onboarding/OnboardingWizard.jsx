@@ -9,6 +9,7 @@ import StepStaff from './StepStaff';
 import StepFloorPlan from './StepFloorPlan';
 import StepMenu from './StepMenu';
 import StepPlan from './StepPlan';
+import StepPayment from './StepPayment';
 import StepOutlets from './StepOutlets';
 import StepConfirmation from './StepConfirmation';
 import { ChevronLeft, ChevronRight, CheckCircle2, Copy, ArrowRight } from 'lucide-react';
@@ -24,7 +25,9 @@ const defaultWizardData = {
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
   outlets: [],
-  selectedPlan: 'starter'
+  selectedPlan: 'starter',
+  paymentReference: null,
+  sessionId: crypto.randomUUID?.() || Date.now().toString(36)
 };
 
 function loadSavedState() {
@@ -64,7 +67,8 @@ const OnboardingWizard = () => {
         { number: 5, title: 'Menu Setup' },
         { number: 6, title: 'Outlets' },
         { number: 7, title: 'Choose Plan' },
-        { number: 8, title: 'Confirm' }
+        { number: 8, title: 'Payment' },
+        { number: 9, title: 'Confirm' }
       ]
     : [
         { number: 1, title: 'Restaurant Info' },
@@ -73,7 +77,8 @@ const OnboardingWizard = () => {
         { number: 4, title: 'Floor Plan' },
         { number: 5, title: 'Menu Setup' },
         { number: 6, title: 'Choose Plan' },
-        { number: 7, title: 'Confirm' }
+        { number: 7, title: 'Payment' },
+        { number: 8, title: 'Confirm' }
       ];
 
   const maxStep = steps.length;
@@ -153,7 +158,8 @@ const OnboardingWizard = () => {
           tables: wizardData.tables,
           menu: cleanMenu,
           outlets: cleanOutlets.length > 0 ? cleanOutlets : undefined,
-          plan: wizardData.selectedPlan
+          plan: wizardData.selectedPlan,
+          paymentReference: wizardData.paymentReference
         })
       });
 
@@ -212,6 +218,8 @@ const OnboardingWizard = () => {
         case 7:
           return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
         case 8:
+          return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
+        case 9:
           return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
         default:
           return null;
@@ -231,6 +239,8 @@ const OnboardingWizard = () => {
         case 6:
           return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
         case 7:
+          return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
+        case 8:
           return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
         default:
           return null;
@@ -331,7 +341,7 @@ const OnboardingWizard = () => {
               <ChevronLeft size={20} />
               Back
             </button>
-            {currentStep !== 1 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && !(hasMultipleOutlets && currentStep === 6) && (
+            {currentStep !== 1 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && !(hasMultipleOutlets && currentStep === 6) && currentStep !== 7 && currentStep !== 8 && !(hasMultipleOutlets && currentStep === 7) && (
               <button
                 onClick={handleNext}
                 className="flex items-center gap-2 px-6 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl transition-all"

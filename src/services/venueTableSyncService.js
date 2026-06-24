@@ -5,6 +5,7 @@ import { getVenueId } from "./venueApiConfig";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { apiUrl } from "./apiConfig";
 import { getVenueTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { useOutlet } from "../context/OutletContext";
 
 function isRecentlyTerminated(tableId) {
   try {
@@ -329,6 +330,8 @@ function acquireSocket(handlers) {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useVenueTableSync() {
+  const { enabledModules } = useOutlet();
+  const venueEnabled = enabledModules?.venue !== false;
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
     if (cached.length > 0) {
@@ -486,6 +489,7 @@ export function useVenueTableSync() {
   }, []);
 
   useEffect(() => {
+    if (!venueEnabled) return;
     loadTables();
 
     const releaseSocket = acquireSocket({

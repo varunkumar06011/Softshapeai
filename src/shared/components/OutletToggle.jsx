@@ -3,7 +3,7 @@ import { useOutlet } from '../../context/OutletContext';
 import { X, Lock } from 'lucide-react';
 
 export default function OutletToggle({ className = '', requireAuth = false }) {
-  const { outlet, switchOutlet } = useOutlet();
+  const { outlet, switchOutlet, enabledModules } = useOutlet();
   const [showModal, setShowModal] = useState(false);
   const [pendingOutlet, setPendingOutlet] = useState(null);
   const [password, setPassword] = useState('');
@@ -45,6 +45,7 @@ export default function OutletToggle({ className = '', requireAuth = false }) {
           <span className="text-base sm:text-lg">🍽</span>
           <span className="hidden xs:inline">Restaurant</span>
         </button>
+        {enabledModules?.bar !== false && (
         <button
           onClick={() => handleToggle('bar')}
           className={`px-2.5 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
@@ -56,6 +57,7 @@ export default function OutletToggle({ className = '', requireAuth = false }) {
           <span className="text-base sm:text-lg">🍺</span>
           <span className="hidden xs:inline">Bar</span>
         </button>
+        )}
       </div>
 
       {showModal && (

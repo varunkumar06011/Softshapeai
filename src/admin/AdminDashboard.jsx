@@ -81,7 +81,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
   const { setTables } = useTableSync();
-  const { outlet } = useOutlet();
+  const { outlet, enabledModules } = useOutlet();
   const socket = useSocket(outlet === 'bar' ? getBarId() : getCurrentRestaurantId());
 
   const loadStats = useCallback(async () => {
@@ -178,9 +178,19 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     };
   }, [socket, outlet, loadStats]);
 
-  const displayNavItems = role === 'manager'
-    ? navItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
+  const moduleGatedNavItems = enabledModules
+    ? navItems.filter(([key]) => {
+        if (key === 'specials') return true;
+        if (key === 'surveillance') return enabledModules.surveillance === true;
+        if (key === 'inventory') return enabledModules.inventory !== false;
+        if (key === 'pricing') return enabledModules.pricing !== false;
+        return enabledModules[key] !== false;
+      })
     : navItems;
+
+  const displayNavItems = role === 'manager'
+    ? moduleGatedNavItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
+    : moduleGatedNavItems;
 
   const title = displayNavItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 

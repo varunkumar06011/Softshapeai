@@ -19,7 +19,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
   const slug = generateSlug(data.name || '');
 
-  const gstinValid = /^[0-9A-Z]{15}$/.test(data.gstin || '');
+  const gstinValid = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(data.gstin || '');
   const isValid = data.name.length >= 2 && data.phone.length >= 10 && gstinValid && data.restaurantType && data.outletCount >= 1;
 
   return (
@@ -112,7 +112,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             />
           </div>
           {data.gstin && !gstinValid && (
-            <p className="text-xs text-red-600 mt-1">GSTIN must be exactly 15 alphanumeric characters</p>
+            <p className="text-xs text-red-600 mt-1">GSTIN must be 15 characters in standard format (e.g., 29ABCDE1234F1Z5)</p>
           )}
         </div>
 
