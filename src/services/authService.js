@@ -1,3 +1,5 @@
+import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
+
 function getApiBase() {
   return (
     import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
@@ -15,6 +17,8 @@ export const authService = {
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials');
     }
+    // Remove stale un-scoped caches from any previous restaurant before storing new tenant
+    purgeLegacyCaches();
     localStorage.setItem('tenant_token', data.token);
     localStorage.setItem('tenant_user', JSON.stringify(data.user));
     if (data.user?.restaurantId) {
@@ -53,6 +57,8 @@ export const authService = {
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials');
     }
+    // Remove stale un-scoped caches from any previous restaurant before storing new tenant
+    purgeLegacyCaches();
     localStorage.setItem('tenant_token', data.token);
     localStorage.setItem('tenant_user', JSON.stringify(data.user));
     if (data.user?.restaurantId) {
@@ -93,6 +99,8 @@ export const authService = {
     } catch {
       // ignore network errors on logout
     }
+    const tenantId = localStorage.getItem('tenant_restaurantId');
+    clearTenantCaches(tenantId);
     localStorage.removeItem('tenant_token');
     localStorage.removeItem('tenant_user');
     localStorage.removeItem('tenant_restaurantId');

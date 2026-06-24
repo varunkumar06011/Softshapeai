@@ -1,6 +1,6 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
-import { BAR_MENU_CACHE_KEY } from "./barApiConfig";
-import { MENU_STORAGE_KEY } from "./menuService";
+import { getBarMenuCacheKey } from "../utils/cacheKeys";
+import { getMenuStorageKey } from "./menuService";
 
 export const DEFAULT_FOOD_IMG =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
@@ -410,16 +410,16 @@ export async function repairBarMenuCloudinaryUrls(apiBase, { force = false } = {
   return { repaired, total: toRepair.length, skipped: false, source: "client" };
 }
 
-export function readBarMenuCache() {
+export function readBarMenuCache(barId) {
   try {
-    const raw = localStorage.getItem(BAR_MENU_CACHE_KEY);
+    const raw = localStorage.getItem(getBarMenuCacheKey(barId));
     if (!raw) return [];
     const items = JSON.parse(raw);
     if (!Array.isArray(items)) return [];
 
     let restaurantItems = [];
     try {
-      const savedMenu = localStorage.getItem(MENU_STORAGE_KEY);
+      const savedMenu = localStorage.getItem(getMenuStorageKey());
       if (savedMenu) restaurantItems = JSON.parse(savedMenu);
     } catch {
       /* ignore */
@@ -450,9 +450,9 @@ export function readBarMenuCache() {
   }
 }
 
-export function writeBarMenuCache(items) {
+export function writeBarMenuCache(items, barId) {
   try {
-    localStorage.setItem(BAR_MENU_CACHE_KEY, JSON.stringify(items));
+    localStorage.setItem(getBarMenuCacheKey(barId), JSON.stringify(items));
   } catch {}
 }
 

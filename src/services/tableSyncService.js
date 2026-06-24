@@ -3,12 +3,13 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchTables, updateTableSession } from "./tableApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
+import { getTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
 
 
 function isRecentlyTerminated(tableId) {
   try {
-    const raw = localStorage.getItem('cashier_recently_terminated');
+    const raw = localStorage.getItem(getRecentlyTerminatedKey());
     const map = raw ? JSON.parse(raw) : {};
     const ts = map[tableId];
     return ts && Date.now() - ts < 30000; // 30 seconds — same as VenueSectionView
@@ -16,8 +17,6 @@ function isRecentlyTerminated(tableId) {
 }
 
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
-const TABLES_CACHE_KEY = "softshape_tables_cache_v6";
-
 export const TABLE_STATUS = {
   FREE: "Free",
   OCCUPIED: "Occupied",
@@ -39,8 +38,11 @@ function toFrontendStatus(backendStatus) {
 
 function readCache() {
   try {
-    localStorage.removeItem("softshape_tables_cache_v5"); // Clear contaminated cache
-    const raw = localStorage.getItem(TABLES_CACHE_KEY);
+    // Clear contaminated un-scoped legacy caches
+    LEGACY_UNSCOPED_KEYS.forEach(key => {
+      if (key.startsWith('softshape_tables_cache')) localStorage.removeItem(key);
+    });
+    const raw = localStorage.getItem(getTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
     // Deduplicate cached tables to prevent duplicate cards on load
     return parsed.filter((table, index, self) =>
@@ -53,7 +55,7 @@ function readCache() {
 
 function writeCache(tables) {
   try {
-    localStorage.setItem(TABLES_CACHE_KEY, JSON.stringify(tables));
+    localStorage.setItem(getTablesCacheKey(), JSON.stringify(tables));
   } catch {
     /* ignore storage failures */
   }

@@ -1,15 +1,25 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchMenuFromBackend } from "./menuService";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
-const STORAGE_KEY = "softshape_unified_menu";
+const BASE_STORAGE_KEY = "softshape_unified_menu";
+
+function getStorageKey(restaurantId = getCurrentRestaurantId()) {
+  return getScopedCacheKey(BASE_STORAGE_KEY, restaurantId);
+}
 
 // Initialize global menu from localStorage to allow instant rendering
 let globalMenu = null;
 try {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved = localStorage.getItem(getStorageKey());
   if (saved) {
     globalMenu = JSON.parse(saved);
   }
+  // Evict stale un-scoped unified menu cache
+  LEGACY_UNSCOPED_KEYS.forEach(k => {
+    if (k === BASE_STORAGE_KEY) localStorage.removeItem(k);
+  });
 } catch (e) {
   console.error("Failed to parse initial menu from local storage", e);
 }
@@ -49,7 +59,7 @@ async function loadInitialMenu() {
 
     try {
       const apiItems = await fetchMenuFromBackend();
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(getStorageKey());
       const localItems = saved ? JSON.parse(saved) : [];
 
       const localSpecials = localItems.filter((i) => i.isSpecial);
@@ -72,7 +82,7 @@ async function loadInitialMenu() {
 
     _isLoading = false;
     if (globalMenu?.length) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(globalMenu));
+      localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
     }
     notifySubscribers();
     dispatchMenuEvent(globalMenu ?? []);
@@ -88,7 +98,7 @@ async function loadInitialMenu() {
 export function useGlobalMenuSync() {
   const [menu, setMenu] = useState(() => {
     if (globalMenu) return globalMenu;
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(getStorageKey());
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -136,7 +146,7 @@ export function useGlobalMenuSync() {
     globalMenu = nextMenu;
     _isLoading = false;
     _loadError = null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMenu));
+    localStorage.setItem(getStorageKey(), JSON.stringify(nextMenu));
 
     setMenu(nextMenu);
     notifySubscribers();
@@ -166,7 +176,7 @@ export function useGlobalMenuSync() {
       globalMenu = [...activeSpecials, ...filteredBase];
       _loadError = null;
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(globalMenu));
+      localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
       setMenu(globalMenu);
       notifySubscribers();
       dispatchMenuEvent(globalMenu);
@@ -185,7 +195,7 @@ export function useGlobalMenuSync() {
   // Sync menu changes across different browser tabs
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
+      if (e.key === getStorageKey() && e.newValue) {
         try {
           const newMenu = JSON.parse(e.newValue);
           globalMenu = newMenu;
@@ -223,7 +233,7 @@ export function useGlobalMenuSync() {
             : item
         );
         globalMenu = patched;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(patched));
+        localStorage.setItem(getStorageKey(), JSON.stringify(patched));
         notifySubscribers();
         dispatchMenuEvent(patched);
       }

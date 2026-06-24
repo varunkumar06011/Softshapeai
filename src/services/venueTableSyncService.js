@@ -4,12 +4,11 @@ import { fetchVenueSections, updateVenueTableSession } from "./venueTableApi";
 import { getVenueId } from "./venueApiConfig";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { apiUrl } from "./apiConfig";
-
-const TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
+import { getVenueTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
 function isRecentlyTerminated(tableId) {
   try {
-    const raw = localStorage.getItem('cashier_recently_terminated');
+    const raw = localStorage.getItem(getRecentlyTerminatedKey());
     const map = raw ? JSON.parse(raw) : {};
     const ts = map[tableId];
     return ts && Date.now() - ts < 30000; // 30 seconds — same as VenueSectionView
@@ -55,7 +54,11 @@ function toFrontendStatus(backendStatus) {
 
 function readCache() {
   try {
-    const raw = localStorage.getItem(TABLES_CACHE_KEY);
+    // Evict stale un-scoped venue cache
+    LEGACY_UNSCOPED_KEYS.forEach(k => {
+      if (k.startsWith('softshape_venue_tables_cache')) localStorage.removeItem(k);
+    });
+    const raw = localStorage.getItem(getVenueTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) {
       console.warn('[VenueTableSync] Cache parse error — treating as empty');
@@ -74,7 +77,7 @@ function readCache() {
 
 function writeCache(tables) {
   try {
-    localStorage.setItem(TABLES_CACHE_KEY, JSON.stringify(tables));
+    localStorage.setItem(getVenueTablesCacheKey(), JSON.stringify(tables));
   } catch {}
 }
 

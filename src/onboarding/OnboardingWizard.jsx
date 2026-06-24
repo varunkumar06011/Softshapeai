@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { purgeLegacyCaches } from '../utils/cacheKeys';
 import { apiFetch } from '../services/apiConfig';
 import StepRestaurant from './StepRestaurant';
 import StepOwner from './StepOwner';
@@ -173,7 +174,14 @@ const OnboardingWizard = () => {
 
   const handleGoToDashboard = () => {
     if (onboardResult?.token) {
-      setAuth(onboardResult.token, onboardResult.user, onboardResult.slug);
+      purgeLegacyCaches();
+      setAuth(onboardResult.token, onboardResult.user, onboardResult.slug, onboardResult.restaurantCode);
+      if (onboardResult.user?.restaurantId) {
+        localStorage.setItem('tenant_restaurantId', onboardResult.user.restaurantId);
+      }
+      if (onboardResult.restaurantCode) {
+        localStorage.setItem('tenant_restaurantCode', onboardResult.restaurantCode);
+      }
     }
     navigate('/admin/dashboard');
   };

@@ -1,8 +1,13 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
 export const MENU_STORAGE_KEY = "softshape_menu";
 export const MENU_QUERY_KEY = ["menu"];
+
+export function getMenuStorageKey(restaurantId) {
+  return getScopedCacheKey(MENU_STORAGE_KEY, restaurantId);
+}
 
 const DEFAULT_MENU_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
@@ -48,9 +53,13 @@ async function fetchWithRetry(url, options, { retries = 3, timeoutMs = FETCH_TIM
   }
 }
 
-export function readStoredMenu() {
+export function readStoredMenu(restaurantId = getCurrentRestaurantId()) {
   try {
-    const saved = localStorage.getItem(MENU_STORAGE_KEY);
+    // Evict stale un-scoped menu cache
+    LEGACY_UNSCOPED_KEYS.forEach(k => {
+      if (k === MENU_STORAGE_KEY) localStorage.removeItem(k);
+    });
+    const saved = localStorage.getItem(getMenuStorageKey(restaurantId));
     return saved ? JSON.parse(saved) : [];
   } catch {
     return [];
@@ -179,15 +188,15 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
   );
 }
 
-export function persistMenu(menuItems) {
-  localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(menuItems));
+export function persistMenu(menuItems, restaurantId = getCurrentRestaurantId()) {
+  localStorage.setItem(getMenuStorageKey(restaurantId), JSON.stringify(menuItems));
   window.dispatchEvent(
     new CustomEvent("softshape_menu_updated", { detail: menuItems })
   );
 }
 
-export function clearStoredMenu() {
-  localStorage.removeItem(MENU_STORAGE_KEY);
+export function clearStoredMenu(restaurantId = getCurrentRestaurantId()) {
+  localStorage.removeItem(getMenuStorageKey(restaurantId));
 }
 
 export { API_BASE };

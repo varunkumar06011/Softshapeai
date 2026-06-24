@@ -3,10 +3,11 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, updateBarTableSession } from "./barTableApi";
 import { getBarId } from "./barApiConfig";
 import { validateTableIntegrity } from "../utils/syncInvariant";
+import { getBarTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
 function isRecentlyTerminated(tableId) {
   try {
-    const raw = localStorage.getItem('cashier_recently_terminated');
+    const raw = localStorage.getItem(getRecentlyTerminatedKey());
     const map = raw ? JSON.parse(raw) : {};
     const ts = map[tableId];
     return ts && Date.now() - ts < 30000; // 30 seconds — same as VenueSectionView
@@ -15,7 +16,6 @@ function isRecentlyTerminated(tableId) {
 
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
-const TABLES_CACHE_KEY = "softshape_bar_tables_cache_v4";
 
 export const TABLE_STATUS = {
   FREE: "Free",
@@ -39,8 +39,10 @@ function toFrontendStatus(backendStatus) {
 function readCache() {
   try {
     // Evict stale caches that may contain local-N fake IDs
-    ['softshape_bar_tables_cache_v1', 'softshape_bar_tables_cache_v2', 'softshape_bar_tables_cache_v3'].forEach(k => localStorage.removeItem(k));
-    const raw = localStorage.getItem(TABLES_CACHE_KEY);
+    LEGACY_UNSCOPED_KEYS.forEach(k => {
+      if (k.startsWith('softshape_bar_tables_cache')) localStorage.removeItem(k);
+    });
+    const raw = localStorage.getItem(getBarTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
     // Drop any local-N entries that slipped through, then deduplicate by backendId
     const clean = parsed.filter(t => t.backendId && !String(t.backendId).startsWith('local-'));
@@ -54,7 +56,7 @@ function readCache() {
 
 function writeCache(tables) {
   try {
-    localStorage.setItem(TABLES_CACHE_KEY, JSON.stringify(tables));
+    localStorage.setItem(getBarTablesCacheKey(), JSON.stringify(tables));
   } catch {
     /* ignore storage failures */
   }
