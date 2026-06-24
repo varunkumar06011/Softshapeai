@@ -41,46 +41,46 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
   return (
     <div className="space-y-6">
       <div className="text-center mb-8">
-        <Users size={48} className="mx-auto text-blue-500 mb-4" />
+        <Users size={48} className="mx-auto text-[#E53935] mb-4" />
         <h2 className="text-2xl font-bold mb-2">Staff Setup</h2>
-        <p className="text-gray-400">Add your captains and cashiers with 4-digit PINs</p>
+        <p className="text-gray-500">Add your captains and cashiers with 4-digit PINs</p>
       </div>
 
       {/* Captains */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Captains</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Captains</h3>
           <button
             onClick={addCaptain}
-            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300"
+            className="flex items-center gap-2 text-sm text-[#E53935] hover:text-[#B71C1C]"
           >
             <Plus size={16} />
             Add Captain
           </button>
         </div>
         {captains.map((captain, index) => (
-          <div key={index} className="bg-gray-700/50 rounded-xl p- space-y-3">
+          <div key={index} className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
             <div className="flex gap-3">
               <div className="flex-1">
                 <input
                   type="text"
                   value={captain.name}
                   onChange={(e) => handleCaptainChange(index, 'name', e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                   placeholder="Captain name"
                 />
               </div>
               {captains.length > 1 && (
                 <button
                   onClick={() => removeCaptain(index)}
-                  className="p-2 text-red-400 hover:text-red-300"
+                  className="p-2 text-red-600 hover:text-red-500"
                 >
                   <Trash2 size={18} />
                 </button>
               )}
             </div>
             <div className="relative">
-              <Key size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Key size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               <input
                 type="text"
                 value={captain.pin}
@@ -88,7 +88,7 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
                   const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                   handleCaptainChange(index, 'pin', value);
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                 placeholder="4-digit PIN"
                 maxLength={4}
               />
@@ -100,38 +100,38 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
       {/* Cashiers */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Cashiers</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Cashiers</h3>
           <button
             onClick={addCashier}
-            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300"
+            className="flex items-center gap-2 text-sm text-[#E53935] hover:text-[#B71C1C]"
           >
             <Plus size={16} />
             Add Cashier
           </button>
         </div>
         {cashiers.map((cashier, index) => (
-          <div key={index} className="bg-gray-700/50 rounded-xl p- space-y-3">
+          <div key={index} className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
             <div className="flex gap-3">
               <div className="flex-1">
                 <input
                   type="text"
                   value={cashier.name}
                   onChange={(e) => handleCashierChange(index, 'name', e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                   placeholder="Cashier name"
                 />
               </div>
               {cashiers.length > 1 && (
                 <button
                   onClick={() => removeCashier(index)}
-                  className="p-2 text-red-400 hover:text-red-300"
+                  className="p-2 text-red-600 hover:text-red-500"
                 >
                   <Trash2 size={18} />
                 </button>
               )}
             </div>
             <div className="relative">
-              <Key size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Key size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               <input
                 type="text"
                 value={cashier.pin}
@@ -139,7 +139,7 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
                   const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                   handleCashierChange(index, 'pin', value);
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                 placeholder="4-digit PIN"
                 maxLength={4}
               />
@@ -148,8 +148,8 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
         ))}
       </div>
 
-      <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-3">
-        <p className="text-sm text-blue-300">
+      <div className="bg-[#E53935]/10 border border-[#E53935]/20 rounded-lg p-3">
+        <p className="text-sm text-[#E53935]">
           <strong>Note:</strong> Staff will use these 4-digit PINs to login. Make sure to write them down.
         </p>
       </div>
@@ -157,7 +157,7 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
       <div className="flex gap-4">
         <button
           onClick={onBack}
-          className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl font-semibold transition-all"
+          className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold transition-all"
         >
           Back
         </button>
@@ -166,8 +166,8 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
           disabled={!isValid}
           className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
             isValid
-              ? 'bg-blue-600 hover:bg-blue-500 text-white'
-              : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+              ? 'bg-[#E53935] hover:bg-[#B71C1C] text-white'
+              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           }`}
         >
           Continue
