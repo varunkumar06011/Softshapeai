@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
-import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater } from 'lucide-react';
+import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater, AlertTriangle } from 'lucide-react';
 
 import { validateAndCreateWaiterCall } from '../services/customerSessionService';
 
@@ -115,7 +115,7 @@ const flattenSections = (payload) => {
 
 
 
-export default function BarMenu({ tableId }) {
+export default function BarMenu({ slug, tableId }) {
 
   const getEngagement = useCallback((id, name) => {
 
@@ -285,9 +285,9 @@ export default function BarMenu({ tableId }) {
 
       Promise.all([
 
-        fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store" }),
+        fetch(apiUrl(`/api/bar/menu/pos-view?slug=${encodeURIComponent(slug)}&tableId=${encodeURIComponent(tableId)}`), { cache: "no-store" }),
 
-        fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
+        fetch(apiUrl(`/api/bar/menu/items?slug=${encodeURIComponent(slug)}&tableId=${encodeURIComponent(tableId)}`), { cache: "no-store" }),
 
       ])
 
@@ -379,7 +379,7 @@ export default function BarMenu({ tableId }) {
 
         try {
 
-          unifiedData = await fetchUnifiedMenu('bar');
+          unifiedData = await fetchUnifiedMenu('bar', slug, tableId);
 
         } catch (e) {
 
@@ -391,13 +391,13 @@ export default function BarMenu({ tableId }) {
 
         const [posViewRes, itemsRes, tablesRes, restaurantRes] = await Promise.all([
 
-          fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store" }),
+          fetch(apiUrl(`/api/bar/menu/pos-view?slug=${encodeURIComponent(slug)}&tableId=${encodeURIComponent(tableId)}`), { cache: "no-store" }),
 
-          fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }),
+          fetch(apiUrl(`/api/bar/menu/items?slug=${encodeURIComponent(slug)}&tableId=${encodeURIComponent(tableId)}`), { cache: "no-store" }),
 
           fetchBarTables(),
 
-          fetch(apiUrl("/api/menu/items"), { cache: "no-store" }),
+          fetch(apiUrl(`/api/menu/items?slug=${encodeURIComponent(slug)}&tableId=${encodeURIComponent(tableId)}`), { cache: "no-store" }),
 
         ]);
 
@@ -1060,15 +1060,37 @@ export default function BarMenu({ tableId }) {
 
     return (
 
-      <div className="flex h-screen flex-col items-center justify-center bg-[#FFF5F5] text-red-700 p-6 text-center">
+      <div className="flex h-screen flex-col items-center justify-center bg-[#FFF5F5] p-6 text-center font-['Inter',sans-serif]">
 
-        <p className="text-lg font-bold mb-4">{error}</p>
+        <div className="bg-white rounded-[32px] p-8 sm:p-12 shadow-[0_20px_60px_rgba(0,0,0,0.06)] max-w-md w-full text-center">
 
-        <button onClick={() => window.location.reload()} className="px-6 py-2.5 bg-[#B71C1C] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md">
+          <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-6">
 
-          Retry
+            <AlertTriangle size={32} className="text-[#FF4D4F]" />
 
-        </button>
+          </div>
+
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight mb-3">
+
+            Menu Unavailable
+
+          </h1>
+
+          <p className="text-sm font-semibold text-gray-400 leading-relaxed mb-8">
+
+            This menu link appears to be invalid or the restaurant may be temporarily unavailable.
+
+            Please ask your server for assistance.
+
+          </p>
+
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#B71C1C]/30">
+
+            Powered by softshape.ai
+
+          </p>
+
+        </div>
 
       </div>
 

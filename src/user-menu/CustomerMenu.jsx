@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp } from 'lucide-react';
+import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -7,10 +7,11 @@ import { validateAndCreateWaiterCall } from '../services/customerSessionService'
 import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
 
 
-export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
+export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) {
   const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
   const [unifiedMenu, setUnifiedMenu] = useState(null);
   const [unifiedLoading, setUnifiedLoading] = useState(true);
+  const [menuError, setMenuError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [dietFilter, setDietFilter] = useState('All'); // All, Veg, Non-Veg
@@ -19,16 +20,21 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
   // Fetch unified menu
   useEffect(() => {
     setUnifiedLoading(true);
-    fetchUnifiedMenu('family-restaurant')
+    setMenuError(false);
+    fetchUnifiedMenu('family-restaurant', slug, tableId)
       .then(data => {
+        if (!data.success || data.error) {
+          setMenuError(true);
+        }
         setUnifiedMenu(data);
         setUnifiedLoading(false);
       })
       .catch(err => {
         console.error('[CustomerMenu] Failed to fetch unified menu:', err);
+        setMenuError(true);
         setUnifiedLoading(false);
       });
-  }, []);
+  }, [slug, tableId]);
 
   // Derive menu items and categories from unified menu
   const menuItems = useMemo(() => {
@@ -252,6 +258,28 @@ export default function CustomerMenu({ tableId, discountPercentage = 0 }) {
       ))}
     </div>
   );
+
+  if (menuError) {
+    return (
+      <div className="flex flex-col h-[100dvh] items-center justify-center bg-[#FFF5F5] p-6 font-['Inter',sans-serif]">
+        <div className="bg-white rounded-[32px] p-8 sm:p-12 shadow-[0_20px_60px_rgba(0,0,0,0.06)] max-w-md w-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-6">
+            <AlertTriangle size={32} className="text-[#FF4D4F]" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight mb-3">
+            Menu Unavailable
+          </h1>
+          <p className="text-sm font-semibold text-gray-400 leading-relaxed mb-8">
+            This menu link appears to be invalid or the restaurant may be temporarily unavailable.
+            Please ask your server for assistance.
+          </p>
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#B71C1C]/30">
+            Powered by softshape.ai
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

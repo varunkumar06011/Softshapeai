@@ -8,6 +8,7 @@ import CaptainApp from "./captain/CaptainApp";
 import UserMenuApp from "./user-menu/UserMenuApp";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
+import TableQRCodes from "./admin/TableQRCodes";
 import { AuthProvider } from "./context/AuthContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
@@ -202,6 +203,7 @@ function App() {
             <Route path="/onboarding" element={<OnboardingWizard />} />
             <Route path="/admin" element={<AdminLoginWrapper />} />
             <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
+            <Route path="/admin/qr-codes" element={<TableQRCodesWrapper />} />
             <Route path="/cashier" element={<CashierLoginWrapper />} />
             <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
             <Route path="/captain/*" element={
@@ -217,8 +219,7 @@ function App() {
             } />
             <Route path="/kitchen" element={<KitchenView />} />
             <Route path="/print-station" element={<PrintStation />} />
-            <Route path="/user-menu" element={<Navigate to="/user-menu/table-1" replace />} />
-            <Route path="/user-menu/:tableId" element={<UserMenuApp />} />
+            <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
@@ -248,6 +249,12 @@ function AdminDashboardWrapper() {
   if (!(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
   const role = authService.getUser()?.role || 'admin';
   return <AdminDashboard role={role} onLogout={() => { authService.logout(); navigate('/admin'); }} />;
+}
+
+function TableQRCodesWrapper() {
+  const navigate = useNavigate();
+  if (!(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
+  return <TableQRCodes />;
 }
 
 function CashierLoginWrapper() {

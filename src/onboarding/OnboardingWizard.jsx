@@ -118,7 +118,7 @@ const OnboardingWizard = () => {
 
       sessionStorage.removeItem(STORAGE_KEY);
       setAuth(data.token, data.user, data.restaurant.slug);
-      setOnboardResult(data.restaurant);
+      navigate('/admin/qr-codes');
     } catch (err) {
       setError(err.message || 'Failed to create restaurant');
     } finally {
