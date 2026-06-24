@@ -1114,23 +1114,14 @@ export default function CaptainApp({ onLogout }) {
   // Helper functions for captain colors
 
   const getCaptainBorderColor = (captainId) => {
-
-    const captain = CAPTAINS.find(c => c.id === captainId);
-
+    const captain = availableCaptains.find(c => c.id === captainId);
     if (!captain) return '';
-
-    const match = captain.color.match(/text-\[([^\]]+)\]/);
-
+    const match = captain.color?.match(/text-\[([^\]]+)\]/);
     return match ? `border-l-[${match[1]}]` : '';
-
   };
 
-
-
   const getCaptain = (captainId) => {
-
-    return CAPTAINS.find(c => c.id === captainId);
-
+    return availableCaptains.find(c => c.id === captainId);
   };
 
 
@@ -2928,7 +2919,7 @@ export default function CaptainApp({ onLogout }) {
                 <div className="space-y-3">
                   <input
                     className="w-full h-12 rounded-2xl border-2 border-gray-100 bg-gray-50 px-4 text-sm font-bold outline-none focus:border-[#E53935] focus:bg-white transition-all"
-                    placeholder="Restaurant ID (e.g. RESTAURANT-001)"
+                    placeholder="Restaurant ID (e.g. your-restaurant-code)"
                     value={captainSlug}
                     onChange={e => { setCaptainSlug(e.target.value); setCaptainCrewError(''); }}
                     onKeyDown={e => e.key === 'Enter' && loadCaptainCrew()}

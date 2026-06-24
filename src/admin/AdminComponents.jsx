@@ -479,18 +479,6 @@ export function Pos() {
   );
 }
 
-const CAPTAINS = [
-  { id: 'C1', name: 'Ajay Kumar' },
-  { id: 'C2', name: 'Raja Behera' },
-  { id: 'C3', name: 'Sagar' },
-  { id: 'C4', name: 'Durga Prasad' },
-  { id: 'C5', name: 'Subbaiah' },
-  { id: 'C6', name: 'Happy' },
-  { id: 'C7', name: 'Subbu' },
-  { id: 'C8', name: 'Sunil' },
-  { id: 'C9', name: 'Ramarao' },
-];
-
 export function Tables({ onOpen }) {
   const [activePopupTableId, setActivePopupTableId] = useState(null);
   const { tables } = useTableSync();
@@ -519,7 +507,7 @@ export function Tables({ onOpen }) {
 
         const items = (t.kotHistory && t.kotHistory.length > 0) ? t.kotHistory.flatMap(k => k.items || []) : (t.items || []);
         const itemsCount = items.reduce((sum, i) => sum + i.q, 0);
-        const captainName = CAPTAINS.find(c => c.id === t.captainId)?.name || t.captainId || 'Staff';
+        const captainName = t.captainName || t.captainId || 'Staff';
 
         let details = "Available";
         if (!isFree && !isReserved) {
@@ -598,7 +586,7 @@ export function Tables({ onOpen }) {
       
       const pItems = (pTable.kotHistory && pTable.kotHistory.length > 0) ? pTable.kotHistory.flatMap(k => k.items || []) : (pTable.items || []);
       const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
-      const pCaptainName = CAPTAINS.find(c => c.id === pTable.captainId)?.name || pTable.captainId || 'Staff';
+      const pCaptainName = pTable.captainName || pTable.captainId || 'Staff';
       
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in duration-200" onClick={() => setActivePopupTableId(null)}>
@@ -5365,7 +5353,7 @@ export function BarTables() {
         
         const pItems = (pTable.kotHistory && pTable.kotHistory.length > 0) ? pTable.kotHistory.flatMap(k => k.items || []) : (pTable.items || []);
         const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
-        const pCaptainName = CAPTAINS.find(c => c.id === pTable.captainId)?.name || pTable.captainId || 'Staff';
+        const pCaptainName = pTable.captainName || pTable.captainId || 'Staff';
         
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in duration-200" onClick={() => setActivePopupTableId(null)}>

@@ -103,4 +103,15 @@ export const authService = {
     const token = localStorage.getItem('tenant_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
+
+  async fetchCrew(restaurantId) {
+    const res = await fetch(`${getApiBase()}/api/auth/crew?restaurantId=${encodeURIComponent(restaurantId)}`, {
+      headers: this.getAuthHeader(),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to fetch crew');
+    }
+    return data;
+  },
 };

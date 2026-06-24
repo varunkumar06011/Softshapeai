@@ -1,11 +1,8 @@
 import { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Users, TrendingUp } from "lucide-react";
-import { CAPTAINS } from "../config/captains";
 import { fetchTransactions } from "../services/orderApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-import { getBarId } from "../services/barApiConfig";
-import { getVenueId } from "../services/venueApiConfig";
 
 export default function CaptainPerformanceDashboard() {
   const [range, setRange] = useState("Today");
@@ -33,17 +30,13 @@ export default function CaptainPerformanceDashboard() {
       monthParam = now.toISOString().slice(0, 7); // "YYYY-MM"
     }
 
-    Promise.allSettled([
-      fetchTransactions(getCurrentRestaurantId(), limit, dateParam, monthParam),
-      fetchTransactions(getBarId(), limit, dateParam, monthParam),
-      fetchTransactions(getVenueId(), limit, dateParam, monthParam),
-    ]).then(results => {
-      const all = results.flatMap(r => (r.status === "fulfilled" && Array.isArray(r.value) ? r.value : []));
-      setTransactions(all);
-      setLoading(false);
-    }).catch(() => {
-      setLoading(false);
-    });
+    fetchTransactions(getCurrentRestaurantId(), limit, dateParam, monthParam)
+      .then(data => {
+        setTransactions(Array.isArray(data) ? data : []);
+        setLoading(false);
+      }).catch(() => {
+        setLoading(false);
+      });
   }, [range]);
 
   const { captains, trends, hasData } = useMemo(() => {
@@ -73,23 +66,9 @@ export default function CaptainPerformanceDashboard() {
       }
     });
 
-    // FIX #5 & #6: Build captain map from config + handle unknown captains
+    // Build captain map dynamically from transaction data
     const captainMap = {};
 
-    // Initialize all known captains
-    CAPTAINS.forEach(c => {
-      captainMap[c.id] = {
-        id: c.id,
-        name: c.name,
-        initials: c.initials,
-        color: c.color,
-        sales: 0,
-        orders: 0,
-        itemsCount: {}
-      };
-    });
-
-    // Process all transactions (including CASHIER and unknown captains)
     filteredTxns.forEach(t => {
       const cid = t.captainId;
 

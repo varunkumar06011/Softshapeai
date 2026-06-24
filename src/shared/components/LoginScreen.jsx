@@ -142,7 +142,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
                       value={slug}
                       onChange={(e) => { setSlug(e.target.value); setError(''); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleFetchStaff()}
-                      placeholder="e.g. RESTAURANT-001 or vgrand"
+                      placeholder="e.g. your-restaurant-code"
                     />
                   </div>
                   {error && (
@@ -232,7 +232,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
                   type="text"
                   value={restaurantCode}
                   onChange={e => { setRestaurantCode(e.target.value); setError(''); }}
-                  placeholder="e.g. RESTAURANT-001"
+                  placeholder="e.g. your-restaurant-code"
                   className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
                 />
               </div>

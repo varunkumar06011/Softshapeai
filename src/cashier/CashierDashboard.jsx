@@ -84,12 +84,6 @@ const mapRealtimeTablePayload = (row, existing = null) => {
   };
 };
 
-const CAPTAINS = [
-  { id: 'C1', name: 'Ajay Kumar' },
-  { id: 'C2', name: 'Raja Behera' },
-  { id: 'C3', name: 'Sagar' },
-];
-
 const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
   id: `W${i + 1}`,
   number: i + 1,
@@ -799,9 +793,8 @@ const CashierDashboard = ({ onLogout }) => {
               : 0,
           itemsList: txn.items || [],
           captainId: txn.captainId || 'CASHIER',
-          // Prefer backend captainName, then CAPTAINS lookup, then captainId itself, then fallback
+          // Prefer backend captainName, then captainId, then fallback
           captainName: txn.captainName
-            || CAPTAINS.find(c => c.id === txn.captainId)?.name
             || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
           method: txn.method || 'UPI',
           tableNumber: txn.tableNumber || null,

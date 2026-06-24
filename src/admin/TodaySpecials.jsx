@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { CAPTAINS } from '../config/captains';
+import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
 
 export default function TodaySpecials() {
@@ -13,6 +13,7 @@ export default function TodaySpecials() {
 
   const [targets, setTargets] = useState({});
   const [targetsLoading, setTargetsLoading] = useState(true);
+  const [captains, setCaptains] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
@@ -446,7 +447,8 @@ export default function TodaySpecials() {
                 </div>
 
                 <div className="p-4 grid grid-cols-2 gap-2.5 max-h-[65vh] overflow-y-auto">
-                  {CAPTAINS.map(cap => {
+                  {captains.map(cap => {
+                    const initials = cap.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '';
                     const currentTarget = targets[cap.id]?.revenueTarget;
                     return (
                       <button
@@ -458,8 +460,8 @@ export default function TodaySpecials() {
                         }}
                         className="p-4 rounded-2xl border border-gray-100 bg-gray-50/60 hover:border-[#E53935]/25 hover:bg-[#FFF5F5] hover:shadow-lg hover:shadow-red-50 transition-all text-left group active:scale-95"
                       >
-                        <div className={`w-11 h-11 rounded-2xl ${cap.color} flex items-center justify-center text-sm font-black mb-3 group-hover:scale-110 transition-transform shadow-sm`}>
-                          {cap.initials}
+                        <div className="w-11 h-11 rounded-2xl bg-red-50 text-[#B71C1C] flex items-center justify-center text-sm font-black mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                          {initials}
                         </div>
                         <h4 className="text-xs font-black text-gray-900 truncate mb-1.5">{cap.name}</h4>
                         <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${currentTarget ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
