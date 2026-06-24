@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
@@ -10,23 +10,42 @@ import StepMenu from './StepMenu';
 import StepPlan from './StepPlan';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
+const STORAGE_KEY = 'onboarding_wizard';
+
+const defaultWizardData = {
+  restaurant: { name: '', address: '', phone: '', email: '', gstin: '' },
+  owner: { name: '', email: '', password: '', confirmPassword: '' },
+  captains: [{ name: '', pin: '' }],
+  cashiers: [{ name: '', pin: '' }],
+  sections: [{ name: '' }],
+  tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
+  menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
+  selectedPlan: 'starter'
+};
+
+function loadSavedState() {
+  try {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore */ }
+  return null;
+}
+
 const OnboardingWizard = () => {
   const navigate = useNavigate();
   const { setAuth } = useAuth();
-  const [currentStep, setCurrentStep] = useState(1);
+
+  const saved = loadSavedState();
+  const [currentStep, setCurrentStep] = useState(saved?.currentStep || 1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [wizardData, setWizardData] = useState(saved?.wizardData || defaultWizardData);
 
-  const [wizardData, setWizardData] = useState({
-    restaurant: { name: '', address: '', phone: '', email: '', gstin: '' },
-    owner: { name: '', email: '', password: '', confirmPassword: '' },
-    captains: [{ name: '', pin: '' }],
-    cashiers: [{ name: '', pin: '' }],
-    sections: [{ name: '' }],
-    tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
-    menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
-    selectedPlan: 'starter'
-  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStep, wizardData }));
+    } catch { /* ignore */ }
+  }, [currentStep, wizardData]);
 
   const steps = [
     { number: 1, title: 'Restaurant Info' },
@@ -95,6 +114,7 @@ const OnboardingWizard = () => {
         })
       });
 
+      sessionStorage.removeItem(STORAGE_KEY);
       setAuth(data.token, data.user, data.restaurant.slug);
       navigate('/admin/dashboard');
     } catch (err) {
