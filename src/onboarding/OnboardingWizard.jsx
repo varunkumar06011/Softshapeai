@@ -8,6 +8,7 @@ import StepStaff from './StepStaff';
 import StepFloorPlan from './StepFloorPlan';
 import StepMenu from './StepMenu';
 import StepPlan from './StepPlan';
+import StepPreview from './StepPreview';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const OnboardingWizard = () => {
@@ -16,6 +17,7 @@ const OnboardingWizard = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [onboardResult, setOnboardResult] = useState(null);
 
   const [wizardData, setWizardData] = useState({
     restaurant: { name: '', address: '', phone: '', email: '', gstin: '' },
@@ -34,7 +36,8 @@ const OnboardingWizard = () => {
     { number: 3, title: 'Staff Setup' },
     { number: 4, title: 'Floor Plan' },
     { number: 5, title: 'Menu Setup' },
-    { number: 6, title: 'Choose Plan' }
+    { number: 6, title: 'Choose Plan' },
+    { number: 7, title: 'Preview & Confirm' }
   ];
 
   const updateWizardData = (section, data) => {
@@ -42,7 +45,7 @@ const OnboardingWizard = () => {
   };
 
   const handleNext = () => {
-    if (currentStep < 6) {
+    if (currentStep < 7) {
       setCurrentStep(prev => prev + 1);
     }
   };
@@ -55,7 +58,7 @@ const OnboardingWizard = () => {
     }
   };
 
-  const handleSubmit = async (plan) => {
+  const handleSubmit = async () => {
     setLoading(true);
     setError(null);
 
@@ -64,18 +67,17 @@ const OnboardingWizard = () => {
         method: 'POST',
         body: JSON.stringify({
           restaurant: wizardData.restaurant,
-          owner: wizardData.owner,
+          owner: { name: wizardData.owner.name, email: wizardData.owner.email, password: wizardData.owner.password },
           captains: wizardData.captains,
           cashiers: wizardData.cashiers,
           sections: wizardData.sections,
           tables: wizardData.tables,
           menu: wizardData.menu,
-          plan
+          plan: wizardData.selectedPlan
         })
       });
 
-      setAuth(data.token, data.user, data.restaurant.slug);
-      navigate('/admin/dashboard');
+      setOnboardResult(data);
     } catch (err) {
       setError(err.message || 'Failed to create restaurant');
     } finally {
@@ -96,11 +98,66 @@ const OnboardingWizard = () => {
       case 5:
         return <StepMenu data={wizardData.menu} onChange={(data) => updateWizardData('menu', data)} onNext={handleNext} onBack={handleBack} />;
       case 6:
-        return <StepPlan selectedPlan={wizardData.selectedPlan} onSelect={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
+        return (
+          <StepPlan
+            selectedPlan={wizardData.selectedPlan}
+            onSelect={(plan) => {
+              updateWizardData('selectedPlan', plan);
+              handleNext();
+            }}
+            onBack={handleBack}
+            loading={false}
+            error={null}
+          />
+        );
+      case 7:
+        return (
+          <StepPreview
+            wizardData={wizardData}
+            onBack={handleBack}
+            onConfirm={handleSubmit}
+            loading={loading}
+            error={error}
+          />
+        );
       default:
         return null;
     }
   };
+
+  if (onboardResult) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-10 shadow-lg border border-gray-100 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Restaurant Created!</h2>
+          <p className="text-gray-500 mb-6">Your restaurant has been set up successfully.</p>
+
+          <div className="bg-gray-50 rounded-xl p-4 mb-6">
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Your Restaurant ID</p>
+            <p className="text-3xl font-bold text-[#E53935] tracking-wider">
+              {onboardResult.restaurant.restaurantCode}
+            </p>
+            <p className="text-xs text-gray-400 mt-2">Save this ID — you'll need it to log in</p>
+          </div>
+
+          <button
+            onClick={() => {
+              setAuth(onboardResult.token, onboardResult.user, onboardResult.restaurant.slug);
+              navigate('/admin/dashboard');
+            }}
+            className="w-full py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-900">
@@ -108,7 +165,7 @@ const OnboardingWizard = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-2">Set Up Your Restaurant</h1>
-          <p className="text-gray-500">Complete these 6 steps to get started</p>
+          <p className="text-gray-500">Complete these 7 steps to get started</p>
         </div>
 
         {/* Progress Bar */}
@@ -121,7 +178,7 @@ const OnboardingWizard = () => {
                 }`}>
                   {currentStep > step.number ? '✓' : step.number}
                 </div>
-                {step.number < 6 && (
+                {step.number < 7 && (
                   <div className={`w-16 h-1 mx-2 ${
                     currentStep > step.number ? 'bg-[#E53935]' : 'bg-gray-200'
                   }`} />
@@ -144,7 +201,7 @@ const OnboardingWizard = () => {
         </div>
 
         {/* Navigation (for steps that don't have their own) */}
-        {currentStep !== 6 && (
+        {currentStep !== 6 && currentStep !== 7 && (
           <div className="flex justify-between mt-6">
             <button
               onClick={handleBack}

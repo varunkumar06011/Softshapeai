@@ -9,6 +9,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   // Admin/Owner login state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [restaurantCode, setRestaurantCode] = useState('');
 
   // Cashier PIN login state
   const [restaurantSlug, setRestaurantSlug] = useState('');
@@ -31,7 +32,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.login(email.trim(), password);
+      const user = await authService.login(email.trim(), password, restaurantCode);
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid credentials');
@@ -222,6 +223,18 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
           ) : (
             /* ── Admin / Owner Email+Password Login ── */
             <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
+                  Restaurant ID <span className="text-gray-400 font-normal normal-case tracking-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={restaurantCode}
+                  onChange={e => { setRestaurantCode(e.target.value.toUpperCase()); setError(''); }}
+                  placeholder="RESTAURANT-001"
+                  className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                />
+              </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
                   Username

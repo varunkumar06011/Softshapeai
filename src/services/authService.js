@@ -11,11 +11,15 @@ function getApiBase() {
 
 export const authService = {
   // Email + password login (OWNER / ADMIN)
-  async login(email, password) {
+  async login(email, password, restaurantCode) {
+    const body = { email, password };
+    if (restaurantCode && restaurantCode.trim()) {
+      body.restaurantCode = restaurantCode.trim().toUpperCase();
+    }
     const res = await fetch(`${getApiBase()}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Invalid credentials');
