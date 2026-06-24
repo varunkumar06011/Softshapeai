@@ -18,6 +18,7 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
 import { RESTAURANT_ID, updateTableSession } from '../services/tableApi';
+import { authService } from '../services/authService';
 import { useOutlet } from '../context/OutletContext';
 import OutletToggle from '../shared/components/OutletToggle';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
@@ -87,18 +88,25 @@ const CAPTAINS = [
   { id: 'C3', name: 'Sagar' },
 ];
 
-const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
-  id: `W${i + 1}`,
-  number: i + 1,
-  backendId: null,
-  isWalkIn: true,
-  status: 'Free',
-  sectionId: null,
-  section: { restaurantId: 'restaurant-001', name: 'Walk-in' },
-  kotHistory: [],
-  currentBill: 0,
-  activeOrder: null,
-}));
+function getWalkinTables() {
+  const restaurantId =
+    authService.getUser()?.restaurantId ||
+    localStorage.getItem('pending_restaurant_id') ||
+    'restaurant-001';
+  return Array.from({ length: 20 }, (_, i) => ({
+    id: `W${i + 1}`,
+    number: i + 1,
+    backendId: null,
+    isWalkIn: true,
+    status: 'Free',
+    sectionId: null,
+    section: { restaurantId, name: 'Walk-in' },
+    kotHistory: [],
+    currentBill: 0,
+    activeOrder: null,
+  }));
+}
+const WALKIN_TABLES = getWalkinTables();
 
 // Source sets for outlet-level data isolation
 const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']);
@@ -432,7 +440,11 @@ const CashierDashboard = ({ onLogout }) => {
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : RESTAURANT_ID;
+  const userRestaurantId =
+    authService.getUser()?.restaurantId ||
+    localStorage.getItem('pending_restaurant_id') ||
+    RESTAURANT_ID;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : userRestaurantId;
 
   const socket = useSocket(activeRestaurantId);
   // ── End moved block ──
@@ -706,7 +718,13 @@ const CashierDashboard = ({ onLogout }) => {
         limitParam = 0;
       }
 
-      const restaurantIds = ['bar-001', 'restaurant-001', 'venue-001'];
+      const dynamicRestaurantId =
+        authService.getUser()?.restaurantId ||
+        localStorage.getItem('pending_restaurant_id') ||
+        'restaurant-001';
+      const restaurantIds = ['bar-001', dynamicRestaurantId, 'venue-001'].filter(
+        (id, idx, arr) => arr.indexOf(id) === idx  // dedupe if bar-001 === dynamicRestaurantId
+      );
 
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(e => {
@@ -1700,9 +1718,15 @@ const CashierDashboard = ({ onLogout }) => {
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
+      const dynamicRestaurantId =
+        authService.getUser()?.restaurantId ||
+        localStorage.getItem('pending_restaurant_id') ||
+        'restaurant-001';
       const restaurantIds = outlet === 'bar'
         ? ['bar-001', 'venue-001']
-        : ['restaurant-001', 'venue-001'];
+        : [dynamicRestaurantId, 'venue-001'].filter(
+            (id, idx, arr) => arr.indexOf(id) === idx
+          );
       
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
@@ -1747,8 +1771,12 @@ const CashierDashboard = ({ onLogout }) => {
         // include only direct restaurant IDs (bar-001 / restaurant-001).
         if (!txn.sectionTag) {
           const rid = txn._sourceRestaurantId || '';
+          const dynId =
+            authService.getUser()?.restaurantId ||
+            localStorage.getItem('pending_restaurant_id') ||
+            'restaurant-001';
           if (outlet === 'bar') return rid === 'bar-001';
-          return rid === 'restaurant-001';
+          return rid === dynId;
         }
         const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
         if (outlet === 'bar') return BAR_SOURCES.has(mappedSource);

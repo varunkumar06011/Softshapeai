@@ -60,7 +60,7 @@ import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelper
 
 
 
-import { CAPTAINS } from '../config/captains';
+import { authService } from '../services/authService';
 
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -432,6 +432,20 @@ export default function CaptainApp({ onLogout }) {
     return !(auth && hasCaptain);
 
   });
+
+  const [availableCaptains, setAvailableCaptains] = useState([]);
+
+  const [captainSlug, setCaptainSlug] = useState(
+
+    () => localStorage.getItem('tenant_slug') || ''
+
+  );
+
+  const [crewLoadError, setCaptainCrewError] = useState('');
+
+  const [crewLoading, setCaptainCrewLoading] = useState(false);
+
+  const [captainSearchQuery, setCaptainSearchQuery] = useState('');
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
@@ -865,10 +879,12 @@ export default function CaptainApp({ onLogout }) {
 
     const todayDateISO = new Date().toISOString().slice(0, 10);
 
-    // Fetch from all three outlets and sum — captain may serve regular restaurant,
-    // bar, AND venue tables (Family Restaurant, Parcel, Conference, etc.)
+    const userRestaurantId =
+      authService.getUser()?.restaurantId ||
+      localStorage.getItem('pending_restaurant_id') ||
+      RESTAURANT_ID;
 
-    const restaurantFetch = fetchTransactions(RESTAURANT_ID, 500, todayDateISO);
+    const restaurantFetch = fetchTransactions(userRestaurantId, 500, todayDateISO);
 
     const barFetch = fetchTransactions(BAR_ID, 500, todayDateISO);
 
@@ -926,12 +942,16 @@ export default function CaptainApp({ onLogout }) {
 
     if (tableSubCategory === 'parcel' && outlet !== 'bar') return 'venue-001';
 
-    // Defensive: warn if tableSubCategory is corrupted/unknown
     if (tableSubCategory && tableSubCategory !== '' && !['dine-in', 'parcel'].includes(tableSubCategory)) {
       console.warn('[CaptainApp] Unknown tableSubCategory:', tableSubCategory, '— falling back to RESTAURANT_ID');
     }
 
-    return RESTAURANT_ID;
+    // Prefer auth user's restaurantId; fall back to hardcoded constant for backward compat
+    return (
+      authService.getUser()?.restaurantId ||
+      localStorage.getItem('pending_restaurant_id') ||
+      RESTAURANT_ID
+    );
 
   }, [outlet, tableSubCategory]);
 
@@ -1916,6 +1936,52 @@ export default function CaptainApp({ onLogout }) {
 
   };
 
+  const loadCaptainCrew = async () => {
+
+    if (!captainSlug.trim()) {
+
+      setCaptainCrewError('Enter your restaurant ID or slug');
+
+      return;
+
+    }
+
+    setCaptainCrewLoading(true);
+
+    setCaptainCrewError('');
+
+    try {
+
+      const data = await authService.fetchCrew(captainSlug.trim());
+
+      setAvailableCaptains(data.captains || []);
+
+      // Cache the resolved DB restaurantId for socket/order routing
+
+      if (data.restaurantId) {
+
+        localStorage.setItem('pending_restaurant_id', data.restaurantId);
+
+      }
+
+      if ((data.captains || []).length === 0) {
+
+        setCaptainCrewError('No active captains found for this restaurant.');
+
+      }
+
+    } catch (e) {
+
+      setCaptainCrewError(e.message || 'Could not load staff');
+
+    } finally {
+
+      setCaptainCrewLoading(false);
+
+    }
+
+  };
+
 
 
   const handlePinInput = (num) => {
@@ -1934,29 +2000,39 @@ export default function CaptainApp({ onLogout }) {
 
         unlockAudioContext();
 
-        const authTimer = setTimeout(() => {
+        const authTimer = setTimeout(async () => {
 
-          if (newPin === selectedProfile.pin) {
+          try {
 
-            setCurrentCaptain(selectedProfile);
+            const user = await authService.captainLogin(selectedProfile.id, newPin);
+
+            const enriched = {
+              ...user,
+              initials: selectedProfile.initials,
+              color: selectedProfile.color || 'bg-[#EFF6FF] text-[#1D4ED8]',
+            };
+
+            setCurrentCaptain(enriched);
 
             setIsLoginView(false);
 
             localStorage.setItem('captain_auth_v2', 'true');
 
-            localStorage.setItem('active_captain', JSON.stringify(selectedProfile));
+            localStorage.setItem('active_captain', JSON.stringify(enriched));
 
             unlockAudioContext();
 
-          } else {
+          } catch {
 
             setPin('');
 
             setPinError(true);
 
-          }
+          } finally {
 
-          setIsAuthenticating(false);
+            setIsAuthenticating(false);
+
+          }
 
         }, 600);
         pinTimeoutRef.current = authTimer;
@@ -2816,15 +2892,17 @@ export default function CaptainApp({ onLogout }) {
 
   };
 
-
+  const filteredCaptains = availableCaptains.filter(p =>
+    p.name.toLowerCase().includes(captainSearchQuery.toLowerCase().trim())
+  );
 
   if (isLoginView) {
 
     return (
 
-      <div className="flex min-h-screen items-center justify-center bg-[#F4F4F5] p-4 sm:p-6 font-['Inter',sans-serif]">
+      <div className="flex min-h-screen items-start justify-center bg-[#F4F4F5] p-4 sm:p-6 font-['Inter',sans-serif] overflow-y-auto">
 
-        <div className="w-full max-w-lg bg-white rounded-[30px] sm:rounded-[40px] p-6 sm:p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100">
+        <div className="w-full max-w-lg bg-white rounded-[30px] sm:rounded-[40px] p-6 sm:p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100 my-auto">
 
           <div className="text-center mb-10">
 
@@ -2852,31 +2930,82 @@ export default function CaptainApp({ onLogout }) {
 
           {!selectedProfile ? (
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
 
-              {CAPTAINS.map(p => (
+              {availableCaptains.length === 0 ? (
 
-                <button
+                <div className="space-y-3">
+                  <input
+                    className="w-full h-12 rounded-2xl border-2 border-gray-100 bg-gray-50 px-4 text-sm font-bold outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                    placeholder="Restaurant ID or slug (e.g. restaurant-001)"
+                    value={captainSlug}
+                    onChange={e => { setCaptainSlug(e.target.value); setCaptainCrewError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && loadCaptainCrew()}
+                  />
+                  <button
+                    onClick={loadCaptainCrew}
+                    disabled={crewLoading}
+                    className="w-full h-12 rounded-2xl bg-[#E53935] text-white text-xs font-black uppercase tracking-widest hover:bg-[#B71C1C] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {crewLoading ? 'Loading…' : 'Load Staff'}
+                  </button>
+                  {crewLoadError && (
+                    <p className="text-xs font-bold text-red-600 text-center">{crewLoadError}</p>
+                  )}
+                </div>
 
-                  key={p.id}
+              ) : (
 
-                  onClick={() => handleProfileSelect(p)}
-
-                  className="flex flex-col items-center gap-4 p-6 rounded-[24px] border border-gray-100 bg-white hover:border-gray-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-300 group"
-
-                >
-
-                  <div className={`w-14 h-14 rounded-2xl ${p.color} flex items-center justify-center text-xl font-black tracking-tight shadow-sm group-hover:scale-110 transition-transform`}>
-
-                    {p.initials}
-
+                <>
+                  <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={captainSearchQuery}
+                      onChange={(e) => setCaptainSearchQuery(e.target.value)}
+                      placeholder="Search captain..."
+                      className="w-full h-12 rounded-2xl border border-gray-100 bg-gray-50 pl-11 pr-4 text-sm font-black outline-none focus:border-gray-300 focus:bg-white transition-all"
+                    />
                   </div>
 
-                  <span className="text-[13px] font-bold text-gray-800 tracking-tight">{p.name}</span>
+                  <div className="max-h-[360px] overflow-y-auto pr-1 -mr-1">
+                    <div className="grid grid-cols-2 gap-4">
+                      {filteredCaptains.map(p => {
+                        const initials = p.name
+                          .split(' ')
+                          .map(w => w[0])
+                          .join('')
+                          .slice(0, 2)
+                          .toUpperCase();
+                        const profile = {
+                          ...p,
+                          initials,
+                          color: 'bg-[#EFF6FF] text-[#1D4ED8]',
+                        };
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => handleProfileSelect(profile)}
+                            className="flex flex-col items-center gap-4 p-6 rounded-[24px] border border-gray-100 bg-white hover:border-gray-300 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-300 group"
+                          >
+                            <div className="w-14 h-14 rounded-2xl bg-[#EFF6FF] text-[#1D4ED8] flex items-center justify-center text-xl font-black tracking-tight shadow-sm group-hover:scale-110 transition-transform">
+                              {initials}
+                            </div>
+                            <span className="text-[13px] font-bold text-gray-800 tracking-tight">
+                              {p.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                </button>
+                    {filteredCaptains.length === 0 && (
+                      <p className="text-center text-[12px] font-bold text-gray-400 py-8">No captains found</p>
+                    )}
+                  </div>
+                </>
 
-              ))}
+              )}
 
             </div>
 

@@ -1,11 +1,10 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { History, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { fetchTransactions, deleteTransaction } from '../services/orderApi';
-import { CAPTAINS } from '../config/captains';
+import { authService } from '../services/authService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 
-const RESTAURANT_ID = 'restaurant-001';
 const BAR_ID = 'bar-001';
 const VENUE_ID = 'venue-001';
 
@@ -14,8 +13,12 @@ function formatBillNumber(txnDate, txnNumber) {
 }
 
 function resolveSource(txn) {
+  const dynamicRestaurantId =
+    authService.getUser()?.restaurantId ||
+    localStorage.getItem('pending_restaurant_id') ||
+    'restaurant-001';
   if (txn.restaurantId === BAR_ID) return 'bar';
-  if (txn.restaurantId === RESTAURANT_ID) return 'restaurant';
+  if (txn.restaurantId === dynamicRestaurantId) return 'restaurant';
   const tag = (txn.sectionTag || '').toLowerCase();
   if (tag === 'venue-bar-ac-hall') return 'bar';
   if (tag === 'venue-bar-conference') return 'conference';
@@ -73,14 +76,15 @@ export default function AdminTransactions({ onStatsRefresh }) {
         limitParam = 500;
       }
 
+      const dynamicRestaurantId = authService.getUser()?.restaurantId || 'restaurant-001';
       const allResults = await Promise.all([
         fetchTransactions(BAR_ID, limitParam, dateParam, monthParam).catch(() => []),
-        fetchTransactions(RESTAURANT_ID, limitParam, dateParam, monthParam).catch(() => []),
+        fetchTransactions(dynamicRestaurantId, limitParam, dateParam, monthParam).catch(() => []),
         fetchTransactions(VENUE_ID, limitParam, dateParam, monthParam).catch(() => []),
       ]);
 
       const allTxns = allResults.flatMap((txns, idx) => {
-        const rid = [BAR_ID, RESTAURANT_ID, VENUE_ID][idx];
+        const rid = [BAR_ID, dynamicRestaurantId, VENUE_ID][idx];
         return txns.map(txn => ({ ...txn, restaurantId: txn.restaurantId || rid }));
       });
 
@@ -106,7 +110,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
         items: txn.itemCount || 0,
         itemsList: txn.items || [],
         captainId: txn.captainId || 'CASHIER',
-        captainName: CAPTAINS.find(c => c.id === txn.captainId)?.name || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
+        captainName: txn.captainName || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
         method: txn.method || 'UPI',
         tableNumber: txn.tableNumber ? formatTxnTableLabel(txn.tableNumber, txn.sectionTag) : null,
         source: resolveSource(txn),

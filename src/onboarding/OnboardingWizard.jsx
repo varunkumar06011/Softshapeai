@@ -103,12 +103,12 @@ const OnboardingWizard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+    <div className="min-h-screen bg-[#F8F9FA] text-gray-900">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-2">Set Up Your Restaurant</h1>
-          <p className="text-gray-400">Complete these 6 steps to get started</p>
+          <p className="text-gray-500">Complete these 6 steps to get started</p>
         </div>
 
         {/* Progress Bar */}
@@ -117,21 +117,21 @@ const OnboardingWizard = () => {
             {steps.map((step) => (
               <div key={step.number} className="flex items-center">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                  currentStep >= step.number ? 'bg-blue-600' : 'bg-gray-700'
+                  currentStep >= step.number ? 'bg-[#E53935]' : 'bg-gray-200 text-gray-500'
                 }`}>
                   {currentStep > step.number ? '✓' : step.number}
                 </div>
                 {step.number < 6 && (
                   <div className={`w-16 h-1 mx-2 ${
-                    currentStep > step.number ? 'bg-blue-600' : 'bg-gray-700'
+                    currentStep > step.number ? 'bg-[#E53935]' : 'bg-gray-200'
                   }`} />
                 )}
               </div>
             ))}
           </div>
-          <div className="flex justify-between text-sm text-gray-400">
+          <div className="flex justify-between text-sm text-gray-500">
             {steps.map((step) => (
-              <span key={step.number} className={currentStep === step.number ? 'text-blue-400 font-semibold' : ''}>
+              <span key={step.number} className={currentStep === step.number ? 'text-[#E53935] font-semibold' : ''}>
                 {step.title}
               </span>
             ))}
@@ -139,7 +139,7 @@ const OnboardingWizard = () => {
         </div>
 
         {/* Step Content */}
-        <div className="bg-gray-800 rounded-2xl p-8 shadow-2xl">
+        <div className="bg-white rounded-2xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.04)] border border-gray-100">
           {renderStep()}
         </div>
 
@@ -148,7 +148,7 @@ const OnboardingWizard = () => {
           <div className="flex justify-between mt-6">
             <button
               onClick={handleBack}
-              className="flex items-center gap-2 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl transition-all"
+              className="flex items-center gap-2 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl transition-all"
             >
               <ChevronLeft size={20} />
               Back
@@ -156,7 +156,7 @@ const OnboardingWizard = () => {
             {currentStep !== 1 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && (
               <button
                 onClick={handleNext}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl transition-all"
+                className="flex items-center gap-2 px-6 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl transition-all"
               >
                 Next
                 <ChevronRight size={20} />

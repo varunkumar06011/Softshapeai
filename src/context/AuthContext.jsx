@@ -14,8 +14,15 @@ export const AuthProvider = ({ children }) => {
     setToken(newToken);
     setUser(newUser);
     setRestaurantSlug(newSlug);
-    if (newToken) localStorage.setItem('tenant_token', newToken);
-    if (newUser) localStorage.setItem('tenant_user', JSON.stringify(newUser));
+    if (newToken) {
+      localStorage.setItem('tenant_token', newToken);
+      localStorage.setItem('ss_auth_token', newToken);
+    }
+    if (newUser) {
+      const str = JSON.stringify(newUser);
+      localStorage.setItem('tenant_user', str);
+      localStorage.setItem('ss_auth_user', str);
+    }
     if (newSlug) localStorage.setItem('tenant_slug', newSlug);
   };
 
@@ -23,9 +30,10 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
     setRestaurantSlug(null);
-    localStorage.removeItem('tenant_token');
-    localStorage.removeItem('tenant_user');
-    localStorage.removeItem('tenant_slug');
+    [
+      'tenant_token', 'tenant_user', 'tenant_slug',
+      'ss_auth_token', 'ss_auth_user'
+    ].forEach(k => localStorage.removeItem(k));
   };
 
   return (

@@ -234,7 +234,7 @@ function PortalSelectionWrapper() {
 
 function AdminLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && ['ADMIN','SUPER_ADMIN','MANAGER'].includes(authService.getUser()?.role));
+  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role));
   if (isLoggedIn) return <Navigate to="/admin/dashboard" replace />;
   return (
     <LoginScreen role="admin" onLogin={(roleType) => {
@@ -245,14 +245,14 @@ function AdminLoginWrapper() {
 
 function AdminDashboardWrapper() {
   const navigate = useNavigate();
-  if (!(authService.isAuthenticated() && ['ADMIN','SUPER_ADMIN','MANAGER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
+  if (!(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
   const role = authService.getUser()?.role || 'admin';
   return <AdminDashboard role={role} onLogout={() => { authService.logout(); navigate('/admin'); }} />;
 }
 
 function CashierLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && authService.getUser()?.role === 'CASHIER');
+  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && ['CASHIER','OWNER','ADMIN'].includes(authService.getUser()?.role));
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
   return (
     <LoginScreen role="cashier" onLogin={() => { setIsLoggedIn(true); }} onBack={() => navigate('/')} />
@@ -261,7 +261,7 @@ function CashierLoginWrapper() {
 
 function CashierDashboardWrapper() {
   const navigate = useNavigate();
-  if (!(authService.isAuthenticated() && authService.getUser()?.role === 'CASHIER')) return <Navigate to="/cashier" replace />;
+  if (!(authService.isAuthenticated() && ['CASHIER','OWNER','ADMIN'].includes(authService.getUser()?.role))) return <Navigate to="/cashier" replace />;
   return <CashierDashboard onLogout={() => { authService.logout(); navigate('/cashier'); }} />;
 }
 
