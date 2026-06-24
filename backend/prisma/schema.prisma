@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  plan      String   @default("basic")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  captains     Captain[]
+  printers     PrinterConfig[]
+  menuItems    MenuItem[]
+  tables       Table[]
+  orders       Order[]
+  transactions Transaction[]
+  kots         KOT[]
+
+  @@index([slug])
+  @@index([active])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  name      String
+  role      String
+  password  String
+  phone     String?
+  resetToken     String?
+  resetExpires   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+}
+
+model Captain {
+  id        String @id @default(cuid())
+  tenantId  String
+  name      String
+  pin       String
+  initials  String
+  color     String
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, active])
+}
+
+model PrinterConfig {
+  id         String @id @default(cuid())
+  tenantId   String
+  name       String
+  ipAddress  String
+  port       Int    @default(9100)
+  type       String
+  paperWidth Int    @default(80)
+  active     Boolean @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, type])
+}
+
+model MenuItem {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  price       Float
+  category    String
+  dietType    String  @default("Non-Veg")
+  menuType    String  @default("FOOD")
+  printerTarget String @default("KITCHEN")
+  description String?
+  image       String?
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+  @@index([tenantId, menuType])
+}
+
+model Table {
+  id          String @id @default(cuid())
+  tenantId    String
+  number      String
+  sectionName String?
+  sectionTag  String?
+  status      String @default("AVAILABLE")
+  captainId   String?
+  currentBill Float  @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tableId     String
+  captainId   String
+  status      String   @default("RUNNING")
+  items       String
+  totalAmount Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  tenantId    String
+  orderId     String?
+  tableId     String?
+  captainId   String?
+  amount      Float
+  type        String
+  status      String @default("COMPLETED")
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+}
+
+model KOT {
+  id        String   @id @default(cuid())
+  tenantId  String
+  orderId   String
+  tableId   String
+  captainId String
+  items     String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}

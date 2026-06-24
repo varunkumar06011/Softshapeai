@@ -5,6 +5,15 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  },
   build: {
     // Rolldown's minifier (Vite 8 default) has a known bug with framer-motion v12
     // ESM circular references — it produces incorrect initialization order, causing
