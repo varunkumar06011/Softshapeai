@@ -14,6 +14,7 @@ import { QZ_CERT } from '../services/certificate.js';
 import { getCurrentRestaurantId } from './getCurrentRestaurantId';
 import { getBarId } from '../services/barApiConfig';
 import { getVenueId } from '../services/venueApiConfig';
+import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -47,9 +48,9 @@ async function fetchSignature(toSign) {
   const cached = signatureCache.get(toSign);
   if (cached) return cached;
 
-  const res = await fetch(`${API_URL}/api/print/qz-sign`, {
+  const res = await fetch(apiUrl('/api/print/qz-sign'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ toSign }),
   });
   if (!res.ok) throw new Error(`QZ sign request failed: ${res.status}`);
