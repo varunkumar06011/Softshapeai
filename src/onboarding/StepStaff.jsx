@@ -1,17 +1,31 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Users, Plus, Trash2, Key } from 'lucide-react';
 
 const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
+  const [errors, setErrors] = useState({ captains: [], cashiers: [] });
+
   const handleCaptainChange = (index, field, value) => {
     const newCaptains = [...captains];
     newCaptains[index] = { ...newCaptains[index], [field]: value };
     onChange(newCaptains, cashiers);
+    
+    if (errors.captains[index]?.[field]) {
+      const newErrors = { ...errors };
+      newErrors.captains[index] = { ...newErrors.captains[index], [field]: null };
+      setErrors(newErrors);
+    }
   };
 
   const handleCashierChange = (index, field, value) => {
     const newCashiers = [...cashiers];
     newCashiers[index] = { ...newCashiers[index], [field]: value };
     onChange(captains, newCashiers);
+    
+    if (errors.cashiers[index]?.[field]) {
+      const newErrors = { ...errors };
+      newErrors.cashiers[index] = { ...newErrors.cashiers[index], [field]: null };
+      setErrors(newErrors);
+    }
   };
 
   const addCaptain = () => {
@@ -34,9 +48,33 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
     }
   };
 
-  const isValid =
-    captains.every(c => c.name.length >= 2 && c.pin.length === 4 && /^\d{4}$/.test(c.pin)) &&
-    cashiers.every(c => c.name.length >= 2 && c.pin.length === 4 && /^\d{4}$/.test(c.pin));
+  const validate = () => {
+    let isValid = true;
+    const newErrors = { captains: [], cashiers: [] };
+
+    captains.forEach((c, i) => {
+      const e = {};
+      if (!c.name || c.name.length < 2) { e.name = "Name ≥ 2 chars"; isValid = false; }
+      if (!c.pin || c.pin.length !== 4) { e.pin = "4 digits"; isValid = false; }
+      newErrors.captains[i] = e;
+    });
+
+    cashiers.forEach((c, i) => {
+      const e = {};
+      if (!c.name || c.name.length < 2) { e.name = "Name ≥ 2 chars"; isValid = false; }
+      if (!c.pin || c.pin.length !== 4) { e.pin = "4 digits"; isValid = false; }
+      newErrors.cashiers[i] = e;
+    });
+
+    setErrors(newErrors);
+    return isValid;
+  };
+
+  const handleContinue = () => {
+    if (validate()) {
+      onNext();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -66,9 +104,10 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
                   type="text"
                   value={captain.name}
                   onChange={(e) => handleCaptainChange(index, 'name', e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className={`w-full px-4 py-2 bg-gray-50 border rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.captains[index]?.name ? 'border-red-500' : 'border-gray-100'}`}
                   placeholder="Captain name"
                 />
+                {errors.captains[index]?.name && <p className="text-red-400 text-xs mt-1">{errors.captains[index].name}</p>}
               </div>
               {captains.length > 1 && (
                 <button
@@ -88,11 +127,12 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
                   const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                   handleCaptainChange(index, 'pin', value);
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                className={`w-full pl-10 pr-4 py-2 bg-gray-50 border rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.captains[index]?.pin ? 'border-red-500' : 'border-gray-100'}`}
                 placeholder="4-digit PIN"
                 maxLength={4}
               />
             </div>
+            {errors.captains[index]?.pin && <p className="text-red-400 text-xs mt-1">{errors.captains[index].pin}</p>}
           </div>
         ))}
       </div>
@@ -117,9 +157,10 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
                   type="text"
                   value={cashier.name}
                   onChange={(e) => handleCashierChange(index, 'name', e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className={`w-full px-4 py-2 bg-gray-50 border rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.cashiers[index]?.name ? 'border-red-500' : 'border-gray-100'}`}
                   placeholder="Cashier name"
                 />
+                {errors.cashiers[index]?.name && <p className="text-red-400 text-xs mt-1">{errors.cashiers[index].name}</p>}
               </div>
               {cashiers.length > 1 && (
                 <button
@@ -139,11 +180,12 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
                   const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                   handleCashierChange(index, 'pin', value);
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                className={`w-full pl-10 pr-4 py-2 bg-gray-50 border rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.cashiers[index]?.pin ? 'border-red-500' : 'border-gray-100'}`}
                 placeholder="4-digit PIN"
                 maxLength={4}
               />
             </div>
+            {errors.cashiers[index]?.pin && <p className="text-red-400 text-xs mt-1">{errors.cashiers[index].pin}</p>}
           </div>
         ))}
       </div>
@@ -162,13 +204,8 @@ const StepStaff = ({ captains, cashiers, onChange, onNext, onBack }) => {
           Back
         </button>
         <button
-          onClick={onNext}
-          disabled={!isValid}
-          className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
-            isValid
-              ? 'bg-[#E53935] hover:bg-[#B71C1C] text-white'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
+          onClick={handleContinue}
+          className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"
         >
           Continue
         </button>

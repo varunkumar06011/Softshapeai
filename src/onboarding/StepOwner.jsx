@@ -4,16 +4,31 @@ import { User, Mail, Lock, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 const StepOwner = ({ data, onChange, onNext, onBack }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errors, setErrors] = useState({});
 
   const handleChange = (field, value) => {
     onChange({ ...data, [field]: value });
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: null }));
+    }
   };
 
-  const isValid =
-    data.name.length >= 2 &&
-    data.email.includes('@') &&
-    data.password.length >= 8 &&
-    data.password === data.confirmPassword;
+  const validate = () => {
+    const newErrors = {};
+    if (!data.name || data.name.length < 2) newErrors.name = 'Name must be at least 2 characters';
+    if (!data.email || !data.email.includes('@')) newErrors.email = 'Please enter a valid email address';
+    if (!data.password || data.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+    if (data.password !== data.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleContinue = () => {
+    if (validate()) {
+      onNext();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -32,9 +47,10 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
             type="text"
             value={data.name}
             onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+            className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.name ? 'border-red-500' : 'border-gray-100'}`}
             placeholder="e.g., John Doe"
           />
+          {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
         </div>
 
         <div>
@@ -47,10 +63,11 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
               type="email"
               value={data.email}
               onChange={(e) => handleChange('email', e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.email ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="e.g., owner@example.com"
             />
           </div>
+          {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
         </div>
 
         <div>
@@ -63,7 +80,7 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
               type={showPassword ? 'text' : 'password'}
               value={data.password}
               onChange={(e) => handleChange('password', e.target.value)}
-              className="w-full pl-10 pr-12 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className={`w-full pl-10 pr-12 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.password ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="Min 8 characters"
             />
             <button
@@ -75,7 +92,11 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
-          <p className="text-xs text-gray-400 mt-1">Must be at least 8 characters</p>
+          {errors.password ? (
+            <p className="text-red-400 text-xs mt-1">{errors.password}</p>
+          ) : (
+            <p className="text-xs text-gray-400 mt-1">Must be at least 8 characters</p>
+          )}
         </div>
 
         <div>
@@ -88,7 +109,7 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
               type={showConfirmPassword ? 'text' : 'password'}
               value={data.confirmPassword}
               onChange={(e) => handleChange('confirmPassword', e.target.value)}
-              className="w-full pl-10 pr-12 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className={`w-full pl-10 pr-12 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.confirmPassword ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="Re-enter password"
             />
             <button
@@ -100,8 +121,8 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
               {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
-          {data.confirmPassword && data.password !== data.confirmPassword && (
-            <p className="text-xs text-red-600 mt-1">Passwords do not match</p>
+          {errors.confirmPassword && (
+            <p className="text-red-400 text-xs mt-1">{errors.confirmPassword}</p>
           )}
         </div>
       </div>
@@ -114,13 +135,8 @@ const StepOwner = ({ data, onChange, onNext, onBack }) => {
           Back
         </button>
         <button
-          onClick={onNext}
-          disabled={!isValid}
-          className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
-            isValid
-              ? 'bg-[#E53935] hover:bg-[#B71C1C] text-white'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
+          onClick={handleContinue}
+          className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"
         >
           Continue
         </button>
