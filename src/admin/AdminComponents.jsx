@@ -60,6 +60,7 @@ import { API_BASE, apiUrl } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { getBarId } from '../services/barApiConfig';
 import { authService } from '../services/authService';
 import { VENUE_PRICE_COLUMNS, BAR_VENUE_PRICE_COLUMNS, RESTAURANT_VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';

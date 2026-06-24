@@ -27,6 +27,7 @@ import { calculateSessionBill, calculateOrderTotal, calculateTableBill, getTable
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 import { isBeerItem } from '../utils/itemHelpers';
 
