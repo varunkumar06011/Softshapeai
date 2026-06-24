@@ -8,7 +8,7 @@ import StepStaff from './StepStaff';
 import StepFloorPlan from './StepFloorPlan';
 import StepMenu from './StepMenu';
 import StepPlan from './StepPlan';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle2, Copy, ArrowRight } from 'lucide-react';
 
 const STORAGE_KEY = 'onboarding_wizard';
 
@@ -39,6 +39,8 @@ const OnboardingWizard = () => {
   const [currentStep, setCurrentStep] = useState(saved?.currentStep || 1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [onboardResult, setOnboardResult] = useState(null);
+  const [copied, setCopied] = useState(false);
   const [wizardData, setWizardData] = useState(saved?.wizardData || defaultWizardData);
 
   useEffect(() => {
@@ -116,11 +118,23 @@ const OnboardingWizard = () => {
 
       sessionStorage.removeItem(STORAGE_KEY);
       setAuth(data.token, data.user, data.restaurant.slug);
-      navigate('/admin/dashboard');
+      setOnboardResult(data.restaurant);
     } catch (err) {
       setError(err.message || 'Failed to create restaurant');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoToDashboard = () => {
+    navigate('/admin/dashboard');
+  };
+
+  const handleCopyCode = () => {
+    if (onboardResult?.restaurantCode) {
+      navigator.clipboard.writeText(onboardResult.restaurantCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -142,6 +156,48 @@ const OnboardingWizard = () => {
         return null;
     }
   };
+
+  if (onboardResult) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex items-center justify-center px-4">
+        <div className="max-w-lg w-full bg-white rounded-3xl p-10 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100 text-center">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-50 flex items-center justify-center">
+            <CheckCircle2 size={48} className="text-green-600" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">You're All Set!</h1>
+          <p className="text-gray-500 mb-8">
+            <span className="font-semibold text-gray-900">{onboardResult.name}</span> has been created successfully.
+          </p>
+
+          <div className="bg-[#F8F9FA] border border-gray-200 rounded-2xl p-6 mb-8">
+            <p className="text-sm text-gray-500 mb-2">Your Restaurant ID</p>
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-2xl font-bold tracking-wide text-[#E53935]">{onboardResult.restaurantCode}</span>
+              <button
+                onClick={handleCopyCode}
+                className="p-2 rounded-lg hover:bg-gray-200 transition-all"
+                title="Copy Restaurant ID"
+              >
+                <Copy size={18} className={copied ? 'text-green-600' : 'text-gray-500'} />
+              </button>
+            </div>
+            {copied && <p className="text-xs text-green-600 mt-2">Copied!</p>}
+            <p className="text-xs text-gray-400 mt-3">
+              Share this ID with your staff to log in. Keep it safe.
+            </p>
+          </div>
+
+          <button
+            onClick={handleGoToDashboard}
+            className="w-full py-4 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2"
+          >
+            Go to Dashboard
+            <ArrowRight size={20} />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-900">
