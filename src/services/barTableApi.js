@@ -1,7 +1,5 @@
-import { apiUrl } from "./apiConfig";
-import { BAR_ID } from "./barApiConfig";
-
-export { BAR_ID };
+import { apiUrl, getAuthHeaders } from "./apiConfig";
+import { getBarId } from "./barApiConfig";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -44,9 +42,9 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
 }
 
 export async function fetchBarTables(signal) {
-  const res = await fetchWithRetry(apiUrl(`/api/bar/tables?restaurantId=${BAR_ID}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/bar/tables?restaurantId=${getBarId()}`), {
     cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
     signal,
   });
   return parseResponse(res);
@@ -55,7 +53,7 @@ export async function fetchBarTables(signal) {
 export async function updateBarTableSession(tableId, sessionData) {
   const res = await fetch(apiUrl(`/api/bar/tables/${tableId}/session`), {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(sessionData),
   });
   return parseResponse(res);
@@ -64,6 +62,7 @@ export async function updateBarTableSession(tableId, sessionData) {
 export async function deleteBarTableSession(tableId) {
   const res = await fetch(apiUrl(`/api/bar/tables/${tableId}/session`), {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return parseResponse(res);
 }

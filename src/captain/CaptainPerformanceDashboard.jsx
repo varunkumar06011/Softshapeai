@@ -4,7 +4,8 @@ import { Users, TrendingUp } from "lucide-react";
 import { CAPTAINS } from "../config/captains";
 import { fetchTransactions } from "../services/orderApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-import { BAR_ID } from "../services/barApiConfig";
+import { getBarId } from "../services/barApiConfig";
+import { getVenueId } from "../services/venueApiConfig";
 
 export default function CaptainPerformanceDashboard() {
   const [range, setRange] = useState("Today");
@@ -34,8 +35,8 @@ export default function CaptainPerformanceDashboard() {
 
     Promise.allSettled([
       fetchTransactions(getCurrentRestaurantId(), limit, dateParam, monthParam),
-      fetchTransactions(BAR_ID, limit, dateParam, monthParam),
-      fetchTransactions('venue-001', limit, dateParam, monthParam),
+      fetchTransactions(getBarId(), limit, dateParam, monthParam),
+      fetchTransactions(getVenueId(), limit, dateParam, monthParam),
     ]).then(results => {
       const all = results.flatMap(r => (r.status === "fulfilled" && Array.isArray(r.value) ? r.value : []));
       setTransactions(all);

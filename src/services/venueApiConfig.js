@@ -1,4 +1,8 @@
-export const VENUE_ID = "venue-001";
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+
+export function getVenueId() {
+  return getCurrentRestaurantId();
+}
 export const VENUE_TABLES_CACHE_KEY = "softshape_venue_tables_cache_v1";
 export const VENUE_MENU_CACHE_KEY = "softshape_venue_menu_cache_v1";
 

@@ -4,16 +4,16 @@ import { fetchTransactions, deleteTransaction } from '../services/orderApi';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-
-const BAR_ID = 'bar-001';
-const VENUE_ID = 'venue-001';
+import { getBarId } from '../services/barApiConfig';
+import { getVenueId } from '../services/venueApiConfig';
 
 function formatBillNumber(txnDate, txnNumber) {
   return formatTxnDisplayId(txnDate, txnNumber);
 }
 
 function resolveSource(txn) {
-  if (txn.restaurantId === BAR_ID) return 'bar';
+  const barId = getBarId();
+  if (txn.restaurantId === barId) return 'bar';
   if (txn.restaurantId === getCurrentRestaurantId()) return 'restaurant';
   const tag = (txn.sectionTag || '').toLowerCase();
   if (tag === 'venue-bar-ac-hall') return 'bar';
@@ -73,13 +73,13 @@ export default function AdminTransactions({ onStatsRefresh }) {
       }
 
       const allResults = await Promise.all([
-        fetchTransactions(BAR_ID, limitParam, dateParam, monthParam).catch(() => []),
+        fetchTransactions(getBarId(), limitParam, dateParam, monthParam).catch(() => []),
         fetchTransactions(getCurrentRestaurantId(), limitParam, dateParam, monthParam).catch(() => []),
-        fetchTransactions(VENUE_ID, limitParam, dateParam, monthParam).catch(() => []),
+        fetchTransactions(getVenueId(), limitParam, dateParam, monthParam).catch(() => []),
       ]);
 
       const allTxns = allResults.flatMap((txns, idx) => {
-        const rid = [BAR_ID, getCurrentRestaurantId(), VENUE_ID][idx];
+        const rid = [getBarId(), getCurrentRestaurantId(), getVenueId()][idx];
         return txns.map(txn => ({ ...txn, restaurantId: txn.restaurantId || rid }));
       });
 

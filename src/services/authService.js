@@ -7,11 +7,11 @@ function getApiBase() {
 }
 
 export const authService = {
-  async login(email, password) {
+  async login(email, password, restaurantCode) {
     const res = await fetch(`${getApiBase()}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, restaurantCode }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -24,15 +24,18 @@ export const authService = {
     }
     if (data.restaurant?.slug) {
       localStorage.setItem('tenant_slug', data.restaurant.slug);
+    }
+    if (data.user?.restaurantCode || data.restaurant?.restaurantCode) {
+      localStorage.setItem('tenant_restaurantCode', data.user?.restaurantCode || data.restaurant?.restaurantCode);
     }
     return data.user;
   },
 
-  async captainLogin(restaurantId, userId, pin) {
+  async captainLogin(restaurantId, userId, pin, restaurantCode) {
     const res = await fetch(`${getApiBase()}/api/auth/captain-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurantId, userId, pin }),
+      body: JSON.stringify({ restaurantId, userId, pin, restaurantCode }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -45,6 +48,9 @@ export const authService = {
     }
     if (data.restaurant?.slug) {
       localStorage.setItem('tenant_slug', data.restaurant.slug);
+    }
+    if (data.user?.restaurantCode || data.restaurant?.restaurantCode) {
+      localStorage.setItem('tenant_restaurantCode', data.user?.restaurantCode || data.restaurant?.restaurantCode);
     }
     return data.user;
   },
@@ -65,6 +71,7 @@ export const authService = {
     localStorage.removeItem('tenant_user');
     localStorage.removeItem('tenant_restaurantId');
     localStorage.removeItem('tenant_slug');
+    localStorage.removeItem('tenant_restaurantCode');
   },
 
   getToken() {

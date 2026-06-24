@@ -1,4 +1,4 @@
-import { apiUrl } from "./apiConfig";
+import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { BAR_MENU_CACHE_KEY } from "./barApiConfig";
 import { MENU_STORAGE_KEY } from "./menuService";
 
@@ -348,7 +348,7 @@ export async function repairBarMenuCloudinaryUrls(apiBase, { force = false } = {
   try {
     const res = await fetch(`${apiBase}/api/bar/menu/restore-images`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     });
     if (res.ok) {
       const data = await res.json();
@@ -373,7 +373,7 @@ export async function repairBarMenuCloudinaryUrls(apiBase, { force = false } = {
   }
 
   const [barItems, restaurantItems] = await Promise.all([
-    fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store" }).then((r) =>
+    fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store", headers: getAuthHeaders() }).then((r) =>
       r.ok ? r.json() : []
     ),
     fetchRestaurantItemsRaw(),
@@ -396,7 +396,7 @@ export async function repairBarMenuCloudinaryUrls(apiBase, { force = false } = {
       batch.map(({ id, imageUrl }) =>
         fetch(`${apiBase}/api/bar/menu/items/${id}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           body: JSON.stringify({ imageUrl }),
         }).then((res) => {
           if (res.ok) repaired += 1;

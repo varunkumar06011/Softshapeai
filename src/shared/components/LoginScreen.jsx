@@ -17,6 +17,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   // Admin/Owner login state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [restaurantCode, setRestaurantCode] = useState('');
 
   // Captain / Cashier login state
   const [slug, setSlug] = useState('');
@@ -34,10 +35,14 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
       setError('Please enter your email and password.');
       return;
     }
+    if (!restaurantCode.trim()) {
+      setError('Please enter your restaurant code.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const user = await authService.login(email.trim(), password);
+      const user = await authService.login(email.trim(), password, restaurantCode.trim());
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid credentials');
@@ -48,7 +53,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
 
   const handleFetchStaff = async () => {
     if (!slug.trim()) {
-      setError('Please enter the restaurant slug.');
+      setError('Please enter the restaurant code or slug.');
       return;
     }
     setLoading(true);
@@ -85,7 +90,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.captainLogin(restaurantId, selectedUser.id, pin);
+      const user = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid PIN');
@@ -130,14 +135,14 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
               {step === 'slug' && (
                 <>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Restaurant Slug</label>
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Restaurant Code or Slug</label>
                     <input
                       className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
                       type="text"
                       value={slug}
                       onChange={(e) => { setSlug(e.target.value); setError(''); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleFetchStaff()}
-                      placeholder="e.g. vgrand"
+                      placeholder="e.g. RESTAURANT-001 or vgrand"
                     />
                   </div>
                   {error && (
@@ -219,6 +224,18 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
           ) : (
             /* ── Admin / Owner Email+Password Login ── */
             <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
+                  Restaurant Code
+                </label>
+                <input
+                  type="text"
+                  value={restaurantCode}
+                  onChange={e => { setRestaurantCode(e.target.value); setError(''); }}
+                  placeholder="e.g. RESTAURANT-001"
+                  className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                />
+              </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
                   Username

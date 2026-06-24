@@ -45,7 +45,8 @@ import OutletToggle from '../shared/components/OutletToggle';
 
 import { useBarTableSync } from '../services/barTableSyncService';
 
-import { BAR_ID } from '../services/barApiConfig';
+import { getBarId } from '../services/barApiConfig';
+import { getVenueId } from '../services/venueApiConfig';
 
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { useVenueTableSync } from '../services/venueTableSyncService';
@@ -881,9 +882,9 @@ export default function CaptainApp({ onLogout }) {
 
     const restaurantFetch = fetchTransactions(getCurrentRestaurantId(), 500, todayDateISO);
 
-    const barFetch = fetchTransactions(BAR_ID, 500, todayDateISO);
+    const barFetch = fetchTransactions(getBarId(), 500, todayDateISO);
 
-    const venueFetch = fetchTransactions('venue-001', 500, todayDateISO);
+    const venueFetch = fetchTransactions(getVenueId(), 500, todayDateISO);
 
     Promise.allSettled([restaurantFetch, barFetch, venueFetch]).then(results => {
 
@@ -933,9 +934,9 @@ export default function CaptainApp({ onLogout }) {
 
   const activeRestaurantId = useMemo(() => {
 
-    if (outlet === 'bar') return BAR_ID;
+    if (outlet === 'bar') return getBarId();
 
-    if (tableSubCategory === 'parcel' && outlet !== 'bar') return 'venue-001';
+    if (tableSubCategory === 'parcel' && outlet !== 'bar') return getVenueId();
 
     if (tableSubCategory && tableSubCategory !== '' && !['dine-in', 'parcel'].includes(tableSubCategory)) {
       console.warn('[CaptainApp] Unknown tableSubCategory:', tableSubCategory, '— falling back to getCurrentRestaurantId()');
@@ -1356,13 +1357,13 @@ export default function CaptainApp({ onLogout }) {
     const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
     socket.emit('join', activeRestaurantId);
     if (isVenueSubcategory) {
-      socket.emit('join', 'venue-001');
+      socket.emit('join', getVenueId());
     }
 
     const onConnect = () => {
       socket.emit('join', activeRestaurantId);
       if (isVenueSubcategory) {
-        socket.emit('join', 'venue-001');
+        socket.emit('join', getVenueId());
       }
     };
     socket.on('connect', onConnect);
@@ -1436,7 +1437,7 @@ export default function CaptainApp({ onLogout }) {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
-      if (table.restaurantId && table.restaurantId !== activeRestaurantId && table.restaurantId !== 'venue-001') return;
+      if (table.restaurantId && table.restaurantId !== activeRestaurantId && table.restaurantId !== getVenueId()) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
 
@@ -1469,7 +1470,7 @@ export default function CaptainApp({ onLogout }) {
           kotHistory: mergedKotHistory,
         };
       });
-      if (table.restaurantId === 'venue-001') {
+      if (table.restaurantId === getVenueId()) {
         setVenueTables(applyUpdate);
       } else {
         setActiveTables(applyUpdate);
@@ -1480,7 +1481,7 @@ export default function CaptainApp({ onLogout }) {
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Merge incoming items with existing so KOTs don't vanish
@@ -1512,7 +1513,7 @@ export default function CaptainApp({ onLogout }) {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? { ...t, activeOrder: order, status: t.status === 'Free' ? 'Occupied' : t.status, workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus }
@@ -1529,7 +1530,7 @@ export default function CaptainApp({ onLogout }) {
     const onBillingRequested = (payload) => {
       const { table } = payload;
       if (!table?.id) return;
-      const isVenue = payload?.restaurantId === 'venue-001' || table?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || table?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
       );
@@ -1555,7 +1556,7 @@ export default function CaptainApp({ onLogout }) {
       socket.off('order:paid', onOrderPaid);
       socket.emit('leave', activeRestaurantId);
       if (isVenueSubcategory) {
-        socket.emit('leave', 'venue-001');
+        socket.emit('leave', getVenueId());
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2433,7 +2434,7 @@ export default function CaptainApp({ onLogout }) {
       let realKotId;
 
       const isVenueTable = venueTables.some(t => t.id === activeTableId);
-      const orderRestaurantId = isVenueTable ? 'venue-001' : activeRestaurantId;
+      const orderRestaurantId = isVenueTable ? getVenueId() : activeRestaurantId;
 
       if (existingOrderId) {
 
@@ -2927,7 +2928,7 @@ export default function CaptainApp({ onLogout }) {
                 <div className="space-y-3">
                   <input
                     className="w-full h-12 rounded-2xl border-2 border-gray-100 bg-gray-50 px-4 text-sm font-bold outline-none focus:border-[#E53935] focus:bg-white transition-all"
-                    placeholder="Restaurant ID or slug (e.g. restaurant-001)"
+                    placeholder="Restaurant ID (e.g. RESTAURANT-001)"
                     value={captainSlug}
                     onChange={e => { setCaptainSlug(e.target.value); setCaptainCrewError(''); }}
                     onKeyDown={e => e.key === 'Enter' && loadCaptainCrew()}
@@ -3893,7 +3894,7 @@ export default function CaptainApp({ onLogout }) {
 
             }
 
-            restaurantId="venue-001"
+            restaurantId={getVenueId()}
 
             roomMode="single"
 

@@ -9,29 +9,34 @@ export const AuthProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : null;
   });
   const [restaurantSlug, setRestaurantSlug] = useState(() => localStorage.getItem('tenant_slug'));
+  const [restaurantCode, setRestaurantCode] = useState(() => localStorage.getItem('tenant_restaurantCode'));
 
-  const setAuth = (newToken, newUser, newSlug) => {
+  const setAuth = (newToken, newUser, newSlug, newCode) => {
     setToken(newToken);
     setUser(newUser);
     setRestaurantSlug(newSlug);
+    setRestaurantCode(newCode);
     if (newToken) localStorage.setItem('tenant_token', newToken);
     if (newUser) localStorage.setItem('tenant_user', JSON.stringify(newUser));
     if (newSlug) localStorage.setItem('tenant_slug', newSlug);
     if (newUser?.restaurantId) localStorage.setItem('tenant_restaurantId', newUser.restaurantId);
+    if (newCode || newUser?.restaurantCode) localStorage.setItem('tenant_restaurantCode', newCode || newUser?.restaurantCode);
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
     setRestaurantSlug(null);
+    setRestaurantCode(null);
     localStorage.removeItem('tenant_token');
     localStorage.removeItem('tenant_user');
     localStorage.removeItem('tenant_slug');
     localStorage.removeItem('tenant_restaurantId');
+    localStorage.removeItem('tenant_restaurantCode');
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, restaurantSlug, setAuth, logout }}>
+    <AuthContext.Provider value={{ token, user, restaurantSlug, restaurantCode, setAuth, logout }}>
       {children}
     </AuthContext.Provider>
   );

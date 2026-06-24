@@ -1,4 +1,4 @@
-import { API_BASE, apiUrl } from "./apiConfig";
+import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 async function parseResponse(res) {
@@ -53,6 +53,7 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
     headers: {
       "Cache-Control": "no-cache",
       Pragma: "no-cache",
+      ...getAuthHeaders(),
     },
     signal,
   });
@@ -60,14 +61,16 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
 }
 
 export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
-  const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`));
+  const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`), {
+    headers: getAuthHeaders(),
+  });
   return parseResponse(res);
 }
 
 export async function updateTableStatus(tableId, status) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}/status`), {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ status }),
   });
   return parseResponse(res);
@@ -76,7 +79,7 @@ export async function updateTableStatus(tableId, status) {
 export async function updateTableSession(tableId, session) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}/session`), {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(session),
   });
   return parseResponse(res);
@@ -85,7 +88,7 @@ export async function updateTableSession(tableId, session) {
 export async function createTable({ number, capacity, sectionId, restaurantId }) {
   const res = await fetch(apiUrl("/api/tables"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ number, capacity, sectionId, restaurantId }),
   });
   return parseResponse(res);
@@ -94,6 +97,7 @@ export async function createTable({ number, capacity, sectionId, restaurantId })
 export async function deleteTable(tableId) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}`), {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return parseResponse(res);
 }

@@ -1,6 +1,7 @@
-import { apiUrl } from "./apiConfig";
+import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
+import { authService } from "./authService";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -49,7 +50,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
       try {
         const res = await fetch(apiUrl("/api/orders"), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authService.getAuthHeader() },
           body: JSON.stringify(orderData),
           signal: controller.signal,
         });
@@ -72,7 +73,7 @@ export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), sta
   if (status) qs.set("status", status);
   const res = await fetch(apiUrl(`/api/orders?${qs.toString()}`), {
     cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...authService.getAuthHeader() },
   });
   return parseResponse(res);
 }
@@ -80,6 +81,7 @@ export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), sta
 export async function fetchTableOrder(tableId) {
   const res = await fetch(apiUrl(`/api/orders/table/${tableId}`), {
     cache: "no-store",
+    headers: getAuthHeaders(),
   });
   return parseResponse(res);
 }
@@ -100,7 +102,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       try {
         const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           body: JSON.stringify(body),
           signal: controller.signal,
         });
@@ -130,7 +132,7 @@ export async function updateOrderStatus(orderId, status) {
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/status`), {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ status }),
       });
       return parseResponse(res);
@@ -142,6 +144,7 @@ export async function updateOrderStatus(orderId, status) {
 export async function requestBilling(orderId) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
     method: "POST",
+    headers: getAuthHeaders(),
   });
   return parseResponse(res);
 }
@@ -149,7 +152,7 @@ export async function requestBilling(orderId) {
 export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/pay`), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ paymentMethod }),
   });
   return parseResponse(res);
@@ -160,7 +163,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ removedItemIds, removedBy }),
       });
       return parseResponse(res);
@@ -187,7 +190,7 @@ export async function saveTransaction({
 }) {
   const res = await fetch(apiUrl('/api/transactions'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authService.getAuthHeader() },
     body: JSON.stringify({
       restaurantId,
       orderId,
@@ -217,6 +220,7 @@ export async function fetchTransactions(restaurantId, limit = 2000, date = null,
   qs.set('_cb', String(Date.now()));
   const res = await fetch(apiUrl(`/api/transactions?${qs}`), {
     cache: 'no-store',
+    headers: { ...authService.getAuthHeader() },
   });
   return parseResponse(res);
 }
@@ -234,7 +238,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId }),
       });
       return parseResponse(res);
@@ -248,7 +252,7 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
     async () => {
       const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/swap`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ targetTableId: targetTableBackendId, swappedBy, restaurantId }),
       });
       return parseResponse(res);
@@ -260,7 +264,7 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
   const res = await fetch(apiUrl(`/api/orders/${orderId}/bill-edit`), {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ removedItemIds, editQuantities, addedItems, editedBy }),
   });
   return parseResponse(res);
@@ -271,7 +275,7 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
     async () => {
       const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/transfer-items`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ targetTableId: targetTableBackendId, itemIds, transferredBy, restaurantId }),
       });
       if (!res.ok) {
@@ -287,6 +291,7 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
 export async function deleteTransaction(transactionId, restaurantId) {
   const res = await fetch(apiUrl(`/api/transactions/${transactionId}?restaurantId=${restaurantId}`), {
     method: 'DELETE',
+    headers: { ...authService.getAuthHeader() },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -301,7 +306,7 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-items`), {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ items, cancelledBy, tableNumber, requestId }),
       });
       return parseResponse(res);

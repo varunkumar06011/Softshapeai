@@ -60,7 +60,8 @@ import { API_BASE, apiUrl } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { BAR_ID } from '../services/barApiConfig';
+import { getBarId } from '../services/barApiConfig';
+import { authService } from '../services/authService';
 import { VENUE_PRICE_COLUMNS, BAR_VENUE_PRICE_COLUMNS, RESTAURANT_VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
@@ -209,7 +210,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
         // Fetch from both outlets
         const [restaurantTxns, barTxns] = await Promise.allSettled([
           fetchTransactions(getCurrentRestaurantId(), 500),
-          fetchTransactions(BAR_ID, 500),
+          fetchTransactions(getBarId(), 500),
         ]);
 
         const allTransactions = [
@@ -685,7 +686,7 @@ export function MenuPage({ onAddDish }) {
       setAdminLoading(true);
       let url;
       if (activeOutlet === 'bar') {
-        url = `${API_BASE}/api/bar/menu/items?restaurantId=bar-001`;
+        url = `${API_BASE}/api/bar/menu/items?restaurantId=${getBarId()}`;
       } else {
         url = `${API_BASE}/api/menu/items/admin?restaurantId=${getCurrentRestaurantId()}`;
       }
@@ -2030,7 +2031,7 @@ function SalesReport({ inventory }) {
       try {
         // Fetch sales data from analytics API
         const response = await fetch(
-          apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${filters.startDate}&endDate=${filters.endDate}`)
+          apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${filters.startDate}&endDate=${filters.endDate}`)
         );
 
         if (!response.ok) {
@@ -2951,8 +2952,8 @@ function ComparisonReport({ inventory }) {
         const ranges = getDateRanges();
 
         const [data1Response, data2Response] = await Promise.all([
-          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${ranges.period1.start.toISOString().slice(0, 10)}&endDate=${ranges.period1.end.toISOString().slice(0, 10)}`)),
-          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${ranges.period2.start.toISOString().slice(0, 10)}&endDate=${ranges.period2.end.toISOString().slice(0, 10)}`))
+          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${ranges.period1.start.toISOString().slice(0, 10)}&endDate=${ranges.period1.end.toISOString().slice(0, 10)}`)),
+          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${ranges.period2.start.toISOString().slice(0, 10)}&endDate=${ranges.period2.end.toISOString().slice(0, 10)}`))
         ]);
 
         const data1 = await data1Response.json();
@@ -3161,7 +3162,7 @@ function TopPerformersReport({ inventory }) {
       setLoading(true);
       try {
         const response = await fetch(
-          apiUrl(`/api/analytics/items-sold?restaurantId=bar-001&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
+          apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
         );
 
         if (!response.ok) throw new Error('Failed to fetch sales data');
@@ -3718,7 +3719,7 @@ export function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [activeTab, setActiveTab] = useState('inventory');
-  const socket = useSocket('bar-001');
+  const socket = useSocket(getBarId());
   const [popup, setPopup] = useState(null);
 
   // Loading states for action buttons
@@ -3798,7 +3799,9 @@ export function Inventory() {
 
   const loadBarMenu = async () => {
     try {
-      const res = await fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'));
+      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getBarId()}`), {
+        headers: authService.getAuthHeader()
+      });
       const data = await res.json();
       const liquorItems = Array.isArray(data)
         ? data.filter(item => item && item.id && item.menuType === 'LIQUOR')
@@ -4306,7 +4309,9 @@ function AddInventoryModal({ onClose, onSave, isSubmitting }) {
   });
 
   useEffect(() => {
-    fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'))
+    fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getBarId()}`), {
+      headers: authService.getAuthHeader()
+    })
       .then(res => res.json())
       .then(data => setMenuItems(data.filter(item => item.menuType === 'LIQUOR')))
       .catch(console.error);
@@ -4742,7 +4747,9 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isS
   });
 
   useEffect(() => {
-    fetch(apiUrl('/api/bar/menu/items?restaurantId=bar-001'))
+    fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getBarId()}`), {
+      headers: authService.getAuthHeader()
+    })
       .then(res => res.json())
       .then(data => setMenuItems(data.filter(item => item.menuType === 'LIQUOR')))
       .catch(console.error);

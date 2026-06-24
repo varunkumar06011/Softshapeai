@@ -1,8 +1,6 @@
-import { apiUrl } from "./apiConfig";
-import { VENUE_ID } from "./venueApiConfig";
+import { apiUrl, getAuthHeaders } from "./apiConfig";
+import { getVenueId } from "./venueApiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-
-export { VENUE_ID };
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -61,7 +59,7 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
 export async function fetchVenueSections(signal) {
   const res = await fetchWithRetry(apiUrl(`/api/venue/sections`), {
     cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
     signal,
   }, { retries: 2, timeoutMs: 45000 });
   return parseResponse(res);
@@ -84,7 +82,7 @@ export async function fetchVenueMenu(venueId = "venue-family-restaurant", restau
   const networkFetch = async () => {
     const res = await fetch(apiUrl(`/api/venue/menu?venueId=${encodeURIComponent(venueId)}`), {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
     });
     const data = await parseResponse(res);
     try {
@@ -110,7 +108,7 @@ export async function fetchVenueMenu(venueId = "venue-family-restaurant", restau
 export async function updateVenueTableSession(tableId, sessionData) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}/session`), {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(sessionData),
   });
   return parseResponse(res);
@@ -124,7 +122,7 @@ export async function updateVenueTableSession(tableId, sessionData) {
 export async function updateVenuePrices(venueId, prices) {
   const res = await fetch(apiUrl(`/api/venue/prices`), {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ venueId, prices }),
   });
   return parseResponse(res);

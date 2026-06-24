@@ -36,6 +36,8 @@ import { API_BASE } from '../services/apiConfig.js';
 
 import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getBarId } from '../services/barApiConfig';
+import { getVenueId } from '../services/venueApiConfig';
 
 // ── Configurable print rooms (for running separate PrintStations per outlet) ──
 // Usage: /print-station?rooms=bar-001,venue-001   (only bar + venue)
@@ -45,7 +47,9 @@ const urlRooms = new URLSearchParams(window.location.search).get('rooms');
 function getPrintRooms() {
   if (urlRooms) return urlRooms.split(',').map(s => s.trim()).filter(Boolean);
   const rid = getCurrentRestaurantId();
-  return rid ? [rid, 'bar-001', 'venue-001'] : ['bar-001', 'venue-001'];
+  const barId = getBarId();
+  const venueId = getVenueId();
+  return [...new Set(rid ? [rid, barId, venueId] : [barId, venueId])];
 }
 
 // ── Per-printer sequential queue ─────────────────────────────────────────────
@@ -100,7 +104,7 @@ function resolveFoodKotPrinter(sectionTag, restaurantId) {
   if (sectionTag === 'venue-bar-pdr' || sectionTag === 'venue-bar-rooms') return KITCHEN_PRINTER;
   if (sectionTag === 'venue-restaurant-parcel')                           return KOT_PRINTER;
   if (sectionTag === 'venue-bar-parcel' || sectionTag === 'venue-bar-gobox') return KITCHEN_PRINTER;
-  if (restaurantId === 'venue-001')                                       return KOT_FAMILY_PRINTER;
+  if (restaurantId === getVenueId())                                       return KOT_FAMILY_PRINTER;
   // TODO Phase 3: replace with per-restaurant printer config once Restaurant model has a printer field — currently all restaurants share one generic printer mapping.
   if (restaurantId === getCurrentRestaurantId())                          return RESTAURANT_KITCHEN_PRINTER;
   return KITCHEN_PRINTER;
@@ -211,7 +215,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
   const stripped = /^[BTVF]\d+$/i.test(rawLabel) ? rawLabel.slice(1) : rawLabel;
 
-  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === 'venue-001';
+  const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel' || restaurantId === getVenueId();
 
   const tableDisplay = isFamilyRestaurant
 
@@ -581,8 +585,8 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
     ? 'V GRAND FAMILY RESTAURANT'
-    : (restaurantId === 'bar-001' ? 'BAR ORDER'
-      : (restaurantId === 'venue-001' ? 'V GRAND FAMILY RESTAURANT'
+    : (restaurantId === getBarId() ? 'BAR ORDER'
+      : (restaurantId === getVenueId() ? 'V GRAND FAMILY RESTAURANT'
         : 'SOFTSHAPE RESTAURANT'));
 
   const cmds = [
@@ -1025,7 +1029,7 @@ export default function PrintStation() {
 
           if (type === 'KOT') {
 
-            if (data.restaurantId === 'venue-001') {
+            if (data.restaurantId === getVenueId()) {
 
               // Use pre-built ESC/POS from backend when available
 
@@ -1136,7 +1140,7 @@ export default function PrintStation() {
 
             } else {
 
-              printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
+              printer = data.restaurantId === getBarId() ? BAR_PRINTER : BILLING_PRINTER;
 
             }
 
@@ -1164,7 +1168,7 @@ export default function PrintStation() {
 
             } else {
 
-              printer = data.restaurantId === 'bar-001' ? BAR_PRINTER : BILLING_PRINTER;
+              printer = data.restaurantId === getBarId() ? BAR_PRINTER : BILLING_PRINTER;
 
             }
 
@@ -1195,7 +1199,7 @@ export default function PrintStation() {
               // Family restaurant
               if (data.sectionTag === 'venue-family-restaurant') return KOT_FAMILY_PRINTER;
               // venue-001 generic
-              if (data.restaurantId === 'venue-001') return isLiquor ? BAR_PRINTER : KOT_FAMILY_PRINTER;
+              if (data.restaurantId === getVenueId()) return isLiquor ? BAR_PRINTER : KOT_FAMILY_PRINTER;
               // Non-venue: bar items → bar, food → kitchen
               return isLiquor ? BAR_PRINTER : KITCHEN_PRINTER;
             };
@@ -1207,7 +1211,7 @@ export default function PrintStation() {
 
             cmds = buildFullCancelCommands(data);
 
-            if (data.restaurantId === 'venue-001') {
+            if (data.restaurantId === getVenueId()) {
 
               // Cashier needs to know the order is voided; kitchen sees it stop coming
 

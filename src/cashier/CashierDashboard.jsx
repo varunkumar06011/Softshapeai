@@ -25,7 +25,9 @@ import BarMenuToggle from '../shared/components/BarMenuToggle';
 import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
-import { BAR_ID } from '../services/barApiConfig';
+import { getBarId } from '../services/barApiConfig';
+import { getVenueId } from '../services/venueApiConfig';
+import { authService } from '../services/authService';
 import { updateBarTableSession, deleteBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
 import VenueSectionView from '../shared/components/VenueSectionView';
@@ -433,7 +435,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : getCurrentRestaurantId();
+  const activeRestaurantId = outlet === 'bar' ? getBarId() : outlet === 'venue' ? getVenueId() : getCurrentRestaurantId();
 
   const socket = useSocket(activeRestaurantId);
   // ── End moved block ──
@@ -707,7 +709,7 @@ const CashierDashboard = ({ onLogout }) => {
         limitParam = 0;
       }
 
-      const restaurantIds = ['bar-001', getCurrentRestaurantId(), 'venue-001'];
+      const restaurantIds = [getBarId(), getCurrentRestaurantId(), getVenueId()].filter((v, i, arr) => arr.indexOf(v) === i);
 
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(e => {
@@ -749,7 +751,7 @@ const CashierDashboard = ({ onLogout }) => {
           : subtotal && discountAmount > 0
             ? Math.round((discountAmount / subtotal) * 10000) / 100
             : 0;
-        const source = txn._sourceRestaurantId === 'venue-001'
+        const source = txn._sourceRestaurantId === getVenueId()
           ? (
             txn.sectionTag === 'venue-family-restaurant' || String(txn.sectionName || '').toLowerCase().includes('family restaurant')
               ? 'family-restaurant'
@@ -820,7 +822,7 @@ const CashierDashboard = ({ onLogout }) => {
             // Rooms
             if (tag.includes('rooms') || source === 'bar-rooms') return `R${num}`;
             // Bar (venue or bar-001)
-            if (tag.includes('bar') || source === 'bar-ac-hall' || source === 'bar' || rid === 'bar-001') return `B${num}`;
+            if (tag.includes('bar') || source === 'bar-ac-hall' || source === 'bar' || rid === getBarId()) return `B${num}`;
             // Family restaurant / venue dine-in
             if (tag.includes('family') || source === 'family-restaurant') return `F${num}`;
             // Default: restaurant table → T prefix
@@ -945,12 +947,12 @@ const CashierDashboard = ({ onLogout }) => {
     // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
     // Also join venue-001 when in bar mode so venue table real-time updates work
     if (outlet === 'bar') {
-      socket.emit('join', 'venue-001');
+      socket.emit('join', getVenueId());
     }
     const onConnect = () => {
       if (outlet === 'bar') {
         refetchBarTables();
-        socket.emit('join', 'venue-001');
+        socket.emit('join', getVenueId());
       } else if (outlet === 'venue') {
         refetchVenueTables();
       } else {
@@ -968,7 +970,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (shouldBlockTableUpdate(table.id, table.status)) return;
 
       // Route table status update to the correct array
-      const isVenue = payload?.restaurantId === 'venue-001' || table?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || table?.restaurantId === getVenueId();
       const updateTableStatus = (prev) => prev.map(t =>
         t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
       );
@@ -1024,7 +1026,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
-      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1114,7 +1116,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
-      const isVenue = payload?.restaurantId === 'venue-001' || order?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1178,7 +1180,7 @@ const CashierDashboard = ({ onLogout }) => {
           activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
         };
       });
-      const isVenue = table.restaurantId === 'venue-001';
+      const isVenue = table.restaurantId === getVenueId();
       if (isVenue) {
         if (setVenueTables) setVenueTables(applyTableUpdate, { skipPersist: true });
       } else {
@@ -1271,7 +1273,7 @@ const CashierDashboard = ({ onLogout }) => {
       const { sourceTableId, targetTableId, sourceTable: rawSource, targetTable: rawTarget } = payload;
 
       // Map raw DB payloads to frontend shape using existing mapper
-      const isVenue = payload?.restaurantId === 'venue-001' || rawSource?.restaurantId === 'venue-001' || rawTarget?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || rawSource?.restaurantId === getVenueId() || rawTarget?.restaurantId === getVenueId();
       const allTablesRef = isVenue ? venueTablesRef.current : activeTablesRef.current;
       const existingSource = allTablesRef?.find(t => t.backendId === sourceTableId) || null;
       const existingTarget = allTablesRef?.find(t => t.backendId === targetTableId) || null;
@@ -1311,7 +1313,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
       if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      const isVenue = payload?.restaurantId === 'venue-001' || sourceTable?.restaurantId === 'venue-001' || targetTable?.restaurantId === 'venue-001';
+      const isVenue = payload?.restaurantId === getVenueId() || sourceTable?.restaurantId === getVenueId() || targetTable?.restaurantId === getVenueId();
       const allTables = isVenue ? venueTables : activeTables;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
@@ -1368,7 +1370,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
       if (outlet === 'bar') {
-        socket.emit('leave', 'venue-001');
+        socket.emit('leave', getVenueId());
       }
     };
   }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables, setBarTables]);
@@ -1702,18 +1704,19 @@ const CashierDashboard = ({ onLogout }) => {
     setBillFinderResults([]);
     try {
       const restaurantIds = outlet === 'bar'
-        ? ['bar-001', 'venue-001']
-        : [getCurrentRestaurantId(), 'venue-001'];
-      
+        ? [getBarId(), getVenueId()]
+        : [getCurrentRestaurantId(), getVenueId()];
+      const uniqueRestaurantIds = [...new Set(restaurantIds)];
+
       const allResults = await Promise.all(
-        restaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
+        uniqueRestaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
           console.error(`[Bill Finder] Fetch failed for ${rid}:`, err);
           return [];
         }))
       );
 
       const allTxns = allResults.flatMap((txns, idx) => {
-        const rid = restaurantIds[idx];
+        const rid = uniqueRestaurantIds[idx];
         return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
       });
 
@@ -1748,7 +1751,7 @@ const CashierDashboard = ({ onLogout }) => {
         // include only direct restaurant IDs (bar-001 / current restaurant).
         if (!txn.sectionTag) {
           const rid = txn._sourceRestaurantId || '';
-          if (outlet === 'bar') return rid === 'bar-001';
+          if (outlet === 'bar') return rid === getBarId();
           return rid === getCurrentRestaurantId();
         }
         const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
@@ -1898,7 +1901,7 @@ const CashierDashboard = ({ onLogout }) => {
           et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
         ));
       } else {
-        const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+        const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
         const updateBillStatus = (prev) =>
           prev.map((t) =>
             t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
@@ -2253,7 +2256,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Store previous table state for rollback
     const previousTableState = selectedTable;
-    const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+    const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
     const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
 
     // Optimistic update: table becomes free
@@ -2471,7 +2474,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
       if (tableSnap?.backendId) {
-        const isVenueTable = tableSnap.section?.restaurantId === 'venue-001' || tableSnap.restaurantId === 'venue-001';
+        const isVenueTable = tableSnap.section?.restaurantId === getVenueId() || tableSnap.restaurantId === getVenueId();
         const resId = tableSnap.section?.restaurantId || activeRestaurantId;
         const terminateUrl = (outlet === 'bar' && !isVenueTable)
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
@@ -2509,7 +2512,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
-      const isVenueTable = tableSnap.section?.restaurantId === 'venue-001' || tableSnap.restaurantId === 'venue-001';
+      const isVenueTable = tableSnap.section?.restaurantId === getVenueId() || tableSnap.restaurantId === getVenueId();
       const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
       setTargetTables(prev => prev.map(t =>
         t.id === tableSnap.id || t.backendId === tableSnap.backendId
@@ -2598,7 +2601,7 @@ const CashierDashboard = ({ onLogout }) => {
         editedBy: 'Cashier',
       });
       // Update local table state so bill total reflects immediately
-      const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+      const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
       const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
       setTargetTables(prev => prev.map(t => {
         if (t.backendId !== selectedTable.backendId) return t;
@@ -2642,7 +2645,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
-    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === 'venue-001');
+    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === getVenueId());
 
     if (outlet === 'restaurant') {
       itemsToFilter = menuItems.filter(item => item.isAvailable !== false);
@@ -2670,7 +2673,7 @@ const CashierDashboard = ({ onLogout }) => {
     } else {
       if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
       else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
-      else if (selectedTable?.section?.restaurantId === 'venue-001') {
+      else if (selectedTable?.section?.restaurantId === getVenueId()) {
         currentVenueId = 'venue-family-restaurant';
       }
     }
@@ -2717,7 +2720,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (isBarVenueContext) {
         return Number(item.p) > 0;
       }
-      if (selectedTable?.section?.restaurantId === 'venue-001') {
+      if (selectedTable?.section?.restaurantId === getVenueId()) {
         return Number(item.p || 0) > 0;
       }
       return true;
@@ -2908,7 +2911,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
-    const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+    const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
     const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
     setTargetTables(prev => prev.map(t => {
       if (t.id === tableId || t.backendId === tableId) {
@@ -3115,7 +3118,7 @@ const CashierDashboard = ({ onLogout }) => {
           return t;
         });
 
-        if (selectedTable.section?.restaurantId === 'venue-001' || selectedTable.restaurantId === 'venue-001') {
+        if (selectedTable.section?.restaurantId === getVenueId() || selectedTable.restaurantId === getVenueId()) {
           setVenueTables(updater);
         } else {
           setActiveTables(updater);
@@ -3728,7 +3731,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <VenueSectionView
                             venueId="venue-bar-conference"
                             sectionName="Conference Hall"
-                            restaurantId="venue-001"
+                            restaurantId={getVenueId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
@@ -3741,7 +3744,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <VenueSectionView
                             venueId="venue-bar-pdr"
                             sectionName="PDR"
-                            restaurantId="venue-001"
+                            restaurantId={getVenueId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
@@ -3754,7 +3757,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <VenueSectionView
                             venueId="venue-bar-rooms"
                             sectionName="Rooms"
-                            restaurantId="venue-001"
+                            restaurantId={getVenueId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
@@ -3767,7 +3770,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <VenueSectionView
                             venueId="venue-bar-parcel"
                             sectionName="GoBox"
-                            restaurantId="venue-001"
+                            restaurantId={getVenueId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
@@ -3781,7 +3784,7 @@ const CashierDashboard = ({ onLogout }) => {
                             key="bar-gobox"
                             venueId="venue-bar-gobox"
                             sectionName="GoBox"
-                            restaurantId="venue-001"
+                            restaurantId={getVenueId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
@@ -3796,7 +3799,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <VenueSectionView
                             venueId="venue-family-restaurant"
                             sectionName="Family Restaurant"
-                            restaurantId="venue-001"
+                            restaurantId={getVenueId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
@@ -4249,7 +4252,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         {(() => {
                                           const mapped = SECTION_TAG_TO_SOURCE[txn.sectionTag];
                                           if (mapped) return mapped.replace(/-/g, ' ');
-                                          if (txn._sourceRestaurantId === 'bar-001') return 'bar ac hall';
+                                          if (txn._sourceRestaurantId === getBarId()) return 'bar ac hall';
                                           if (txn._sourceRestaurantId === getCurrentRestaurantId()) return 'restaurant';
                                           return '—';
                                         })()}
@@ -5640,7 +5643,7 @@ const CashierDashboard = ({ onLogout }) => {
                     const targetId = swapTargetId;
                     const sourceSnap = { ...selectedTable };
 
-                    const isVenueSwap = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+                    const isVenueSwap = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
                     const setSwapTables = isVenueSwap && setVenueTables ? setVenueTables : setActiveTables;
 
                     setSwapTables(prev => prev.map(t => {
@@ -5960,7 +5963,7 @@ const CashierDashboard = ({ onLogout }) => {
               };
               setSelectedTable(applyCancelOptimistic);
 
-              const isVenueTable = selectedTable?.section?.restaurantId === 'venue-001' || selectedTable?.restaurantId === 'venue-001';
+              const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
               const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
               setTargetTables(prev => prev.map(t => {
                 if (t.backendId !== selectedTable.backendId) return t;

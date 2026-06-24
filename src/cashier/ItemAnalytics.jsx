@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-
-const BAR_ID = 'bar-001';
-const VENUE_ID = 'venue-001';
+import { getBarId } from '../services/barApiConfig';
+import { getVenueId } from '../services/venueApiConfig';
+import { authService } from '../services/authService';
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 
@@ -15,9 +15,9 @@ function getLiquorMlPoured(itemName, quantity) {
 }
 
 function getRestaurantIdForSource(source) {
-  if (source === 'bar') return BAR_ID;
+  if (source === 'bar') return getBarId();
   if (source === 'restaurant') return getCurrentRestaurantId();
-  return VENUE_ID;
+  return getVenueId();
 }
 
 function getSectionNameForSource(source) {
@@ -166,8 +166,8 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         const sectionNames = ['GoBox', 'Owner', 'Parcel'];
         const results = await Promise.all(
           sectionNames.map(sname => {
-            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=venue-001&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=bar`;
-            return fetch(url).then(r => r.json()).catch(() => ({ items: [], summary: null }));
+            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getVenueId()}&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=bar`;
+            return fetch(url, { headers: authService.getAuthHeader() }).then(r => r.json()).catch(() => ({ items: [], summary: null }));
           })
         );
 
@@ -203,8 +203,8 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         const sectionNames = ['Parcel', 'GoBox'];
         const results = await Promise.all(
           sectionNames.map(sname => {
-            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=venue-001&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=restaurant`;
-            return fetch(url).then(r => r.json()).catch(() => ({ items: [], summary: null }));
+            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getVenueId()}&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=restaurant`;
+            return fetch(url, { headers: authService.getAuthHeader() }).then(r => r.json()).catch(() => ({ items: [], summary: null }));
           })
         );
 

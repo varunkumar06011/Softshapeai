@@ -18,6 +18,16 @@ export function apiUrl(path) {
   return `${API_BASE}${normalizedPath}`;
 }
 
+/** Returns auth headers object with Bearer token if available */
+export function getAuthHeaders() {
+  const token = localStorage.getItem('tenant_token');
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 /** Fetch wrapper with Bearer token support */
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem('tenant_token');

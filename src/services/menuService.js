@@ -1,4 +1,4 @@
-import { API_BASE, apiUrl } from "./apiConfig";
+import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 export const MENU_STORAGE_KEY = "softshape_menu";
@@ -15,6 +15,7 @@ const fetchOpts = {
   headers: {
     "Cache-Control": "no-cache",
     Pragma: "no-cache",
+    ...getAuthHeaders(),
   },
 };
 

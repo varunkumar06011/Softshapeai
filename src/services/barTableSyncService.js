@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
-import { fetchBarTables, BAR_ID, updateBarTableSession } from "./barTableApi";
+import { fetchBarTables, updateBarTableSession } from "./barTableApi";
+import { getBarId } from "./barApiConfig";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 
 function isRecentlyTerminated(tableId) {
@@ -189,7 +190,7 @@ function attachSocketLogging(socket) {
 
   socket.on("connect", () => {
     console.log("[Socket] Connected:", socket.id);
-    socket.emit("join", BAR_ID);
+    socket.emit("join", getBarId());
   });
 
   socket.on("disconnect", (reason) => {
@@ -210,7 +211,7 @@ function acquireSocket(handlers) {
       attachSocketLogging(sharedSocket);
     }
 
-    sharedSocket.emit("join", BAR_ID);
+    sharedSocket.emit("join", getBarId());
 
     const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
@@ -393,7 +394,7 @@ export function useBarTableSync() {
 
     const releaseSocket = acquireSocket({
       onUpdated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== BAR_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getBarId()) return;
         const updatedTable = unwrapTableEvent(payload);
         if (!updatedTable?.id) return;
 
@@ -435,7 +436,7 @@ export function useBarTableSync() {
         });
       },
       onCreated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== BAR_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getBarId()) return;
         const newTable = unwrapTableEvent(payload);
         if (!newTable?.id) return;
 
@@ -453,7 +454,7 @@ export function useBarTableSync() {
         });
       },
       onDeleted: ({ id, restaurantId }) => {
-        if (restaurantId && restaurantId !== BAR_ID) return;
+        if (restaurantId && restaurantId !== getBarId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
           writeCache(next);

@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 import { useVenueTableSync } from '../services/venueTableSyncService';
 import { fetchVenueMenu, updateVenueTableSession } from '../services/venueTableApi';
-import { VENUE_ID, VENUE_SUB_IDS } from '../services/venueApiConfig';
+import { getVenueId as getTenantVenueId, VENUE_SUB_IDS } from '../services/venueApiConfig';
+import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 import { createOrder, updateOrderItems } from '../services/orderApi';
 import { getSocket } from '../hooks/useSocket';
 import { calculateOrderTotal, getTableItems } from '../shared/utils/billing';
@@ -192,7 +193,7 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
           tableId: selectedTable.backendId,
           tableNumber: selectedTable.id || selectedTable.number,
           items: cart,
-          restaurantId: VENUE_ID,
+          restaurantId: getTenantVenueId(),
           requestId,
         });
         orderId = order.id;
@@ -292,19 +293,19 @@ export default function VenueDashboard({ addNotification, activeRestaurantId }) 
     try {
       // Call backend print-bill endpoint first - emits FINAL_BILL socket event to PrintStation
       await fetch(
-        `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/print-bill?restaurantId=${VENUE_ID}`,
+        apiUrl(`/api/orders/${orderId}/print-bill?restaurantId=${getTenantVenueId()}`),
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
         }
       );
 
       // Settle on backend
       const settleRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${VENUE_ID}`,
+        apiUrl(`/api/orders/${orderId}/settle?restaurantId=${getTenantVenueId()}`),
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ paymentMethod: method }),
         }
       );

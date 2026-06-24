@@ -30,7 +30,8 @@ import TodaySpecials from './TodaySpecials';
 import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { BAR_ID } from '../services/barApiConfig';
+import { getBarId } from '../services/barApiConfig';
+import { getVenueId } from '../services/venueApiConfig';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
@@ -81,14 +82,14 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   ]);
   const { setTables } = useTableSync();
   const { outlet } = useOutlet();
-  const socket = useSocket(outlet === 'bar' ? BAR_ID : getCurrentRestaurantId());
+  const socket = useSocket(outlet === 'bar' ? getBarId() : getCurrentRestaurantId());
 
   const loadStats = useCallback(async () => {
     try {
       const [restaurantTxns, barTxns, venueTxns] = await Promise.allSettled([
         fetchTransactions(getCurrentRestaurantId(), 500),
-        fetchTransactions(BAR_ID, 500),
-        fetchTransactions('venue-001', 500),
+        fetchTransactions(getBarId(), 500),
+        fetchTransactions(getVenueId(), 500),
       ]);
       const transactions = [
         ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
-import { fetchVenueSections, VENUE_ID, updateVenueTableSession } from "./venueTableApi";
+import { fetchVenueSections, updateVenueTableSession } from "./venueTableApi";
+import { getVenueId } from "./venueApiConfig";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { apiUrl } from "./apiConfig";
 
@@ -297,10 +298,10 @@ function acquireSocket(handlers) {
     if (!socketListenersAttached) {
       socketListenersAttached = true;
       sharedSocket.on("connect", () => {
-        sharedSocket.emit("join", VENUE_ID);
+        sharedSocket.emit("join", getVenueId());
       });
     }
-    sharedSocket.emit("join", VENUE_ID);
+    sharedSocket.emit("join", getVenueId());
 
     const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
@@ -486,7 +487,7 @@ export function useVenueTableSync() {
 
     const releaseSocket = acquireSocket({
       onUpdated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getVenueId()) return;
         const updatedTable = payload?.table || payload;
         if (!updatedTable?.id) return;
 
@@ -546,7 +547,7 @@ export function useVenueTableSync() {
         });
       },
       onCreated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getVenueId()) return;
         const newTable = payload?.table || payload;
         if (!newTable?.id) return;
         if (isRecentlyTerminated(newTable.id)) {
@@ -567,7 +568,7 @@ export function useVenueTableSync() {
         });
       },
       onDeleted: ({ id, restaurantId }) => {
-        if (restaurantId && restaurantId !== VENUE_ID) return;
+        if (restaurantId && restaurantId !== getVenueId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
           writeCache(next);
@@ -579,7 +580,7 @@ export function useVenueTableSync() {
         if (!order?.tableId) return;
         if (payload?.isExtraTable) return; // extra-table orders must never leak into venue tables
         if (isRecentlyTerminated(order.tableId)) return;
-        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getVenueId()) return;
         setTablesState((prev) => {
           const next = prev.map((t) =>
             t.backendId === order.tableId
@@ -603,7 +604,7 @@ export function useVenueTableSync() {
         if (!order?.tableId) return;
         if (payload?.isExtraTable) return; // extra-table orders must never leak into venue tables
         if (isRecentlyTerminated(order.tableId)) return;
-        if (payload?.restaurantId && payload.restaurantId !== VENUE_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getVenueId()) return;
         setTablesState((prev) => {
           const next = prev.map((t) => {
             if (t.backendId !== order.tableId) return t;
