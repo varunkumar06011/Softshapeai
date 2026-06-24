@@ -3,7 +3,7 @@ import {
   Plus, Edit2, Trash2, Save, X, Star, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
-import { RESTAURANT_ID } from '../services/tableApi';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { CAPTAINS } from '../config/captains';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
 

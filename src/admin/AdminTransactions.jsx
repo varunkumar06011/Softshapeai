@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { History, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { fetchTransactions, deleteTransaction } from '../services/orderApi';
-import { authService } from '../services/authService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 const BAR_ID = 'bar-001';
 const VENUE_ID = 'venue-001';
@@ -13,12 +13,8 @@ function formatBillNumber(txnDate, txnNumber) {
 }
 
 function resolveSource(txn) {
-  const dynamicRestaurantId =
-    authService.getUser()?.restaurantId ||
-    localStorage.getItem('pending_restaurant_id') ||
-    'restaurant-001';
   if (txn.restaurantId === BAR_ID) return 'bar';
-  if (txn.restaurantId === dynamicRestaurantId) return 'restaurant';
+  if (txn.restaurantId === getCurrentRestaurantId()) return 'restaurant';
   const tag = (txn.sectionTag || '').toLowerCase();
   if (tag === 'venue-bar-ac-hall') return 'bar';
   if (tag === 'venue-bar-conference') return 'conference';
@@ -76,15 +72,14 @@ export default function AdminTransactions({ onStatsRefresh }) {
         limitParam = 500;
       }
 
-      const dynamicRestaurantId = authService.getUser()?.restaurantId || 'restaurant-001';
       const allResults = await Promise.all([
         fetchTransactions(BAR_ID, limitParam, dateParam, monthParam).catch(() => []),
-        fetchTransactions(dynamicRestaurantId, limitParam, dateParam, monthParam).catch(() => []),
+        fetchTransactions(getCurrentRestaurantId(), limitParam, dateParam, monthParam).catch(() => []),
         fetchTransactions(VENUE_ID, limitParam, dateParam, monthParam).catch(() => []),
       ]);
 
       const allTxns = allResults.flatMap((txns, idx) => {
-        const rid = [BAR_ID, dynamicRestaurantId, VENUE_ID][idx];
+        const rid = [BAR_ID, getCurrentRestaurantId(), VENUE_ID][idx];
         return txns.map(txn => ({ ...txn, restaurantId: txn.restaurantId || rid }));
       });
 

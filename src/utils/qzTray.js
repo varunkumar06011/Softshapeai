@@ -11,6 +11,7 @@
  */
 
 import { QZ_CERT } from '../services/certificate.js';
+import { getCurrentRestaurantId } from './getCurrentRestaurantId';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -128,7 +129,8 @@ const KOT_PRINTER = import.meta.env.VITE_KOT_PRINTER_NAME || 'KOT PRINTER';
 export function getPrinterForJob(type, restaurantId, sectionTag) {
   if (type === 'KOT') {
     if (restaurantId === 'venue-001') return KOT_FAMILY_PRINTER;
-    return restaurantId === 'restaurant-001' ? RESTAURANT_KITCHEN_PRINTER : KITCHEN_PRINTER;
+    // TODO Phase 3: replace with per-restaurant printer config once Restaurant model has a printer field — currently all restaurants share one generic printer mapping.
+    return restaurantId === getCurrentRestaurantId() ? RESTAURANT_KITCHEN_PRINTER : KITCHEN_PRINTER;
   }
   if (type === 'BAR_KOT') return BAR_PRINTER;
   if (type === 'BILL' || type === 'FINAL_BILL') {

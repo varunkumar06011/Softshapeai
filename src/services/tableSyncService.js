@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
-import { fetchTables, RESTAURANT_ID, updateTableSession } from "./tableApi";
+import { fetchTables, updateTableSession } from "./tableApi";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 
 
@@ -234,7 +235,7 @@ function attachSocketLogging(socket) {
 
   socket.on("connect", () => {
     console.log("[Socket] Connected:", socket.id);
-    socket.emit("join", RESTAURANT_ID);
+    socket.emit("join", getCurrentRestaurantId());
 
     // Re-fetch on every reconnect to recover orders missed during the gap.
     if (_reconnectRefetch) {
@@ -263,7 +264,7 @@ function acquireSocket(handlers) {
       attachSocketLogging(sharedSocket);
     }
 
-    sharedSocket.emit("join", RESTAURANT_ID);
+    sharedSocket.emit("join", getCurrentRestaurantId());
 
     const { onUpdated, onCreated, onDeleted } = handlers;
     sharedSocket.on("table:updated", onUpdated);
@@ -365,7 +366,7 @@ export function useTableSync() {
     let apiTables = null;
 
     try {
-      apiTables = flattenSections(await fetchTables(RESTAURANT_ID, abortControllerRef.current.signal));
+      apiTables = flattenSections(await fetchTables(getCurrentRestaurantId(), abortControllerRef.current.signal));
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         console.log('[TableSync] Fetch aborted');
@@ -405,7 +406,7 @@ export function useTableSync() {
 
     const releaseSocket = acquireSocket({
       onUpdated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== RESTAURANT_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
         const updatedTable = unwrapTableEvent(payload);
         if (!updatedTable?.id) return;
 
@@ -441,7 +442,7 @@ export function useTableSync() {
         });
       },
       onCreated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== RESTAURANT_ID) return;
+        if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
         const newTable = unwrapTableEvent(payload);
         if (!newTable?.id) return;
 
@@ -457,7 +458,7 @@ export function useTableSync() {
         });
       },
       onDeleted: ({ id, restaurantId }) => {
-        if (restaurantId && restaurantId !== RESTAURANT_ID) return;
+        if (restaurantId && restaurantId !== getCurrentRestaurantId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
           writeCache(next);

@@ -1,6 +1,3 @@
-const TOKEN_KEY = 'ss_auth_token';
-const USER_KEY = 'ss_auth_user';
-
 function getApiBase() {
   return (
     import.meta.env.VITE_API_URL ||
@@ -10,7 +7,6 @@ function getApiBase() {
 }
 
 export const authService = {
-  // Email + password login (OWNER / ADMIN)
   async login(email, password) {
     const res = await fetch(`${getApiBase()}/api/auth/login`, {
       method: 'POST',
@@ -18,44 +14,43 @@ export const authService = {
       body: JSON.stringify({ email, password }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Invalid credentials');
-    this._persistAuth(data.token, data.user);
-    if (data.restaurant?.slug) localStorage.setItem('tenant_slug', data.restaurant.slug);
+    if (!res.ok) {
+      throw new Error(data.error || 'Invalid credentials');
+    }
+    localStorage.setItem('tenant_token', data.token);
+    localStorage.setItem('tenant_user', JSON.stringify(data.user));
+    if (data.user?.restaurantId) {
+      localStorage.setItem('tenant_restaurantId', data.user.restaurantId);
+    }
+    if (data.restaurant?.slug) {
+      localStorage.setItem('tenant_slug', data.restaurant.slug);
+    }
     return data.user;
   },
 
-  // PIN login (CAPTAIN / CASHIER) — sends captainId from crew fetch
-  async captainLogin(captainId, pin) {
+  async captainLogin(restaurantId, userId, pin) {
     const res = await fetch(`${getApiBase()}/api/auth/captain-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ captainId, pin }),
+      body: JSON.stringify({ restaurantId, userId, pin }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Invalid credentials');
-    this._persistAuth(data.token, data.user);
+    if (!res.ok) {
+      throw new Error(data.error || 'Invalid credentials');
+    }
+    localStorage.setItem('tenant_token', data.token);
+    localStorage.setItem('tenant_user', JSON.stringify(data.user));
+    if (data.user?.restaurantId) {
+      localStorage.setItem('tenant_restaurantId', data.user.restaurantId);
+    }
+    if (data.restaurant?.slug) {
+      localStorage.setItem('tenant_slug', data.restaurant.slug);
+    }
     return data.user;
   },
 
-  // Fetch crew list for a restaurant (by slug or DB id)
-  async fetchCrew(restaurantId) {
-    const res = await fetch(
-      `${getApiBase()}/api/auth/crew?restaurantId=${encodeURIComponent(restaurantId)}` 
-    );
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load staff');
-    // Cache the resolved DB restaurantId for later use
-    if (data.restaurantId) {
-      const user = this.getUser();
-      if (!user?.restaurantId) {
-        localStorage.setItem('pending_restaurant_id', data.restaurantId);
-      }
-    }
-    return data; // { captains: [{id,name}], cashiers: [{id,name}], restaurantId }
-  },
-
   async logout() {
-    const token = this.getToken();
+    const token = localStorage.getItem('tenant_token');
     try {
       if (token) {
         await fetch(`${getApiBase()}/api/auth/logout`, {
@@ -63,28 +58,22 @@ export const authService = {
           headers: { Authorization: `Bearer ${token}` },
         });
       }
-    } catch { /* ignore network errors */ }
-    [
-      TOKEN_KEY, USER_KEY,
-      'tenant_token', 'tenant_user', 'tenant_slug',
-      'captain_auth_v2', 'active_captain',
-      'pending_restaurant_id'
-    ].forEach(k => localStorage.removeItem(k));
+    } catch {
+      // ignore network errors on logout
+    }
+    localStorage.removeItem('tenant_token');
+    localStorage.removeItem('tenant_user');
+    localStorage.removeItem('tenant_restaurantId');
+    localStorage.removeItem('tenant_slug');
   },
 
   getToken() {
-    return (
-      localStorage.getItem(TOKEN_KEY) ||
-      localStorage.getItem('tenant_token') ||
-      null
-    );
+    return localStorage.getItem('tenant_token');
   },
 
   getUser() {
     try {
-      const raw =
-        localStorage.getItem(USER_KEY) ||
-        localStorage.getItem('tenant_user');
+      const raw = localStorage.getItem('tenant_user');
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -92,7 +81,7 @@ export const authService = {
   },
 
   isAuthenticated() {
-    const token = this.getToken();
+    const token = localStorage.getItem('tenant_token');
     if (!token) return false;
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
@@ -104,20 +93,7 @@ export const authService = {
   },
 
   getAuthHeader() {
-    const token = this.getToken();
+    const token = localStorage.getItem('tenant_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
-  },
-
-  // Internal: write to both key sets so all consumers stay in sync
-  _persistAuth(token, user) {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem('tenant_token', token);
-    }
-    if (user) {
-      const str = JSON.stringify(user);
-      localStorage.setItem(USER_KEY, str);
-      localStorage.setItem('tenant_user', str);
-    }
   },
 };

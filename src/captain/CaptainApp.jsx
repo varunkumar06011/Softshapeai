@@ -26,7 +26,7 @@ import { calculateSessionBill, calculateOrderTotal, calculateTableBill, getTable
 
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
-import { RESTAURANT_ID } from '../services/tableApi';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 import { isBeerItem } from '../utils/itemHelpers';
 
@@ -879,12 +879,7 @@ export default function CaptainApp({ onLogout }) {
 
     const todayDateISO = new Date().toISOString().slice(0, 10);
 
-    const userRestaurantId =
-      authService.getUser()?.restaurantId ||
-      localStorage.getItem('pending_restaurant_id') ||
-      RESTAURANT_ID;
-
-    const restaurantFetch = fetchTransactions(userRestaurantId, 500, todayDateISO);
+    const restaurantFetch = fetchTransactions(getCurrentRestaurantId(), 500, todayDateISO);
 
     const barFetch = fetchTransactions(BAR_ID, 500, todayDateISO);
 
@@ -943,15 +938,10 @@ export default function CaptainApp({ onLogout }) {
     if (tableSubCategory === 'parcel' && outlet !== 'bar') return 'venue-001';
 
     if (tableSubCategory && tableSubCategory !== '' && !['dine-in', 'parcel'].includes(tableSubCategory)) {
-      console.warn('[CaptainApp] Unknown tableSubCategory:', tableSubCategory, '— falling back to RESTAURANT_ID');
+      console.warn('[CaptainApp] Unknown tableSubCategory:', tableSubCategory, '— falling back to getCurrentRestaurantId()');
     }
 
-    // Prefer auth user's restaurantId; fall back to hardcoded constant for backward compat
-    return (
-      authService.getUser()?.restaurantId ||
-      localStorage.getItem('pending_restaurant_id') ||
-      RESTAURANT_ID
-    );
+    return getCurrentRestaurantId();
 
   }, [outlet, tableSubCategory]);
 

@@ -59,7 +59,7 @@ import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '..
 import { API_BASE, apiUrl } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
-import { RESTAURANT_ID } from '../services/tableApi';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { BAR_ID } from '../services/barApiConfig';
 import { VENUE_PRICE_COLUMNS, BAR_VENUE_PRICE_COLUMNS, RESTAURANT_VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
@@ -208,7 +208,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
       try {
         // Fetch from both outlets
         const [restaurantTxns, barTxns] = await Promise.allSettled([
-          fetchTransactions(RESTAURANT_ID, 500),
+          fetchTransactions(getCurrentRestaurantId(), 500),
           fetchTransactions(BAR_ID, 500),
         ]);
 
@@ -687,7 +687,7 @@ export function MenuPage({ onAddDish }) {
       if (activeOutlet === 'bar') {
         url = `${API_BASE}/api/bar/menu/items?restaurantId=bar-001`;
       } else {
-        url = `${API_BASE}/api/menu/items/admin?restaurantId=restaurant-001`;
+        url = `${API_BASE}/api/menu/items/admin?restaurantId=${getCurrentRestaurantId()}`;
       }
 
       const res = await fetch(url);

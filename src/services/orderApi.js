@@ -1,5 +1,5 @@
 import { apiUrl } from "./apiConfig";
-import { RESTAURANT_ID } from "./tableApi";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
 
 async function parseResponse(res) {
@@ -32,7 +32,7 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = RESTAURANT_ID, requestId = null, captainName = null, isExtraTable = false, sectionTag = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
@@ -67,7 +67,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   );
 }
 
-export async function fetchOrders({ restaurantId = RESTAURANT_ID, status } = {}) {
+export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), status } = {}) {
   const qs = new URLSearchParams({ restaurantId });
   if (status) qs.set("status", status);
   const res = await fetch(apiUrl(`/api/orders?${qs.toString()}`), {

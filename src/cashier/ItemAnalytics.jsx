@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE } from '../services/apiConfig';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
-const RESTAURANT_ID = 'restaurant-001';
 const BAR_ID = 'bar-001';
 const VENUE_ID = 'venue-001';
 const BAR_UNIT_ML = 30;
@@ -16,7 +16,7 @@ function getLiquorMlPoured(itemName, quantity) {
 
 function getRestaurantIdForSource(source) {
   if (source === 'bar') return BAR_ID;
-  if (source === 'restaurant') return RESTAURANT_ID;
+  if (source === 'restaurant') return getCurrentRestaurantId();
   return VENUE_ID;
 }
 

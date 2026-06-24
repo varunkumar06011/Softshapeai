@@ -1,6 +1,5 @@
 import { API_BASE, apiUrl } from "./apiConfig";
-
-export const RESTAURANT_ID = "restaurant-001";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -47,7 +46,7 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
   }
 }
 
-export async function fetchTables(restaurantId = RESTAURANT_ID, signal) {
+export async function fetchTables(restaurantId = getCurrentRestaurantId(), signal) {
   const res = await fetchWithRetry(apiUrl(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}`), {
     method: "GET",
     cache: "no-store",
@@ -60,7 +59,7 @@ export async function fetchTables(restaurantId = RESTAURANT_ID, signal) {
   return parseResponse(res);
 }
 
-export async function fetchSections(restaurantId = RESTAURANT_ID) {
+export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
   const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`));
   return parseResponse(res);
 }

@@ -35,15 +35,18 @@ import { io } from 'socket.io-client';
 import { API_BASE } from '../services/apiConfig.js';
 
 import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 // ── Configurable print rooms (for running separate PrintStations per outlet) ──
 // Usage: /print-station?rooms=bar-001,venue-001   (only bar + venue)
-//        /print-station?rooms=restaurant-001       (only restaurant)
-// Default: all three rooms
+//        /print-station?rooms=<restaurant-id>      (only current restaurant)
+// Default: current restaurant + bar + venue
 const urlRooms = new URLSearchParams(window.location.search).get('rooms');
-const PRINT_ROOMS = urlRooms
-  ? urlRooms.split(',').map(s => s.trim()).filter(Boolean)
-  : ['restaurant-001', 'bar-001', 'venue-001'];
+function getPrintRooms() {
+  if (urlRooms) return urlRooms.split(',').map(s => s.trim()).filter(Boolean);
+  const rid = getCurrentRestaurantId();
+  return rid ? [rid, 'bar-001', 'venue-001'] : ['bar-001', 'venue-001'];
+}
 
 // ── Per-printer sequential queue ─────────────────────────────────────────────
 // Prevents printer overload when many orders fire simultaneously.
@@ -98,7 +101,8 @@ function resolveFoodKotPrinter(sectionTag, restaurantId) {
   if (sectionTag === 'venue-restaurant-parcel')                           return KOT_PRINTER;
   if (sectionTag === 'venue-bar-parcel' || sectionTag === 'venue-bar-gobox') return KITCHEN_PRINTER;
   if (restaurantId === 'venue-001')                                       return KOT_FAMILY_PRINTER;
-  if (restaurantId === 'restaurant-001')                                  return RESTAURANT_KITCHEN_PRINTER;
+  // TODO Phase 3: replace with per-restaurant printer config once Restaurant model has a printer field — currently all restaurants share one generic printer mapping.
+  if (restaurantId === getCurrentRestaurantId())                          return RESTAURANT_KITCHEN_PRINTER;
   return KITCHEN_PRINTER;
 }
 // Helper: resolve counter/liquor KOT printer by sectionTag (escposDataCounter path)
@@ -894,11 +898,11 @@ export default function PrintStation() {
 
           setTimeout(() => {
 
-            PRINT_ROOMS.forEach(room => socket.emit('join:print', room));
+            getPrintRooms().forEach(room => socket.emit('join:print', room));
 
             hasJoinedRef.current = true;
 
-            pushLog(`Socket connected — joined print rooms: ${PRINT_ROOMS.join(', ')} ✓`);
+            pushLog(`Socket connected — joined print rooms: ${getPrintRooms().join(', ')} ✓`);
 
           }, 500);
 
@@ -912,9 +916,9 @@ export default function PrintStation() {
 
           setTimeout(() => {
 
-            PRINT_ROOMS.forEach(room => socket.emit('join:print', room));
+            getPrintRooms().forEach(room => socket.emit('join:print', room));
 
-            pushLog(`Socket reconnected — rejoined print rooms: ${PRINT_ROOMS.join(', ')} ✓`);
+            pushLog(`Socket reconnected — rejoined print rooms: ${getPrintRooms().join(', ')} ✓`);
 
           }, 500);
 
@@ -930,9 +934,9 @@ export default function PrintStation() {
 
         setTimeout(() => {
 
-          PRINT_ROOMS.forEach(room => socket.emit('join:print', room));
+          getPrintRooms().forEach(room => socket.emit('join:print', room));
 
-          pushLog(`Socket reconnected — rejoined print rooms: ${PRINT_ROOMS.join(', ')} ✓`, true);
+          pushLog(`Socket reconnected — rejoined print rooms: ${getPrintRooms().join(', ')} ✓`, true);
 
         }, 500);
 

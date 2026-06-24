@@ -29,8 +29,7 @@ import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
 import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
-import { RESTAURANT_ID } from '../services/tableApi';
-import { authService } from '../services/authService';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { BAR_ID } from '../services/barApiConfig';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
@@ -82,14 +81,12 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   ]);
   const { setTables } = useTableSync();
   const { outlet } = useOutlet();
-  const userRestaurantId = authService.getUser()?.restaurantId || RESTAURANT_ID;
-  const socket = useSocket(outlet === 'bar' ? BAR_ID : userRestaurantId);
+  const socket = useSocket(outlet === 'bar' ? BAR_ID : getCurrentRestaurantId());
 
   const loadStats = useCallback(async () => {
     try {
-      const adminRestaurantId = authService.getUser()?.restaurantId || RESTAURANT_ID;
       const [restaurantTxns, barTxns, venueTxns] = await Promise.allSettled([
-        fetchTransactions(adminRestaurantId, 500),
+        fetchTransactions(getCurrentRestaurantId(), 500),
         fetchTransactions(BAR_ID, 500),
         fetchTransactions('venue-001', 500),
       ]);

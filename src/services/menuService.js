@@ -1,5 +1,5 @@
 import { API_BASE, apiUrl } from "./apiConfig";
-import { RESTAURANT_ID } from "./tableApi";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 export const MENU_STORAGE_KEY = "softshape_menu";
 export const MENU_QUERY_KEY = ["menu"];
@@ -127,7 +127,7 @@ async function parseMenuResponse(res, label) {
   return res.json();
 }
 
-async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
+async function fetchLeanMenu(restaurantId = getCurrentRestaurantId()) {
   const url = apiUrl(`/api/menu/items?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
   const res = await fetchWithRetry(url, fetchOpts, { retries: 3, timeoutMs: 60000 });
@@ -135,7 +135,7 @@ async function fetchLeanMenu(restaurantId = RESTAURANT_ID) {
   return mapFlatMenuItems(items);
 }
 
-async function fetchPosViewMenu(restaurantId = RESTAURANT_ID) {
+async function fetchPosViewMenu(restaurantId = getCurrentRestaurantId()) {
   const url = apiUrl(`/api/menu/pos-view?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
   const res = await fetchWithRetry(url, fetchOpts, { retries: 3, timeoutMs: 60000 });
@@ -144,7 +144,7 @@ async function fetchPosViewMenu(restaurantId = RESTAURANT_ID) {
 }
 
 /** Prefer lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
-export async function fetchMenuFromBackend(restaurantId = RESTAURANT_ID) {
+export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId()) {
   let lean = [];
   try {
     lean = await fetchLeanMenu(restaurantId);

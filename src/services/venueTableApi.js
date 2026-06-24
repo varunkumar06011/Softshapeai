@@ -1,5 +1,6 @@
 import { apiUrl } from "./apiConfig";
 import { VENUE_ID } from "./venueApiConfig";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 export { VENUE_ID };
 
@@ -66,7 +67,7 @@ export async function fetchVenueSections(signal) {
   return parseResponse(res);
 }
 
-export async function fetchVenueMenu(venueId = "venue-family-restaurant", restaurantId = "restaurant-001") {
+export async function fetchVenueMenu(venueId = "venue-family-restaurant", restaurantId = getCurrentRestaurantId()) {
   const cacheKey = `softshape_venue_menu_${venueId}`;
 
   // Try to load from localStorage first for instant return

@@ -1,5 +1,5 @@
 import { API_BASE } from './apiConfig';
-import { RESTAURANT_ID } from './tableApi';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 /**
  * Save (upsert) a captain's revenue target and discount limit.
@@ -9,7 +9,7 @@ export async function saveCaptainTarget(captainId, revenueTarget, discountLimit)
   const res = await fetch(`${API_BASE}/api/captain-targets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ restaurantId: RESTAURANT_ID, captainId, revenueTarget, discountLimit }),
+    body: JSON.stringify({ restaurantId: getCurrentRestaurantId(), captainId, revenueTarget, discountLimit }),
   });
   if (!res.ok) throw new Error('Failed to save target');
   return res.json();
@@ -22,7 +22,7 @@ export async function saveCaptainTarget(captainId, revenueTarget, discountLimit)
  */
 export async function fetchCaptainTarget(captainId) {
   try {
-    const res = await fetch(`${API_BASE}/api/captain-targets/${captainId}?restaurantId=${RESTAURANT_ID}`);
+    const res = await fetch(`${API_BASE}/api/captain-targets/${captainId}?restaurantId=${getCurrentRestaurantId()}`);
     if (res.status === 404) return null;
     if (!res.ok) return null;
     return res.json();
@@ -38,7 +38,7 @@ export async function fetchCaptainTarget(captainId) {
  */
 export async function fetchAllCaptainTargets() {
   try {
-    const res = await fetch(`${API_BASE}/api/captain-targets?restaurantId=${RESTAURANT_ID}`);
+    const res = await fetch(`${API_BASE}/api/captain-targets?restaurantId=${getCurrentRestaurantId()}`);
     if (!res.ok) return {};
     const list = await res.json();
     // Convert array to map keyed by captainId for easy lookup

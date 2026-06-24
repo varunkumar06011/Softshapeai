@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users } from 'lucide-react';
 import { authService } from '../../services/authService';
+
+function getApiBase() {
+  return (
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_BACKEND_URL ||
+    'https://softshape-backend.onrender.com'
+  );
+}
 
 const LoginScreen = ({ role, onLogin, onBack }) => {
   const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
@@ -10,15 +18,13 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Cashier PIN login state
-  const [restaurantSlug, setRestaurantSlug] = useState('');
-  const [crew, setCrew] = useState({ cashiers: [] });
-  const [crewLoaded, setCrewLoaded] = useState(false);
-  const [crewLoading, setCrewLoading] = useState(false);
-  const [selectedCashier, setSelectedCashier] = useState(null);
+  // Captain / Cashier login state
+  const [slug, setSlug] = useState('');
+  const [staffList, setStaffList] = useState([]);
+  const [restaurantId, setRestaurantId] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [step, setStep] = useState('slug'); // slug | staff | pin
   const [pin, setPin] = useState('');
-  const [resolvedRestaurantId, setResolvedRestaurantId] = useState('');
-
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -40,32 +46,35 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     }
   };
 
-  // Load cashier crew from backend
-  const handleLoadCrew = async () => {
-    if (!restaurantSlug.trim()) {
-      setError('Please enter your Restaurant ID or Slug.');
+  const handleFetchStaff = async () => {
+    if (!slug.trim()) {
+      setError('Please enter the restaurant slug.');
       return;
     }
-    setCrewLoading(true);
+    setLoading(true);
     setError('');
     try {
-      const data = await authService.fetchCrew(restaurantSlug.trim());
-      setCrew({ cashiers: data.cashiers || [] });
-      setResolvedRestaurantId(data.restaurantId || restaurantSlug.trim());
-      setCrewLoaded(true);
-      if ((data.cashiers || []).length === 0) {
-        setError('No active cashiers found for this restaurant.');
+      const roleParam = isCashier ? 'CASHIER' : 'CAPTAIN';
+      const res = await fetch(`${getApiBase()}/api/restaurant/${encodeURIComponent(slug.trim())}/staff?role=${roleParam}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load staff');
       }
+      if (!data.staff || data.staff.length === 0) {
+        throw new Error('No staff found for this restaurant.');
+      }
+      setStaffList(data.staff);
+      setRestaurantId(data.restaurantId);
+      setStep('staff');
     } catch (err) {
-      setError(err.message || 'Could not load staff. Check Restaurant ID.');
+      setError(err.message || 'Failed to load staff');
     } finally {
-      setCrewLoading(false);
+      setLoading(false);
     }
   };
 
-  // Cashier PIN login
-  const handleCashierLogin = async () => {
-    if (!selectedCashier) {
+  const handleCaptainLogin = async () => {
+    if (!selectedUser) {
       setError('Please select your profile.');
       return;
     }
@@ -76,7 +85,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.captainLogin(selectedCashier.id, pin);
+      const user = await authService.captainLogin(restaurantId, selectedUser.id, pin);
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid PIN');
@@ -116,107 +125,95 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
         </div>
 
         <div className="space-y-6">
-          {isCashier ? (
-            /* ── Cashier PIN Login ── */
+          {isCashier || role === 'captain' ? (
             <div className="space-y-6 py-4">
-              {!crewLoaded ? (
-                /* Step 1: Enter restaurant slug */
-                <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
-                    Restaurant ID / Slug
-                  </label>
-                  <input
-                    className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-bold outline-none focus:border-[#E53935] focus:bg-white transition-all"
-                    placeholder="e.g. my-restaurant or restaurant-001"
-                    value={restaurantSlug}
-                    onChange={e => { setRestaurantSlug(e.target.value); setError(''); }}
-                    onKeyDown={e => e.key === 'Enter' && handleLoadCrew()}
-                  />
-                  {error && <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>}
+              {step === 'slug' && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Restaurant Slug</label>
+                    <input
+                      className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                      type="text"
+                      value={slug}
+                      onChange={(e) => { setSlug(e.target.value); setError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFetchStaff()}
+                      placeholder="e.g. vgrand"
+                    />
+                  </div>
+                  {error && (
+                    <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>
+                  )}
                   <button
-                    onClick={handleLoadCrew}
-                    disabled={crewLoading}
-                    className="w-full h-16 rounded-[24px] bg-[#E53935] px-6 text-sm font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-[#B71C1C] shadow-2xl shadow-red-100 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={handleFetchStaff}
+                    disabled={loading}
+                    className="w-full h-16 rounded-[24px] bg-[#E53935] px-6 text-sm font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-[#B71C1C] shadow-2xl shadow-red-100 hover:scale-[1.02] active:scale-[0.98] mt-4 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ShieldCheck size={20} />
-                    {crewLoading ? 'Loading…' : 'Load Staff'}
+                    <Users size={20} /> {loading ? 'Loading…' : 'Find Staff'}
                   </button>
-                </div>
-              ) : !selectedCashier ? (
-                /* Step 2: Select cashier profile */
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
-                      Select Your Profile
-                    </label>
-                    <button
-                      onClick={() => { setCrewLoaded(false); setCrew({ cashiers: [] }); setError(''); }}
-                      className="text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-[#E53935]"
-                    >
-                      ← Change Restaurant
-                    </button>
-                  </div>
+                </>
+              )}
+
+              {step === 'staff' && (
+                <>
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Your Profile</label>
                   <div className="grid grid-cols-2 gap-4">
-                    {crew.cashiers.map(cashier => {
-                      const initials = cashier.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-                      return (
-                        <button
-                          key={cashier.id}
-                          onClick={() => { setSelectedCashier(cashier); setError(''); }}
-                          className="flex items-center gap-3 p-4 rounded-3xl border-2 border-gray-50 bg-gray-50 hover:border-[#E53935] hover:bg-white transition-all group"
-                        >
-                          <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-sm font-black shadow-sm group-hover:scale-110 transition-transform text-[#E53935]">
-                            {initials}
-                          </div>
-                          <span className="text-[11px] font-black uppercase tracking-tight">{cashier.name}</span>
-                        </button>
-                      );
-                    })}
+                    {staffList.map(user => (
+                      <button
+                        key={user.id}
+                        onClick={() => { setSelectedUser(user); setError(''); setStep('pin'); }}
+                        className={`flex items-center gap-3 p-4 rounded-3xl border-2 transition-all group ${selectedUser?.id === user.id ? 'border-[#E53935] bg-white' : 'border-gray-50 bg-gray-50 hover:border-[#E53935] hover:bg-white'}`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-lg shadow-sm group-hover:scale-110 transition-transform">
+                          {user.name.includes('Lakshmi') || user.name.includes('Meena') ? '👩‍💼' : '👨‍💼'}
+                        </div>
+                        <span className="text-[11px] font-black uppercase tracking-tight">{user.name}</span>
+                      </button>
+                    ))}
                   </div>
-                  {error && <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>}
-                </div>
-              ) : (
-                /* Step 3: Enter PIN */
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => { setSelectedCashier(null); setPin(''); setError(''); }}
-                      className="p-2 text-gray-400 hover:text-gray-900 transition-colors"
-                    >
-                      <ArrowLeft size={18} />
-                    </button>
-                    <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-2xl">
-                      <div className="w-8 h-8 rounded-xl bg-[#E53935]/10 text-[#E53935] flex items-center justify-center text-xs font-black">
-                        {selectedCashier.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                      </div>
-                      <span className="text-sm font-bold text-gray-900">{selectedCashier.name}</span>
-                    </div>
+                  <button
+                    onClick={() => { setStep('slug'); setStaffList([]); setSelectedUser(null); }}
+                    className="text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600"
+                  >
+                    &larr; Back to slug
+                  </button>
+                </>
+              )}
+
+              {step === 'pin' && (
+                <>
+                  <div className="text-center mb-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Selected</p>
+                    <p className="text-lg font-black text-gray-900">{selectedUser?.name}</p>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
-                      Personal 4-Digit PIN
-                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Personal 4-Digit PIN</label>
                     <input
                       className="w-full h-16 rounded-[24px] border-2 border-gray-50 bg-gray-50 px-5 text-center text-2xl tracking-[1em] font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
                       type="password"
                       placeholder="••••"
                       maxLength={4}
                       value={pin}
-                      onChange={e => { setPin(e.target.value); setError(''); }}
-                      onKeyDown={e => e.key === 'Enter' && handleCashierLogin()}
-                      autoFocus
+                      onChange={(e) => { setPin(e.target.value); setError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCaptainLogin()}
                     />
                   </div>
-                  {error && <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>}
+                  {error && (
+                    <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>
+                  )}
                   <button
-                    onClick={handleCashierLogin}
+                    onClick={handleCaptainLogin}
                     disabled={loading}
-                    className="w-full h-16 rounded-[24px] bg-[#E53935] px-6 text-sm font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-[#B71C1C] shadow-2xl shadow-red-100 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full h-16 rounded-[24px] bg-[#E53935] px-6 text-sm font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-[#B71C1C] shadow-2xl shadow-red-100 hover:scale-[1.02] active:scale-[0.98] mt-4 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ShieldCheck size={20} />
-                    {loading ? 'Authenticating…' : 'Authenticate Session'}
+                    <ShieldCheck size={20} /> {loading ? 'Authenticating…' : 'Authenticate Session'}
                   </button>
-                </div>
+                  <button
+                    onClick={() => { setStep('staff'); setPin(''); setError(''); }}
+                    className="text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600"
+                  >
+                    &larr; Back to staff list
+                  </button>
+                </>
               )}
             </div>
           ) : (

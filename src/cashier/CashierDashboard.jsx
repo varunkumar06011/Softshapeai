@@ -17,8 +17,8 @@ import { validateTableIntegrity } from '../utils/syncInvariant';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
-import { RESTAURANT_ID, updateTableSession } from '../services/tableApi';
-import { authService } from '../services/authService';
+import { updateTableSession } from '../services/tableApi';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { useOutlet } from '../context/OutletContext';
 import OutletToggle from '../shared/components/OutletToggle';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
@@ -88,25 +88,18 @@ const CAPTAINS = [
   { id: 'C3', name: 'Sagar' },
 ];
 
-function getWalkinTables() {
-  const restaurantId =
-    authService.getUser()?.restaurantId ||
-    localStorage.getItem('pending_restaurant_id') ||
-    'restaurant-001';
-  return Array.from({ length: 20 }, (_, i) => ({
-    id: `W${i + 1}`,
-    number: i + 1,
-    backendId: null,
-    isWalkIn: true,
-    status: 'Free',
-    sectionId: null,
-    section: { restaurantId, name: 'Walk-in' },
-    kotHistory: [],
-    currentBill: 0,
-    activeOrder: null,
-  }));
-}
-const WALKIN_TABLES = getWalkinTables();
+const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
+  id: `W${i + 1}`,
+  number: i + 1,
+  backendId: null,
+  isWalkIn: true,
+  status: 'Free',
+  sectionId: null,
+  section: { restaurantId: getCurrentRestaurantId(), name: 'Walk-in' },
+  kotHistory: [],
+  currentBill: 0,
+  activeOrder: null,
+}));
 
 // Source sets for outlet-level data isolation
 const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']);
@@ -440,11 +433,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Derived — restaurant or bar depending on outlet
   const activeTables = outlet === 'bar' ? barTables : tables;
   const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const userRestaurantId =
-    authService.getUser()?.restaurantId ||
-    localStorage.getItem('pending_restaurant_id') ||
-    RESTAURANT_ID;
-  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : userRestaurantId;
+  const activeRestaurantId = outlet === 'bar' ? BAR_ID : outlet === 'venue' ? 'venue-001' : getCurrentRestaurantId();
 
   const socket = useSocket(activeRestaurantId);
   // ── End moved block ──
@@ -718,13 +707,7 @@ const CashierDashboard = ({ onLogout }) => {
         limitParam = 0;
       }
 
-      const dynamicRestaurantId =
-        authService.getUser()?.restaurantId ||
-        localStorage.getItem('pending_restaurant_id') ||
-        'restaurant-001';
-      const restaurantIds = ['bar-001', dynamicRestaurantId, 'venue-001'].filter(
-        (id, idx, arr) => arr.indexOf(id) === idx  // dedupe if bar-001 === dynamicRestaurantId
-      );
+      const restaurantIds = ['bar-001', getCurrentRestaurantId(), 'venue-001'];
 
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(e => {
@@ -786,7 +769,7 @@ const CashierDashboard = ({ onLogout }) => {
                             ? 'bar-gobox'
                             : 'venue'
           )
-          : txn._sourceRestaurantId === 'restaurant-001'
+          : txn._sourceRestaurantId === getCurrentRestaurantId()
             ? 'restaurant'
             : 'bar';
 
@@ -1718,15 +1701,9 @@ const CashierDashboard = ({ onLogout }) => {
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
-      const dynamicRestaurantId =
-        authService.getUser()?.restaurantId ||
-        localStorage.getItem('pending_restaurant_id') ||
-        'restaurant-001';
       const restaurantIds = outlet === 'bar'
         ? ['bar-001', 'venue-001']
-        : [dynamicRestaurantId, 'venue-001'].filter(
-            (id, idx, arr) => arr.indexOf(id) === idx
-          );
+        : [getCurrentRestaurantId(), 'venue-001'];
       
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
@@ -1768,15 +1745,11 @@ const CashierDashboard = ({ onLogout }) => {
         // If no sectionTag, derive from restaurantId as fallback.
         // venue-001 contains BOTH bar and restaurant tables, so we can only
         // safely include it when sectionTag is present. Without sectionTag,
-        // include only direct restaurant IDs (bar-001 / restaurant-001).
+        // include only direct restaurant IDs (bar-001 / current restaurant).
         if (!txn.sectionTag) {
           const rid = txn._sourceRestaurantId || '';
-          const dynId =
-            authService.getUser()?.restaurantId ||
-            localStorage.getItem('pending_restaurant_id') ||
-            'restaurant-001';
           if (outlet === 'bar') return rid === 'bar-001';
-          return rid === dynId;
+          return rid === getCurrentRestaurantId();
         }
         const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
         if (outlet === 'bar') return BAR_SOURCES.has(mappedSource);
@@ -3590,7 +3563,7 @@ const CashierDashboard = ({ onLogout }) => {
                         )}
 
                         {/* ── MAIN TABLES ── */}
-                        {/* Bar AC Hall - uses activeTables from restaurant-001 */}
+                        {/* Bar AC Hall - uses activeTables from current restaurant */}
                         {outlet === 'bar' && tableSubCategory === 'bar-ac-hall' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {[...activeTables.filter((table) => {
@@ -4277,7 +4250,7 @@ const CashierDashboard = ({ onLogout }) => {
                                           const mapped = SECTION_TAG_TO_SOURCE[txn.sectionTag];
                                           if (mapped) return mapped.replace(/-/g, ' ');
                                           if (txn._sourceRestaurantId === 'bar-001') return 'bar ac hall';
-                                          if (txn._sourceRestaurantId === 'restaurant-001') return 'restaurant';
+                                          if (txn._sourceRestaurantId === getCurrentRestaurantId()) return 'restaurant';
                                           return '—';
                                         })()}
                                       </td>

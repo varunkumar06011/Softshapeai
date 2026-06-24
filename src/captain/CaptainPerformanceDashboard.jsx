@@ -3,7 +3,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
 import { Users, TrendingUp } from "lucide-react";
 import { CAPTAINS } from "../config/captains";
 import { fetchTransactions } from "../services/orderApi";
-import { RESTAURANT_ID } from "../services/tableApi";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { BAR_ID } from "../services/barApiConfig";
 
 export default function CaptainPerformanceDashboard() {
@@ -33,7 +33,7 @@ export default function CaptainPerformanceDashboard() {
     }
 
     Promise.allSettled([
-      fetchTransactions(RESTAURANT_ID, limit, dateParam, monthParam),
+      fetchTransactions(getCurrentRestaurantId(), limit, dateParam, monthParam),
       fetchTransactions(BAR_ID, limit, dateParam, monthParam),
       fetchTransactions('venue-001', limit, dateParam, monthParam),
     ]).then(results => {
