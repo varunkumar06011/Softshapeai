@@ -60,16 +60,37 @@ const OnboardingWizard = () => {
     setError(null);
 
     try {
+      // Sanitize: remove empty entries that fail Zod validation
+      const cleanCaptains = wizardData.captains.filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin));
+      const cleanCashiers = wizardData.cashiers.filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin));
+      const cleanSections = wizardData.sections.filter(s => s.name.trim().length >= 1);
+      const cleanMenu = {
+        categories: wizardData.menu.categories
+          .filter(cat => cat.name.trim().length >= 1)
+          .map(cat => ({
+            ...cat,
+            items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
+          }))
+          .filter(cat => cat.items.length > 0)
+      };
+
+      if (cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
+      if (cleanCashiers.length === 0) { setError('Add at least one cashier with a 4-digit PIN'); setLoading(false); return; }
+      if (cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
+      if (cleanMenu.categories.length === 0) { setError('Add at least one menu category with items'); setLoading(false); return; }
+
+      const { confirmPassword, ...ownerData } = wizardData.owner;
+
       const data = await apiFetch('/api/onboard', {
         method: 'POST',
         body: JSON.stringify({
           restaurant: wizardData.restaurant,
-          owner: wizardData.owner,
-          captains: wizardData.captains,
-          cashiers: wizardData.cashiers,
-          sections: wizardData.sections,
+          owner: ownerData,
+          captains: cleanCaptains,
+          cashiers: cleanCashiers,
+          sections: cleanSections,
           tables: wizardData.tables,
-          menu: wizardData.menu,
+          menu: cleanMenu,
           plan
         })
       });
