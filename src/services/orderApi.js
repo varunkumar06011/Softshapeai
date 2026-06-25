@@ -2,6 +2,7 @@ import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
 import { authService } from "./authService";
+import { addPendingAction } from "../utils/offlineDB";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -40,8 +41,18 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (isExtraTable) { orderData.isExtraTable = true; }
   if (sectionTag) { orderData.sectionTag = sectionTag; }
 
-  console.log("=== ORDER PAYLOAD ===");
-  console.log(JSON.stringify(orderData, null, 2));
+  // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
+  if (!navigator.onLine) {
+    await addPendingAction({
+      url: '/api/orders',
+      method: 'POST',
+      body: orderData,
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
+    }
+    return { id: `offline-${Date.now()}`, ...orderData, offline: true };
+  }
 
   return withRetry(
     async () => {

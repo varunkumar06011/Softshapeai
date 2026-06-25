@@ -1,7 +1,6 @@
 // Simulated Backend Service for Waiter Calls
 // This file acts as a mock backend to ensure security logic (like cooldowns)
 // are strictly enforced, rather than relying solely on the frontend UI state.
-
 const WAITER_CALLS_KEY = "softshape_waiter_calls";
 const DEVICE_SESSION_KEY = "softshape_device_session_id";
 
