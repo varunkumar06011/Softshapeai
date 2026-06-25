@@ -184,7 +184,7 @@ export default function PrinterSettingsPage() {
             Install on the Windows PC that is connected (USB/WiFi) to your printers.
           </p>
           <a
-            href="https://github.com/softshape-ai/softshape-print-agent/releases/latest"
+            href="https://github.com/varunkumar06011/softshape-print-agent/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-xl bg-[#B71C1C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8B0000]"
