@@ -337,27 +337,29 @@ const OnboardingWizard = () => {
 
         {/* Progress Bar */}
         <div className="mb-8">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex items-start w-full">
             {steps.map((step, idx) => (
-              <div key={step.id} className="flex items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                  currentStepIndex >= idx ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'
-                }`}>
-                  {currentStepIndex > idx ? '✓' : idx + 1}
+              <React.Fragment key={step.id}>
+                {/* Step: circle + label stacked */}
+                <div className="flex flex-col items-center shrink-0" style={{ minWidth: 0 }}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                    currentStepIndex >= idx ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {currentStepIndex > idx ? '✓' : idx + 1}
+                  </div>
+                  <span className={`mt-1 text-[10px] text-center leading-tight w-12 ${
+                    currentStepIndex === idx ? 'text-[#E53935] font-semibold' : 'text-gray-500'
+                  }`}>
+                    {step.title}
+                  </span>
                 </div>
+                {/* Connector line between steps */}
                 {idx < maxStep - 1 && (
-                  <div className={`w-16 h-1 mx-2 ${
+                  <div className={`flex-1 h-1 mt-5 mx-1 ${
                     currentStepIndex > idx ? 'bg-[#E53935]' : 'bg-gray-200'
                   }`} />
                 )}
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between text-sm text-gray-500">
-            {steps.map((step, idx) => (
-              <span key={step.id} className={currentStepIndex === idx ? 'text-[#E53935] font-semibold' : ''}>
-                {step.title}
-              </span>
+              </React.Fragment>
             ))}
           </div>
         </div>
