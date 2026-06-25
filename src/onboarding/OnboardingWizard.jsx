@@ -253,7 +253,7 @@ const OnboardingWizard = () => {
       case 'restaurant':
         return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
       case 'branding':
-        return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
+        return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} restaurantGstin={wizardData.restaurant.gstin} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
       case 'owner':
         return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
       case 'staff':

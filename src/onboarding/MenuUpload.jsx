@@ -3,7 +3,7 @@ import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Le
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
-export default function MenuUpload({ onImported }) {
+export default function MenuUpload({ onImported, onboardingMode = false }) {
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -58,6 +58,15 @@ export default function MenuUpload({ onImported }) {
     setError('');
 
     try {
+      if (onboardingMode) {
+        // During onboarding, restaurant doesn't exist yet. Return parsed rows
+        // so the parent wizard can include them in the final onboarding payload.
+        const result = { created: parsed.rows.length, skipped: [] };
+        setImportResult(result);
+        if (onImported) onImported(parsed.rows);
+        return;
+      }
+
       const restaurantId = getCurrentRestaurantId();
       const res = await fetch(`${API_BASE}/api/menu/bulk-import`, {
         method: 'POST',

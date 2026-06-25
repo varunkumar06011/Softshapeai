@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check } from 'lucide-react';
+import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send } from 'lucide-react';
 
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant', desc: 'Tables, food menu, KOT printing', icon: Utensils },
@@ -26,7 +26,8 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
   const barMlValid = !BAR_TYPES.includes(data.restaurantType) || (
     (data.barUnitMl ?? 30) > 0 && (data.halfBottleMl ?? 375) > 0 && (data.fullBottleMl ?? 750) > 0
   );
-  const isValid = data.name.length >= 2 && data.phone.length >= 10 && gstinValid && data.restaurantType && data.outletCount >= 1 && barMlValid;
+  const phoneValid = /^[0-9]{10}$/.test(data.phone || '');
+  const isValid = data.name.length >= 2 && phoneValid && gstinValid && data.restaurantType && data.outletCount >= 1 && barMlValid;
 
   return (
     <div className="space-y-6">
@@ -78,12 +79,24 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             <Phone size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
             <input
               type="tel"
+              inputMode="numeric"
+              maxLength={10}
               value={data.phone}
-              onChange={(e) => handleChange('phone', e.target.value)}
+              onChange={(e) => handleChange('phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
               className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
               placeholder="e.g., 9876543210"
             />
           </div>
+          {data.phone.length === 10 && (
+            <button
+              type="button"
+              onClick={() => alert(`OTP will be sent to +91 ${data.phone}`)}
+              className="mt-2 w-full py-2 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2"
+            >
+              <Send size={16} />
+              Send OTP
+            </button>
+          )}
         </div>
 
         <div>

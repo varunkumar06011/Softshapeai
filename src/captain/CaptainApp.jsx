@@ -383,6 +383,8 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
 export default function CaptainApp({ onLogout }) {
 
+  const { restaurant, user, setAuth } = useAuth();
+
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
@@ -430,8 +432,6 @@ export default function CaptainApp({ onLogout }) {
   });
 
   const [availableCaptains, setAvailableCaptains] = useState([]);
-
-  const { restaurant, user, setAuth } = useAuth();
 
   const [captainSlug, setCaptainSlug] = useState(
 

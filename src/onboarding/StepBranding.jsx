@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
-import { Palette, FileText, Image, Check } from 'lucide-react';
+import { Palette, FileText } from 'lucide-react';
 
-const StepBranding = ({ data, restaurantName, onChange, onNext, onBack }) => {
+const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext, onBack }) => {
   // Auto-fill receipt header from restaurant name if empty
   useEffect(() => {
     if (!data.receiptHeader && restaurantName) {
@@ -15,8 +15,6 @@ const StepBranding = ({ data, restaurantName, onChange, onNext, onBack }) => {
 
   const fssaiValid = !data.fssai || /^\d{14}$/.test(data.fssai);
   const isValid = (data.receiptHeader || '').trim().length >= 2 && fssaiValid;
-
-  const themeColor = data.themePrimary || '#E53935';
 
   return (
     <div className="space-y-6">
@@ -63,7 +61,7 @@ const StepBranding = ({ data, restaurantName, onChange, onNext, onBack }) => {
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
-                FSSAI Number
+                FSSAI Number <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <input
                 type="text"
@@ -80,43 +78,19 @@ const StepBranding = ({ data, restaurantName, onChange, onNext, onBack }) => {
                 <p className="text-xs text-red-600 mt-1">FSSAI must be exactly 14 digits</p>
               )}
             </div>
-          </div>
-
-          <div className="bg-gray-50 rounded-xl p-4 space-y-4">
-            <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Palette size={16} /> Branding
-            </p>
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
-                Primary Brand Color
+                GST Number
               </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={themeColor}
-                  onChange={(e) => handleChange('themePrimary', e.target.value)}
-                  className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer"
-                />
-                <span className="text-sm text-gray-700 font-mono">{themeColor}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Logo URL
-              </label>
-              <div className="relative">
-                <Image size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                <input
-                  type="text"
-                  value={data.logoUrl || ''}
-                  onChange={(e) => handleChange('logoUrl', e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
-                  placeholder="https://..."
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-1">You can upload a logo from Admin Settings after setup</p>
+              <input
+                type="text"
+                value={restaurantGstin || ''}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600 cursor-not-allowed"
+                placeholder="GST number from previous step"
+              />
+              <p className="text-xs text-gray-400 mt-1">GST number is pulled from restaurant details</p>
             </div>
           </div>
 
@@ -150,6 +124,9 @@ const StepBranding = ({ data, restaurantName, onChange, onNext, onBack }) => {
                 <div className="font-bold uppercase text-sm">{data.receiptHeader || restaurantName || 'Your Restaurant'}</div>
                 {data.receiptSubHeader && (
                   <div className="text-gray-500 text-xs mt-0.5">{data.receiptSubHeader}</div>
+                )}
+                {restaurantGstin && (
+                  <div className="text-gray-500 text-xs mt-0.5">GST: {restaurantGstin}</div>
                 )}
               </div>
               <div className="flex justify-between mb-2 text-xs text-gray-500">
