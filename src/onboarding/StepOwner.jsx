@@ -7,6 +7,14 @@ function getApiBase() {
   return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
 }
 
+function normalizePhone(raw) {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return '+91' + digits;
+  if (digits.length === 12 && digits.startsWith('91')) return '+' + digits;
+  if (raw.startsWith('+')) return raw.trim();
+  return '+' + digits;
+}
+
 const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -25,14 +33,46 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const recaptchaRef = useRef(null);
   const recaptchaContainerId = 'recaptcha-container-step-owner';
 
-  // Clear phone verification state on unmount
+  // Timer state
+  const [emailTimeLeft, setEmailTimeLeft] = useState(300);
+  const [phoneTimeLeft, setPhoneTimeLeft] = useState(120);
+  const emailTimerRef = useRef(null);
+  const phoneTimerRef = useRef(null);
+
+  // Clear phone verification state and timers on unmount
   useEffect(() => {
     return () => {
       if (recaptchaRef.current) {
         try { recaptchaRef.current.clear(); } catch {}
       }
+      clearInterval(emailTimerRef.current);
+      clearInterval(phoneTimerRef.current);
     };
   }, []);
+
+  const formatTimer = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+  const startEmailTimer = () => {
+    setEmailTimeLeft(300);
+    clearInterval(emailTimerRef.current);
+    emailTimerRef.current = setInterval(() => {
+      setEmailTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(emailTimerRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const startPhoneTimer = () => {
+    setPhoneTimeLeft(120);
+    clearInterval(phoneTimerRef.current);
+    phoneTimerRef.current = setInterval(() => {
+      setPhoneTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(phoneTimerRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const handleChange = (field, value) => {
     // Proof invalidation: if email changes after verification, clear the proof
@@ -80,6 +120,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         body: JSON.stringify({ email: data.email, sessionId })
       });
       setEmailOtpStatus('sent');
+      startEmailTimer();
     } catch (err) {
       setEmailError(err.message || 'Failed to send code');
       setEmailOtpStatus('error');
@@ -102,7 +143,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       setEmailOtpStatus('verified');
     } catch (err) {
       setEmailError(err.message || 'Invalid code');
-      setEmailOtpStatus('error');
+      setEmailOtpStatus('sent');
     }
   };
 
@@ -115,12 +156,16 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     setPhoneOtpStatus('sending');
     setPhoneError('');
     try {
-      if (!recaptchaRef.current) {
-        recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, { size: 'invisible' });
+      if (recaptchaRef.current) {
+        try { recaptchaRef.current.clear(); } catch {}
+        recaptchaRef.current = null;
       }
-      const result = await signInWithPhoneNumber(firebaseAuth, data.phone, recaptchaRef.current);
+      recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, { size: 'invisible' });
+      const phone = normalizePhone(data.phone);
+      const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
       setConfirmationResult(result);
       setPhoneOtpStatus('sent');
+      startPhoneTimer();
     } catch (err) {
       setPhoneError(err.message || 'Failed to send SMS');
       setPhoneOtpStatus('error');
@@ -145,7 +190,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       setPhoneOtpStatus('verified');
     } catch (err) {
       setPhoneError(err.message || 'Invalid code');
-      setPhoneOtpStatus('error');
+      setPhoneOtpStatus('sent');
     }
   };
 
@@ -201,24 +246,41 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
           {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
           {emailError && <p className="text-red-400 text-xs mt-1">{emailError}</p>}
 
-          {emailOtpStatus === 'sent' && !data.emailVerificationProof && (
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="text"
-                maxLength={6}
-                value={emailOtp}
-                onChange={(e) => setEmailOtp(e.target.value)}
-                placeholder="6-digit code"
-                className="w-32 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 text-center text-sm font-mono"
-              />
-              <button
-                type="button"
-                onClick={verifyEmailOtp}
-                disabled={emailOtpStatus === 'verifying'}
-                className="px-4 py-2 text-xs font-semibold bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C] disabled:opacity-50 transition-all"
-              >
-                {emailOtpStatus === 'verifying' ? <Loader2 size={14} className="animate-spin inline" /> : 'Verify'}
-              </button>
+          {emailOtpStatus === 'error' && !data.emailVerificationProof && (
+            <div className="mt-1">
+              <button type="button" onClick={sendEmailOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend Code</button>
+            </div>
+          )}
+          {(emailOtpStatus === 'sent' || emailOtpStatus === 'verifying') && !data.emailVerificationProof && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={emailOtp}
+                  onChange={(e) => setEmailOtp(e.target.value)}
+                  placeholder="6-digit code"
+                  className="w-32 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 text-center text-sm font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={verifyEmailOtp}
+                  disabled={emailOtpStatus === 'verifying'}
+                  className="px-4 py-2 text-xs font-semibold bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C] disabled:opacity-50 transition-all"
+                >
+                  {emailOtpStatus === 'verifying' ? <Loader2 size={14} className="animate-spin inline" /> : 'Verify'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-xs text-gray-400">
+                  {emailTimeLeft > 0 ? `Code expires in ${formatTimer(emailTimeLeft)}` : 'Code expired.'}
+                </span>
+                {(emailTimeLeft === 0 || emailTimeLeft <= 240) ? (
+                  <button type="button" onClick={sendEmailOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend Code</button>
+                ) : (
+                  <span className="text-xs text-gray-400">Resend in {formatTimer(emailTimeLeft - 240)}</span>
+                )}
+              </div>
             </div>
           )}
           {data.emailVerificationProof && (
@@ -251,24 +313,41 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
           {errors.phone && <p className="text-red-400 text-xs mt-1">{errors.phone}</p>}
           {phoneError && <p className="text-red-400 text-xs mt-1">{phoneError}</p>}
 
-          {phoneOtpStatus === 'sent' && !data.phoneVerificationProof && (
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="text"
-                maxLength={6}
-                value={phoneOtp}
-                onChange={(e) => setPhoneOtp(e.target.value)}
-                placeholder="Enter OTP"
-                className="w-32 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 text-center text-sm font-mono"
-              />
-              <button
-                type="button"
-                onClick={verifyPhoneOtp}
-                disabled={phoneOtpStatus === 'verifying'}
-                className="px-4 py-2 text-xs font-semibold bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C] disabled:opacity-50 transition-all"
-              >
-                {phoneOtpStatus === 'verifying' ? <Loader2 size={14} className="animate-spin inline" /> : 'Verify'}
-              </button>
+          {phoneOtpStatus === 'error' && !data.phoneVerificationProof && (
+            <div className="mt-1">
+              <button type="button" onClick={sendPhoneOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend OTP</button>
+            </div>
+          )}
+          {(phoneOtpStatus === 'sent' || phoneOtpStatus === 'verifying') && !data.phoneVerificationProof && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={phoneOtp}
+                  onChange={(e) => setPhoneOtp(e.target.value)}
+                  placeholder="Enter OTP"
+                  className="w-32 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 text-center text-sm font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={verifyPhoneOtp}
+                  disabled={phoneOtpStatus === 'verifying'}
+                  className="px-4 py-2 text-xs font-semibold bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C] disabled:opacity-50 transition-all"
+                >
+                  {phoneOtpStatus === 'verifying' ? <Loader2 size={14} className="animate-spin inline" /> : 'Verify'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-xs text-gray-400">
+                  {phoneTimeLeft > 0 ? `Code expires in ${formatTimer(phoneTimeLeft)}` : 'Code expired.'}
+                </span>
+                {(phoneTimeLeft === 0 || phoneTimeLeft <= 60) ? (
+                  <button type="button" onClick={sendPhoneOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend OTP</button>
+                ) : (
+                  <span className="text-xs text-gray-400">Resend in {formatTimer(phoneTimeLeft - 60)}</span>
+                )}
+              </div>
             </div>
           )}
           {data.phoneVerificationProof && (

@@ -313,7 +313,7 @@ const OnboardingWizard = () => {
       case 'payment':
         return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
       case 'confirm':
-        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
+        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToOwnerStep={() => setCurrentStepId('owner')} />;
       default:
         return null;
     }

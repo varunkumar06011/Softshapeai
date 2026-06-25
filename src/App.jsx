@@ -8,6 +8,8 @@ import CaptainApp from "./captain/CaptainApp";
 import UserMenuApp from "./user-menu/UserMenuApp";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import TableQRCodes from "./admin/TableQRCodes";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
@@ -229,6 +231,8 @@ function App() {
           <Routes>
             <Route path="/" element={<PortalSelectionWrapper />} />
             <Route path="/onboarding" element={<OnboardingWizard />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/admin" element={<AdminLoginWrapper />} />
             <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
             <Route path="/admin/qr-codes" element={<TableQRCodesWrapper />} />

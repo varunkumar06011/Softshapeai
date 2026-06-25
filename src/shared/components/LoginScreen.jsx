@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, Users } from 'lucide-react';
 import { authService } from '../../services/authService';
 
@@ -9,6 +10,7 @@ function getApiBase() {
 }
 
 const LoginScreen = ({ role, onLogin, onBack }) => {
+  const navigate = useNavigate();
   const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
   const isCashier = role === 'cashier';
 
@@ -288,7 +290,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
                 Trust this terminal
               </span>
             </label>
-            <button className="text-[10px] font-black uppercase tracking-widest text-[#E53935] hover:underline">
+            <button onClick={() => navigate('/forgot-password')} className="text-[10px] font-black uppercase tracking-widest text-[#E53935] hover:underline">
               Forgot Access?
             </button>
           </div>
