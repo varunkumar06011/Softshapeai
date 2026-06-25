@@ -52,3 +52,20 @@ export const useAuth = () => {
   }
   return context;
 };
+
+/**
+ * Returns whether a given module is enabled for the current restaurant.
+ * `enabledModules` is a JSON object with lowercase keys, e.g.
+ * { dashboard: true, bar: true, venue: false, inventory: true, ... }.
+ *
+ * Legacy-safe: if the restaurant has no enabledModules (not yet migrated),
+ * or a specific key is absent, default to `true` so nothing is hidden.
+ *
+ * @param {string} moduleName - module key (case-insensitive), e.g. 'bar', 'venue'
+ * @returns {boolean}
+ */
+export const useFeature = (moduleName) => {
+  const { restaurant } = useAuth();
+  if (!restaurant?.enabledModules) return true; // legacy-safe default: show everything
+  return restaurant.enabledModules[String(moduleName).toLowerCase()] ?? true;
+};

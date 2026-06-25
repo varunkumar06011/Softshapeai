@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, updateBarTableSession } from "./barTableApi";
-import { getBarId } from "./barApiConfig";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { getBarTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
@@ -192,7 +192,7 @@ function attachSocketLogging(socket) {
 
   socket.on("connect", () => {
     console.log("[Socket] Connected:", socket.id);
-    socket.emit("join", getBarId());
+    socket.emit("join", getCurrentRestaurantId());
   });
 
   socket.on("disconnect", (reason) => {
@@ -213,7 +213,7 @@ function acquireSocket(handlers) {
       attachSocketLogging(sharedSocket);
     }
 
-    sharedSocket.emit("join", getBarId());
+    sharedSocket.emit("join", getCurrentRestaurantId());
 
     const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
@@ -396,7 +396,7 @@ export function useBarTableSync() {
 
     const releaseSocket = acquireSocket({
       onUpdated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== getBarId()) return;
+        if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
         const updatedTable = unwrapTableEvent(payload);
         if (!updatedTable?.id) return;
 
@@ -438,7 +438,7 @@ export function useBarTableSync() {
         });
       },
       onCreated: (payload) => {
-        if (payload?.restaurantId && payload.restaurantId !== getBarId()) return;
+        if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
         const newTable = unwrapTableEvent(payload);
         if (!newTable?.id) return;
 
@@ -456,7 +456,7 @@ export function useBarTableSync() {
         });
       },
       onDeleted: ({ id, restaurantId }) => {
-        if (restaurantId && restaurantId !== getBarId()) return;
+        if (restaurantId && restaurantId !== getCurrentRestaurantId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
           writeCache(next);

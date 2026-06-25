@@ -15,6 +15,7 @@ import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 import { authService } from "./services/authService";
+import { purgeLegacyCaches } from "./utils/cacheKeys";
 
 
 // ─── Live Kitchen Display System ──────────────────────────────────────────────
@@ -214,6 +215,12 @@ function ThemeInjector() {
 
 // Root Component
 function App() {
+  useEffect(() => {
+    // Purge legacy un-scoped caches once on startup, before any data fetching,
+    // so stale single-restaurant data never leaks across tenants.
+    purgeLegacyCaches();
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

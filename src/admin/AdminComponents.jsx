@@ -46,7 +46,7 @@ import {
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
 } from 'recharts';
 import { useMenu } from '../context/MenuContext';
-import { useOutlet } from '../context/OutletContext';
+import { useAuth } from '../context/AuthContext';
 import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
 import { getSmartRecommendation } from '../services/pricingEngine';
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
@@ -61,9 +61,8 @@ import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
-import { getBarId } from '../services/barApiConfig';
 import { authService } from '../services/authService';
-import { VENUE_PRICE_COLUMNS, BAR_VENUE_PRICE_COLUMNS, RESTAURANT_VENUE_PRICE_COLUMNS } from '../services/venueApiConfig';
+import { fetchSections } from '../services/tableApi';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
@@ -210,7 +209,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
         // Fetch from both outlets
         const [restaurantTxns, barTxns] = await Promise.allSettled([
           fetchTransactions(getCurrentRestaurantId(), 500),
-          fetchTransactions(getBarId(), 500),
+          fetchTransactions(getCurrentRestaurantId(), 500),
         ]);
 
         const allTransactions = [
@@ -659,7 +658,7 @@ export function Tables({ onOpen }) {
 export function MenuPage({ onAddDish }) {
   const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu, setGlobalMenu } = useMenu();
   const [filter, setFilter] = useState("");
-  const [activeVenueId, setActiveVenueId] = useState(BAR_VENUE_PRICE_COLUMNS[0].id);
+  const [activeVenueId, setActiveVenueId] = useState(null);
   const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
 
   // ── Admin items: fetched from admin endpoint (includes unavailable) ───
@@ -667,14 +666,28 @@ export function MenuPage({ onAddDish }) {
   const [adminLoading, setAdminLoading] = useState(true);
   const [activeOutlet, setActiveOutlet] = useState('restaurant'); // 'restaurant' | 'bar'
 
-  const currentVenueColumns = activeOutlet === 'bar' ? BAR_VENUE_PRICE_COLUMNS : RESTAURANT_VENUE_PRICE_COLUMNS;
+  // ── Sections (tenant-scoped) drive the venue price columns dynamically ──
+  const [sections, setSections] = useState([]);
+  useEffect(() => {
+    fetchSections()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data?.sections ?? []);
+        setSections(list);
+      })
+      .catch((err) => console.warn('[MenuPage] fetchSections failed:', err.message));
+  }, []);
+
+  const currentVenueColumns = useMemo(() => {
+    const cols = sections.map(s => ({ id: s.id || s.name, label: s.name || 'Price' }));
+    return cols.length > 0 ? cols : [{ id: 'default', label: 'Price' }];
+  }, [sections]);
 
   const fetchAdminItems = useCallback(async () => {
     try {
       setAdminLoading(true);
       let url;
       if (activeOutlet === 'bar') {
-        url = `${API_BASE}/api/bar/menu/items?restaurantId=${getBarId()}`;
+        url = `${API_BASE}/api/bar/menu/items?restaurantId=${getCurrentRestaurantId()}`;
       } else {
         url = `${API_BASE}/api/menu/items/admin?restaurantId=${getCurrentRestaurantId()}`;
       }
@@ -710,9 +723,16 @@ export function MenuPage({ onAddDish }) {
 
   // Reset venue tab when switching outlets and refetch
   useEffect(() => {
-    setActiveVenueId(currentVenueColumns[0].id);
+    setActiveVenueId(currentVenueColumns[0]?.id ?? null);
     fetchAdminItems(); // Refetch when outlet changes
   }, [activeOutlet, fetchAdminItems]);
+
+  // Keep activeVenueId valid once columns load / change.
+  useEffect(() => {
+    if (currentVenueColumns.length === 0) return;
+    const exists = currentVenueColumns.some((c) => c.id === activeVenueId);
+    if (!exists) setActiveVenueId(currentVenueColumns[0].id);
+  }, [currentVenueColumns, activeVenueId]);
 
   const items = useMemo(() => {
     return adminItems
@@ -2019,7 +2039,7 @@ function SalesReport({ inventory }) {
       try {
         // Fetch sales data from analytics API
         const response = await fetch(
-          apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${filters.startDate}&endDate=${filters.endDate}`)
+          apiUrl(`/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${filters.startDate}&endDate=${filters.endDate}`)
         );
 
         if (!response.ok) {
@@ -2940,8 +2960,8 @@ function ComparisonReport({ inventory }) {
         const ranges = getDateRanges();
 
         const [data1Response, data2Response] = await Promise.all([
-          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${ranges.period1.start.toISOString().slice(0, 10)}&endDate=${ranges.period1.end.toISOString().slice(0, 10)}`)),
-          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${ranges.period2.start.toISOString().slice(0, 10)}&endDate=${ranges.period2.end.toISOString().slice(0, 10)}`))
+          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${ranges.period1.start.toISOString().slice(0, 10)}&endDate=${ranges.period1.end.toISOString().slice(0, 10)}`)),
+          fetch(apiUrl(`/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${ranges.period2.start.toISOString().slice(0, 10)}&endDate=${ranges.period2.end.toISOString().slice(0, 10)}`))
         ]);
 
         const data1 = await data1Response.json();
@@ -3150,7 +3170,7 @@ function TopPerformersReport({ inventory }) {
       setLoading(true);
       try {
         const response = await fetch(
-          apiUrl(`/api/analytics/items-sold?restaurantId=${getBarId()}&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
+          apiUrl(`/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
         );
 
         if (!response.ok) throw new Error('Failed to fetch sales data');
@@ -3695,7 +3715,11 @@ function WasteReport({ inventory }) {
 }
 
 export function Inventory() {
-  const { outlet } = useOutlet();
+  const { restaurant } = useAuth();
+  const enabledModules = restaurant?.enabledModules || {};
+  const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
+    : enabledModules.bar && !enabledModules.food ? 'bar'
+    : 'restaurant';
   const [inventory, setInventory] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3707,7 +3731,7 @@ export function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [activeTab, setActiveTab] = useState('inventory');
-  const socket = useSocket(getBarId());
+  const socket = useSocket(getCurrentRestaurantId());
   const [popup, setPopup] = useState(null);
 
   // Loading states for action buttons
@@ -3730,14 +3754,14 @@ export function Inventory() {
   };
 
   useEffect(() => {
-    if (outlet === 'bar') {
+    if (activeOutlet === 'bar' || activeOutlet === 'both') {
       loadInventory();
       loadLowStockItems();
       loadBarMenu();
     } else {
       setLoading(false);
     }
-  }, [outlet]);
+  }, [activeOutlet]);
 
   useEffect(() => {
     const handleInventoryUpdate = (data) => {
@@ -3787,7 +3811,7 @@ export function Inventory() {
 
   const loadBarMenu = async () => {
     try {
-      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getBarId()}`), {
+      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getCurrentRestaurantId()}`), {
         headers: authService.getAuthHeader()
       });
       const data = await res.json();
@@ -3986,8 +4010,8 @@ export function Inventory() {
     return matchesSearch && matchesFilter;
   });
 
-  // Show "Coming Soon" for restaurant outlet
-  if (outlet === 'restaurant') {
+  // Show "Coming Soon" for restaurant-only outlet
+  if (activeOutlet === 'restaurant') {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
@@ -4297,7 +4321,7 @@ function AddInventoryModal({ onClose, onSave, isSubmitting }) {
   });
 
   useEffect(() => {
-    fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getBarId()}`), {
+    fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getCurrentRestaurantId()}`), {
       headers: authService.getAuthHeader()
     })
       .then(res => res.json())
@@ -4735,7 +4759,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isS
   });
 
   useEffect(() => {
-    fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getBarId()}`), {
+    fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getCurrentRestaurantId()}`), {
       headers: authService.getAuthHeader()
     })
       .then(res => res.json())
@@ -5738,8 +5762,25 @@ export function BarMenuPage() {
   const [unifiedMenu, setUnifiedMenu] = useState(null);
   const [unifiedLoading, setUnifiedLoading] = useState(true);
   const [barMenuTab, setBarMenuTab] = useState('food');
-  const [activeVenueId, setActiveVenueId] = useState(BAR_VENUE_PRICE_COLUMNS[0].id);
+  const [activeVenueId, setActiveVenueId] = useState(null);
   const [filter, setFilter] = useState('');
+
+  // ── Sections (tenant-scoped) drive the venue price columns dynamically ──
+  const [sections, setSections] = useState([]);
+  useEffect(() => {
+    fetchSections()
+      .then((data) => setSections(Array.isArray(data) ? data : (data?.sections ?? [])))
+      .catch((err) => console.warn('[BarMenuPage] fetchSections failed:', err.message));
+  }, []);
+  const venueColumns = useMemo(() => {
+    const cols = sections.map(s => ({ id: s.id || s.name, label: s.name || 'Price' }));
+    return cols.length > 0 ? cols : [{ id: 'default', label: 'Price' }];
+  }, [sections]);
+  useEffect(() => {
+    if (venueColumns.length === 0) return;
+    const exists = venueColumns.some((c) => c.id === activeVenueId);
+    if (!exists) setActiveVenueId(venueColumns[0].id);
+  }, [venueColumns, activeVenueId]);
 
   // Fetch unified menu for bar
   useEffect(() => {
@@ -6050,7 +6091,7 @@ export function BarMenuPage() {
 
       <div className="mb-3 flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
-          {BAR_VENUE_PRICE_COLUMNS.map((venue) => (
+          {venueColumns.map((venue) => (
             <button
               key={venue.id}
               type="button"

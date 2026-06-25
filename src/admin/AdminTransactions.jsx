@@ -4,13 +4,20 @@ import { fetchTransactions, deleteTransaction } from '../services/orderApi';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+<<<<<<< HEAD
 import { authService } from '../services/authService';
+=======
+>>>>>>> f33b19c (all onboarding and more things done,calude audited and done by kimi at 25/06,1321)
 
 function formatBillNumber(txnDate, txnNumber) {
   return formatTxnDisplayId(txnDate, txnNumber);
 }
 
 function resolveSource(txn) {
+<<<<<<< HEAD
+=======
+  if (txn.restaurantId === getCurrentRestaurantId()) return 'restaurant';
+>>>>>>> f33b19c (all onboarding and more things done,calude audited and done by kimi at 25/06,1321)
   const tag = (txn.sectionTag || '').toLowerCase();
   if (tag === 'venue-bar-ac-hall') return 'bar';
   if (tag === 'venue-bar-conference') return 'conference';
@@ -68,6 +75,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
         limitParam = 500;
       }
 
+<<<<<<< HEAD
       const rid = authService.getUser()?.restaurantId;
       if (!rid) {
         setTransactions([]);
@@ -76,6 +84,23 @@ export default function AdminTransactions({ onStatsRefresh }) {
       }
 
       const deduped = await fetchTransactions(rid, limitParam, dateParam, monthParam).catch(() => []);
+=======
+      const allResults = await Promise.all([
+        fetchTransactions(getCurrentRestaurantId(), limitParam, dateParam, monthParam).catch(() => []),
+      ]);
+
+      const allTxns = allResults.flatMap((txns, idx) => {
+        const rid = [getCurrentRestaurantId()][idx];
+        return txns.map(txn => ({ ...txn, restaurantId: txn.restaurantId || rid }));
+      });
+
+      const seen = new Set();
+      const deduped = allTxns.filter(txn => {
+        if (seen.has(txn.id)) return false;
+        seen.add(txn.id);
+        return true;
+      });
+>>>>>>> f33b19c (all onboarding and more things done,calude audited and done by kimi at 25/06,1321)
 
       deduped.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
 

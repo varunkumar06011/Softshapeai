@@ -12,7 +12,7 @@ import { createOrder, updateOrderItems } from '../services/orderApi';
 
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 
-import { getBarId } from '../services/barApiConfig';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
@@ -978,7 +978,7 @@ export default function BarMenu({ tableId }) {
 
           tableNumber: matched.number || matched.id,
 
-          restaurantId: getBarId(),
+          restaurantId: getCurrentRestaurantId(),
 
           items: apiItems
 

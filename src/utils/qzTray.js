@@ -12,8 +12,6 @@
 
 import { QZ_CERT } from '../services/certificate.js';
 import { getCurrentRestaurantId } from './getCurrentRestaurantId';
-import { getBarId } from '../services/barApiConfig';
-import { getVenueId } from '../services/venueApiConfig';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -130,10 +128,8 @@ const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || '
 const KOT_PRINTER = import.meta.env.VITE_KOT_PRINTER_NAME || 'KOT PRINTER';
 
 export function getPrinterForJob(type, restaurantId, sectionTag) {
-  const barId = getBarId();
-  const venueId = getVenueId();
   if (type === 'KOT') {
-    if (restaurantId === venueId) return KOT_FAMILY_PRINTER;
+    if (restaurantId === getCurrentRestaurantId()) return KOT_FAMILY_PRINTER;
     // TODO Phase 3: replace with per-restaurant printer config once Restaurant model has a printer field — currently all restaurants share one generic printer mapping.
     return restaurantId === getCurrentRestaurantId() ? RESTAURANT_KITCHEN_PRINTER : KITCHEN_PRINTER;
   }
@@ -142,10 +138,10 @@ export function getPrinterForJob(type, restaurantId, sectionTag) {
     if (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel') {
       return DINE_IN_BILL_PRINTER;
     }
-    return restaurantId === barId ? BAR_PRINTER : BILLING_PRINTER;
+    return BILLING_PRINTER;
   }
   if (type === 'CANCEL_KOT') {
-    if (restaurantId === venueId) return KOT_FAMILY_PRINTER;
+    if (restaurantId === getCurrentRestaurantId()) return KOT_FAMILY_PRINTER;
     if (sectionTag === 'venue-family-restaurant') return KOT_FAMILY_PRINTER;
     if (sectionTag === 'venue-restaurant-parcel') return KOT_PRINTER;
     return KITCHEN_PRINTER;

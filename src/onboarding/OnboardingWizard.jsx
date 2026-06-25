@@ -1,29 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { purgeLegacyCaches } from '../utils/cacheKeys';
 import { apiFetch } from '../services/apiConfig';
 import StepRestaurant from './StepRestaurant';
+import StepBranding from './StepBranding';
 import StepOwner from './StepOwner';
 import StepStaff from './StepStaff';
 import StepFloorPlan from './StepFloorPlan';
 import StepMenu from './StepMenu';
+import StepTax from './StepTax';
+import StepPrinters from './StepPrinters';
 import StepPlan from './StepPlan';
 import StepPayment from './StepPayment';
 import StepOutlets from './StepOutlets';
 import StepConfirmation from './StepConfirmation';
-import { ChevronLeft, ChevronRight, CheckCircle2, Copy, ArrowRight, Store, ShieldCheck, Users, Layout, Utensils, CreditCard, Check } from 'lucide-react';
+import OnboardingSuccess from './OnboardingSuccess';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const STORAGE_KEY = 'onboarding_wizard';
+const STORAGE_KEY = 'onboarding_wizard_v2';
+
+function computeSteps(restaurantType, outletCount) {
+  const base = [
+    { id: 'restaurant', title: 'Restaurant Info' },
+    { id: 'branding', title: 'Branding' },
+    { id: 'owner', title: 'Owner Account' },
+    { id: 'staff', title: 'Staff Setup' },
+  ];
+
+  if (restaurantType !== 'CLOUD_KITCHEN') {
+    base.push({ id: 'floorplan', title: 'Floor Plan' });
+  }
+
+  base.push({ id: 'menu', title: 'Menu Setup' });
+  base.push({ id: 'tax', title: 'GST & Tax' });
+  base.push({ id: 'printers', title: 'Printers' });
+
+  if (outletCount > 1) {
+    base.push({ id: 'outlets', title: 'Outlets' });
+  }
+
+  base.push({ id: 'plan', title: 'Choose Plan' });
+  base.push({ id: 'payment', title: 'Payment' });
+  base.push({ id: 'confirm', title: 'Confirm' });
+
+  return base;
+}
 
 const defaultWizardData = {
-  restaurant: { name: '', address: '', phone: '', email: '', gstin: '', restaurantType: '', outletCount: 1 },
+  restaurant: { name: '', address: '', phone: '', email: '', gstin: '', restaurantType: '', outletCount: 1, barUnitMl: 30, fullBottleMl: 750, halfBottleMl: 375, deliveryPlatforms: [] },
+  branding: { receiptHeader: '', receiptSubHeader: '', fssai: '', themePrimary: '#E53935', logoUrl: '' },
   owner: { name: '', email: '', password: '', confirmPassword: '' },
-  captains: [{ name: '', pin: '' }],
-  cashiers: [{ name: '', pin: '' }],
-  sections: [{ name: '' }],
+  captains: [{ name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }],
+  cashiers: [{ name: '', pin: '', shift: 'Full Day' }],
+  sections: [{ name: '', kotPrinterName: '' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
+  taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', pricesIncludeGst: false, serviceChargePercent: 0 },
+  printers: [
+    { name: 'Kitchen Printer', paperWidth: '80mm', type: 'KITCHEN' },
+    { name: 'Bill Printer', paperWidth: '80mm', type: 'BILL' },
+  ],
+  sectionRouting: {},
   outlets: [],
   selectedPlan: 'starter',
   paymentReference: null,
@@ -33,7 +71,12 @@ const defaultWizardData = {
 function loadSavedState() {
   try {
     const saved = sessionStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Migration guard: old format used numeric currentStep; discard stale state
+      if (typeof parsed?.currentStep === 'number') return null;
+      return parsed;
+    }
   } catch { /* ignore */ }
   return null;
 }
@@ -43,69 +86,82 @@ const OnboardingWizard = () => {
   const { setAuth } = useAuth();
 
   const saved = loadSavedState();
-  const [currentStep, setCurrentStep] = useState(saved?.currentStep || 1);
+  const [currentStepId, setCurrentStepId] = useState(saved?.currentStepId || 'restaurant');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [onboardResult, setOnboardResult] = useState(null);
-  const [copied, setCopied] = useState(false);
   const [wizardData, setWizardData] = useState(saved?.wizardData || defaultWizardData);
+
+  const steps = useMemo(
+    () => computeSteps(wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount),
+    [wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount]
+  );
+
+  const maxStep = steps.length;
+  const currentStepIndex = steps.findIndex(s => s.id === currentStepId);
+  const hasMultipleOutlets = wizardData.restaurant.outletCount > 1;
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStep, wizardData }));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStepId, wizardData }));
     } catch { /* ignore */ }
-  }, [currentStep, wizardData]);
+  }, [currentStepId, wizardData]);
 
-  const hasMultipleOutlets = wizardData.restaurant.outletCount > 1;
-
-  const steps = hasMultipleOutlets
-    ? [
-        { number: 1, title: 'Restaurant Info' },
-        { number: 2, title: 'Owner Account' },
-        { number: 3, title: 'Staff Setup' },
-        { number: 4, title: 'Floor Plan' },
-        { number: 5, title: 'Menu Setup' },
-        { number: 6, title: 'Outlets' },
-        { number: 7, title: 'Choose Plan' },
-        { number: 8, title: 'Payment' },
-        { number: 9, title: 'Confirm' }
-      ]
-    : [
-        { number: 1, title: 'Restaurant Info' },
-        { number: 2, title: 'Owner Account' },
-        { number: 3, title: 'Staff Setup' },
-        { number: 4, title: 'Floor Plan' },
-        { number: 5, title: 'Menu Setup' },
-        { number: 6, title: 'Choose Plan' },
-        { number: 7, title: 'Payment' },
-        { number: 8, title: 'Confirm' }
-      ];
-
-  const maxStep = steps.length;
+  // Reset dependent data when restaurant type changes
+  const prevTypeRef = React.useRef(wizardData.restaurant.restaurantType);
+  useEffect(() => {
+    const newType = wizardData.restaurant.restaurantType;
+    const prevType = prevTypeRef.current;
+    if (newType && prevType && newType !== prevType) {
+      setWizardData(prev => {
+        const reset = { ...prev };
+        // Clear floor-plan data for cloud kitchen
+        if (newType === 'CLOUD_KITCHEN') {
+          reset.sections = [{ name: '', kotPrinterName: '' }];
+          reset.tables = [{ number: 1, capacity: 4, sectionIndex: 0 }];
+          reset.captains = [{ name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }];
+        }
+        // Reset type-specific fields
+        reset.restaurant = {
+          ...reset.restaurant,
+          barUnitMl: null,
+          halfBottleMl: null,
+          fullBottleMl: null,
+          deliveryPlatforms: []
+        };
+        return reset;
+      });
+      // Jump back to restaurant step so owner sees the new flow
+      setCurrentStepId('restaurant');
+    }
+    prevTypeRef.current = newType;
+  }, [wizardData.restaurant.restaurantType]);
 
   const updateWizardData = (section, data) => {
     setWizardData(prev => ({ ...prev, [section]: data }));
   };
 
-  const handleNext = () => {
-    if (currentStep < maxStep) {
-      setCurrentStep(prev => prev + 1);
+  const handleNext = useCallback(() => {
+    if (currentStepIndex >= 0 && currentStepIndex < maxStep - 1) {
+      setCurrentStepId(steps[currentStepIndex + 1].id);
     }
-  };
+  }, [currentStepIndex, maxStep, steps]);
 
-  const handleBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep(prev => prev - 1);
+  const handleBack = useCallback(() => {
+    if (currentStepIndex > 0) {
+      setCurrentStepId(steps[currentStepIndex - 1].id);
     } else {
       navigate('/');
     }
-  };
+  }, [currentStepIndex, steps, navigate]);
 
   const handleSubmit = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const isCloud = wizardData.restaurant.restaurantType === 'CLOUD_KITCHEN';
+
       // Sanitize: remove empty entries that fail Zod validation
       const cleanCaptains = wizardData.captains.filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin));
       const cleanCashiers = wizardData.cashiers.filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin));
@@ -120,9 +176,9 @@ const OnboardingWizard = () => {
           .filter(cat => cat.items.length > 0)
       };
 
-      if (cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
+      if (!isCloud && cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
       if (cleanCashiers.length === 0) { setError('Add at least one cashier with a 4-digit PIN'); setLoading(false); return; }
-      if (cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
+      if (!isCloud && cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
       if (cleanMenu.categories.length === 0) { setError('Add at least one menu category with items'); setLoading(false); return; }
 
       // Sanitize outlets if multi-outlet
@@ -147,20 +203,26 @@ const OnboardingWizard = () => {
 
       const { confirmPassword, ...ownerData } = wizardData.owner;
 
+      const payload = {
+        restaurant: wizardData.restaurant,
+        branding: wizardData.branding,
+        taxConfig: wizardData.taxConfig,
+        owner: ownerData,
+        captains: isCloud ? [] : cleanCaptains,
+        cashiers: cleanCashiers,
+        sections: isCloud ? [] : cleanSections,
+        tables: isCloud ? [] : wizardData.tables,
+        menu: cleanMenu,
+        printers: wizardData.printers,
+        sectionRouting: wizardData.sectionRouting,
+        outlets: cleanOutlets.length > 0 ? cleanOutlets : undefined,
+        plan: wizardData.selectedPlan,
+        paymentReference: wizardData.paymentReference
+      };
+
       const data = await apiFetch('/api/onboard', {
         method: 'POST',
-        body: JSON.stringify({
-          restaurant: wizardData.restaurant,
-          owner: ownerData,
-          captains: cleanCaptains,
-          cashiers: cleanCashiers,
-          sections: cleanSections,
-          tables: wizardData.tables,
-          menu: cleanMenu,
-          outlets: cleanOutlets.length > 0 ? cleanOutlets : undefined,
-          plan: wizardData.selectedPlan,
-          paymentReference: wizardData.paymentReference
-        })
+        body: JSON.stringify(payload)
       });
 
       sessionStorage.removeItem(STORAGE_KEY);
@@ -186,147 +248,81 @@ const OnboardingWizard = () => {
     navigate('/admin/dashboard');
   };
 
-  const handleCopyCode = () => {
-    if (onboardResult?.restaurantCode) {
-      navigator.clipboard.writeText(onboardResult.restaurantCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
   const renderStep = () => {
-    if (hasMultipleOutlets) {
-      switch (currentStep) {
-        case 1:
-          return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
-        case 2:
-          return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
-        case 3:
-          return <StepStaff captains={wizardData.captains} cashiers={wizardData.cashiers} onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }} onNext={handleNext} onBack={handleBack} />;
-        case 4:
-          return <StepFloorPlan sections={wizardData.sections} tables={wizardData.tables} onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }} onNext={handleNext} onBack={handleBack} />;
-        case 5:
-          return <StepMenu data={wizardData.menu} onChange={(data) => updateWizardData('menu', data)} onNext={handleNext} onBack={handleBack} />;
-        case 6:
-          return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
-        case 7:
-          return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
-        case 8:
-          return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
-        case 9:
-          return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
-        default:
-          return null;
-      }
-    } else {
-      switch (currentStep) {
-        case 1:
-          return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} onBack={handleBack} />;
-        case 2:
-          return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
-        case 3:
-          return <StepStaff captains={wizardData.captains} cashiers={wizardData.cashiers} onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }} onNext={handleNext} onBack={handleBack} />;
-        case 4:
-          return <StepFloorPlan sections={wizardData.sections} tables={wizardData.tables} onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }} onNext={handleNext} onBack={handleBack} />;
-        case 5:
-          return <StepMenu data={wizardData.menu} onChange={(data) => updateWizardData('menu', data)} onNext={handleNext} onBack={handleBack} />;
-        case 6:
-          return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
-        case 7:
-          return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
-        case 8:
-          return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
-        default:
-          return null;
-      }
+    switch (currentStepId) {
+      case 'restaurant':
+        return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
+      case 'branding':
+        return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
+      case 'owner':
+        return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
+      case 'staff':
+        return (
+          <StepStaff
+            restaurantType={wizardData.restaurant.restaurantType}
+            captains={wizardData.captains}
+            cashiers={wizardData.cashiers}
+            onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
+      case 'floorplan':
+        return (
+          <StepFloorPlan
+            restaurantType={wizardData.restaurant.restaurantType}
+            printers={wizardData.printers}
+            sections={wizardData.sections}
+            tables={wizardData.tables}
+            onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
+      case 'menu':
+        return (
+          <StepMenu
+            restaurantType={wizardData.restaurant.restaurantType}
+            taxConfig={wizardData.taxConfig}
+            data={wizardData.menu}
+            onChange={(data) => updateWizardData('menu', data)}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
+      case 'tax':
+        return <StepTax data={wizardData.taxConfig} onChange={(data) => updateWizardData('taxConfig', data)} onNext={handleNext} onBack={handleBack} />;
+      case 'printers':
+        return (
+          <StepPrinters
+            printers={wizardData.printers}
+            sectionRouting={wizardData.sectionRouting}
+            sectionsData={wizardData.sections}
+            onChange={(printers, sectionRouting) => { updateWizardData('printers', printers); updateWizardData('sectionRouting', sectionRouting); }}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
+      case 'outlets':
+        return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
+      case 'plan':
+        return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
+      case 'payment':
+        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
+      case 'confirm':
+        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
+      default:
+        return null;
     }
   };
 
   if (onboardResult) {
-    const totalTables = wizardData.tables.length + (wizardData.outlets || []).reduce((sum, o) => sum + o.tables.length, 0);
-    const totalMenuItems = wizardData.menu.categories.reduce((sum, cat) => sum + cat.items.length, 0);
-
     return (
-      <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex items-center justify-center px-4 py-10">
-        <div className="max-w-xl w-full space-y-6">
-          {/* Welcome heading */}
-          <div className="bg-white rounded-3xl p-10 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-50 flex items-center justify-center">
-              <CheckCircle2 size={48} className="text-green-600" />
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Welcome to Softshape, {onboardResult.name}!</h1>
-            <p className="text-gray-500">Your restaurant is live and ready to serve.</p>
-          </div>
-
-          {/* Credentials card */}
-          <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <ShieldCheck size={20} className="text-green-600" /> Your Credentials
-            </h2>
-            <div className="bg-[#F8F9FA] border border-gray-200 rounded-2xl p-6 mb-4">
-              <p className="text-sm text-gray-500 mb-2">Restaurant Code</p>
-              <div className="flex items-center justify-between">
-                <span className="text-3xl font-black tracking-widest text-[#E53935]">{onboardResult.restaurantCode}</span>
-                <button
-                  onClick={handleCopyCode}
-                  className="p-2 rounded-lg hover:bg-gray-200 transition-all"
-                  title="Copy Restaurant Code"
-                >
-                  <Copy size={18} className={copied ? 'text-green-600' : 'text-gray-500'} />
-                </button>
-              </div>
-              {copied && <p className="text-xs text-green-600 mt-2">Copied!</p>}
-            </div>
-            <div className="grid grid-cols-1 gap-3 text-sm">
-              <div><span className="text-gray-400">Owner Email:</span> <span className="font-medium">{wizardData.owner.email}</span></div>
-            </div>
-            <p className="text-xs text-gray-400 mt-4 bg-yellow-50 border border-yellow-100 rounded-lg p-3">
-              Share the Restaurant Code with your cashiers and captains — they need it to log in.
-            </p>
-          </div>
-
-          {/* App links */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="/admin" className="bg-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all">
-              <Store size={24} className="text-[#E53935] mb-3" />
-              <h3 className="font-bold text-sm">Admin Panel</h3>
-              <p className="text-xs text-gray-400 mt-1">Manage menu, staff, reports, and settings.</p>
-            </a>
-            <a href="/cashier" className="bg-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all">
-              <ShieldCheck size={24} className="text-[#E53935] mb-3" />
-              <h3 className="font-bold text-sm">Cashier Login</h3>
-              <p className="text-xs text-gray-400 mt-1">Process bills, payments, and daily settlements.</p>
-            </a>
-            <a href="/captain" className="bg-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all">
-              <Users size={24} className="text-[#E53935] mb-3" />
-              <h3 className="font-bold text-sm">Captain Login</h3>
-              <p className="text-xs text-gray-400 mt-1">Take orders, manage tables, and send KOTs.</p>
-            </a>
-          </div>
-
-          {/* Setup checklist */}
-          <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
-            <h2 className="text-lg font-bold mb-4">What was created</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.captains.length} captains added</div>
-              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.cashiers.length} cashiers added</div>
-              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.sections.length} sections created</div>
-              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {totalTables} tables created</div>
-              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> {wizardData.menu.categories.length} menu categories</div>
-              <div className="flex items-center gap-2 text-gray-700"><Check size={16} className="text-green-600" /> Plan: {wizardData.selectedPlan}</div>
-            </div>
-          </div>
-
-          {/* CTA */}
-          <button
-            onClick={handleGoToDashboard}
-            className="w-full py-4 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2"
-          >
-            Go to Admin Dashboard
-            <ArrowRight size={20} />
-          </button>
-        </div>
-      </div>
+      <OnboardingSuccess
+        onboardResult={onboardResult}
+        formData={wizardData}
+        onGoToDashboard={handleGoToDashboard}
+      />
     );
   }
 
@@ -342,24 +338,24 @@ const OnboardingWizard = () => {
         {/* Progress Bar */}
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
-            {steps.map((step) => (
-              <div key={step.number} className="flex items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                  currentStep >= step.number ? 'bg-[#E53935]' : 'bg-gray-200 text-gray-500'
+            {steps.map((step, idx) => (
+              <div key={step.id} className="flex items-center">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                  currentStepIndex >= idx ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'
                 }`}>
-                  {currentStep > step.number ? '✓' : step.number}
+                  {currentStepIndex > idx ? '✓' : idx + 1}
                 </div>
-                {step.number < maxStep && (
+                {idx < maxStep - 1 && (
                   <div className={`w-16 h-1 mx-2 ${
-                    currentStep > step.number ? 'bg-[#E53935]' : 'bg-gray-200'
+                    currentStepIndex > idx ? 'bg-[#E53935]' : 'bg-gray-200'
                   }`} />
                 )}
               </div>
             ))}
           </div>
           <div className="flex justify-between text-sm text-gray-500">
-            {steps.map((step) => (
-              <span key={step.number} className={currentStep === step.number ? 'text-[#E53935] font-semibold' : ''}>
+            {steps.map((step, idx) => (
+              <span key={step.id} className={currentStepIndex === idx ? 'text-[#E53935] font-semibold' : ''}>
                 {step.title}
               </span>
             ))}
@@ -371,6 +367,18 @@ const OnboardingWizard = () => {
           {renderStep()}
         </div>
 
+        {/* Global Back — most steps have their own, but this covers StepRestaurant */}
+        {currentStepId !== 'confirm' && (
+          <div className="flex justify-between mt-6">
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-2 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl transition-all"
+            >
+              <ChevronLeft size={20} />
+              Back
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
