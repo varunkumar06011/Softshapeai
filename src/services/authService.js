@@ -62,6 +62,10 @@ export const authService = {
     return localStorage.getItem('ss_token');
   },
 
+  setToken(token) {
+    localStorage.setItem('ss_token', token);
+  },
+
   getUser() {
     try {
       const raw = localStorage.getItem('ss_user');

@@ -70,7 +70,7 @@ const defaultWizardData = {
 
 function loadSavedState() {
   try {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       // Migration guard: old format used numeric currentStep; discard stale state
@@ -103,7 +103,7 @@ const OnboardingWizard = () => {
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStepId, wizardData }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStepId, wizardData }));
     } catch { /* ignore */ }
   }, [currentStepId, wizardData]);
 
@@ -225,7 +225,7 @@ const OnboardingWizard = () => {
         body: JSON.stringify(payload)
       });
 
-      sessionStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY);
       setOnboardResult({
         restaurantCode: data.restaurant.restaurantCode,
         name: data.restaurant.name,
