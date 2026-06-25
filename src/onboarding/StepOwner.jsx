@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useId } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { User, Mail, Lock, ShieldCheck, Eye, EyeOff, Smartphone, Send, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { firebaseAuth, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
 import { apiFetch } from '../services/apiConfig';
@@ -31,7 +31,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [phoneError, setPhoneError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
   const recaptchaRef = useRef(null);
-  const recaptchaContainerId = `recaptcha-${useId()}`;
+  const recaptchaContainerId = 'recaptcha-container-owner';
 
   // Timer state
   const [emailTimeLeft, setEmailTimeLeft] = useState(300);
@@ -161,24 +161,51 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     setPhoneOtpStatus('sending');
     setPhoneError('');
     try {
+      // Fully destroy existing reCAPTCHA instance
       if (recaptchaRef.current) {
-        try { await recaptchaRef.current.clear(); } catch {}
+        try { recaptchaRef.current.clear(); } catch {}
         recaptchaRef.current = null;
       }
       if (window.recaptchaVerifier) {
         try { window.recaptchaVerifier.clear(); } catch {}
         window.recaptchaVerifier = null;
       }
+
+      // Wipe and re-inject the container div so reCAPTCHA sees a clean element
       const container = document.getElementById(recaptchaContainerId);
-      if (container) container.innerHTML = '';
-      recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, { size: 'invisible' });
+      if (container) {
+        container.innerHTML = '';
+        // Force DOM reset by replacing the node
+        const fresh = document.createElement('div');
+        fresh.id = recaptchaContainerId;
+        container.parentNode.replaceChild(fresh, container);
+      }
+
+      // Small delay to let DOM settle
+      await new Promise(r => setTimeout(r, 100));
+
+      recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
+        size: 'invisible',
+        callback: () => {},
+        'expired-callback': () => {
+          setPhoneError('reCAPTCHA expired. Please try again.');
+          setPhoneOtpStatus('error');
+        }
+      });
       window.recaptchaVerifier = recaptchaRef.current;
+
       const phone = normalizePhone(data.phone);
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
       setConfirmationResult(result);
       setPhoneOtpStatus('sent');
       startPhoneTimer();
     } catch (err) {
+      // Clean up on failure so next attempt starts fresh
+      if (recaptchaRef.current) {
+        try { recaptchaRef.current.clear(); } catch {}
+        recaptchaRef.current = null;
+      }
+      window.recaptchaVerifier = null;
       setPhoneError(err.message || 'Failed to send SMS');
       setPhoneOtpStatus('error');
     }
