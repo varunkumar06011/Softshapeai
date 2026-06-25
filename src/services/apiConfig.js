@@ -5,7 +5,7 @@ export function normalizeApiBase(url) {
 }
 
 export const API_BASE = normalizeApiBase(
-  import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ""
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "http://localhost:3000"
 );
 
 /** Build API URL: base + path (path must start with /) */

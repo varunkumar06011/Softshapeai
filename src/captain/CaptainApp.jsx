@@ -537,6 +537,7 @@ export default function CaptainApp({ onLogout }) {
   const [removedItem, setRemovedItem] = useState(null);
 
   const removeTimeoutRef = useRef(null);
+  const pinTimeoutRef = useRef(null);
 
   // Tracks the confirmed DB order ID for the current table session.
 
@@ -1933,7 +1934,8 @@ export default function CaptainApp({ onLogout }) {
 
           try {
 
-            const { token, user, restaurant } = await authService.captainLogin(selectedProfile.id, newPin);
+            const restaurantId = localStorage.getItem('pending_restaurant_id') || getCurrentRestaurantId();
+            const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedProfile.id, newPin);
 
             if (token && user) {
               setAuth({ token, user, restaurant });
