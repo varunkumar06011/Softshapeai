@@ -32,6 +32,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const recaptchaRef = useRef(null);
   const recaptchaWrapperRef = useRef(null);
   const confirmationResultRef = useRef(null);
+  const lastPhoneOtpAttemptRef = useRef(0);
 
   // Timer state
   const [emailTimeLeft, setEmailTimeLeft] = useState(300);
@@ -155,6 +156,13 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       setPhoneError('Please enter a valid phone number first');
       return;
     }
+    const cooldownMs = 30000; // 30s between attempts
+    const elapsed = Date.now() - lastPhoneOtpAttemptRef.current;
+    if (elapsed < cooldownMs) {
+      const wait = Math.ceil((cooldownMs - elapsed) / 1000);
+      setPhoneError(`Please wait ${wait} seconds before resending`);
+      return;
+    }
     setPhoneOtpStatus('sending');
     setPhoneError('');
     try {
@@ -186,6 +194,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       const phone = normalizePhone(data.phone);
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
       confirmationResultRef.current = result;
+      lastPhoneOtpAttemptRef.current = Date.now();
       setPhoneOtpStatus('sent');
       startPhoneTimer();
     } catch (err) {
