@@ -30,7 +30,8 @@ export default function PrinterSettingsPage() {
   const [setupToken, setSetupToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tokenLoading, setTokenLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedRestaurant, setCopiedRestaurant] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
   const [error, setError] = useState(null);
   const [showManual, setShowManual] = useState(false);
   const pollRef = useRef(null);
@@ -76,11 +77,29 @@ export default function PrinterSettingsPage() {
     }
   };
 
-  const copyCode = (text) => {
-    navigator.clipboard.writeText(text).then(() => {
+  const copyCode = async (text, setCopied) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers / insecure contexts
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    } catch (err) {
+      console.error('Copy failed:', err);
+      setError('Copy failed. Please select and copy manually.');
+      setTimeout(() => setError(null), 3000);
+    }
   };
 
   const restaurantCode = agentStatus?.restaurantCode || setupToken?.restaurantCode || user?.restaurantCode || '';
@@ -203,10 +222,10 @@ export default function PrinterSettingsPage() {
               <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                 <span className="font-mono text-lg font-bold tracking-widest text-gray-900">{restaurantCode}</span>
                 <button
-                  onClick={() => copyCode(restaurantCode)}
+                  onClick={() => copyCode(restaurantCode, setCopiedRestaurant)}
                   className="rounded-lg border border-gray-200 p-1.5 hover:bg-white"
                 >
-                  {copied ? <CheckCircle size={14} className="text-green-500" /> : <Copy size={14} />}
+                  {copiedRestaurant ? <CheckCircle size={14} className="text-green-500" /> : <Copy size={14} />}
                 </button>
               </div>
               <div className="text-center">
@@ -242,10 +261,10 @@ export default function PrinterSettingsPage() {
                   {setupToken.token}
                 </span>
                 <button
-                  onClick={() => copyCode(setupToken.token)}
+                  onClick={() => copyCode(setupToken.token, setCopiedToken)}
                   className="rounded-lg border border-gray-200 p-1.5 hover:bg-white shrink-0"
                 >
-                  <Copy size={14} />
+                  {copiedToken ? <CheckCircle size={14} className="text-green-500" /> : <Copy size={14} />}
                 </button>
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-red-500 mt-1.5">
