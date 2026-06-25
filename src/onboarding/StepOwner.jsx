@@ -29,9 +29,9 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [phoneOtpStatus, setPhoneOtpStatus] = useState('idle');
   const [phoneOtp, setPhoneOtp] = useState('');
   const [phoneError, setPhoneError] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState(null);
   const recaptchaRef = useRef(null);
-  const recaptchaContainerId = 'recaptcha-container-owner';
+  const recaptchaWrapperRef = useRef(null);
+  const confirmationResultRef = useRef(null);
 
   // Timer state
   const [emailTimeLeft, setEmailTimeLeft] = useState(300);
@@ -46,10 +46,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         try { recaptchaRef.current.clear(); } catch {}
         recaptchaRef.current = null;
       }
-      if (window.recaptchaVerifier) {
-        try { window.recaptchaVerifier.clear(); } catch {}
-        window.recaptchaVerifier = null;
-      }
+      confirmationResultRef.current = null;
       clearInterval(emailTimerRef.current);
       clearInterval(phoneTimerRef.current);
     };
@@ -171,22 +168,13 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         window.recaptchaVerifier = null;
       }
 
-      // Wipe the container div so reCAPTCHA sees a clean element
-      const container = document.getElementById(recaptchaContainerId);
-      if (container) {
-        container.innerHTML = '';
-      }
+      // Create a brand-new DOM element so reCAPTCHA never sees a reused container
+      const wrapper = recaptchaWrapperRef.current;
+      if (!wrapper) throw new Error('reCAPTCHA wrapper missing');
+      const freshDiv = document.createElement('div');
+      wrapper.appendChild(freshDiv);
 
-      // Small delay to let DOM settle
-      await new Promise(r => setTimeout(r, 100));
-
-      // Guard: container must still be in the DOM
-      const liveContainer = document.getElementById(recaptchaContainerId);
-      if (!liveContainer) {
-        throw new Error('reCAPTCHA container missing from DOM');
-      }
-
-      recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
+      recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, freshDiv, {
         size: 'invisible',
         callback: () => {},
         'expired-callback': () => {
@@ -194,29 +182,20 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
           setPhoneOtpStatus('error');
         }
       });
-      window.recaptchaVerifier = recaptchaRef.current;
 
       const phone = normalizePhone(data.phone);
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
-      setConfirmationResult(result);
+      confirmationResultRef.current = result;
       setPhoneOtpStatus('sent');
       startPhoneTimer();
     } catch (err) {
-      // Thorough cleanup so next attempt starts with a blank slate
+      console.error('[sendPhoneOtp] error:', err.code, err.message);
+      // Let Firebase's clear() handle widget teardown properly
       if (recaptchaRef.current) {
         try { recaptchaRef.current.clear(); } catch {}
         recaptchaRef.current = null;
       }
-      if (window.recaptchaVerifier) {
-        try { window.recaptchaVerifier.clear(); } catch {}
-        window.recaptchaVerifier = null;
-      }
-      const container = document.getElementById(recaptchaContainerId);
-      if (container) container.innerHTML = '';
-      document.querySelectorAll('.grecaptcha-badge').forEach(el => el.remove());
-      if (window.grecaptcha) {
-        try { window.grecaptcha.reset(); } catch {}
-      }
+      confirmationResultRef.current = null;
       setPhoneError(err.message || 'Failed to send SMS');
       setPhoneOtpStatus('error');
     }
@@ -230,7 +209,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     setPhoneOtpStatus('verifying');
     setPhoneError('');
     try {
-      const credential = await confirmationResult.confirm(phoneOtp);
+      const credential = await confirmationResultRef.current.confirm(phoneOtp);
       const idToken = await credential.user.getIdToken();
 
       // Retry backend call up to 3 times on network error
@@ -252,6 +231,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       onChange({ ...data, phoneVerificationProof: res.proof });
       setPhoneOtpStatus('verified');
     } catch (err) {
+      console.error('[verifyPhoneOtp] error:', err.code, err.message);
       setPhoneError(err.message || 'Invalid code');
       setPhoneOtpStatus('sent');
     }
@@ -268,7 +248,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       </div>
 
       {/* Invisible reCAPTCHA mount point */}
-      <div id={recaptchaContainerId} />
+      <div ref={recaptchaWrapperRef} />
 
       <div className="space-y-4">
         {/* Name */}
