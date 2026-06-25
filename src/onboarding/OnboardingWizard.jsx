@@ -311,9 +311,12 @@ const OnboardingWizard = () => {
       case 'plan':
         return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
       case 'payment':
-        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
+        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} ownerEmail={wizardData.owner.email} ownerPhone={wizardData.owner.phone} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
       case 'confirm':
-        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToOwnerStep={() => setCurrentStepId('owner')} />;
+        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToOwnerStep={() => {
+          setWizardData(prev => ({ ...prev, owner: { ...prev.owner, emailVerificationProof: undefined, phoneVerificationProof: undefined } }));
+          setCurrentStepId('owner');
+        }} />;
       default:
         return null;
     }

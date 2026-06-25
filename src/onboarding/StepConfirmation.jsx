@@ -43,7 +43,7 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
           <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-600 space-y-2">
             {isVerificationExpired ? (
               <>
-                <p>Your email or phone verification has expired (30 min limit). Please go back to Step 2 and re-verify.</p>
+                <p>Your email or phone verification has expired (2 hour limit). Please go back to Step 2 and re-verify.</p>
                 <button
                   onClick={onGoToOwnerStep}
                   className="text-sm font-semibold underline text-red-700 hover:text-red-900"

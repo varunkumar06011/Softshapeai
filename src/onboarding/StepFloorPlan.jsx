@@ -178,7 +178,7 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
                           type="number"
                           value={table.capacity}
                           onChange={(e) => handleTableChange(sectionIndex, tableIndex, 'capacity', parseInt(e.target.value) || 4)}
-                          className="w-full pl-8 pr-2 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                          className="w-full pl-8 pr-2 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                           min="1"
                         />
                       </div>

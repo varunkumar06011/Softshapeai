@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { CreditCard, Lock, CheckCircle2, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 
-const StepPayment = ({ plan, outletCount, sessionId, onPaymentComplete, onBack }) => {
+const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onPaymentComplete, onBack }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [paymentReference, setPaymentReference] = useState(null);
+
+  const isMockMode = !import.meta.env.VITE_RAZORPAY_KEY_ID;
 
   const handleMockPayment = async () => {
     setProcessing(true);
@@ -24,6 +26,75 @@ const StepPayment = ({ plan, outletCount, sessionId, onPaymentComplete, onBack }
     }
   };
 
+  const handleRazorpayPayment = async () => {
+    setProcessing(true);
+    setError(null);
+    try {
+      // 1. Create order on backend
+      const { gatewayOrderId, amount } = await apiFetch('/api/onboard/payment/initiate', {
+        method: 'POST',
+        body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
+      });
+
+      // 2. Load Razorpay checkout script
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      document.body.appendChild(script);
+
+      await new Promise((resolve, reject) => {
+        script.onload = resolve;
+        script.onerror = reject;
+      });
+
+      // 3. Open Razorpay modal
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: amount * 100,
+        currency: 'INR',
+        name: 'Softshape.ai',
+        description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan — Monthly`,
+        order_id: gatewayOrderId,
+        handler: async (response) => {
+          // 4. Verify on backend
+          const { paymentReference: ref } = await apiFetch('/api/onboard/payment/verify', {
+            method: 'POST',
+            body: JSON.stringify({
+              gatewayOrderId,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              sessionId,
+            }),
+          });
+          setPaymentReference(ref);
+          onPaymentComplete(ref);
+        },
+        prefill: {
+          email: ownerEmail || '',
+          contact: ownerPhone || '',
+        },
+        theme: { color: '#E53935' },
+        modal: {
+          ondismiss: () => {
+            setProcessing(false);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', () => {
+        setError('Payment was cancelled or failed. Please try again.');
+        setProcessing(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setError(err.message || 'Payment failed');
+      setProcessing(false);
+    }
+  };
+
+  const handlePayment = isMockMode ? handleMockPayment : handleRazorpayPayment;
+
   if (paymentReference) {
     return (
       <div className="space-y-6">
@@ -32,7 +103,7 @@ const StepPayment = ({ plan, outletCount, sessionId, onPaymentComplete, onBack }
             <CheckCircle2 size={48} className="text-green-600" />
           </div>
           <h2 className="text-2xl font-bold mb-2">Payment Successful!</h2>
-          <p className="text-gray-500">Your mock payment has been processed.</p>
+          <p className="text-gray-500">{isMockMode ? 'Your mock payment has been processed.' : 'Your payment has been processed securely via Razorpay.'}</p>
         </div>
 
         <div className="bg-gray-50 rounded-xl p-5 space-y-3">
@@ -95,8 +166,8 @@ const StepPayment = ({ plan, outletCount, sessionId, onPaymentComplete, onBack }
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
         <Lock size={18} className="text-blue-600 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
-          <p className="font-semibold mb-1">Mock Payment Mode</p>
-          <p>This is a sandbox environment. No real charges will be made. Click below to simulate a payment.</p>
+          <p className="font-semibold mb-1">{isMockMode ? 'Mock Payment Mode' : 'Secure Razorpay Checkout'}</p>
+          <p>{isMockMode ? 'This is a sandbox environment. No real charges will be made. Click below to simulate a payment.' : 'Your payment is secured by Razorpay. You can pay via UPI, card, net banking, or wallet.'}</p>
         </div>
       </div>
 
@@ -110,7 +181,7 @@ const StepPayment = ({ plan, outletCount, sessionId, onPaymentComplete, onBack }
           Back
         </button>
         <button
-          onClick={handleMockPayment}
+          onClick={handlePayment}
           disabled={processing}
           className={`flex-1 py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
             !processing
@@ -126,7 +197,7 @@ const StepPayment = ({ plan, outletCount, sessionId, onPaymentComplete, onBack }
           ) : (
             <>
               <Lock size={18} />
-              Pay Now (Mock)
+              {isMockMode ? 'Pay Now (Mock)' : 'Pay Now'}
             </>
           )}
         </button>
