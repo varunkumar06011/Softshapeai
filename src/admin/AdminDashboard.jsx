@@ -17,10 +17,11 @@ import {
   Search,
   Bot,
   Send,
-  Star
+  Star,
+  AlertCircle
 } from 'lucide-react';
 import {
-  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage
+  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory
 } from './AdminComponents';
 import { useOutlet } from '../context/OutletContext';
 import OutletToggle from '../shared/components/OutletToggle';
@@ -48,6 +49,7 @@ const navItems = [
   ["reports", "Reports", ChartNoAxesCombined],
   ["captains", "Captain Analytics", ChartNoAxesCombined],
   ["payroll", "Payroll", DollarSign],
+  ["kitchen-inventory", "Kitchen Inventory", UtensilsCrossed],
   ["marketing", "Marketing AI", Megaphone],
   ["surveillance", "Surveillance", Camera],
   ["inventory", "Inventory", Package],
@@ -80,6 +82,8 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     { id: 1, text: "Raju closed Table 4 bill for â‚¹2,450", time: "2 min ago", type: "success" },
     { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
   ]);
+  const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
+
   const { setTables } = useTableSync();
   const { outlet, enabledModules } = useOutlet();
   const socket = useSocket(outlet === 'bar' ? getBarId() : getCurrentRestaurantId());
@@ -146,6 +150,16 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     };
     socket.on('menu-item-updated', onMenuItemUpdated);
 
+    // Kitchen low-stock alerts (Phase 5)
+    const onKitchenLowStock = (payload) => {
+      console.log('[AdminDashboard] Kitchen low-stock:', payload);
+      setKitchenLowStockAlerts((prev) => {
+        const filtered = prev.filter((a) => a.ingredientId !== payload.ingredientId);
+        return [...filtered, { ...payload, timestamp: Date.now() }];
+      });
+    };
+    socket.on('kitchen:low-stock', onKitchenLowStock);
+
     return () => {
       socket.off("order:created", onOrderCreated);
       socket.off("order:updated", onOrderUpdated);
@@ -153,6 +167,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       socket.off("order:paid", onOrderPaid);
       socket.off("table:updated", onTableUpdated);
       socket.off('menu-item-updated', onMenuItemUpdated);
+      socket.off('kitchen:low-stock', onKitchenLowStock);
     };
   }, [socket, setTables]);
 
@@ -273,6 +288,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
             <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
           )}
           {page === "payroll" && <Payroll onPayslip={() => { }} />}
+          {page === "kitchen-inventory" && <KitchenInventory />}
           {page === "marketing" && <Marketing upload={mUpload} setUpload={setMUpload} uploadRef={mUploadRef} generated={mGenerated} setGenerated={setMGenerated} posted={mPosted} setPosted={setMPosted} />}
           {page === "surveillance" && <SurveillanceDashboard onIncident={() => { }} />}
           {page === "inventory" && <Inventory />}
@@ -295,6 +311,32 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           </motion.button>
           <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
         </>
+      )}
+
+      {/* Kitchen low-stock toast notifications */}
+      {kitchenLowStockAlerts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+          {kitchenLowStockAlerts.map((alert) => (
+            <div
+              key={alert.ingredientId}
+              className="bg-amber-50 border border-amber-300 rounded-xl p-3 shadow-lg flex items-start gap-3 animate-in slide-in-from-top duration-300"
+            >
+              <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+              <div className="flex-1">
+                <p className="text-sm font-bold text-amber-900">Low Stock: {alert.name}</p>
+                <p className="text-xs text-amber-700">
+                  {alert.currentStock} {alert.unit} left (reorder at {alert.reorderLevel} {alert.unit})
+                </p>
+              </div>
+              <button
+                onClick={() => setKitchenLowStockAlerts((prev) => prev.filter((a) => a.ingredientId !== alert.ingredientId))}
+                className="text-amber-400 hover:text-amber-600 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {spireOpen && (

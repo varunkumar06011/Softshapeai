@@ -56,7 +56,7 @@ import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSear
 import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
-import { API_BASE, apiUrl } from '../services/apiConfig';
+import { API_BASE, apiUrl, getAuthHeaders } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -732,6 +732,11 @@ export function MenuPage({ onAddDish }) {
   const [deleteWorking, setDeleteWorking] = useState(false);
   const [togglingId, setTogglingId] = useState(null);
 
+  // Recipe editor state (Phase 5)
+  const [recipeRows, setRecipeRows] = useState([]);
+  const [kitchenIngredients, setKitchenIngredients] = useState([]);
+  const [recipeLoading, setRecipeLoading] = useState(false);
+
   // ── Availability toggle with optimistic update ─────────────────────────
   const handleToggleAvailability = useCallback(async (item) => {
     if (togglingId) return;
@@ -786,13 +791,43 @@ export function MenuPage({ onAddDish }) {
     fetchCategories();
   }, []);
 
-  const handleEdit = (item) => setEditingItem({
-    originalName: item.n,
-    ...item,
-    basePrice: item.p,
-    venuePrice: Number(item.venuePrices?.[activeVenueId] || 0),
-    categoryPrinterTarget: item.categoryPrinterTarget,
-  });
+  const handleEdit = async (item) => {
+    setEditingItem({
+      originalName: item.n,
+      ...item,
+      basePrice: item.p,
+      venuePrice: Number(item.venuePrices?.[activeVenueId] || 0),
+      categoryPrinterTarget: item.categoryPrinterTarget,
+    });
+
+    // Fetch existing recipe + available ingredients for FOOD items
+    if (item.menuType !== 'LIQUOR') {
+      setRecipeLoading(true);
+      try {
+        const rid = getCurrentRestaurantId();
+        const [recipeRes, ingredientsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/menu/recipes/${item.id}`, { headers: { ...getAuthHeaders() } }),
+          fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${rid}`, { headers: { ...getAuthHeaders() } }),
+        ]);
+        if (recipeRes.ok) {
+          const recipes = await recipeRes.json();
+          setRecipeRows(recipes.map(r => ({ ingredientId: r.ingredientId, quantity: r.quantity, name: r.ingredient?.name, unit: r.ingredient?.unit })));
+        } else {
+          setRecipeRows([]);
+        }
+        if (ingredientsRes.ok) {
+          setKitchenIngredients(await ingredientsRes.json());
+        }
+      } catch (err) {
+        console.error('[MenuPage] Failed to load recipe data:', err);
+        setRecipeRows([]);
+      } finally {
+        setRecipeLoading(false);
+      }
+    } else {
+      setRecipeRows([]);
+    }
+  };
   const handleDeleteClick = (item) => setDeletingItem(item);
 
   // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
@@ -901,6 +936,23 @@ export function MenuPage({ onAddDish }) {
         setAdminItems(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...optimisticItem, isAvailable: editingItem.isAvailable } : i));
         window.dispatchEvent(new CustomEvent('softshape_venue_prices_updated'));
         setEditingItem(null);
+
+        // Save recipe if any rows are set (Phase 5)
+        if (recipeRows.length > 0 && activeOutlet === 'restaurant') {
+          try {
+            const validRows = recipeRows.filter(r => r.ingredientId && r.quantity);
+            if (validRows.length > 0) {
+              await fetch(`${API_BASE}/api/menu/recipes/${optimisticItem.id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ ingredients: validRows.map(r => ({ ingredientId: r.ingredientId, quantity: parseFloat(r.quantity) })) }),
+              });
+            }
+          } catch (recipeErr) {
+            console.error('[MenuPage] Failed to save recipe:', recipeErr);
+          }
+        }
+
         // Background re-sync to confirm server state
         refreshMenu().catch(() => {});
       } else {
@@ -1354,10 +1406,61 @@ export function MenuPage({ onAddDish }) {
                     ))}
               </div>
             </div>
-          </div>
-          <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
-            <button onClick={() => setEditingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-            <button onClick={handleSaveEdit} disabled={saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Saving…' : 'Save Changes'}</button>
+
+            {/* Recipe Editor (Phase 5) — only for FOOD items */}
+            {editingItem.menuType !== 'LIQUOR' && (
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Ingredients)</label>
+                  <button
+                    type="button"
+                    onClick={() => setRecipeRows([...recipeRows, { ingredientId: '', quantity: '', name: '', unit: '' }])}
+                    className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C]"
+                  >+ Add Ingredient</button>
+                </div>
+                {recipeLoading ? (
+                  <p className="text-xs text-gray-400">Loading recipe...</p>
+                ) : recipeRows.length === 0 ? (
+                  <p className="text-xs text-gray-400">No recipe set. Add ingredients to enable automatic kitchen inventory deduction on settle.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {recipeRows.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <select
+                          value={row.ingredientId}
+                          onChange={(e) => {
+                            const ing = kitchenIngredients.find(i => i.id === e.target.value);
+                            setRecipeRows(recipeRows.map((r, i) => i === idx ? { ...r, ingredientId: e.target.value, name: ing?.name, unit: ing?.unit } : r));
+                          }}
+                          className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-gray-50"
+                        >
+                          <option value="">Select ingredient</option>
+                          {kitchenIngredients.map(ing => (
+                            <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          step="0.001"
+                          placeholder="Qty"
+                          value={row.quantity}
+                          onChange={(e) => setRecipeRows(recipeRows.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
+                          className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-gray-50 text-right"
+                        />
+                        <span className="text-xs text-gray-400 w-8">{row.unit || ''}</span>
+                        <button
+                          type="button"
+                          onClick={() => setRecipeRows(recipeRows.filter((_, i) => i !== idx))}
+                          className="p-1 text-red-500 hover:text-red-600"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1582,29 +1685,133 @@ export function Orders() {
 export { default as Reports } from './AdminReports';
 
 export function Payroll() {
-  const staff = [
-    { name: "Rahul Sharma", role: "Head Chef", salary: 35000, absent: 2, deduction: 2333, bonus: 5000, status: "Paid" },
-    { name: "Meena Kumari", role: "Sr. Captain", salary: 22000, absent: 0, deduction: 0, bonus: 2500, status: "Paid" },
-    { name: "Suresh Babu", role: "Chef de Partie", salary: 28000, absent: 4, deduction: 3733, bonus: 0, status: "Pending" },
-    { name: "Lakshmi Rao", role: "Cashier", salary: 18000, absent: 1, deduction: 600, bonus: 1000, status: "Paid" },
-    { name: "Kiran Kumar", role: "Captain", salary: 16000, absent: 3, deduction: 1600, bonus: 1200, status: "Paid" },
-    { name: "Ananya Singh", role: "Waitstaff", salary: 14000, absent: 0, deduction: 0, bonus: 800, status: "Pending" }
-  ];
+  const [employees, setEmployees] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [monthYear, setMonthYear] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newEmp, setNewEmp] = useState({ name: '', age: '', role: '', baseSalary: '' });
+  const [payModal, setPayModal] = useState(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [editValues, setEditValues] = useState({});
+
+  const restaurantId = getCurrentRestaurantId();
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [empRes, recRes] = await Promise.all([
+        fetch(`${API_BASE}/api/payroll/employees?restaurantId=${restaurantId}`, {
+          headers: { ...getAuthHeaders() },
+        }),
+        fetch(`${API_BASE}/api/payroll/records?restaurantId=${restaurantId}&monthYear=${monthYear}`, {
+          headers: { ...getAuthHeaders() },
+        }),
+      ]);
+      if (empRes.ok) setEmployees(await empRes.json());
+      if (recRes.ok) setRecords(await recRes.json());
+    } catch (err) {
+      console.error('[Payroll] Failed to load:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [monthYear, restaurantId]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleAddEmployee = async () => {
+    if (!newEmp.name || !newEmp.baseSalary) return;
+    try {
+      await fetch(`${API_BASE}/api/payroll/employees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ restaurantId, ...newEmp, baseSalary: parseFloat(newEmp.baseSalary), age: newEmp.age ? parseInt(newEmp.age) : null }),
+      });
+      setNewEmp({ name: '', age: '', role: '', baseSalary: '' });
+      setShowAddModal(false);
+      loadData();
+    } catch (err) {
+      console.error('[Payroll] Add employee failed:', err);
+    }
+  };
+
+  const handleSaveRecord = async (employeeId) => {
+    const vals = editValues[employeeId] || {};
+    try {
+      await fetch(`${API_BASE}/api/payroll/records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          restaurantId,
+          employeeId,
+          monthYear,
+          absentDays: vals.absentDays || 0,
+          otDays: vals.otDays || 0,
+          advanceAmount: vals.advanceAmount || 0,
+        }),
+      });
+      loadData();
+    } catch (err) {
+      console.error('[Payroll] Save record failed:', err);
+    }
+  };
+
+  const handlePayment = async () => {
+    if (!payModal || !payAmount) return;
+    try {
+      await fetch(`${API_BASE}/api/payroll/records/${payModal.id}/payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ amount: parseFloat(payAmount) }),
+      });
+      setPayModal(null);
+      setPayAmount('');
+      loadData();
+    } catch (err) {
+      console.error('[Payroll] Payment failed:', err);
+    }
+  };
+
+  const totalPayable = records.reduce((s, r) => s + Number(r.netPayable), 0);
+  const totalPaid = records.reduce((s, r) => s + Number(r.paidAmount), 0);
+  const totalOutstanding = totalPayable - totalPaid;
+
+  const getRecord = (empId) => records.find((r) => r.employeeId === empId);
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-20 text-gray-400">Loading payroll...</div>;
+  }
 
   return (
     <div className="space-y-6 font-sans">
-      <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
         <div>
           <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Staff Payroll & Attendance</h2>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">May 2024 Operating Cycle</p>
+          <div className="flex items-center gap-3 mt-2">
+            <input
+              type="month"
+              value={monthYear}
+              onChange={(e) => setMonthYear(e.target.value)}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+            />
+          </div>
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-10">
           <div className="text-left sm:text-right">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
-            <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹1,38,434</p>
+            <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹{totalPayable.toLocaleString()}</p>
+            {totalOutstanding > 0 && (
+              <p className="text-xs text-amber-600 font-bold mt-1">Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
+            )}
           </div>
-          <button className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95">
-             Run Payroll
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
+          >
+            Add Employee
           </button>
         </div>
       </div>
@@ -1614,42 +1821,100 @@ export function Payroll() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
               <tr>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Employee Details</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Base Salary</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Absent Days</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Deductions</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Bonus/Inc.</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Final Payable</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Employee</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Base Salary</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Absent</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">OT Days</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Advance</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Net Payable</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Paid</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {staff.map((emp, i) => {
-                const final = emp.salary - emp.deduction + emp.bonus;
+              {employees.map((emp) => {
+                const rec = getRecord(emp.id);
+                const vals = editValues[emp.id] || {};
                 return (
-                  <tr key={i} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
+                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center text-xs font-black text-[#B71C1C]">{emp.name.split(' ').map(n => n[0]).join('')}</div>
+                        <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center text-xs font-black text-[#B71C1C]">
+                          {emp.name.split(' ').map(n => n[0]).join('')}
+                        </div>
                         <div>
                           <p className="font-black text-gray-900">{emp.name}</p>
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role}</p>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-bold text-gray-700">₹{emp.salary.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${emp.absent > 2 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
-                        {emp.absent} Days
-                      </span>
+                    <td className="px-4 py-4 font-bold text-gray-700 text-right">₹{Number(emp.baseSalary).toLocaleString()}</td>
+                    <td className="px-4 py-4 text-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="30"
+                        defaultValue={rec?.absentDays || 0}
+                        onChange={(e) => setEditValues({ ...editValues, [emp.id]: { ...vals, absentDays: parseInt(e.target.value) || 0 } })}
+                        className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
+                      />
                     </td>
-                    <td className="px-6 py-4 text-right font-bold text-red-600">₹{emp.deduction.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-bold text-green-600">₹{emp.bonus.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-right font-black text-gray-900">₹{final.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${emp.status === 'Paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700 animate-pulse'}`}>
-                        {emp.status}
-                      </span>
+                    <td className="px-4 py-4 text-center">
+                      <input
+                        type="number"
+                        min="0"
+                        defaultValue={rec?.otDays || 0}
+                        onChange={(e) => setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } })}
+                        className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        defaultValue={rec?.advanceAmount || 0}
+                        onChange={(e) => setEditValues({ ...editValues, [emp.id]: { ...vals, advanceAmount: parseFloat(e.target.value) || 0 } })}
+                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-4 text-right font-black text-gray-900">
+                      ₹{rec ? Number(rec.netPayable).toLocaleString() : '—'}
+                    </td>
+                    <td className="px-4 py-4 text-right font-bold text-gray-600">
+                      ₹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {rec ? (
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                          rec.status === 'PAID' ? 'bg-green-100 text-green-700' :
+                          rec.status === 'PARTIAL' ? 'bg-blue-100 text-blue-700' :
+                          'bg-amber-100 text-amber-700 animate-pulse'
+                        }`}>
+                          {rec.status}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">Not generated</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleSaveRecord(emp.id)}
+                          className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-gray-800"
+                        >
+                          Save
+                        </button>
+                        {rec && rec.status !== 'PAID' && (
+                          <button
+                            onClick={() => { setPayModal(rec); setPayAmount(''); }}
+                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
+                          >
+                            Pay
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1658,6 +1923,298 @@ export function Payroll() {
           </table>
         </div>
       </div>
+
+      {employees.length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <Users size={48} className="mx-auto mb-3 opacity-30" />
+          <p>No employees yet. Click "Add Employee" to get started.</p>
+        </div>
+      )}
+
+      {/* Add Employee Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-gray-900">Add Employee</h3>
+            <input type="text" placeholder="Name" value={newEmp.name} onChange={(e) => setNewEmp({ ...newEmp, name: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <input type="number" placeholder="Age" value={newEmp.age} onChange={(e) => setNewEmp({ ...newEmp, age: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <select value={newEmp.role} onChange={(e) => setNewEmp({ ...newEmp, role: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
+              <option value="">Select Role</option>
+              <option value="Chef">Chef</option>
+              <option value="Captain">Captain</option>
+              <option value="Helper">Helper</option>
+              <option value="Cashier">Cashier</option>
+              <option value="Waitstaff">Waitstaff</option>
+            </select>
+            <input type="number" placeholder="Base Salary (₹)" value={newEmp.baseSalary} onChange={(e) => setNewEmp({ ...newEmp, baseSalary: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
+              <button onClick={handleAddEmployee} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      {payModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setPayModal(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-gray-900">Payment for {payModal.employee?.name}</h3>
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Net Payable: <span className="font-bold text-gray-900">₹{Number(payModal.netPayable).toLocaleString()}</span></p>
+              <p>Already Paid: <span className="font-bold text-gray-700">₹{Number(payModal.paidAmount).toLocaleString()}</span></p>
+              <p>Remaining: <span className="font-bold text-[#B71C1C]">₹{(Number(payModal.netPayable) - Number(payModal.paidAmount)).toLocaleString()}</span></p>
+            </div>
+            <input type="number" placeholder="Payment amount" value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setPayModal(null)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
+              <button onClick={handlePayment} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Pay</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// KITCHEN INVENTORY MANAGEMENT (Phase 5)
+// ==========================================
+
+export function KitchenInventory() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', currentStock: '', reorderLevel: '' });
+  const [addStockModal, setAddStockModal] = useState(null);
+  const [addStockAmount, setAddStockAmount] = useState('');
+  const restaurantId = getCurrentRestaurantId();
+
+  const loadItems = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (res.ok) setItems(await res.json());
+    } catch (err) {
+      console.error('[KitchenInventory] Failed to load:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [restaurantId]);
+
+  useEffect(() => { loadItems(); }, [loadItems]);
+
+  const handleAddItem = async () => {
+    if (!newItem.name || !newItem.unit) return;
+    try {
+      await fetch(`${API_BASE}/api/inventory/kitchen/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          restaurantId,
+          name: newItem.name,
+          unit: newItem.unit,
+          currentStock: parseFloat(newItem.currentStock) || 0,
+          reorderLevel: parseFloat(newItem.reorderLevel) || 0,
+        }),
+      });
+      setNewItem({ name: '', unit: 'kg', currentStock: '', reorderLevel: '' });
+      setShowAddModal(false);
+      loadItems();
+    } catch (err) {
+      console.error('[KitchenInventory] Add item failed:', err);
+    }
+  };
+
+  const handleAddStock = async () => {
+    if (!addStockModal || !addStockAmount) return;
+    try {
+      await fetch(`${API_BASE}/api/inventory/kitchen/entries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          restaurantId,
+          itemId: addStockModal.id,
+          addStock: parseFloat(addStockAmount),
+        }),
+      });
+      setAddStockModal(null);
+      setAddStockAmount('');
+      loadItems();
+    } catch (err) {
+      console.error('[KitchenInventory] Add stock failed:', err);
+    }
+  };
+
+  const handleDeleteItem = async (id) => {
+    if (!confirm('Delete this ingredient?')) return;
+    try {
+      await fetch(`${API_BASE}/api/inventory/kitchen/items/${id}`, {
+        method: 'DELETE',
+        headers: { ...getAuthHeaders() },
+      });
+      loadItems();
+    } catch (err) {
+      console.error('[KitchenInventory] Delete failed:', err);
+    }
+  };
+
+  const lowStockItems = items.filter((i) => i.currentStock <= i.reorderLevel && i.reorderLevel > 0);
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-20 text-gray-400">Loading kitchen inventory...</div>;
+  }
+
+  return (
+    <div className="space-y-6 font-sans">
+      <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
+        <div>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Kitchen Inventory</h2>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Ingredients & Daily Tracking</p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
+        >
+          Add Ingredient
+        </button>
+      </div>
+
+      {lowStockItems.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+          <AlertCircle className="text-amber-600" size={24} />
+          <div>
+            <p className="font-bold text-amber-800">{lowStockItems.length} ingredient(s) below reorder level</p>
+            <p className="text-sm text-amber-600">{lowStockItems.map((i) => i.name).join(', ')}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+              <tr>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Ingredient</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Current Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Reorder Level</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Today's Entry</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {items.map((item) => {
+                const isLow = item.currentStock <= item.reorderLevel && item.reorderLevel > 0;
+                return (
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-black ${isLow ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}>
+                          <Package size={16} />
+                        </div>
+                        <div>
+                          <p className="font-black text-gray-900">{item.name}</p>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.unit}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className={`px-4 py-4 text-right font-black ${isLow ? 'text-amber-600' : 'text-gray-900'}`}>
+                      {item.currentStock} {item.unit}
+                    </td>
+                    <td className="px-4 py-4 text-right font-bold text-gray-500">
+                      {item.reorderLevel} {item.unit}
+                    </td>
+                    <td className="px-4 py-4 text-center text-xs text-gray-500">
+                      {item.todayEntry ? (
+                        <span>
+                          O: {item.todayEntry.openingStock} · A: +{item.todayEntry.addedStock} · C: -{item.todayEntry.consumedStock} · Cl: {item.todayEntry.closingStock}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">No entry today</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => { setAddStockModal(item); setAddStockAmount(''); }}
+                          className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-gray-800"
+                        >
+                          Add Stock
+                        </button>
+                        <button
+                          onClick={() => handleDeleteItem(item.id)}
+                          className="p-1.5 text-red-600 hover:text-red-500"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {items.length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <Package size={48} className="mx-auto mb-3 opacity-30" />
+          <p>No ingredients yet. Click "Add Ingredient" to get started.</p>
+          <p className="text-xs mt-2">Recipes must be set up for menu items to enable automatic deduction on settlement.</p>
+        </div>
+      )}
+
+      {/* Add Ingredient Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-gray-900">Add Ingredient</h3>
+            <input type="text" placeholder="Name (e.g., Rice, Oil, Tomatoes)" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <select value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+              <option value="L">L</option>
+              <option value="ml">ml</option>
+              <option value="pcs">pcs</option>
+              <option value="pack">pack</option>
+            </select>
+            <input type="number" step="0.01" placeholder="Current Stock" value={newItem.currentStock} onChange={(e) => setNewItem({ ...newItem, currentStock: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <input type="number" step="0.01" placeholder="Reorder Level" value={newItem.reorderLevel} onChange={(e) => setNewItem({ ...newItem, reorderLevel: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
+              <button onClick={handleAddItem} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Stock Modal */}
+      {addStockModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setAddStockModal(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-gray-900">Add Stock — {addStockModal.name}</h3>
+            <p className="text-sm text-gray-500">Current: <span className="font-bold">{addStockModal.currentStock} {addStockModal.unit}</span></p>
+            <input type="number" step="0.01" placeholder={`Amount (${addStockModal.unit})`} value={addStockAmount} onChange={(e) => setAddStockAmount(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setAddStockModal(null)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
+              <button onClick={handleAddStock} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Add</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

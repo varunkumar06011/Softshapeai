@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Utensils, Plus, Trash2, Upload, Leaf } from 'lucide-react';
+import { Utensils, Plus, Trash2, Upload, Leaf, FileSpreadsheet } from 'lucide-react';
+import MenuUpload from './MenuUpload';
 
 const StepMenu = ({ data, onChange, onNext, onBack }) => {
-  const [mode, setMode] = useState('manual'); // 'manual' or 'upload'
+  const [mode, setMode] = useState('manual'); // 'manual', 'upload-json', or 'upload-file'
   const [hasInteracted, setHasInteracted] = useState(false);
 
   const handleCategoryChange = (categoryIndex, field, value) => {
@@ -101,12 +102,21 @@ const StepMenu = ({ data, onChange, onNext, onBack }) => {
           Manual Entry
         </button>
         <button
-          onClick={() => setMode('upload')}
+          onClick={() => setMode('upload-json')}
           className={`flex-1 py-2 px-4 rounded-lg transition-all ${
-            mode === 'upload' ? 'bg-[#E53935] text-white' : 'text-gray-500 hover:text-gray-900'
+            mode === 'upload-json' ? 'bg-[#E53935] text-white' : 'text-gray-500 hover:text-gray-900'
           }`}
         >
           Upload JSON
+        </button>
+        <button
+          onClick={() => setMode('upload-file')}
+          className={`flex-1 py-2 px-4 rounded-lg transition-all ${
+            mode === 'upload-file' ? 'bg-[#E53935] text-white' : 'text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <FileSpreadsheet size={16} className="inline mr-1" />
+          Upload File
         </button>
       </div>
 
@@ -202,7 +212,7 @@ const StepMenu = ({ data, onChange, onNext, onBack }) => {
             Add Category
           </button>
         </div>
-      ) : (
+      ) : mode === 'upload-json' ? (
         <div className="space-y-4">
           <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50">
             <Upload size={48} className="mx-auto text-gray-500 mb-4" />
@@ -236,6 +246,8 @@ const StepMenu = ({ data, onChange, onNext, onBack }) => {
             </div>
           )}
         </div>
+      ) : (
+        <MenuUpload onImported={() => {}} />
       )}
 
       {!isValid && hasInteracted && (
