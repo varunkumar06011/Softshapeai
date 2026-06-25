@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Store, Plus, Trash2, Layout, Utensils, ChevronDown, ChevronUp } from 'lucide-react';
+import { Store, Plus, Trash2, Layout, ChevronDown, ChevronUp } from 'lucide-react';
 
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant' },
@@ -14,7 +14,6 @@ const defaultOutlet = (index, parentType) => ({
   restaurantType: parentType || 'DINE_IN',
   sections: [{ name: 'Main Hall' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
-  menu: { categories: [{ name: 'Starters', items: [{ name: '', price: 0, isVeg: true }] }] },
 });
 
 const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBack }) => {
@@ -48,18 +47,12 @@ const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBac
     updateOutlet(index, { tables });
   };
 
-  const updateOutletMenu = (index, menu) => {
-    updateOutlet(index, { menu });
-  };
-
   const isValid = currentOutlets.every(o =>
     o.name.length >= 2 &&
     o.restaurantType &&
     o.sections.every(s => s.name.length >= 1) &&
     o.tables.length >= 1 &&
-    o.tables.every(t => t.number > 0 && t.capacity > 0) &&
-    o.menu.categories.length >= 1 &&
-    o.menu.categories.every(cat => cat.name.length >= 1 && cat.items.every(item => item.name.length >= 1 && item.price > 0))
+    o.tables.every(t => t.number > 0 && t.capacity > 0)
   );
 
   return (
@@ -117,11 +110,6 @@ const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBac
                 outlet={outlet}
                 onSectionsChange={(sections) => updateOutletSections(idx, sections)}
                 onTablesChange={(tables) => updateOutletTables(idx, tables)}
-              />
-
-              <OutletMenu
-                menu={outlet.menu}
-                onChange={(menu) => updateOutletMenu(idx, menu)}
               />
             </div>
           )}
@@ -255,126 +243,6 @@ function OutletFloorPlan({ outlet, onSectionsChange, onTablesChange }) {
   );
 }
 
-function OutletMenu({ menu, onChange }) {
-  const addCategory = () => {
-    onChange({ ...menu, categories: [...menu.categories, { name: '', items: [{ name: '', price: 0, isVeg: true }] }] });
-  };
 
-  const removeCategory = (idx) => {
-    if (menu.categories.length > 1) {
-      onChange({ ...menu, categories: menu.categories.filter((_, i) => i !== idx) });
-    }
-  };
-
-  const addItem = (catIdx) => {
-    const next = [...menu.categories];
-    next[catIdx] = { ...next[catIdx], items: [...next[catIdx].items, { name: '', price: 0, isVeg: true }] };
-    onChange({ ...menu, categories: next });
-  };
-
-  const removeItem = (catIdx, itemIdx) => {
-    if (menu.categories[catIdx].items.length > 1) {
-      const next = [...menu.categories];
-      next[catIdx] = { ...next[catIdx], items: next[catIdx].items.filter((_, i) => i !== itemIdx) };
-      onChange({ ...menu, categories: next });
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-        <Utensils size={16} /> Menu
-      </div>
-      {menu.categories.map((cat, catIdx) => (
-        <div key={catIdx} className="bg-white rounded-lg p-3 space-y-2 border border-gray-100">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={cat.name}
-              onChange={(e) => {
-                const next = [...menu.categories];
-                next[catIdx] = { ...next[catIdx], name: e.target.value };
-                onChange({ ...menu, categories: next });
-              }}
-              className="flex-1 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 text-sm font-medium"
-              placeholder="Category name"
-            />
-            {menu.categories.length > 1 && (
-              <button onClick={() => removeCategory(catIdx)} className="p-1 text-red-600 hover:text-red-500">
-                <Trash2 size={16} />
-              </button>
-            )}
-          </div>
-          {cat.items.map((item, itemIdx) => (
-            <div key={itemIdx} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={item.name}
-                onChange={(e) => {
-                  const next = [...menu.categories];
-                  next[catIdx] = {
-                    ...next[catIdx],
-                    items: next[catIdx].items.map((it, i) => i === itemIdx ? { ...it, name: e.target.value } : it)
-                  };
-                  onChange({ ...menu, categories: next });
-                }}
-                className="flex-1 px-2 py-1 bg-gray-50 border border-gray-100 rounded text-sm text-gray-900"
-                placeholder="Item name"
-              />
-              <div className="w-20 relative">
-                <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
-                <input
-                  type="number"
-                  value={item.price === 0 ? '' : item.price}
-                  onChange={(e) => {
-                    const next = [...menu.categories];
-                    next[catIdx] = {
-                      ...next[catIdx],
-                      items: next[catIdx].items.map((it, i) => i === itemIdx ? { ...it, price: parseFloat(e.target.value) || 0 } : it)
-                    };
-                    onChange({ ...menu, categories: next });
-                  }}
-                  className="w-full pl-4 pr-1 py-1 bg-gray-50 border border-gray-100 rounded text-sm text-gray-900"
-                  placeholder="Price"
-                  min="0"
-                />
-              </div>
-              <button
-                onClick={() => {
-                  const next = [...menu.categories];
-                  next[catIdx] = {
-                    ...next[catIdx],
-                    items: next[catIdx].items.map((it, i) => i === itemIdx ? { ...it, isVeg: !it.isVeg } : it)
-                  };
-                  onChange({ ...menu, categories: next });
-                }}
-                className={`px-2 py-1 rounded text-xs ${item.isVeg ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}
-              >
-                {item.isVeg ? 'Veg' : 'Non-Veg'}
-              </button>
-              {cat.items.length > 1 && (
-                <button onClick={() => removeItem(catIdx, itemIdx)} className="text-red-600 hover:text-red-500">
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </div>
-          ))}
-          <button
-            onClick={() => addItem(catIdx)}
-            className="flex items-center gap-1 text-xs text-[#E53935] hover:text-[#B71C1C]"
-          >
-            <Plus size={14} /> Add Item
-          </button>
-        </div>
-      ))}
-      <button
-        onClick={addCategory}
-        className="w-full py-2 border-2 border-dashed border-gray-200 rounded-lg text-sm text-gray-500 hover:border-[#E53935] hover:text-[#E53935] transition-all flex items-center justify-center gap-1"
-      >
-        <Plus size={16} /> Add Category
-      </button>
-    </div>
-  );
-}
 
 export default StepOutlets;

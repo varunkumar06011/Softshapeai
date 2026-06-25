@@ -15,6 +15,7 @@ export default defineConfig({
     }
   },
   build: {
+    chunkSizeWarningLimit: 3000,
     // Rolldown's minifier (Vite 8 default) has a known bug with framer-motion v12
     // ESM circular references — it produces incorrect initialization order, causing
     // "Cannot access 'X' before initialization" (TDZ) at runtime.
