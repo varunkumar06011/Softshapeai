@@ -221,10 +221,23 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     try {
       const credential = await confirmationResult.confirm(phoneOtp);
       const idToken = await credential.user.getIdToken();
-      const res = await apiFetch('/api/verify/phone/verify', {
-        method: 'POST',
-        body: JSON.stringify({ idToken, sessionId })
-      });
+
+      // Retry backend call up to 3 times on network error
+      let res, lastErr;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          res = await apiFetch('/api/verify/phone/verify', {
+            method: 'POST',
+            body: JSON.stringify({ idToken, sessionId })
+          });
+          break; // success
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+      if (!res) throw lastErr;
+
       onChange({ ...data, phoneVerificationProof: res.proof });
       setPhoneOtpStatus('verified');
     } catch (err) {
