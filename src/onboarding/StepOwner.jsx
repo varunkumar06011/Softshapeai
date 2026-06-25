@@ -294,8 +294,8 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-2">Phone Number *</label>
           <div className="relative">
-            <Smartphone size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-            <span className="absolute left-10 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 select-none">+91</span>
+            <Smartphone size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <span className="absolute left-[2.25rem] top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 select-none pointer-events-none">+91</span>
             <input
               type="tel"
               value={data.phone?.replace(/\D/g, '').replace(/^91/, '') || ''}
@@ -304,7 +304,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
                 handleChange('phone', digits);
               }}
               disabled={data.phoneVerificationProof}
-              className={`w-full pl-[3.25rem] pr-24 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 disabled:opacity-60 ${errors.phone ? 'border-red-500' : 'border-gray-100'}`}
+              className={`w-full pl-[5rem] pr-24 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 disabled:opacity-60 ${errors.phone ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="9876543210"
             />
             <button
