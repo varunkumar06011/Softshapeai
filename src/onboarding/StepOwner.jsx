@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import { User, Mail, Lock, ShieldCheck, Eye, EyeOff, Smartphone, Send, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { firebaseAuth, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
 import { apiFetch } from '../services/apiConfig';
@@ -31,7 +31,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [phoneError, setPhoneError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
   const recaptchaRef = useRef(null);
-  const recaptchaContainerId = 'recaptcha-container-step-owner';
+  const recaptchaContainerId = `recaptcha-${useId()}`;
 
   // Timer state
   const [emailTimeLeft, setEmailTimeLeft] = useState(300);
@@ -157,9 +157,11 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     setPhoneError('');
     try {
       if (recaptchaRef.current) {
-        try { recaptchaRef.current.clear(); } catch {}
+        try { await recaptchaRef.current.clear(); } catch {}
         recaptchaRef.current = null;
       }
+      const container = document.getElementById(recaptchaContainerId);
+      if (container) container.innerHTML = '';
       recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, { size: 'invisible' });
       const phone = normalizePhone(data.phone);
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
@@ -292,14 +294,18 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-2">Phone Number *</label>
           <div className="relative">
-            <Smartphone size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+            <Smartphone size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <span className="absolute left-[2.25rem] top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 select-none pointer-events-none">+91</span>
             <input
               type="tel"
-              value={data.phone}
-              onChange={(e) => handleChange('phone', e.target.value)}
+              value={data.phone?.replace(/\D/g, '').replace(/^91/, '') || ''}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                handleChange('phone', digits);
+              }}
               disabled={data.phoneVerificationProof}
-              className={`w-full pl-10 pr-24 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 disabled:opacity-60 ${errors.phone ? 'border-red-500' : 'border-gray-100'}`}
-              placeholder="e.g., +919876543210"
+              className={`w-full pl-[5rem] pr-24 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 disabled:opacity-60 ${errors.phone ? 'border-red-500' : 'border-gray-100'}`}
+              placeholder="9876543210"
             />
             <button
               type="button"

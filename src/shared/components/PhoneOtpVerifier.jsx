@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { Loader2, CheckCircle, Phone } from 'lucide-react';
 import { firebaseAuth, RecaptchaVerifier, signInWithPhoneNumber } from '../../lib/firebase';
 
@@ -27,6 +27,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
   const timerRef = useRef(null);
   const recaptchaVerifierRef = useRef(null);
   const confirmationResultRef = useRef(null);
+  const recaptchaContainerId = `recaptcha-${useId()}`;
 
   const startTimer = useCallback(() => {
     setTimeLeft(COUNTDOWN_SECONDS);
@@ -42,16 +43,18 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
     }, 1000);
   }, []);
 
-  const clearRecaptcha = useCallback(() => {
+  const clearRecaptcha = useCallback(async () => {
     if (recaptchaVerifierRef.current) {
       try {
-        recaptchaVerifierRef.current.clear();
+        await recaptchaVerifierRef.current.clear();
       } catch {
         // ignore
       }
       recaptchaVerifierRef.current = null;
     }
-  }, []);
+    const container = document.getElementById(recaptchaContainerId);
+    if (container) container.innerHTML = '';
+  }, [recaptchaContainerId]);
 
   useEffect(() => {
     return () => {
@@ -65,10 +68,10 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
   const handleSend = async () => {
     setErrorMsg('');
     setStatus('sending');
-    clearRecaptcha();
+    await clearRecaptcha();
 
     try {
-      recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
+      recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
         size: 'invisible',
         callback: () => {},
       });
@@ -80,8 +83,8 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       startTimer();
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err) {
-      clearRecaptcha();
-      const msg = err.message?.includes('auth/') 
+      await clearRecaptcha();
+      const msg = err.message?.includes('auth/')
         ? 'Failed to send SMS. Check the phone number format (+91XXXXXXXXXX).'
         : (err.message || 'Failed to send code');
       setErrorMsg(msg);
@@ -144,7 +147,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
         body: JSON.stringify({ idToken, sessionId }),
       });
       clearInterval(timerRef.current);
-      clearRecaptcha();
+      await clearRecaptcha();
       setStatus('verified');
       onVerified?.(data.proof, data.phoneNumber);
     } catch (err) {
@@ -168,7 +171,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
 
   return (
     <div className="space-y-5">
-      <div id="recaptcha-container" />
+      <div id={recaptchaContainerId} />
 
       {(status === 'idle' || status === 'error') && (
         <>

@@ -249,7 +249,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
                       {activeTab === 'food' && (
                         <button
                           onClick={() => handleItemChange(categoryIndex, itemIndex, 'isVeg', !item.isVeg)}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${item.isVeg ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${item.isVeg ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}
                         >
                           <Leaf size={14} /> {item.isVeg ? 'Vegetarian' : 'Non-Veg'}
                         </button>

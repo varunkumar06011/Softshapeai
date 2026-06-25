@@ -87,16 +87,6 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               placeholder="e.g., 9876543210"
             />
           </div>
-          {data.phone.length === 10 && (
-            <button
-              type="button"
-              onClick={() => alert(`OTP will be sent to +91 ${data.phone}`)}
-              className="mt-2 w-full py-2 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2"
-            >
-              <Send size={16} />
-              Send OTP
-            </button>
-          )}
         </div>
 
         <div>
