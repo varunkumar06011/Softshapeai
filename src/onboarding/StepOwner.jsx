@@ -44,6 +44,11 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     return () => {
       if (recaptchaRef.current) {
         try { recaptchaRef.current.clear(); } catch {}
+        recaptchaRef.current = null;
+      }
+      if (window.recaptchaVerifier) {
+        try { window.recaptchaVerifier.clear(); } catch {}
+        window.recaptchaVerifier = null;
       }
       clearInterval(emailTimerRef.current);
       clearInterval(phoneTimerRef.current);
@@ -160,9 +165,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         try { await recaptchaRef.current.clear(); } catch {}
         recaptchaRef.current = null;
       }
+      if (window.recaptchaVerifier) {
+        try { window.recaptchaVerifier.clear(); } catch {}
+        window.recaptchaVerifier = null;
+      }
       const container = document.getElementById(recaptchaContainerId);
       if (container) container.innerHTML = '';
       recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, { size: 'invisible' });
+      window.recaptchaVerifier = recaptchaRef.current;
       const phone = normalizePhone(data.phone);
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
       setConfirmationResult(result);

@@ -52,6 +52,10 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       }
       recaptchaVerifierRef.current = null;
     }
+    if (window.recaptchaVerifier) {
+      try { window.recaptchaVerifier.clear(); } catch {}
+      window.recaptchaVerifier = null;
+    }
     const container = document.getElementById(recaptchaContainerId);
     if (container) container.innerHTML = '';
   }, [recaptchaContainerId]);
@@ -75,6 +79,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
         size: 'invisible',
         callback: () => {},
       });
+      window.recaptchaVerifier = recaptchaVerifierRef.current;
 
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaVerifierRef.current);
       confirmationResultRef.current = result;
