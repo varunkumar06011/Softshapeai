@@ -56,7 +56,7 @@ import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSear
 import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
-import { API_BASE, apiUrl, getAuthHeaders } from '../services/apiConfig';
+import { API_BASE, apiUrl } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -67,7 +67,6 @@ import { VENUE_PRICE_COLUMNS, BAR_VENUE_PRICE_COLUMNS, RESTAURANT_VENUE_PRICE_CO
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
-import { getTenantBranding } from '../utils/tenantBranding';
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 const BAR_FULL_BOTTLE_MULTIPLIER = Math.round(FULL_BOTTLE_ML / BAR_UNIT_ML);
@@ -774,10 +773,7 @@ export function MenuPage({ onAddDish }) {
     const fetchCategories = async () => {
       try {
         setCategoriesLoading(true);
-        const res = await fetch(
-          `${API_BASE}/api/menu/categories?restaurantId=${encodeURIComponent(getCurrentRestaurantId() ?? '')}`,
-          { headers: getAuthHeaders() }
-        );
+        const res = await fetch(`${API_BASE}/api/menu/categories`);
         if (!res.ok) throw new Error('Failed to fetch categories');
         const data = await res.json();
         setDbCategories(Array.isArray(data) ? data.filter(c => c.isActive !== false) : []);
@@ -808,7 +804,7 @@ export function MenuPage({ onAddDish }) {
 
     const formData = new FormData();
     formData.append('file', blob, 'image.jpg');
-    formData.append('upload_preset', getTenantBranding().cloudinaryUploadPreset);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
     if (itemName?.trim()) {
       formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
     }
@@ -4947,7 +4943,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isS
 export function Marketing({ upload, setUpload, uploadRef }) {
   const [step, setStep] = useState('upload');
   const [selectedConfig, setSelectedConfig] = useState(null);
-  const [caption, setCaption] = useState(getTenantBranding().defaultCaption);
+  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#VGrand #SoftshapeAI #GourmetExperience #FoodArt");
   const [scheduling, setScheduling] = useState('now');
 
   const handlePost = () => {
@@ -5080,8 +5076,8 @@ export function Marketing({ upload, setUpload, uploadRef }) {
                           </div>
                        </div>
                        <div className="flex flex-col">
-                          <p className="text-[9px] font-black">{getTenantBranding().instagramHandle}</p>
-                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest">{getTenantBranding().instagramLocation}</p>
+                          <p className="text-[9px] font-black">vgrand_restaurants</p>
+                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest">Ongole, India</p>
                        </div>
                     </div>
                     
@@ -5209,9 +5205,406 @@ export function Marketing({ upload, setUpload, uploadRef }) {
   );
 }
 
-export { Pricing } from './components/Pricing';
+export function Pricing() {
+  const plans = [
+    {
+      name: "Starter Plan",
+      dayPrice: "100",
+      monthPrice: "2,999",
+      features: ["POS Billing", "Basic Inventory", "Captain Analytics"],
+      color: "border-gray-200",
+      btn: "bg-gray-900 text-white"
+    },
+    {
+      name: "Growth Plan",
+      dayPrice: "200",
+      monthPrice: "5,999",
+      features: ["Everything in Starter", "Marketing AI", "Smart Pricing Engine"],
+      color: "border-[#B71C1C] ring-4 ring-red-50 shadow-2xl",
+      popular: true,
+      btn: "bg-[#B71C1C] text-white"
+    },
+    {
+      name: "Pro Plan",
+      dayPrice: "333",
+      monthPrice: "9,999",
+      features: ["Everything in Growth", "Surveillance AI", "Swiggy & Zomato Integration"],
+      color: "border-gray-200",
+      btn: "bg-gray-900 text-white"
+    }
+  ];
 
-export { SettingsPage } from './components/SettingsPage';
+  return (
+    <div className="py-8 px-4 font-sans">
+      <div className="text-center mb-16">
+        <h2 className="text-4xl font-black text-gray-900 tracking-tighter mb-4">Enterprise-Grade Scalability</h2>
+        <p className="text-gray-500 font-bold uppercase tracking-[0.3em] text-xs">Transparent Pricing for Modern Restaurants</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto">
+        {plans.map((plan, i) => (
+          <div key={i} className={`relative bg-white rounded-[40px] border-2 p-10 flex flex-col transition-all duration-500 hover:translate-y-[-12px] ${plan.color}`}>
+            {plan.popular && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#B71C1C] text-white px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl shadow-red-100">
+                Most Popular
+              </div>
+            )}
+            <h3 className="text-xl font-black text-gray-900 mb-4">{plan.name}</h3>
+            <div className="flex flex-col mb-10">
+              <div className="flex items-baseline gap-1">
+                <span className="text-5xl font-black text-gray-900 tracking-tighter">₹{plan.dayPrice}</span>
+                <span className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">/ Day</span>
+              </div>
+              <p className="text-sm font-medium text-gray-400 mt-2">₹{plan.monthPrice} / Month</p>
+            </div>
+
+            <div className="space-y-4 mb-12 flex-grow">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">What's included:</p>
+              {plan.features.map((f, j) => (
+                <div key={j} className="flex items-center gap-3">
+                  <div className="h-5 w-5 rounded-full bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                    <Check size={12} strokeWidth={4} />
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{f}</span>
+                </div>
+              ))}
+            </div>
+
+            <button className={`w-full py-4 rounded-[20px] font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-95 shadow-lg ${plan.btn}`}>
+              Select {plan.name.split(' ')[0]}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-20 text-center">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Trusted by 2,400+ restaurants globally</p>
+        <div className="mt-4 flex justify-center gap-8 opacity-30 grayscale contrast-150">
+           {/* Mock Brand Logos */}
+           <div className="h-6 w-24 bg-gray-400 rounded-md" />
+           <div className="h-6 w-24 bg-gray-400 rounded-md" />
+           <div className="h-6 w-24 bg-gray-400 rounded-md" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function SettingsPage() {
+
+  const { restaurant, setRestaurant } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState(() => ({
+    name: restaurant?.name || '',
+    address: restaurant?.address || '',
+    phone: restaurant?.phone || '',
+    email: restaurant?.email || '',
+    gstin: restaurant?.gstin || '',
+    receiptHeader: restaurant?.receiptHeader || '',
+    receiptSubHeader: restaurant?.receiptSubHeader || '',
+    themePrimary: restaurant?.themePrimary || '#6366f1',
+    themeSecondary: restaurant?.themeSecondary || '#8b5cf6',
+    logoUrl: restaurant?.logoUrl || '',
+    barUnitMl: restaurant?.barUnitMl ?? 30,
+    fullBottleMl: restaurant?.fullBottleMl ?? 750,
+  }));
+
+  const updateField = (key, value) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const [printers, setPrinters] = useState({ kitchen: '', billing: '', bar: '' });
+  const [staff, setStaff] = useState([]);
+  const [loadingExtras, setLoadingExtras] = useState(true);
+  const [savingStatus, setSavingStatus] = useState(null);
+
+  useEffect(() => {
+    const loadExtras = async () => {
+      try {
+        const slug = localStorage.getItem('tenant_slug');
+        if (!slug) return;
+        
+        const token = localStorage.getItem('ss_token');
+        const res = await fetch(`${API_BASE}/api/restaurants/${slug}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const resData = await res.json();
+        setStaff([...(resData.captains || []), ...(resData.cashiers || [])]);
+
+        try {
+          const printRes = await fetch(`${API_BASE}/api/printers`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const printData = await printRes.json();
+          if (Array.isArray(printData)) {
+            const kitchen = printData.find(p => p.type === 'kitchen')?.ipAddress || '';
+            const billing = printData.find(p => p.type === 'billing')?.ipAddress || '';
+            const bar = printData.find(p => p.type === 'bar')?.ipAddress || '';
+            setPrinters({ kitchen, billing, bar });
+          }
+        } catch (e) {
+          console.warn('Printers not configured yet');
+        }
+      } catch (err) {
+        console.error("Failed to load extra settings data", err);
+      } finally {
+        setLoadingExtras(false);
+      }
+    };
+    loadExtras();
+  }, []);
+
+  const handleSavePrinters = async () => {
+    try {
+      setSavingStatus('printers');
+      const token = localStorage.getItem('ss_token');
+      await fetch(`${API_BASE}/api/printers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify([
+          { type: 'kitchen', ipAddress: printers.kitchen },
+          { type: 'billing', ipAddress: printers.billing },
+          { type: 'bar', ipAddress: printers.bar }
+        ])
+      });
+      alert('Printers saved successfully');
+    } catch (err) {
+      alert('Failed to save printers');
+    } finally {
+      setSavingStatus(null);
+    }
+  };
+
+  const handleTestPrint = async (type) => {
+    try {
+      const token = localStorage.getItem('ss_token');
+      await fetch(`${API_BASE}/api/printers/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type })
+      });
+      alert('Test print sent to ' + type);
+    } catch (err) {
+      alert('Test print failed for ' + type);
+    }
+  };
+
+  const handleResetPin = async (userId) => {
+    const newPin = prompt("Enter new 4-digit PIN:");
+    if (!newPin || !/^\d{4}$/.test(newPin)) {
+      alert("Invalid PIN. Must be 4 digits.");
+      return;
+    }
+    try {
+      const token = localStorage.getItem('ss_token');
+      await fetch(`${API_BASE}/api/staff/${userId}/reset-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pin: newPin })
+      });
+      alert('PIN reset successfully');
+    } catch (err) {
+      alert('Failed to reset PIN');
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('ss_token');
+      const res = await fetch(`${API_BASE}/api/restaurant/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      setRestaurant(data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      alert(err.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fieldClass = "w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-[#E53935] focus:bg-white transition-all";
+  const labelClass = "text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-1 block";
+
+  return (
+    <div className="p-6 bg-white border rounded-2xl font-sans max-w-3xl mx-auto space-y-8">
+      <div>
+        <h2 className="text-2xl font-bold mb-1">Restaurant Settings</h2>
+        <p className="text-sm text-gray-500">Update your restaurant profile, branding, and receipt config.</p>
+      </div>
+
+      {/* Basic Info */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Basic Information</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Restaurant Name</label>
+            <input className={fieldClass} value={form.name} onChange={e => updateField('name', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>Phone</label>
+            <input className={fieldClass} value={form.phone} onChange={e => updateField('phone', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>Email</label>
+            <input className={fieldClass} value={form.email} onChange={e => updateField('email', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>GSTIN</label>
+            <input className={fieldClass} value={form.gstin} onChange={e => updateField('gstin', e.target.value)} maxLength={15} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelClass}>Address</label>
+            <input className={fieldClass} value={form.address} onChange={e => updateField('address', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Receipt Branding */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Receipt Branding</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Receipt Header (Line 1)</label>
+            <input className={fieldClass} value={form.receiptHeader} onChange={e => updateField('receiptHeader', e.target.value)} placeholder="e.g. YOUR RESTAURANT NAME" />
+          </div>
+          <div>
+            <label className={labelClass}>Receipt Sub-Header (Line 2)</label>
+            <input className={fieldClass} value={form.receiptSubHeader} onChange={e => updateField('receiptSubHeader', e.target.value)} placeholder="e.g. Since 1990 | Fine Dining" />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelClass}>Logo URL</label>
+            <input className={fieldClass} value={form.logoUrl} onChange={e => updateField('logoUrl', e.target.value)} placeholder="https://..." />
+          </div>
+        </div>
+      </div>
+
+      {/* Theme Colors */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Theme Colors</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-center gap-4">
+            <input type="color" className="w-12 h-12 rounded-xl border border-gray-200 cursor-pointer" value={form.themePrimary} onChange={e => updateField('themePrimary', e.target.value)} />
+            <div>
+              <label className={labelClass}>Primary Color</label>
+              <input className={fieldClass} value={form.themePrimary} onChange={e => updateField('themePrimary', e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <input type="color" className="w-12 h-12 rounded-xl border border-gray-200 cursor-pointer" value={form.themeSecondary} onChange={e => updateField('themeSecondary', e.target.value)} />
+            <div>
+              <label className={labelClass}>Secondary Color</label>
+              <input className={fieldClass} value={form.themeSecondary} onChange={e => updateField('themeSecondary', e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bar Config */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Bar Configuration</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Bar Unit (ml)</label>
+            <input type="number" className={fieldClass} value={form.barUnitMl} onChange={e => updateField('barUnitMl', Number(e.target.value))} />
+          </div>
+          <div>
+            <label className={labelClass}>Full Bottle (ml)</label>
+            <input type="number" className={fieldClass} value={form.fullBottleMl} onChange={e => updateField('fullBottleMl', Number(e.target.value))} />
+          </div>
+        </div>
+      </div>
+
+      {/* Printer Config */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Printer Configuration</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="border border-gray-100 p-4 rounded-xl bg-gray-50">
+            <label className={labelClass}>Kitchen Printer IP</label>
+            <input type="text" placeholder="e.g. 192.168.1.100" value={printers.kitchen} onChange={(e) => setPrinters({...printers, kitchen: e.target.value})} className={fieldClass + " mb-2"} />
+            <button onClick={() => handleTestPrint('kitchen')} className="text-[10px] font-bold text-[#E53935] uppercase hover:underline">Test Print</button>
+          </div>
+          <div className="border border-gray-100 p-4 rounded-xl bg-gray-50">
+            <label className={labelClass}>Billing Printer IP</label>
+            <input type="text" placeholder="e.g. 192.168.1.101" value={printers.billing} onChange={(e) => setPrinters({...printers, billing: e.target.value})} className={fieldClass + " mb-2"} />
+            <button onClick={() => handleTestPrint('billing')} className="text-[10px] font-bold text-[#E53935] uppercase hover:underline">Test Print</button>
+          </div>
+          <div className="border border-gray-100 p-4 rounded-xl bg-gray-50">
+            <label className={labelClass}>Bar Printer IP</label>
+            <input type="text" placeholder="e.g. 192.168.1.102" value={printers.bar} onChange={(e) => setPrinters({...printers, bar: e.target.value})} className={fieldClass + " mb-2"} />
+            <button onClick={() => handleTestPrint('bar')} className="text-[10px] font-bold text-[#E53935] uppercase hover:underline">Test Print</button>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button onClick={handleSavePrinters} disabled={savingStatus === 'printers'} className="px-6 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-gray-800 transition-all disabled:opacity-50">
+            {savingStatus === 'printers' ? 'Saving...' : 'Save Printers'}
+          </button>
+        </div>
+      </div>
+
+      {/* Staff Management */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Staff List & PINs</h3>
+        {loadingExtras ? (
+          <div className="text-sm text-gray-400">Loading staff...</div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-gray-200">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50">
+                <tr className="border-b border-gray-200">
+                  <th className="px-4 py-3 font-semibold text-gray-600">Name</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff.length === 0 ? (
+                  <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">No staff found.</td></tr>
+                ) : (
+                  staff.map((s, i) => (
+                    <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                      <td className="px-4 py-3 text-gray-500 capitalize">{s.role?.toLowerCase() || 'staff'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => handleResetPin(s.id)} className="text-[#E53935] hover:bg-[#FFEBEE] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                          Reset PIN
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-8 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-bold transition-all disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+        {saved && <span className="text-sm font-bold text-green-600">Saved successfully!</span>}
+      </div>
+
+    </div>
+  );
+}
 
 export function BarTables() {
   const [activePopupTableId, setActivePopupTableId] = useState(null);
@@ -5497,7 +5890,7 @@ export function BarMenuPage() {
 
     const formData = new FormData();
     formData.append('file', blob, 'image.jpg');
-    formData.append('upload_preset', getTenantBranding().cloudinaryUploadPreset);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
     if (itemName?.trim()) {
       formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
     }

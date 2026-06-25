@@ -4,7 +4,7 @@
  */
 export function getRestaurantConfig() {
   try {
-    const raw = localStorage.getItem('tenant_restaurant_config');
+    const raw = localStorage.getItem('ss_restaurant');
     if (!raw) return getDefaultConfig();
     return { ...getDefaultConfig(), ...JSON.parse(raw) };
   } catch {
@@ -18,6 +18,7 @@ function getDefaultConfig() {
     receiptHeader: null,
     receiptSubHeader: null,
     themePrimary: null,
+    themeSecondary: null,
     printerConfig: null,
     barUnitMl: 30,
     fullBottleMl: 750,
@@ -29,7 +30,7 @@ function getDefaultConfig() {
 
 export function getRestaurantName() {
   try {
-    const user = JSON.parse(localStorage.getItem('tenant_user') || '{}');
-    return user?.restaurantName ?? null;
+    const restaurant = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+    return restaurant?.name ?? null;
   } catch { return null; }
 }

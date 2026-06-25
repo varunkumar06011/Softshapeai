@@ -9,7 +9,7 @@ import UserMenuApp from "./user-menu/UserMenuApp";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
 import TableQRCodes from "./admin/TableQRCodes";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
@@ -192,12 +192,33 @@ const KitchenView = () => {
 };
 
 
+function ThemeInjector() {
+  const { restaurant } = useAuth();
+
+  useEffect(() => {
+    if (restaurant?.themePrimary) {
+      document.documentElement.style.setProperty('--color-primary', restaurant.themePrimary);
+    }
+    if (restaurant?.themeSecondary) {
+      document.documentElement.style.setProperty('--color-secondary', restaurant.themeSecondary);
+    }
+    if (restaurant?.name) {
+      document.title = `${restaurant.name} | Softshape`;
+    } else {
+      document.title = 'Softshape';
+    }
+  }, [restaurant]);
+
+  return null;
+}
+
 // Root Component
 function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
         <BrowserRouter>
+          <ThemeInjector />
           <Routes>
             <Route path="/" element={<PortalSelectionWrapper />} />
             <Route path="/onboarding" element={<OnboardingWizard />} />

@@ -155,6 +155,11 @@ async function fetchPosViewMenu(restaurantId = getCurrentRestaurantId()) {
 
 /** Prefer lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
 export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId()) {
+  if (!restaurantId || restaurantId === 'null' || restaurantId === 'undefined') {
+    console.warn("[MenuService] No valid restaurantId provided, skipping backend fetch.");
+    return readStoredMenu();
+  }
+
   let lean = [];
   try {
     lean = await fetchLeanMenu(restaurantId);

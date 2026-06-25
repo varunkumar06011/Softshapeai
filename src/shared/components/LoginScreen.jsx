@@ -40,7 +40,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.login(email.trim(), password, restaurantCode.trim());
+      const { user } = await authService.login(email.trim(), password, restaurantCode.trim());
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid credentials');
@@ -88,7 +88,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const user = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
+      const { user } = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid PIN');
@@ -99,19 +99,19 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA] p-6 font-sans relative overflow-hidden">
+    <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA] p-4 sm:p-6 font-sans relative overflow-hidden">
       <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#E53935]/5 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#B71C1C]/5 rounded-full blur-[120px] pointer-events-none" />
 
-      <div className="w-full max-w-xl rounded-[48px] border border-gray-100 bg-white p-12 lg:p-16 shadow-[0_32px_64px_rgba(0,0,0,0.04)] relative z-10">
+      <div className="w-full max-w-xl rounded-[32px] sm:rounded-[48px] border border-gray-100 bg-white p-6 sm:p-12 lg:p-16 shadow-[0_32px_64px_rgba(0,0,0,0.04)] relative z-10 mx-auto">
         <button
           onClick={onBack}
-          className="absolute left-8 top-8 w-12 h-12 flex items-center justify-center rounded-2xl text-gray-400 hover:bg-gray-50 hover:text-gray-900 transition-all active:scale-90 border border-gray-100"
+          className="absolute left-4 top-4 sm:left-8 sm:top-8 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl sm:rounded-2xl text-gray-400 hover:bg-gray-50 hover:text-gray-900 transition-all active:scale-90 border border-gray-100"
         >
           <ArrowLeft size={20} />
         </button>
 
-        <div className="mb-10 text-center">
+        <div className="mb-6 sm:mb-10 mt-6 sm:mt-0 text-center">
           <div className="flex flex-col items-center justify-center mb-6 gap-2">
             <img
               src="/logo softshape.ai.png"
@@ -119,7 +119,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
               className="h-20 w-auto object-contain"
             />
           </div>
-          <h2 className="text-xl font-black text-gray-900 uppercase tracking-widest leading-none">
+          <h2 className="text-lg sm:text-xl font-black text-gray-900 uppercase tracking-widest leading-none">
             {roleTitle} Terminal
           </h2>
           <p className="text-xs text-gray-400 mt-2 font-bold uppercase tracking-widest">
@@ -273,9 +273,9 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
             </div>
           )}
 
-          <div className="flex items-center justify-between px-2 pt-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-2 pt-2 gap-4 sm:gap-0">
             <label className="flex items-center gap-2 cursor-pointer group">
-              <input type="checkbox" className="w-4 h-4 rounded border-2 border-gray-200 text-[#E53935] focus:ring-[#E53935]" />
+              <input type="checkbox" className="w-5 h-5 sm:w-4 sm:h-4 rounded border-2 border-gray-200 text-[#E53935] focus:ring-[#E53935]" />
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">
                 Trust this terminal
               </span>
@@ -286,11 +286,11 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
           </div>
         </div>
 
-        <div className="mt-12 flex items-center justify-center gap-3 opacity-30 grayscale hover:grayscale-0 transition-all duration-700">
+        <div className="mt-8 sm:mt-12 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 opacity-40 sm:opacity-30 grayscale hover:grayscale-0 transition-all duration-700">
           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-900">
             Softshape Terminal System
           </p>
-          <div className="h-4 w-[1px] bg-gray-400" />
+          <div className="hidden sm:block h-4 w-[1px] bg-gray-400" />
           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-900">
             v2.45.12-OPERATIONAL
           </p>

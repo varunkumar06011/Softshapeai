@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Building2, Globe, Phone, Mail, FileText, Store, Layers } from 'lucide-react';
 
 const RESTAURANT_TYPES = [
@@ -8,9 +8,14 @@ const RESTAURANT_TYPES = [
   { value: 'CLOUD_KITCHEN', label: 'Cloud Kitchen' },
 ];
 
-const StepRestaurant = ({ data, onChange, onNext }) => {
+const StepRestaurant = ({ data, onChange, onNext, onBack }) => {
+  const [errors, setErrors] = useState({});
+
   const handleChange = (field, value) => {
     onChange({ ...data, [field]: value });
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: null }));
+    }
   };
 
   const generateSlug = (name) => {
@@ -19,8 +24,25 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
   const slug = generateSlug(data.name || '');
 
-  const gstinValid = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(data.gstin || '');
-  const isValid = data.name.length >= 2 && data.phone.length >= 10 && gstinValid && data.restaurantType && data.outletCount >= 1;
+  const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  const gstinValid = gstinRegex.test(data.gstin || '');
+  
+  const validate = () => {
+    const newErrors = {};
+    if (!data.name || data.name.length < 2) newErrors.name = 'Restaurant name must be at least 2 characters';
+    if (!data.phone || data.phone.length < 10) newErrors.phone = 'Phone number must be at least 10 digits';
+    if (!data.gstin || !gstinValid) newErrors.gstin = 'GSTIN must be 15 characters in standard format (e.g., 29ABCDE1234F1Z5)';
+    if (!data.restaurantType) newErrors.restaurantType = 'Please select a restaurant type';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleContinue = () => {
+    if (validate()) {
+      onNext();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -39,9 +61,10 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             type="text"
             value={data.name}
             onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+            className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.name ? 'border-red-500' : 'border-gray-100'}`}
             placeholder="e.g., Grand Hotel"
           />
+          {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
         </div>
 
         {data.name && (
@@ -74,10 +97,11 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               type="tel"
               value={data.phone}
               onChange={(e) => handleChange('phone', e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.phone ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="e.g., 9876543210"
             />
           </div>
+          {errors.phone && <p className="text-red-400 text-xs mt-1">{errors.phone}</p>}
         </div>
 
         <div>
@@ -106,14 +130,12 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               type="text"
               value={data.gstin}
               onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 uppercase"
+              className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 uppercase ${errors.gstin ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="e.g., 29ABCDE1234F1Z5"
               maxLength={15}
             />
           </div>
-          {data.gstin && !gstinValid && (
-            <p className="text-xs text-red-600 mt-1">GSTIN must be 15 characters in standard format (e.g., 29ABCDE1234F1Z5)</p>
-          )}
+          {errors.gstin && <p className="text-red-400 text-xs mt-1">{errors.gstin}</p>}
         </div>
 
         <div>
@@ -125,7 +147,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             <select
               value={data.restaurantType || ''}
               onChange={(e) => handleChange('restaurantType', e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.restaurantType ? 'border-red-500' : 'border-gray-100'}`}
             >
               <option value="">Select type...</option>
               {RESTAURANT_TYPES.map(t => (
@@ -133,6 +155,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               ))}
             </select>
           </div>
+          {errors.restaurantType && <p className="text-red-400 text-xs mt-1">{errors.restaurantType}</p>}
         </div>
 
         <div>
@@ -159,17 +182,22 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
         </div>
       </div>
 
-      <button
-        onClick={onNext}
-        disabled={!isValid}
-        className={`w-full py-3 rounded-xl font-semibold transition-all ${
-          isValid
-            ? 'bg-[#E53935] hover:bg-[#B71C1C] text-white'
-            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-        }`}
-      >
-        Continue
-      </button>
+      <div className="flex gap-4">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold transition-all"
+          >
+            Back
+          </button>
+        )}
+        <button
+          onClick={handleContinue}
+          className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"
+        >
+          Continue
+        </button>
+      </div>
     </div>
   );
 };

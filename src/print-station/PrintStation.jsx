@@ -38,6 +38,7 @@ import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getBarId } from '../services/barApiConfig';
 import { getVenueId } from '../services/venueApiConfig';
+import { useAuth } from '../context/AuthContext.jsx';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 // ── Configurable print rooms (for running separate PrintStations per outlet) ──
@@ -172,9 +173,6 @@ try {
   // ignore — fall back to env/localStorage values
 }
 
-// ── Receipt header from backend config ─────────────────────────────────────
-
-const RECEIPT_HEADER = getRestaurantConfig().receiptHeader || 'RESTAURANT';
 // ── ESC/POS constants ────────────────────────────────────────────────────────
 
 const INIT = '\x1B\x40';
@@ -222,7 +220,7 @@ function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
 
-function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, sectionTag, restaurantId }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, sectionTag, restaurantId, restaurant }) {
 
   const now = new Date();
 
@@ -250,13 +248,15 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
   // Determine venue label based on sectionTag
 
+  const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
+
   const venueLabel = sectionTag === 'venue-family-restaurant'
 
-    ? RECEIPT_HEADER
+    ? receiptHeader
 
     : (sectionTag === 'venue-restaurant-parcel'
 
-        ? RECEIPT_HEADER
+        ? receiptHeader
 
         : label);
 
@@ -368,7 +368,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
 
 
-function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName, sectionTag, restaurantId }) {
+function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sectionName, sectionTag, restaurantId, restaurant }) {
 
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
@@ -378,9 +378,11 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
   // Venue label for restaurant side cancels
 
+  const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
+
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
 
-    ? RECEIPT_HEADER
+    ? receiptHeader
 
     : 'CANCEL ITEM';
 
@@ -477,15 +479,17 @@ function buildCancelKOTCommands({ tableNumber, cancelledBy, timestamp, item, sec
 
 
 
-function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, sectionName, sectionTag, restaurantId }) {
+function buildFullCancelCommands({ tableNumber, cancelledBy, timestamp, items, sectionName, sectionTag, restaurantId, restaurant }) {
 
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
 
 
+  const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
+
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
 
-    ? RECEIPT_HEADER
+    ? receiptHeader
 
     : 'CANCEL ORDER';
 
@@ -604,13 +608,14 @@ function padRight(left, right, width = LINE_NORMAL) {
 
 
 
-function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag }) {
+function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag, restaurant }) {
+
+  const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
-    ? RECEIPT_HEADER
+    ? receiptHeader
     : (restaurantId === getBarId() ? 'BAR ORDER'
-      : (restaurantId === getVenueId() ? RECEIPT_HEADER
-        : RECEIPT_HEADER));
+      : receiptHeader);
 
   const cmds = [
 
@@ -623,6 +628,26 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
     `${venueLabel}\n`,
 
     BOLD_OFF,
+
+    SIZE_NORMAL,
+
+  ];
+
+  // Print restaurant details only if available
+  if (restaurant?.receiptSubHeader) {
+    cmds.push(CENTER, `${restaurant.receiptSubHeader}\n`);
+  }
+  if (restaurant?.address) {
+    cmds.push(CENTER, `${restaurant.address}\n`);
+  }
+  if (restaurant?.phone) {
+    cmds.push(CENTER, `Phone: ${restaurant.phone}\n`);
+  }
+  if (restaurant?.gstin) {
+    cmds.push(CENTER, `GSTIN: ${restaurant.gstin}\n`);
+  }
+
+  cmds.push(
 
     SIZE_2X,
 
@@ -652,7 +677,7 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
 
     separator(),
 
-  ];
+  );
 
   (items || []).forEach(item => {
 
@@ -696,7 +721,7 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
 
     '\n',
 
-    'Powered by VTech - Softshape.ai\n',
+    `Powered by ${restaurant?.name || 'Softshape'}\n`,
 
     '\n\n\n',
 
@@ -782,9 +807,8 @@ export default function PrintStation() {
 
   const hasJoinedRef = useRef(false);
 
+  const { restaurant } = useAuth();
 
-  const restaurantConfig = getRestaurantConfig();
-  const RECEIPT_HEADER = restaurantConfig.receiptHeader || 'RESTAURANT';
   // ── Load printedKotIds from sessionStorage on mount ───────────────────────
   useEffect(() => {
     try {
@@ -1097,7 +1121,7 @@ export default function PrintStation() {
                   const fallbackFoodPrinter = resolveFoodKotPrinter(data.sectionTag, data.restaurantId);
                   printTasks.push({
                     printer: fallbackFoodPrinter,
-                    cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag }),
+                    cmds: buildKOTCommands({ ...data, items: kitchenItems, label: 'FOOD ORDER', sectionTag: data.sectionTag, restaurant }),
                   });
                 }
 
@@ -1109,7 +1133,7 @@ export default function PrintStation() {
 
                     printer: fallbackCounterPrinter,
 
-                    cmds: buildKOTCommands({ ...data, items: counterItems, label: 'COUNTER ORDER', sectionTag: data.sectionTag }),
+                    cmds: buildKOTCommands({ ...data, items: counterItems, label: 'COUNTER ORDER', sectionTag: data.sectionTag, restaurant }),
 
                   });
 
@@ -1128,7 +1152,7 @@ export default function PrintStation() {
 
               } else {
 
-                cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag: data.sectionTag });
+                cmds = buildKOTCommands({ ...data, label: 'FOOD ORDER', sectionTag: data.sectionTag, restaurant });
 
                 printTasks.push({ printer: nonVenuePrinter, cmds });
 
@@ -1144,7 +1168,7 @@ export default function PrintStation() {
 
             } else {
 
-              cmds = buildKOTCommands({ ...data, label: 'BAR ORDER', sectionTag: data.sectionTag });
+              cmds = buildKOTCommands({ ...data, label: 'BAR ORDER', sectionTag: data.sectionTag, restaurant });
 
               printer = BAR_PRINTER;
 
@@ -1154,7 +1178,7 @@ export default function PrintStation() {
 
           } else if (type === 'BILL') {
 
-            cmds = buildBillCommands(data);
+            cmds = buildBillCommands({ ...data, restaurant });
 
             if (data.sectionTag === 'venue-family-restaurant') {
 
@@ -1208,7 +1232,7 @@ export default function PrintStation() {
 
             const buildSlip = (items) => {
               const payload = { ...data, items, item: items[0] };
-              return items.length > 1 ? buildFullCancelCommands(payload) : buildCancelKOTCommands(payload);
+              return items.length > 1 ? buildFullCancelCommands({ ...payload, restaurant }) : buildCancelKOTCommands({ ...payload, restaurant });
             };
 
             const resolveCancelPrinter = (menuType) => {
@@ -1235,7 +1259,7 @@ export default function PrintStation() {
 
           } else if (type === 'CANCEL_ORDER') {
 
-            cmds = buildFullCancelCommands(data);
+            cmds = buildFullCancelCommands({ ...data, restaurant });
 
             if (data.restaurantId === getVenueId()) {
 

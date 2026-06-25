@@ -28,6 +28,7 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 import { isBeerItem } from '../utils/itemHelpers';
 
@@ -435,9 +436,16 @@ export default function CaptainApp({ onLogout }) {
 
   const [availableCaptains, setAvailableCaptains] = useState([]);
 
+  const { restaurant, user, setAuth } = useAuth();
+
   const [captainSlug, setCaptainSlug] = useState(
 
-    () => localStorage.getItem('tenant_slug') || ''
+    () => {
+      try {
+        const r = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+        return r?.slug || '';
+      } catch { return ''; }
+    }
 
   );
 
@@ -1985,7 +1993,11 @@ export default function CaptainApp({ onLogout }) {
 
           try {
 
-            const user = await authService.captainLogin(selectedProfile.id, newPin);
+            const { token, user, restaurant } = await authService.captainLogin(selectedProfile.id, newPin);
+
+            if (token && user) {
+              setAuth({ token, user, restaurant });
+            }
 
             const enriched = {
               ...user,
@@ -3208,7 +3220,7 @@ export default function CaptainApp({ onLogout }) {
 
             <div className="hidden sm:flex flex-col border-l-2 border-gray-100 pl-3 justify-center">
 
-              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Terminal</span>
+              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{restaurant?.name || 'Softshape'}</span>
 
               <span className="text-[11px] font-black text-gray-900 tracking-tight leading-none">{currentCaptain?.name}</span>
 
