@@ -52,10 +52,6 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       }
       recaptchaVerifierRef.current = null;
     }
-    if (window.recaptchaVerifier) {
-      try { window.recaptchaVerifier.clear(); } catch {}
-      window.recaptchaVerifier = null;
-    }
     const container = document.getElementById(recaptchaContainerId);
     if (container) container.innerHTML = '';
   }, [recaptchaContainerId]);
@@ -75,12 +71,14 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
     await clearRecaptcha();
 
     try {
+      const liveContainer = document.getElementById(recaptchaContainerId);
+      if (!liveContainer) {
+        throw new Error('reCAPTCHA container missing from DOM');
+      }
       recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
         size: 'invisible',
         callback: () => {},
       });
-      window.recaptchaVerifier = recaptchaVerifierRef.current;
-
       const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaVerifierRef.current);
       confirmationResultRef.current = result;
       setDigits(['', '', '', '', '', '']);
@@ -153,6 +151,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       });
       clearInterval(timerRef.current);
       await clearRecaptcha();
+      confirmationResultRef.current = null;
       setStatus('verified');
       onVerified?.(data.proof, data.phoneNumber);
     } catch (err) {
