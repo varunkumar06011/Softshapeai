@@ -58,6 +58,10 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
     }
     const container = document.getElementById(recaptchaContainerId);
     if (container) container.innerHTML = '';
+    document.querySelectorAll('.grecaptcha-badge').forEach(el => el.remove());
+    if (window.grecaptcha) {
+      try { window.grecaptcha.reset(); } catch {}
+    }
   }, [recaptchaContainerId]);
 
   useEffect(() => {

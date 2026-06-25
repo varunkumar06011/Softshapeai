@@ -202,12 +202,21 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       setPhoneOtpStatus('sent');
       startPhoneTimer();
     } catch (err) {
-      // Clean up on failure so next attempt starts fresh
+      // Thorough cleanup so next attempt starts with a blank slate
       if (recaptchaRef.current) {
         try { recaptchaRef.current.clear(); } catch {}
         recaptchaRef.current = null;
       }
-      window.recaptchaVerifier = null;
+      if (window.recaptchaVerifier) {
+        try { window.recaptchaVerifier.clear(); } catch {}
+        window.recaptchaVerifier = null;
+      }
+      const container = document.getElementById(recaptchaContainerId);
+      if (container) container.innerHTML = '';
+      document.querySelectorAll('.grecaptcha-badge').forEach(el => el.remove());
+      if (window.grecaptcha) {
+        try { window.grecaptcha.reset(); } catch {}
+      }
       setPhoneError(err.message || 'Failed to send SMS');
       setPhoneOtpStatus('error');
     }
