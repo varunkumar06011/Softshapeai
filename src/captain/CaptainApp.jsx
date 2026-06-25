@@ -41,17 +41,9 @@ import { useWaiterCalls, broadcastWaiterEvent } from '../services/waiterCallServ
 
 import { markWaiterCallAccepted } from '../services/customerSessionService';
 
-import { useOutlet } from '../context/OutletContext';
-
-import OutletToggle from '../shared/components/OutletToggle';
-
 import { useBarTableSync } from '../services/barTableSyncService';
 
-import { getBarId } from '../services/barApiConfig';
-import { getVenueId } from '../services/venueApiConfig';
-
 import BarMenuToggle from '../shared/components/BarMenuToggle';
-import { useVenueTableSync } from '../services/venueTableSyncService';
 import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
@@ -391,11 +383,14 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
 export default function CaptainApp({ onLogout }) {
 
-  const { outlet } = useOutlet();
+  const enabledModules = restaurant?.enabledModules || {};
+  const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
+    : enabledModules.bar && !enabledModules.food ? 'bar'
+    : 'restaurant';
 
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
 
-  const { tables, setTables, isSyncing: tablesSyncing } = useTableSync();
+  const { tables, setTables, isSyncing: tablesLoading, refetch: refetchRestaurantTables } = useTableSync();
 
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
 
@@ -408,7 +403,7 @@ export default function CaptainApp({ onLogout }) {
   useSocket(null);
   useSocket(null);
 
-  const { activeCalls, clearCall } = useWaiterCalls(outlet);
+  const { activeCalls, clearCall } = useWaiterCalls(activeOutlet);
 
 
 
@@ -558,7 +553,6 @@ export default function CaptainApp({ onLogout }) {
   const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const lastAnyItemAddedRef = useRef(0);
-  const isVenueTableRef = useRef(false);
 
 
 
@@ -572,7 +566,7 @@ export default function CaptainApp({ onLogout }) {
 
     if (saved) return saved;
 
-    return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
+    return activeOutlet === 'bar' || activeOutlet === 'both' ? 'bar-ac-hall' : 'family-restaurant';
 
   }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-gobox', restaurant: 'family-restaurant'|'parcel'
 
@@ -839,7 +833,7 @@ export default function CaptainApp({ onLogout }) {
 
     const restaurantError = restaurantMenuLoading === false && restaurantMenu.length === 0;
 
-    const barError = barMenuLoading === false && barMenu.length === 0 && outlet === 'bar';
+    const barError = barMenuLoading === false && barMenu.length === 0 && (activeOutlet === 'bar' || activeOutlet === 'both');
 
     if (restaurantError || barError) {
 
@@ -851,7 +845,7 @@ export default function CaptainApp({ onLogout }) {
 
     }
 
-  }, [restaurantMenuLoading, barMenuLoading, restaurantMenu.length, barMenu.length, outlet]);
+  }, [restaurantMenuLoading, barMenuLoading, restaurantMenu.length, barMenu.length, activeOutlet]);
 
 
 
@@ -861,11 +855,11 @@ export default function CaptainApp({ onLogout }) {
 
     if (!currentCaptain?.id) return 0;
 
-    const activeList = outlet === 'bar' ? barTables : tables;
+    const activeList = (activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables;
 
     return activeList.filter(t => t.captainId === currentCaptain.id && t.status !== TABLE_STATUS.FREE).length;
 
-  }, [tables, barTables, currentCaptain?.id, outlet]);
+  }, [tables, barTables, currentCaptain?.id, activeOutlet]);
 
 
 
@@ -875,9 +869,9 @@ export default function CaptainApp({ onLogout }) {
 
   const pendingCalls = useMemo(() => {
 
-    return activeCalls.filter(c => c.status === 'pending' && (c.source || 'restaurant') === outlet);
+    return activeCalls.filter(c => c.status === 'pending' && (c.source || 'restaurant') === activeOutlet);
 
-  }, [activeCalls, outlet]);
+  }, [activeCalls, activeOutlet]);
 
 
 
@@ -889,11 +883,7 @@ export default function CaptainApp({ onLogout }) {
 
     const restaurantFetch = fetchTransactions(getCurrentRestaurantId(), 500, todayDateISO);
 
-    const barFetch = fetchTransactions(getBarId(), 500, todayDateISO);
-
-    const venueFetch = fetchTransactions(getVenueId(), 500, todayDateISO);
-
-    Promise.allSettled([restaurantFetch, barFetch, venueFetch]).then(results => {
+    Promise.allSettled([restaurantFetch]).then(results => {
 
       const allTxns = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 
@@ -931,19 +921,19 @@ export default function CaptainApp({ onLogout }) {
 
   // Derive today's specials from the live global menu — eliminates dead softshape_specials key
 
-  const activeMenuItems = outlet === 'bar' ? barMenu : restaurantMenu;
+  const activeMenuItems = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu;
 
-  const setMenuItems = outlet === 'bar' ? () => { } : setRestaurantMenu;
+  const setMenuItems = (activeOutlet === 'bar' || activeOutlet === 'both') ? () => { } : setRestaurantMenu;
 
-  const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
+  const menuLoading = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenuLoading : restaurantMenuLoading;
 
 
 
   const activeRestaurantId = useMemo(() => {
 
-    if (outlet === 'bar') return getBarId();
+    if (activeOutlet === 'bar' || activeOutlet === 'both') return getCurrentRestaurantId();
 
-    if (tableSubCategory === 'parcel' && outlet !== 'bar') return getVenueId();
+    if (tableSubCategory === 'parcel') return getCurrentRestaurantId();
 
     if (tableSubCategory && tableSubCategory !== '' && !['dine-in', 'parcel'].includes(tableSubCategory)) {
       console.warn('[CaptainApp] Unknown tableSubCategory:', tableSubCategory, '— falling back to getCurrentRestaurantId()');
@@ -951,17 +941,16 @@ export default function CaptainApp({ onLogout }) {
 
     return getCurrentRestaurantId();
 
-  }, [outlet, tableSubCategory]);
+  }, [activeOutlet, tableSubCategory]);
 
-  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
   const venuePrices = useVenuePrices();
 
   const outletFilteredMenuItems = useMemo(() => {
-    const base = (outlet === 'bar' ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
+    const base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
     let currentVenueId = null;
 
-    if (outlet === 'bar') {
+    if (activeOutlet === 'bar' || activeOutlet === 'both') {
 
       if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
 
@@ -982,7 +971,7 @@ export default function CaptainApp({ onLogout }) {
     }
 
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
-    const isBarVenueContext = outlet === 'bar' && currentVenueId !== null;
+    const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && currentVenueId !== null;
 
     return base.map(item => {
       const overridePrice = venueSpecificPrices[item.id];
@@ -1009,7 +998,7 @@ export default function CaptainApp({ onLogout }) {
       }
       return true;
     });
-  }, [outlet, barMenu, restaurantMenu, tableSubCategory, venuePrices]);
+  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, venuePrices]);
 
 
 
@@ -1037,24 +1026,13 @@ export default function CaptainApp({ onLogout }) {
 
   // Derived — switch between restaurant and bar floor
 
-  const activeTables = outlet === 'bar' ? barTables : tables;
+  const activeTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables;
 
-  const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-
-  // Route mutations to the correct table array based on where the active table lives
-  // Uses a ref to avoid stale closure when venueTables is momentarily empty during re-fetch
-  const setActiveOrVenueTables = useCallback((updater, options) => {
-    if (isVenueTableRef.current) {
-      setVenueTables(updater, options);
-    } else {
-      setActiveTables(updater, options);
-    }
-  }, [setVenueTables, setActiveTables]);
+  const setActiveTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? setBarTables : setTables;
 
   const activeTable = useMemo(() =>
-    activeTables.find(t => t.id === activeTableId) ||
-    venueTables.find(t => t.id === activeTableId),
-  [activeTables, venueTables, activeTableId]);
+    activeTables.find(t => t.id === activeTableId),
+  [activeTables, activeTableId]);
 
 
 
@@ -1141,9 +1119,9 @@ export default function CaptainApp({ onLogout }) {
 
     const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
 
-    return isVenueSubcategory ? venueTables : activeTables;
+    return activeTables;
 
-  }, [activeTables, venueTables, tableSubCategory]);
+  }, [activeTables, tableSubCategory]);
 
 
 
@@ -1157,7 +1135,7 @@ export default function CaptainApp({ onLogout }) {
 
     // When in bar outlet bar-ac-hall, further narrow to bar-section tables
 
-    if (outlet === 'bar' && tableSubCategory === 'bar-ac-hall') {
+    if ((activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall') {
 
       const barTables = displayTables.filter(t => {
 
@@ -1177,7 +1155,7 @@ export default function CaptainApp({ onLogout }) {
 
     return baseTables.filter(t => t.captainId === currentCaptain?.id);
 
-  }, [displayTables, tableFilter, currentCaptain?.id, outlet, tableSubCategory]);
+  }, [displayTables, tableFilter, currentCaptain?.id, activeOutlet, tableSubCategory]);
 
 
 
@@ -1352,17 +1330,10 @@ export default function CaptainApp({ onLogout }) {
     // Join the active outlet room; also join venue-001 whenever captain is on a
     // venue subcategory so real-time updates reach Family Restaurant / Parcel / etc.
     const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'family-restaurant', 'parcel'];
-    const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
     socket.emit('join', activeRestaurantId);
-    if (isVenueSubcategory) {
-      socket.emit('join', getVenueId());
-    }
 
     const onConnect = () => {
       socket.emit('join', activeRestaurantId);
-      if (isVenueSubcategory) {
-        socket.emit('join', getVenueId());
-      }
     };
     socket.on('connect', onConnect);
 
@@ -1383,7 +1354,6 @@ export default function CaptainApp({ onLogout }) {
           : t
       );
       setActiveTables(clearTable);
-      setVenueTables(clearTable);
 
       if (activeTableIdRef.current && String(tableId) === String(activeTableIdRef.current)) {
         const settledId = activeTableIdRef.current;
@@ -1435,7 +1405,7 @@ export default function CaptainApp({ onLogout }) {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
-      if (table.restaurantId && table.restaurantId !== activeRestaurantId && table.restaurantId !== getVenueId()) return;
+      if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
 
@@ -1468,18 +1438,13 @@ export default function CaptainApp({ onLogout }) {
           kotHistory: mergedKotHistory,
         };
       });
-      if (table.restaurantId === getVenueId()) {
-        setVenueTables(applyUpdate);
-      } else {
-        setActiveTables(applyUpdate);
-      }
+      setActiveTables(applyUpdate);
     };
     socket.on('table:updated', onTableUpdated);
 
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Merge incoming items with existing so KOTs don't vanish
@@ -1500,43 +1465,29 @@ export default function CaptainApp({ onLogout }) {
         );
         return { ...t, activeOrder: mergedOrder, kotHistory: updatedKotHistory };
       });
-      if (isVenue) {
-        setVenueTables(updateTables);
-      } else {
-        setActiveTables(updateTables);
-      }
+      setActiveTables(updateTables);
     };
     socket.on('order:updated', onOrderUpdated);
 
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? { ...t, activeOrder: order, status: t.status === 'Free' ? 'Occupied' : t.status, workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus }
           : t
       );
-      if (isVenue) {
-        setVenueTables(updateTables);
-      } else {
-        setActiveTables(updateTables);
-      }
+      setActiveTables(updateTables);
     };
     socket.on('order:created', onOrderCreated);
 
     const onBillingRequested = (payload) => {
       const { table } = payload;
       if (!table?.id) return;
-      const isVenue = payload?.restaurantId === getVenueId() || table?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
       );
-      if (isVenue) {
-        setVenueTables(updateTables);
-      } else {
-        setActiveTables(updateTables);
-      }
+      setActiveTables(updateTables);
     };
     socket.on('billing:requested', onBillingRequested);
 
@@ -1553,9 +1504,6 @@ export default function CaptainApp({ onLogout }) {
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:paid', onOrderPaid);
       socket.emit('leave', activeRestaurantId);
-      if (isVenueSubcategory) {
-        socket.emit('leave', getVenueId());
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRestaurantId, tableSubCategory]);
@@ -1594,7 +1542,7 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
 
-    if (tablesSyncing) {
+    if (tablesLoading) {
 
       setIsSyncing(true);
 
@@ -1604,7 +1552,7 @@ export default function CaptainApp({ onLogout }) {
 
     }
 
-  }, [tablesSyncing]);
+  }, [tablesLoading]);
 
 
 
@@ -1622,7 +1570,7 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
 
-    setTableSubCategory(outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant');
+    setTableSubCategory((activeOutlet === 'bar' || activeOutlet === 'both') ? 'bar-ac-hall' : 'family-restaurant');
 
 
 
@@ -1652,7 +1600,7 @@ export default function CaptainApp({ onLogout }) {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
 
-  }, [outlet]);
+  }, [activeOutlet]);
 
 
 
@@ -1702,20 +1650,12 @@ export default function CaptainApp({ onLogout }) {
 
   }, [tableSubCategory]);
 
-  // Force venue table refetch when switching to a venue subcategory — prevents stale/empty data
-  const isVenueSubcategory = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'parcel'].includes(tableSubCategory);
-  useEffect(() => {
-    if (isVenueSubcategory && refetchVenueTables) {
-      refetchVenueTables();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableSubCategory]);
 
   // Clean up stale cart keys when a table is deleted from the active list
 
   useEffect(() => {
-    if (tablesSyncing || venueTablesLoading) return;
-    const validIds = new Set([...activeTables, ...venueTables].map(t => String(t.id)));
+    if (tablesLoading) return;
+    const validIds = new Set(activeTables.map(t => String(t.id)));
     setTableCarts(prev => {
 
       const cleaned = Object.fromEntries(
@@ -1727,7 +1667,7 @@ export default function CaptainApp({ onLogout }) {
       return Object.keys(cleaned).length === Object.keys(prev).length ? prev : cleaned;
 
     });
-  }, [activeTables, venueTables, tablesSyncing, venueTablesLoading]);
+  }, [activeTables, tablesLoading]);
 
 
 
@@ -2047,9 +1987,6 @@ export default function CaptainApp({ onLogout }) {
       console.warn('[CaptainApp] openTableSession blocked: missing table or table.id', table);
       return;
     }
-    // Determine venue vs regular at open time using a ref (stable across re-renders)
-    isVenueTableRef.current = venueTables.some(t => t.id === table.id || t.backendId === table.id);
-
     // BUG FIX: Reset ALL session state before switching tables so nothing from the previous table leaks in.
     // Clear the previous table's cart from localStorage-backed state.
     const previousTableId = activeTableIdRef.current;
@@ -2147,13 +2084,13 @@ export default function CaptainApp({ onLogout }) {
     console.log('[CaptainApp] handleItemClick:', item?.n, 'activeTableId:', activeTableId, 'view:', view);
 
     // Beer items should be added directly
-    if (outlet === 'bar' && isBeerItem(item)) {
+    if ((activeOutlet === 'bar' || activeOutlet === 'both') && isBeerItem(item)) {
       addItemToSession(item);
       return;
     }
 
     // Other liquor items (spirits) should show variant picker
-    if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
+    if ((activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setActiveVariantItem(item);
     } else {
       addItemToSession(item);
@@ -2183,7 +2120,7 @@ export default function CaptainApp({ onLogout }) {
     kotRequestIdRef.current = null;
 
     if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
-      setActiveOrVenueTables(currentTables => currentTables.map(t => {
+      setActiveTables(currentTables => currentTables.map(t => {
         if (t.id === activeTable.id) {
 
           return { ...t, status: TABLE_STATUS.FREE, captainId: null };
@@ -2300,8 +2237,6 @@ export default function CaptainApp({ onLogout }) {
 
       // Re-seed from live state so second KOT on a reloaded session works correctly
       const liveTableEntry = activeTables.find(
-        t => t.backendId === activeTableId || t.id === activeTableId
-      ) || venueTables.find(
         t => t.backendId === activeTableId || t.id === activeTableId
       );
 
@@ -2435,13 +2370,12 @@ export default function CaptainApp({ onLogout }) {
 
       let realKotId;
 
-      const isVenueTable = venueTables.some(t => t.id === activeTableId);
-      const orderRestaurantId = isVenueTable ? getVenueId() : activeRestaurantId;
+      const orderRestaurantId = activeRestaurantId;
 
       if (existingOrderId) {
 
         // Subsequent KOT on same table — append items to existing order
-        const activeTableEntry = [...activeTables, ...venueTables].find(t => t.id === activeTableId || t.backendId === activeTableId);
+        const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
         const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
         const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt);
 
@@ -2502,7 +2436,7 @@ export default function CaptainApp({ onLogout }) {
 
       };
 
-      setActiveOrVenueTables(prev => prev.map(t => {
+      setActiveTables(prev => prev.map(t => {
         if (t.backendId !== activeTable?.backendId) return t;
 
         return {
@@ -2550,7 +2484,7 @@ export default function CaptainApp({ onLogout }) {
 
       );
 
-      setActiveOrVenueTables(prev => prev.map(t => {
+      setActiveTables(prev => prev.map(t => {
         if (t.backendId !== activeTable?.backendId) return t;
 
         return {
@@ -2677,7 +2611,7 @@ export default function CaptainApp({ onLogout }) {
 
 
     // Optimistic UI — mark item as CANCELLED immediately
-    setActiveOrVenueTables(prev => prev.map(t => {
+    setActiveTables(prev => prev.map(t => {
       if (t.backendId !== activeTable?.backendId) return t;
 
       return {
@@ -2777,7 +2711,7 @@ export default function CaptainApp({ onLogout }) {
       addNotification(`Cancel failed: ${err.message}`, 'error');
 
       // Revert optimistic update
-      setActiveOrVenueTables(prev => prev.map(t => {
+      setActiveTables(prev => prev.map(t => {
         if (t.backendId !== activeTable?.backendId) return t;
 
         return {
@@ -2830,8 +2764,7 @@ export default function CaptainApp({ onLogout }) {
   const requestFinalBill = async () => {
 
     // Re-fetch from live tables in case state is stale
-    const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId)
-      || venueTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+    const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
     const orderId = liveTable?.activeOrder?.id;
 
     const previousStatus = liveTable?.status || TABLE_STATUS.PREPARING;
@@ -2839,7 +2772,7 @@ export default function CaptainApp({ onLogout }) {
 
 
     // 1. Update UI immediately
-    setActiveOrVenueTables(prev => prev.map(t => {
+    setActiveTables(prev => prev.map(t => {
       if (t.id === activeTableId || t.backendId === activeTableId) {
 
         return { ...t, status: TABLE_STATUS.BILLING };
@@ -2868,7 +2801,7 @@ export default function CaptainApp({ onLogout }) {
         addNotification('Billing request failed — please try again', 'error');
 
         // Revert table status back to previous status (e.g. PREPARING)
-        setActiveOrVenueTables(prev => prev.map(t => {
+        setActiveTables(prev => prev.map(t => {
           if (t.id === liveTable?.id || t.backendId === liveTable?.backendId) {
 
             return { ...t, status: previousStatus };
@@ -3139,8 +3072,7 @@ export default function CaptainApp({ onLogout }) {
               // 2. Collision check: Did someone else just lock this table in the live floor map?
 
               const callTableNumber = String(call.tableId).match(/(\d+)/)?.[1] || call.tableId;
-              const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber))
-                || venueTables.find(t => String(t.id) === String(callTableNumber) || String(t.number) === String(callTableNumber));
+              const targetTable = activeTables.find(t => String(t.id) === String(callTableNumber));
 
 
 
@@ -3156,14 +3088,14 @@ export default function CaptainApp({ onLogout }) {
 
                   captainName: currentCaptain.name
 
-                }, outlet);
+                }, activeOutlet);
 
                 addNotification(`You accepted table ${call.tableId}`, 'success');
 
 
 
                 // Allocate table to this captain
-                setActiveOrVenueTables(prev => prev.map(t => {
+                setActiveTables(prev => prev.map(t => {
                   if (String(t.id) === String(callTableNumber)) {
 
                     return {
@@ -3233,8 +3165,6 @@ export default function CaptainApp({ onLogout }) {
 
 
         <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-
-          <OutletToggle className="flex" />
 
           <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-20'}`}>
 
@@ -3638,7 +3568,7 @@ export default function CaptainApp({ onLogout }) {
 
                 {[
 
-                  ...(outlet === 'bar'
+                  ...((activeOutlet === 'bar' || activeOutlet === 'both')
 
                     ? [
 
@@ -3692,7 +3622,7 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-              {outlet === 'bar' && tableSubCategory === 'bar-ac-hall' ? (
+              {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall' ? (
 
                 <>
 
@@ -3796,7 +3726,7 @@ export default function CaptainApp({ onLogout }) {
 
                         <div className="flex flex-col items-start gap-0.5">
 
-                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{outlet === 'bar' ? 'B' : 'T'}{table.number ?? table.id}</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{(activeOutlet === 'bar' || activeOutlet === 'both') ? 'B' : 'T'}{table.number ?? table.id}</span>
 
                           {table.captainName && (
 
@@ -3866,7 +3796,7 @@ export default function CaptainApp({ onLogout }) {
 
             venueId={
 
-              outlet === 'bar'
+              (activeOutlet === 'bar' || activeOutlet === 'both')
 
                 ? (tableSubCategory === 'bar-conference' ? 'venue-bar-conference' :
 
@@ -3882,7 +3812,7 @@ export default function CaptainApp({ onLogout }) {
 
             sectionName={
 
-              outlet === 'bar'
+              (activeOutlet === 'bar' || activeOutlet === 'both')
 
                 ? (tableSubCategory === 'bar-conference' ? 'Conference Hall' :
 
@@ -3896,7 +3826,7 @@ export default function CaptainApp({ onLogout }) {
 
             }
 
-            restaurantId={getVenueId()}
+            restaurantId={getCurrentRestaurantId()}
 
             roomMode="single"
 
@@ -3910,9 +3840,9 @@ export default function CaptainApp({ onLogout }) {
 
             onOrderPlaced={() => {}}
 
-            venueTables={venueTables}
-            isSyncing={venueTablesLoading}
-            refetch={refetchVenueTables}
+            venueTables={[]}
+            isSyncing={false}
+            refetch={refetchRestaurantTables}
           />
 
         )}
@@ -3991,7 +3921,7 @@ export default function CaptainApp({ onLogout }) {
 
                 {/* STICKY MENU BAR */}
 
-                {outlet === 'bar' ? (
+                {(activeOutlet === 'bar' || activeOutlet === 'both') ? (
 
                   <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 shrink-0 z-30 shadow-sm transition-all duration-300 sticky top-0">
 
@@ -4249,7 +4179,7 @@ export default function CaptainApp({ onLogout }) {
                         onClick={() => {
                           setMenuPanelError(null);
                           // Trigger menu refresh by calling refreshMenu from the hooks
-                          if (outlet === 'bar') {
+                          if (activeOutlet === 'bar' || activeOutlet === 'both') {
                             // barMenu refresh is handled by the hook, just clear error
                           } else {
                             // restaurantMenu refresh is handled by the hook, just clear error
@@ -4509,7 +4439,7 @@ export default function CaptainApp({ onLogout }) {
 
                                   )}
 
-                                  {outlet === 'bar' && item.menuType === 'FOOD' && (
+                                  {(activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'FOOD' && (
 
                                     <span className="text-[7px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
 
@@ -5526,7 +5456,7 @@ export default function CaptainApp({ onLogout }) {
 
       {showMoveModal && (() => {
 
-        const freeTables = (outlet === 'bar' ? barTables : tables).filter(
+        const freeTables = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables).filter(
 
           t => t.status === TABLE_STATUS.FREE && t.id !== activeTable?.id
 

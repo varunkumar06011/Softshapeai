@@ -6,7 +6,7 @@ function getApiBase() {
   );
 }
 
-async function request(method, url, body) {
+async function request(method, url, body, isRetry = false) {
   const headers = {
     'Content-Type': 'application/json',
     ...authService.getAuthHeader(),
@@ -18,7 +18,21 @@ async function request(method, url, body) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && !isRetry) {
+    // Attempt sliding refresh before giving up
+    try {
+      const refreshRes = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: 'POST',
+        headers: authService.getAuthHeader(),
+      });
+      if (refreshRes.ok) {
+        const { token } = await refreshRes.json();
+        authService.setToken(token); // store new token
+        return request(method, url, body, true); // retry once
+      }
+    } catch {
+      /* refresh failed — fall through to logout */
+    }
     authService.logout();
     window.location.href = '/';
     throw new Error('Session expired. Please log in again.');

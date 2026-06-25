@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ShieldCheck, Users } from 'lucide-react';
 import { authService } from '../../services/authService';
 
@@ -26,6 +26,14 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Pre-fill restaurant code from ?code= query param for cashier/captain logins
+  useEffect(() => {
+    if (!isCashier && role !== 'captain') return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (code) setSlug(code);
+  }, [isCashier, role]);
 
   // Admin email+password login
   const handleAdminLogin = async () => {

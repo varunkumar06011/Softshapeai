@@ -1,6 +1,5 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-import { getBarId } from "./barApiConfig";
 
 /**
  * Fetch unified menu from the shared endpoint
@@ -16,13 +15,13 @@ export async function fetchUnifiedMenu(venue = "restaurant") {
 
     if (!res.ok) {
       console.warn(`[unifiedMenuService] unified menu not available (${res.status}), returning empty menu`);
-      return { success: false, venue, restaurantId: venue === 'bar' ? getBarId() : getCurrentRestaurantId(), categories: [] };
+      return { success: false, venue, restaurantId: getCurrentRestaurantId(), categories: [] };
     }
 
     const data = await res.json();
     return data;
   } catch (error) {
     console.error("[unifiedMenuService] Failed to fetch unified menu:", error);
-    return { success: false, venue, restaurantId: venue === 'bar' ? getBarId() : getCurrentRestaurantId(), categories: [] };
+    return { success: false, venue, restaurantId: getCurrentRestaurantId(), categories: [] };
   }
 }

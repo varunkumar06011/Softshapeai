@@ -4,13 +4,13 @@ import { fetchTransactions, deleteTransaction } from '../services/orderApi';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { authService } from '../services/authService';
 
 function formatBillNumber(txnDate, txnNumber) {
   return formatTxnDisplayId(txnDate, txnNumber);
 }
 
 function resolveSource(txn) {
+  if (txn.restaurantId === getCurrentRestaurantId()) return 'restaurant';
   const tag = (txn.sectionTag || '').toLowerCase();
   if (tag === 'venue-bar-ac-hall') return 'bar';
   if (tag === 'venue-bar-conference') return 'conference';
@@ -68,14 +68,21 @@ export default function AdminTransactions({ onStatsRefresh }) {
         limitParam = 500;
       }
 
-      const rid = authService.getUser()?.restaurantId;
-      if (!rid) {
-        setTransactions([]);
-        setLoading(false);
-        return;
-      }
+      const allResults = await Promise.all([
+        fetchTransactions(getCurrentRestaurantId(), limitParam, dateParam, monthParam).catch(() => []),
+      ]);
 
-      const deduped = await fetchTransactions(rid, limitParam, dateParam, monthParam).catch(() => []);
+      const allTxns = allResults.flatMap((txns, idx) => {
+        const rid = [getCurrentRestaurantId()][idx];
+        return txns.map(txn => ({ ...txn, restaurantId: txn.restaurantId || rid }));
+      });
+
+      const seen = new Set();
+      const deduped = allTxns.filter(txn => {
+        if (seen.has(txn.id)) return false;
+        seen.add(txn.id);
+        return true;
+      });
 
       deduped.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
 

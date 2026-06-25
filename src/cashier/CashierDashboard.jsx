@@ -19,14 +19,11 @@ import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
 import { updateTableSession } from '../services/tableApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { useOutlet } from '../context/OutletContext';
-import OutletToggle from '../shared/components/OutletToggle';
+import { useAuth } from '../context/AuthContext';
 import BarMenuToggle from '../shared/components/BarMenuToggle';
 import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
-import { getBarId } from '../services/barApiConfig';
-import { getVenueId } from '../services/venueApiConfig';
 import { authService } from '../services/authService';
 import { updateBarTableSession, deleteBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
@@ -34,12 +31,22 @@ import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
 import { useVenuePrices } from '../hooks/useVenuePrices';
-import { useVenueTableSync, getVenueTableLabel } from '../services/venueTableSyncService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
+
+function getVenueTableLabel(sectionTag, tableNumber) {
+  const tag = (sectionTag || '').toLowerCase();
+  if (tag.includes('bar-ac-hall') || tag.includes('bar')) return `B${tableNumber}`;
+  if (tag.includes('conference')) return `C${tableNumber}`;
+  if (tag.includes('pdr')) return `PDR${tableNumber}`;
+  if (tag.includes('rooms')) return `R${tableNumber}`;
+  if (tag.includes('family') || tag.includes('restaurant-parcel')) return `F${tableNumber}`;
+  if (tag.includes('parcel') || tag.includes('gobox')) return `P${tableNumber}`;
+  return String(tableNumber);
+}
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 const TXN_PAGE_SIZE = 100;
@@ -210,12 +217,16 @@ const HighlightedText = ({ text, highlight }) => {
 
 const CashierDashboard = ({ onLogout }) => {
   console.log('[BUILD] CashierDashboard loaded — version 2025-06-13-v2');
-  const { outlet } = useOutlet();
+  const { user, restaurant } = useAuth();
+  const enabledModules = restaurant?.enabledModules || {};
+  const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
+    : enabledModules.bar && !enabledModules.food ? 'bar'
+    : 'restaurant';
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
   const [tableSubCategory, setTableSubCategory] = useState(() => {
     const saved = localStorage.getItem('softshape_selected_subcategory');
     if (saved) return saved;
-    return outlet === 'bar' ? 'bar-ac-hall' : 'family-restaurant';
+    return 'family-restaurant';
   }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel' | 'bar-gobox', restaurant: 'family-restaurant' | 'parcel'
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
     const saved = localStorage.getItem('cashier_selected_pdr_room');
@@ -234,7 +245,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleTabSwitch = (tabId) => {
     // Check if switching between family-restaurant and GoBox in restaurant outlet
-    const isSwitchingProtected = outlet === 'restaurant' &&
+    const isSwitchingProtected = activeOutlet === 'restaurant' &&
       ((tableSubCategory === 'family-restaurant' && tabId === 'parcel') ||
        (tableSubCategory === 'parcel' && tabId === 'family-restaurant'));
 
@@ -410,34 +421,31 @@ const CashierDashboard = ({ onLogout }) => {
     localStorage.removeItem('cashier_cart');
   };
 
-  // ── Moved up: these must be declared before activeTablesRef / venueTablesRef ──
+  // ── Moved up: these must be declared before activeTablesRef ──
   const venuePrices = useVenuePrices();
-  const { tables: venueTables, setTables: setVenueTables, isSyncing: venueTablesLoading, refetch: refetchVenueTables } = useVenueTableSync();
 
   const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
   const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
 
   const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync();
   const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
-  const menuLoading = outlet === 'bar' ? barMenuLoading : restaurantMenuLoading;
+  const menuLoading = activeOutlet === 'bar' || activeOutlet === 'both' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
   const [extraTables, setExtraTables] = useState(() => {
     try { return JSON.parse(localStorage.getItem('cashier_extra_tables') || '[]'); } catch { return []; }
   });
 
-  // Derived — restaurant or bar depending on outlet
-  const activeTables = outlet === 'bar' ? barTables : tables;
-  const setActiveTables = outlet === 'bar' ? setBarTables : setTables;
-  const activeRestaurantId = outlet === 'bar' ? getBarId() : outlet === 'venue' ? getVenueId() : getCurrentRestaurantId();
+  // Derived — based on enabledModules
+  const activeTables = activeOutlet === 'bar' ? barTables : activeOutlet === 'both' ? [...barTables, ...tables] : tables;
+  const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
+  const activeRestaurantId = getCurrentRestaurantId();
 
   const socket = useSocket(activeRestaurantId);
   // ── End moved block ──
 
   const activeTablesRef = useRef(activeTables);
   useEffect(() => { activeTablesRef.current = activeTables; }, [activeTables]);
-  const venueTablesRef = useRef(venueTables);
-  useEffect(() => { venueTablesRef.current = venueTables; }, [venueTables]);
 
   // Persist extraTables to localStorage so they survive page refresh
   useEffect(() => {
@@ -512,7 +520,7 @@ const CashierDashboard = ({ onLogout }) => {
     // During 5s pause after settlement: block ALL updates
     if (Date.now() < syncPauseUntilRef.current) return true;
     // After pause: if table is already Free locally, a new session may have started — allow
-    const localTable = [...(activeTablesRef.current || []), ...(venueTablesRef.current || [])]
+    const localTable = [...(activeTablesRef.current || [])]
       .find(t => t.backendId === tableId);
     if (!localTable || localTable.status === 'Free' || localTable.status === 'AVAILABLE') return false;
     // Otherwise only allow forward transitions (Free / AVAILABLE / TERMINATED / CLEANING)
@@ -651,7 +659,7 @@ const CashierDashboard = ({ onLogout }) => {
     setIsSwappingItems(false);
   }, [selectedTable?.backendId]);
 
-  const TX_CACHE_KEY = `softshape_transactions_${outlet}_${getKolkataDateString()}`;
+  const TX_CACHE_KEY = `softshape_transactions_${activeOutlet}_${getKolkataDateString()}`;
 
   const [pastTransactions, setPastTransactions] = useState(() => {
     // Start with localStorage cache for instant display
@@ -703,7 +711,7 @@ const CashierDashboard = ({ onLogout }) => {
         limitParam = 0;
       }
 
-      const restaurantIds = [getBarId(), getCurrentRestaurantId(), getVenueId()].filter((v, i, arr) => arr.indexOf(v) === i);
+      const restaurantIds = [getCurrentRestaurantId()];
 
       const allResults = await Promise.all(
         restaurantIds.map(rid => fetchTransactions(rid, limitParam, dateParam, monthParam).catch(e => {
@@ -745,7 +753,7 @@ const CashierDashboard = ({ onLogout }) => {
           : subtotal && discountAmount > 0
             ? Math.round((discountAmount / subtotal) * 10000) / 100
             : 0;
-        const source = txn._sourceRestaurantId === getVenueId()
+        const source = txn._sourceRestaurantId === getCurrentRestaurantId()
           ? (
             txn.sectionTag === 'venue-family-restaurant' || String(txn.sectionName || '').toLowerCase().includes('family restaurant')
               ? 'family-restaurant'
@@ -815,7 +823,7 @@ const CashierDashboard = ({ onLogout }) => {
             // Rooms
             if (tag.includes('rooms') || source === 'bar-rooms') return `R${num}`;
             // Bar (venue or bar-001)
-            if (tag.includes('bar') || source === 'bar-ac-hall' || source === 'bar' || rid === getBarId()) return `B${num}`;
+            if (tag.includes('bar') || source === 'bar-ac-hall' || source === 'bar') return `B${num}`;
             // Family restaurant / venue dine-in
             if (tag.includes('family') || source === 'family-restaurant') return `F${num}`;
             // Default: restaurant table → T prefix
@@ -826,14 +834,11 @@ const CashierDashboard = ({ onLogout }) => {
         };
       });
 
-      // Isolate: bar outlet sees only bar/bar-venue sources; restaurant outlet sees only restaurant/restaurant-venue sources
+      // Filter by active outlet: bar sees bar sources, restaurant sees restaurant sources, both sees all
       const isolated = mapped.filter(txn => {
-        if (outlet === 'bar') {
-          // Bar sees ONLY bar-sourced transactions — never any restaurant source
-          return BAR_SOURCES.has(txn.source);
-        }
-        // Restaurant sees ONLY restaurant-sourced transactions — never bar or unknown venue
-        return RESTAURANT_SOURCES.has(txn.source);
+        if (activeOutlet === 'bar') return BAR_SOURCES.has(txn.source);
+        if (activeOutlet === 'restaurant') return RESTAURANT_SOURCES.has(txn.source);
+        return true; // 'both' sees everything
       });
 
       // Sort by billNumber numerically (ascending) when viewing a specific date; fall back to paidAt for legacy records
@@ -874,7 +879,7 @@ const CashierDashboard = ({ onLogout }) => {
         setTxnsLoading(false);
       }
     }
-  }, [outlet, txnCustomDate]);
+  }, [activeOutlet, txnCustomDate]);
 
   // FIX 2: Filtered transactions based on method and search
   const filteredTransactions = useMemo(() => {
@@ -938,19 +943,11 @@ const CashierDashboard = ({ onLogout }) => {
     if (!socket) return;
 
     // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
-    // Also join venue-001 when in bar mode so venue table real-time updates work
-    if (outlet === 'bar') {
-      socket.emit('join', getVenueId());
-    }
     const onConnect = () => {
-      if (outlet === 'bar') {
+      if (activeOutlet === 'bar' || activeOutlet === 'both') {
         refetchBarTables();
-        socket.emit('join', getVenueId());
-      } else if (outlet === 'venue') {
-        refetchVenueTables();
-      } else {
-        refetchRestaurantTables();
       }
+      refetchRestaurantTables();
       // Refresh transactions so history stays current after a disconnect gap
       loadTransactions(txnDateFilterRef.current);
     };
@@ -963,15 +960,10 @@ const CashierDashboard = ({ onLogout }) => {
       if (shouldBlockTableUpdate(table.id, table.status)) return;
 
       // Route table status update to the correct array
-      const isVenue = payload?.restaurantId === getVenueId() || table?.restaurantId === getVenueId();
       const updateTableStatus = (prev) => prev.map(t =>
         t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
       );
-      if (isVenue) {
-        if (setVenueTables) setVenueTables(updateTableStatus, { skipPersist: true });
-      } else {
-        setActiveTables(updateTableStatus, { skipPersist: true });
-      }
+      setActiveTables(updateTableStatus, { skipPersist: true });
 
       // Add to billing alerts queue for cashier attention
       setBillingAlerts(prev => {
@@ -1019,7 +1011,6 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
-      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1031,12 +1022,8 @@ const CashierDashboard = ({ onLogout }) => {
             }
           : t
       );
-      if (isVenue) {
-        if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
-      } else {
-        setActiveTables(updateTables, { skipPersist: true });
-        if (outlet === 'bar' && setBarTables) setBarTables(updateTables, { skipPersist: true });
-      }
+      setActiveTables(updateTables, { skipPersist: true });
+      if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
 
     const dedupKotHistory = (existing = [], incoming = []) => {
@@ -1109,7 +1096,6 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
-      const isVenue = payload?.restaurantId === getVenueId() || order?.restaurantId === getVenueId();
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1119,12 +1105,8 @@ const CashierDashboard = ({ onLogout }) => {
             }
           : t
       );
-      if (isVenue) {
-        if (setVenueTables) setVenueTables(updateTables, { skipPersist: true });
-      } else {
-        setActiveTables(updateTables, { skipPersist: true });
-        if (outlet === 'bar' && setBarTables) setBarTables(updateTables, { skipPersist: true });
-      }
+      setActiveTables(updateTables, { skipPersist: true });
+      if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
 
     const onTableUpdated = ({ table } = {}) => {
@@ -1173,12 +1155,7 @@ const CashierDashboard = ({ onLogout }) => {
           activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
         };
       });
-      const isVenue = table.restaurantId === getVenueId();
-      if (isVenue) {
-        if (setVenueTables) setVenueTables(applyTableUpdate, { skipPersist: true });
-      } else {
-        setActiveTables(applyTableUpdate, { skipPersist: true });
-      }
+      setActiveTables(applyTableUpdate, { skipPersist: true });
       if (selectedTable?.backendId === table.id && !selectedTable?.isExtra) {
         setSelectedTable(prev => {
           if (!prev) return prev;
@@ -1233,15 +1210,13 @@ const CashierDashboard = ({ onLogout }) => {
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
       if (!isExtraTable) {
-        // Clear table status to Free in activeTables and venueTables
         const clearTable = (prev) => prev.map(t =>
           t.backendId === tableId
             ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
             : t
         );
         setActiveTables(clearTable, { skipPersist: true });
-        if (setVenueTables) setVenueTables(clearTable, { skipPersist: true });
-        if (outlet === 'bar' && setBarTables) setBarTables(clearTable, { skipPersist: true });
+        if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(clearTable, { skipPersist: true });
 
         // Remove from billing alerts
         setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
@@ -1266,8 +1241,7 @@ const CashierDashboard = ({ onLogout }) => {
       const { sourceTableId, targetTableId, sourceTable: rawSource, targetTable: rawTarget } = payload;
 
       // Map raw DB payloads to frontend shape using existing mapper
-      const isVenue = payload?.restaurantId === getVenueId() || rawSource?.restaurantId === getVenueId() || rawTarget?.restaurantId === getVenueId();
-      const allTablesRef = isVenue ? venueTablesRef.current : activeTablesRef.current;
+      const allTablesRef = activeTablesRef.current;
       const existingSource = allTablesRef?.find(t => t.backendId === sourceTableId) || null;
       const existingTarget = allTablesRef?.find(t => t.backendId === targetTableId) || null;
       const mappedSource = mapRealtimeTablePayload(rawSource, existingSource);
@@ -1279,11 +1253,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (t.backendId === targetTableId) return mappedTarget || t;
         return t;
       });
-      if (isVenue) {
-        if (setVenueTables) setVenueTables(updateTables);
-      } else {
-        setActiveTables(updateTables);
-      }
+      setActiveTables(updateTables);
 
       // If cashier had the source table open, switch selection to the new table
       if (selectedTable?.backendId === sourceTableId && mappedTarget) {
@@ -1306,8 +1276,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
       if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      const isVenue = payload?.restaurantId === getVenueId() || sourceTable?.restaurantId === getVenueId() || targetTable?.restaurantId === getVenueId();
-      const allTables = isVenue ? venueTables : activeTables;
+      const allTables = activeTables;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
         allTables.find((table) => table.backendId === sourceTableId) || null,
@@ -1322,11 +1291,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (table.backendId === targetTableId) return mappedTarget || table;
         return table;
       });
-      if (isVenue) {
-        if (setVenueTables) setVenueTables(updateTables);
-      } else {
-        setActiveTables(updateTables);
-      }
+      setActiveTables(updateTables);
 
       if (selectedTable?.backendId === sourceTableId && mappedSource) {
         setSelectedTable(mappedSource);
@@ -1362,22 +1327,18 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:items-transferred', onTableItemsTransferred);
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
-      if (outlet === 'bar') {
-        socket.emit('leave', getVenueId());
-      }
     };
-  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables, setBarTables]);
+  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
     const pollInterval = socket?.connected ? 30_000 : 5_000;
     const interval = setInterval(() => {
-      if (outlet === 'bar') refetchBarTables();
-      else if (outlet === 'venue') refetchVenueTables();
-      else refetchRestaurantTables();
+      if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
+      refetchRestaurantTables();
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [outlet, refetchBarTables, refetchVenueTables, refetchRestaurantTables, socket?.connected]);
+  }, [activeOutlet, refetchBarTables, refetchRestaurantTables, socket?.connected]);
 
   // Keep ref in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -1405,7 +1366,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (activeTab === 'history') {
       loadTransactions(txnDateFilter);
     }
-  }, [txnDateFilter, activeTab, loadTransactions, outlet]);
+  }, [txnDateFilter, activeTab, loadTransactions, activeOutlet]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -1422,8 +1383,7 @@ const CashierDashboard = ({ onLogout }) => {
     // to a non-Waiting-Bill status. The button must stay as "Settlement".
     if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
       // Only let sync through if it brings a Free/AVAILABLE (settlement confirmed elsewhere)
-      const liveTable = activeTables.find((t) => t.backendId === selectedTable.backendId) ||
-        venueTables.find((t) => t.backendId === selectedTable.backendId);
+      const liveTable = activeTables.find((t) => t.backendId === selectedTable.backendId);
       if (liveTable) {
         const isNowFree = liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free';
         if (isNowFree) {
@@ -1456,8 +1416,7 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId) ||
-      venueTables.find((table) => table.backendId === selectedTable.backendId);
+    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
 
     if (liveTable) {
       if (liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free') {
@@ -1506,7 +1465,7 @@ const CashierDashboard = ({ onLogout }) => {
         });
       }
     }
-  }, [activeTables, venueTables, selectedTable, billPrintedTableIds]);
+  }, [activeTables, selectedTable, billPrintedTableIds]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -1537,14 +1496,14 @@ const CashierDashboard = ({ onLogout }) => {
     setSearchQuery('');
     setIsWalkinMode(false);
     setWalkinTableNumber(null);
-  }, [outlet]);
+  }, [activeOutlet]);
 
-  // Reset selectedMenuType to ALL when switching from bar to restaurant (if it was set to LIQUOR)
+  // Reset selectedMenuType to ALL when not in bar mode (if it was set to LIQUOR)
   useEffect(() => {
-    if (outlet !== 'bar' && selectedMenuType === 'LIQUOR') {
+    if (activeOutlet !== 'bar' && activeOutlet !== 'both' && selectedMenuType === 'LIQUOR') {
       setSelectedMenuType('ALL');
     }
-  }, [outlet]);
+  }, [activeOutlet]);
 
   const activeTableOrders = useMemo(() => {
     return activeTables
@@ -1571,22 +1530,10 @@ const CashierDashboard = ({ onLogout }) => {
       });
   }, [activeTables]);
 
-  // ── Dashboard floor tables: combine regular tables + venue tables for the current outlet ──
-  // This ensures the dashboard "Live Floor Status" and stats show ALL active tables,
-  // including venue sections (Family Restaurant, Parcel, GoBox, etc.) without leaking
-  // across outlets (bar venue tables don't show in restaurant dashboard).
+  // ── Dashboard floor tables ──
   const dashboardFloorTables = useMemo(() => {
-    const relevantVenueTables = (venueTables || []).filter(t => {
-      const tag = (t.sectionTag || '').toLowerCase();
-      if (outlet === 'bar') {
-        return tag.startsWith('venue-bar-');
-      } else if (outlet === 'restaurant') {
-        return tag === 'venue-family-restaurant' || tag === 'venue-restaurant-parcel';
-      }
-      return false;
-    });
-    return [...activeTables, ...relevantVenueTables];
-  }, [activeTables, venueTables, outlet]);
+    return activeTables;
+  }, [activeTables]);
 
   const itemSwapItems = useMemo(() => {
     return (selectedTable?.activeOrder?.items || []).filter(item => !item.removedFromBill && item.id);
@@ -1619,7 +1566,7 @@ const CashierDashboard = ({ onLogout }) => {
       setItemSwapTargetId(null);
       addNotification(
         'Items Transferred',
-        `${itemSwapSelectedIds.length} items moved to ${outlet === 'bar'
+        `${itemSwapSelectedIds.length} items moved to ${activeOutlet === 'bar'
           ? `B${selectedItemSwapTarget?.number ?? selectedItemSwapTarget?.id}`
           : `T${selectedItemSwapTarget?.id}`}`,
         'success',
@@ -1676,7 +1623,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     setBillFinderResults([]);
     setBillFinderSearched(false);
-  }, [outlet]);
+  }, [activeOutlet]);
 
   const handleDashboardDateChange = (date) => {
     if (date) {
@@ -1696,9 +1643,7 @@ const CashierDashboard = ({ onLogout }) => {
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
-      const restaurantIds = outlet === 'bar'
-        ? [getBarId(), getVenueId()]
-        : [getCurrentRestaurantId(), getVenueId()];
+      const restaurantIds = [getCurrentRestaurantId()];
       const uniqueRestaurantIds = [...new Set(restaurantIds)];
 
       const allResults = await Promise.all(
@@ -1738,18 +1683,14 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
-        // If no sectionTag, derive from restaurantId as fallback.
-        // venue-001 contains BOTH bar and restaurant tables, so we can only
-        // safely include it when sectionTag is present. Without sectionTag,
-        // include only direct restaurant IDs (bar-001 / current restaurant).
         if (!txn.sectionTag) {
           const rid = txn._sourceRestaurantId || '';
-          if (outlet === 'bar') return rid === getBarId();
           return rid === getCurrentRestaurantId();
         }
         const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
-        if (outlet === 'bar') return BAR_SOURCES.has(mappedSource);
-        return RESTAURANT_SOURCES.has(mappedSource);
+        if (activeOutlet === 'bar') return BAR_SOURCES.has(mappedSource);
+        if (activeOutlet === 'restaurant') return RESTAURANT_SOURCES.has(mappedSource);
+        return true;
       });
 
       // Enrich results with tableDisplayName for rendering
@@ -1894,19 +1835,14 @@ const CashierDashboard = ({ onLogout }) => {
           et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
         ));
       } else {
-        const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
         const updateBillStatus = (prev) =>
           prev.map((t) =>
             t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
           );
-        if (isVenueTable) {
-          if (setVenueTables) setVenueTables(updateBillStatus);
-        } else {
-          setActiveTables(updateBillStatus);
-        }
+        setActiveTables(updateBillStatus);
         // Also persist 'bill_printed' in the table localStorage cache
         try {
-          const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1' : outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
+          const cacheKey = activeOutlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
           const updatedCache = cached.map(t =>
             t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
@@ -2067,7 +2003,7 @@ const CashierDashboard = ({ onLogout }) => {
     const extraItems = getAllOrderItems(extraTable);
     if (extraItems.length > 0) {
       // Merge items back into parent table's activeOrder visually
-      const parentTable = [...activeTables, ...venueTables].find(t => t.backendId === extraTable.baseBackendId);
+      const parentTable = activeTables.find(t => t.backendId === extraTable.baseBackendId);
       if (parentTable?.activeOrder) {
         const mainItems = parentTable.activeOrder.items || [];
         const extraKotHistory = extraTable.kotHistory || [];
@@ -2090,7 +2026,6 @@ const CashierDashboard = ({ onLogout }) => {
             : t
         );
         setActiveTables(updateTables, { skipPersist: true });
-        setVenueTables(updateTables, { skipPersist: true });
       }
     }
     setExtraTables(prev => prev.filter(et => et.id !== extraTable.id));
@@ -2249,8 +2184,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Store previous table state for rollback
     const previousTableState = selectedTable;
-    const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
-    const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+    const setTargetTables = setActiveTables;
 
     // Optimistic update: table becomes free
     const optimisticFn = () => {
@@ -2333,7 +2267,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId && !selectedTable.isExtra) {
         setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
         syncPauseUntilRef.current = Date.now() + 2000;
-        const cacheKey = outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : outlet === 'venue' ? 'softshape_venue_tables_cache_v1' : 'softshape_tables_cache_v6';
+        const cacheKey = activeOutlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
         try {
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
           const updated = cached.map(t =>
@@ -2467,9 +2401,8 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
       if (tableSnap?.backendId) {
-        const isVenueTable = tableSnap.section?.restaurantId === getVenueId() || tableSnap.restaurantId === getVenueId();
         const resId = tableSnap.section?.restaurantId || activeRestaurantId;
-        const terminateUrl = (outlet === 'bar' && !isVenueTable)
+        const terminateUrl = (activeOutlet === 'bar' || activeOutlet === 'both')
           ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
           : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
@@ -2484,7 +2417,7 @@ const CashierDashboard = ({ onLogout }) => {
         }
 
         // Step 2: Backend confirmed success — now safe to clear local state
-        if (outlet === 'bar' && !isVenueTable) {
+        if (activeOutlet === 'bar' || activeOutlet === 'both') {
           // Use DELETE for bar tables — fully wipes session including activeOrder on backend
           deleteBarTableSession(tableSnap.backendId)
             .catch(err => console.warn('[Terminate] deleteBarSession failed:', err.message));
@@ -2505,9 +2438,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
-      const isVenueTable = tableSnap.section?.restaurantId === getVenueId() || tableSnap.restaurantId === getVenueId();
-      const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
-      setTargetTables(prev => prev.map(t =>
+      setActiveTables(prev => prev.map(t =>
         t.id === tableSnap.id || t.backendId === tableSnap.backendId
           ? {
               ...t,
@@ -2542,8 +2473,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Clean up persisted discount on terminate
 
       // Step 6: Evict terminated table from localStorage cache so hard refresh never shows it again
-      const cacheKey = isVenueTable ? 'softshape_venue_tables_cache_v1'
-        : (outlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6');
+      const cacheKey = (activeOutlet === 'bar' || activeOutlet === 'both') ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
       try {
         const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
         const filtered = cached.filter(t => t.backendId !== tableSnap.backendId);
@@ -2594,9 +2524,7 @@ const CashierDashboard = ({ onLogout }) => {
         editedBy: 'Cashier',
       });
       // Update local table state so bill total reflects immediately
-      const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
-      const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
-      setTargetTables(prev => prev.map(t => {
+      setActiveTables(prev => prev.map(t => {
         if (t.backendId !== selectedTable.backendId) return t;
         return {
           ...t,
@@ -2618,15 +2546,15 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const activeCategories = useMemo(() => {
-    if (outlet === 'restaurant') return categories;
+    if (activeOutlet === 'restaurant') return categories;
     const items = barMenuItems.filter(i => i.isAvailable !== false);
     const cats = items.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
-  }, [outlet, categories, barMenuItems]);
+  }, [activeOutlet, categories, barMenuItems]);
 
   const menuTypeSubcategories = useMemo(() => {
     if (selectedMenuType === 'ALL') return [];
-    const items = outlet === 'restaurant'
+    const items = activeOutlet === 'restaurant'
       ? menuItems.filter(i => i.isAvailable !== false)
       : barMenuItems.filter(i => i.isAvailable !== false);
     const filtered = selectedMenuType === 'FOOD'
@@ -2634,13 +2562,13 @@ const CashierDashboard = ({ onLogout }) => {
       : items.filter(i => i.menuType === 'LIQUOR');
     const cats = filtered.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
-  }, [selectedMenuType, outlet, menuItems, barMenuItems]);
+  }, [selectedMenuType, activeOutlet, menuItems, barMenuItems]);
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
-    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox'].includes(tableSubCategory) || Boolean(selectedTable?.restaurantId === getVenueId());
+    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox'].includes(tableSubCategory);
 
-    if (outlet === 'restaurant') {
+    if (activeOutlet === 'restaurant') {
       itemsToFilter = menuItems.filter(item => item.isAvailable !== false);
     } else {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
@@ -2649,7 +2577,7 @@ const CashierDashboard = ({ onLogout }) => {
     // Determine current venue ID from selected table or sub-category
     // Prioritize tableSubCategory over selectedTable section
     let currentVenueId = null;
-    if (outlet === 'bar') {
+    if (activeOutlet === 'bar' || activeOutlet === 'both') {
       if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
       else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
       else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
@@ -2666,14 +2594,11 @@ const CashierDashboard = ({ onLogout }) => {
     } else {
       if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
       else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
-      else if (selectedTable?.section?.restaurantId === getVenueId()) {
-        currentVenueId = 'venue-family-restaurant';
-      }
     }
 
     const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
 
-    const isBarVenueContext = outlet === 'bar' && Boolean(currentVenueId);
+    const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && Boolean(currentVenueId);
 
     const mapped = itemsToFilter.map(item => {
       const overridePrice = venueSpecificPrices[item.id];
@@ -2713,7 +2638,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (isBarVenueContext) {
         return Number(item.p) > 0;
       }
-      if (selectedTable?.section?.restaurantId === getVenueId()) {
+      if (selectedTable?.section?.restaurantId === getCurrentRestaurantId()) {
         return Number(item.p || 0) > 0;
       }
       return true;
@@ -2755,7 +2680,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return filtered;
-  }, [outlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
+  }, [activeOutlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
 
   const handleTableSelect = (table) => {
     setIsModalDataLoading(false);
@@ -2815,8 +2740,7 @@ const CashierDashboard = ({ onLogout }) => {
     } else {
       // Open modal immediately — don't block on network
       setShowTableModal(true);
-      if (outlet === 'bar') refetchBarTables();
-      else if (outlet === 'venue') refetchVenueTables();
+      if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
       else refetchRestaurantTables();
       // Restore saved discount for this table if one exists
       const savedDiscount = localStorage.getItem(`cashier_table_discount_${table.backendId}`);
@@ -2869,7 +2793,7 @@ const CashierDashboard = ({ onLogout }) => {
     addItemCooldownRef.current[itemKey] = now;
 
     // Beer items should be added directly
-    if (outlet === 'bar' && isBeerItem(item)) {
+    if ((activeOutlet === 'bar' || activeOutlet === 'both') && isBeerItem(item)) {
       addToCart(item);
       setSearchQuery('');
       setSelectedCategory('All');
@@ -2878,7 +2802,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     // Other liquor items (spirits) should show variant picker
-    if (outlet === 'bar' && item.menuType === 'LIQUOR' && !item.isBottleItem) {
+    if ((activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'LIQUOR' && !item.isBottleItem) {
       setVariantPickerItem(item);
     } else {
       addToCart(item);
@@ -2904,9 +2828,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
-    const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
-    const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
-    setTargetTables(prev => prev.map(t => {
+    setActiveTables(prev => prev.map(t => {
       if (t.id === tableId || t.backendId === tableId) {
         let allReady = true;
         const updatedKotHistory = (t.kotHistory || []).map(kot => {
@@ -3111,11 +3033,7 @@ const CashierDashboard = ({ onLogout }) => {
           return t;
         });
 
-        if (selectedTable.section?.restaurantId === getVenueId() || selectedTable.restaurantId === getVenueId()) {
-          setVenueTables(updater);
-        } else {
-          setActiveTables(updater);
-        }
+        setActiveTables(updater);
       }
 
       // Snapshot items and patch selectedTable so modal shows items immediately
@@ -3300,11 +3218,10 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
 
           <div className="flex items-center gap-4">
-            <OutletToggle className="flex" requireAuth={true} />
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-xs md:text-sm font-black leading-none text-gray-900">Kiran Kumar</p>
-                <p className="text-[10px] text-gray-400 font-black uppercase mt-1">Head Cashier</p>
+                <p className="text-xs md:text-sm font-black leading-none text-gray-900">{user?.name || 'Cashier'}</p>
+                <p className="text-[10px] text-gray-400 font-black uppercase mt-1">{user?.role === 'OWNER' || user?.role === 'ADMIN' ? user.role : 'Cashier'}</p>
               </div>
               <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-base shadow-inner border border-gray-200">🤵</div>
               <button onClick={onLogout} className="sm:hidden ml-2 p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50"><LogOut size={20} /></button>
@@ -3474,7 +3391,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 >
                                   <div className="flex items-start justify-between gap-1">
                                     <span className={`text-4xl font-black leading-none ${textColor}`}>
-                                      {outlet === 'bar' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}
+                                      {activeOutlet === 'bar' || activeOutlet === 'both' ? `B${table.number ?? table.id}` : (table.number ?? table.id)}
                                     </span>
                                     <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${badgeCls}`}>
                                       {statusLabel}
@@ -3507,7 +3424,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="flex items-center justify-between">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
-                          ? (outlet === 'bar'
+                          ? ((activeOutlet === 'bar' || activeOutlet === 'both')
                             ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'GoBox')
                             : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'GoBox'))
                           : activeTab.replace('-', ' ') + ' Feed'}
@@ -3519,7 +3436,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* ── SUBCATEGORY PILLS — sit inside Tables screen, not a separate toggle ── */}
                         <div className="flex gap-2 flex-wrap">
                           {[
-                            ...(outlet === 'bar'
+                            ...((activeOutlet === 'bar' || activeOutlet === 'both')
                               ? [
                                   { id: 'bar-ac-hall', label: 'Bar AC Hall', emoji: '' },
                                   { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
@@ -3545,22 +3462,9 @@ const CashierDashboard = ({ onLogout }) => {
                           ))}
                         </div>
 
-                        {/* Debug status */}
-                        {venueTablesLoading && (
-                          <div className="text-xs text-gray-400 font-mono">Loading venue tables…</div>
-                        )}
-                        {!venueTablesLoading && venueTables.length > 0 && (
-                          <div className="text-xs text-gray-400 font-mono">
-                            Venue tables loaded: {venueTables.length} &nbsp;|&nbsp; Family Restaurant: {venueTables.filter(t => (t.sectionName || t.section?.name || '').toLowerCase().includes('family restaurant')).length}
-                          </div>
-                        )}
-                        {!venueTablesLoading && venueTables.length === 0 && (
-                          <div className="text-xs text-red-500 font-mono">No venue tables loaded — check console (F12) for errors</div>
-                        )}
-
                         {/* ── MAIN TABLES ── */}
                         {/* Bar AC Hall - uses activeTables from current restaurant */}
-                        {outlet === 'bar' && tableSubCategory === 'bar-ac-hall' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {[...activeTables.filter((table) => {
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
@@ -3720,90 +3624,90 @@ const CashierDashboard = ({ onLogout }) => {
 
 
                         {/* ── BAR VENUE VIEWS ── */}
-                        {outlet === 'bar' && tableSubCategory === 'bar-conference' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-conference' && (
                           <VenueSectionView
                             venueId="venue-bar-conference"
                             sectionName="Conference Hall"
-                            restaurantId={getVenueId()}
+                            restaurantId={getCurrentRestaurantId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
-                            venueTables={venueTables}
-                            isSyncing={venueTablesLoading}
-                            refetch={refetchVenueTables}
+                            venueTables={[]}
+                            isSyncing={false}
+                            refetch={refetchBarTables}
                           />
                         )}
-                        {outlet === 'bar' && tableSubCategory === 'bar-pdr' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-pdr' && (
                           <VenueSectionView
                             venueId="venue-bar-pdr"
                             sectionName="PDR"
-                            restaurantId={getVenueId()}
+                            restaurantId={getCurrentRestaurantId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
-                            venueTables={venueTables}
-                            isSyncing={venueTablesLoading}
-                            refetch={refetchVenueTables}
+                            venueTables={[]}
+                            isSyncing={false}
+                            refetch={refetchBarTables}
                           />
                         )}
-                        {outlet === 'bar' && tableSubCategory === 'bar-rooms' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-rooms' && (
                           <VenueSectionView
                             venueId="venue-bar-rooms"
                             sectionName="Rooms"
-                            restaurantId={getVenueId()}
+                            restaurantId={getCurrentRestaurantId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
-                            venueTables={venueTables}
-                            isSyncing={venueTablesLoading}
-                            refetch={refetchVenueTables}
+                            venueTables={[]}
+                            isSyncing={false}
+                            refetch={refetchBarTables}
                           />
                         )}
-                        {outlet === 'bar' && tableSubCategory === 'bar-parcel' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-parcel' && (
                           <VenueSectionView
                             venueId="venue-bar-parcel"
                             sectionName="GoBox"
-                            restaurantId={getVenueId()}
+                            restaurantId={getCurrentRestaurantId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
-                            venueTables={venueTables}
-                            isSyncing={venueTablesLoading}
-                            refetch={refetchVenueTables}
+                            venueTables={[]}
+                            isSyncing={false}
+                            refetch={refetchBarTables}
                           />
                         )}
-                        {outlet === 'bar' && tableSubCategory === 'bar-gobox' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-gobox' && (
                           <VenueSectionView
                             key="bar-gobox"
                             venueId="venue-bar-gobox"
                             sectionName="GoBox"
-                            restaurantId={getVenueId()}
+                            restaurantId={getCurrentRestaurantId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
-                            venueTables={venueTables}
-                            isSyncing={venueTablesLoading}
-                            refetch={refetchVenueTables}
+                            venueTables={[]}
+                            isSyncing={false}
+                            refetch={refetchBarTables}
                           />
                         )}
 
                         {/* ── RESTAURANT VENUE VIEWS ── */}
-                        {outlet === 'restaurant' && tableSubCategory === 'family-restaurant' && (
+                        {activeOutlet === 'restaurant' && tableSubCategory === 'family-restaurant' && (
                           <VenueSectionView
                             venueId="venue-family-restaurant"
                             sectionName="Family Restaurant"
-                            restaurantId={getVenueId()}
+                            restaurantId={getCurrentRestaurantId()}
                             roomMode="single"
                             onTableSelect={handleTableSelect}
                             onOrderPlaced={() => { }}
-                            venueTables={venueTables}
-                            isSyncing={venueTablesLoading}
+                            venueTables={[]}
+                            isSyncing={false}
                             extraTables={extraTables}
                             onAddExtraTable={handleAddVenueExtraTable}
                             onRemoveExtraTable={handleRemoveVenueExtraTable}
                           />
                         )}
-                        {outlet === 'restaurant' && tableSubCategory === 'parcel' && (
+                        {activeOutlet === 'restaurant' && tableSubCategory === 'parcel' && (
                           <div className="mt-4">
                             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
                             <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
@@ -3866,7 +3770,7 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Source filter */}
                         <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
                           {[
-                            ...(outlet === 'bar'
+                            ...((activeOutlet === 'bar' || activeOutlet === 'both')
                               ? [
                                   { key: 'all', label: 'All' },
                                   { key: 'bar', label: 'Bar AC Hall' },
@@ -4149,7 +4053,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'analytics' && (
-                      <ItemAnalytics outlet={outlet} />
+                      <ItemAnalytics outlet={activeOutlet} />
                     )}
 
                     {activeTab === 'billfinder' && (
@@ -4245,7 +4149,7 @@ const CashierDashboard = ({ onLogout }) => {
                                         {(() => {
                                           const mapped = SECTION_TAG_TO_SOURCE[txn.sectionTag];
                                           if (mapped) return mapped.replace(/-/g, ' ');
-                                          if (txn._sourceRestaurantId === getBarId()) return 'bar ac hall';
+                                          if (txn._sourceRestaurantId === getCurrentRestaurantId()) return 'bar ac hall';
                                           if (txn._sourceRestaurantId === getCurrentRestaurantId()) return 'restaurant';
                                           return '—';
                                         })()}
@@ -4479,7 +4383,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3 flex-grow">
                             {[
-                              ...(outlet === 'bar'
+                              ...((activeOutlet === 'bar' || activeOutlet === 'both')
                                 ? [
                                     { value: 'ALL', label: 'ALL' },
                                     { value: 'FOOD', label: 'FOOD 🍽️' },
@@ -4590,7 +4494,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
                                   <div className={`w-2 h-2 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
                                 </div>
-                                {outlet === 'bar' && item.menuType && (
+                                {(activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType && (
                                   <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg">
                                     {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}
                                   </span>
@@ -4642,7 +4546,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
                           <div className="flex items-center gap-3">
                             <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center text-[#E53935] font-black text-lg shadow-sm border border-red-100">
-                              {selectedTable ? (selectedTable.displayName || selectedTable.name || (outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`)) : 'POS'}
+                              {selectedTable ? (selectedTable.displayName || selectedTable.name || ((activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`)) : 'POS'}
                             </div>
                             <div className="flex-grow min-w-0">
                               <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.displayName || selectedTable.name || selectedTable.id}` : 'Walk-in Order'}</p>
@@ -4813,7 +4717,7 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
 
                       <div className="pt-0.5">
-                        {(isWalkinMode || (outlet === 'restaurant' && tableSubCategory === 'parcel')) ? (
+                        {(isWalkinMode || (activeOutlet === 'restaurant' && tableSubCategory === 'parcel')) ? (
                           <button
                             onClick={handleWalkinFinalBill}
                             disabled={cart.length === 0 || isPrintingBill}
@@ -4870,7 +4774,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
-                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.number ?? selectedTable.id}`}
+                  {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.number ?? selectedTable.id}`}
                 </div>
                 <div>
                   <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-400 leading-none tracking-widest">Active Session</h2>
@@ -5187,7 +5091,7 @@ const CashierDashboard = ({ onLogout }) => {
       {/* BILL EDITOR MODAL */}
       {showBillEditor && selectedTable && (() => {
         const committedItems = getBillableItems(selectedTable);
-        const allMenuItems = outlet === 'bar' ? barMenuItems : menuItems;
+        const allMenuItems = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenuItems : menuItems;
         const searchResults = billEditSearch.trim().length > 1
           ? allMenuItems.filter(m =>
             m.isAvailable !== false &&
@@ -5219,7 +5123,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <div>
                   <p className="text-xs sm:text-sm font-black uppercase text-gray-400 tracking-wider">Edit Bill</p>
                   <p className="text-lg sm:text-xl font-black text-gray-900 mt-1">
-                    Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
+                    Table {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
@@ -5468,7 +5372,7 @@ const CashierDashboard = ({ onLogout }) => {
 
             <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
-                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {outlet === 'bar' ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
                 <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeGrandTotal).toFixed(0)}</p>
               </div>
               <button
@@ -5572,7 +5476,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div>
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Swap Table Session</p>
                 <p className="text-base font-black text-gray-900 mt-0.5">
-                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Select Destination
+                  {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Select Destination
                 </p>
               </div>
               <button
@@ -5598,7 +5502,7 @@ const CashierDashboard = ({ onLogout }) => {
                         : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-300'
                         }`}
                     >
-                      <span className="text-lg font-black">{outlet === 'bar' ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
+                      <span className="text-lg font-black">{(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
                       <span className="text-[9px] font-bold text-green-600 mt-0.5">Free</span>
                     </button>
                   ))}
@@ -5618,7 +5522,7 @@ const CashierDashboard = ({ onLogout }) => {
                       key={t.backendId || t.id}
                       className="aspect-square rounded-xl border-2 border-gray-100 bg-gray-50 flex flex-col items-center justify-center text-xs font-black opacity-40 cursor-not-allowed"
                     >
-                      <span className="text-lg font-black text-gray-400">{outlet === 'bar' ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
+                      <span className="text-lg font-black text-gray-400">{(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${t.number ?? t.id}` : `T${t.id}`}</span>
                       <span className="text-[9px] font-bold text-red-400 mt-0.5">Occupied</span>
                     </div>
                   ))}
@@ -5636,8 +5540,7 @@ const CashierDashboard = ({ onLogout }) => {
                     const targetId = swapTargetId;
                     const sourceSnap = { ...selectedTable };
 
-                    const isVenueSwap = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
-                    const setSwapTables = isVenueSwap && setVenueTables ? setVenueTables : setActiveTables;
+                    const setSwapTables = setActiveTables;
 
                     setSwapTables(prev => prev.map(t => {
                       if (t.backendId === sourceId) {
@@ -5684,7 +5587,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div>
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Swap Selected Items</p>
                 <p className="text-base font-black text-gray-900 mt-0.5">
-                  {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Choose Items & Destination
+                  {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Choose Items & Destination
                 </p>
               </div>
               <button
@@ -5778,7 +5681,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-lg font-black text-gray-900">
-                              {outlet === 'bar' ? `B${table.number ?? table.id}` : `T${table.id}`}
+                              {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${table.number ?? table.id}` : `T${table.id}`}
                             </p>
                             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mt-1">
                               {table.section?.name || 'Table'}
@@ -5810,7 +5713,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {isSwappingItems
                   ? 'Transferring...'
                   : itemSwapSelectedIds.length > 0 && itemSwapTargetId
-                    ? `Transfer ${itemSwapSelectedIds.length} items to ${outlet === 'bar'
+                    ? `Transfer ${itemSwapSelectedIds.length} items to ${(activeOutlet === 'bar' || activeOutlet === 'both')
                       ? `B${selectedItemSwapTarget?.number ?? selectedItemSwapTarget?.id}`
                       : `T${selectedItemSwapTarget?.id}`}`
                     : 'Select items and table'}
@@ -5956,8 +5859,7 @@ const CashierDashboard = ({ onLogout }) => {
               };
               setSelectedTable(applyCancelOptimistic);
 
-              const isVenueTable = selectedTable?.section?.restaurantId === getVenueId() || selectedTable?.restaurantId === getVenueId();
-              const setTargetTables = isVenueTable && setVenueTables ? setVenueTables : setActiveTables;
+              const setTargetTables = setActiveTables;
               setTargetTables(prev => prev.map(t => {
                 if (t.backendId !== selectedTable.backendId) return t;
                 const updatedOrder = t.activeOrder
@@ -6235,7 +6137,7 @@ const CashierDashboard = ({ onLogout }) => {
               <div>
                 <p className="text-xs font-black uppercase text-red-500 tracking-wider">Terminate Session</p>
                 <p className="text-base font-black text-gray-900 mt-0.5">
-                  Table {outlet === 'bar' ? `B${selectedTable.number ?? selectedTable.id}` : (selectedTable.displayName ?? selectedTable.number ?? selectedTable.id)}
+                  Table {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : (selectedTable.displayName ?? selectedTable.number ?? selectedTable.id)}
                 </p>
               </div>
               <button

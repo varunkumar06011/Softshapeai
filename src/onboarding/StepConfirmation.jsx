@@ -4,6 +4,7 @@ import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Uten
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
   BAR_LOUNGE: 'Bar & Lounge',
+  BAR_WITH_DINING: 'Bar with Dining',
   CAFE: 'Cafe',
   CLOUD_KITCHEN: 'Cloud Kitchen',
 };

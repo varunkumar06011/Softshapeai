@@ -3,13 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
-import { OutletProvider } from './context/OutletContext'
-import { OnlineStatusProvider } from './context/OnlineStatusContext'
-import { registerSW } from './utils/registerSW'
-import { initSyncEngine } from './utils/syncEngine'
+import * as Sentry from '@sentry/react'
 
-registerSW();
-initSyncEngine();
+Sentry.init({
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  environment: import.meta.env.MODE,
+  tracesSampleRate: 0.1,
+  enabled: !!import.meta.env.VITE_SENTRY_DSN,
+});
 
 // Catch unhandled promise rejections that React Error Boundaries cannot intercept
 window.addEventListener('unhandledrejection', (event) => {
@@ -19,12 +20,8 @@ window.addEventListener('unhandledrejection', (event) => {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <OutletProvider>
-      <OnlineStatusProvider>
-        <MenuProvider>
-          <App />
-        </MenuProvider>
-      </OnlineStatusProvider>
-    </OutletProvider>
+    <MenuProvider>
+      <App />
+    </MenuProvider>
   </StrictMode>,
 )

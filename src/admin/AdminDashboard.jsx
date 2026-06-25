@@ -23,16 +23,14 @@ import {
 import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory
 } from './AdminComponents';
-import { useOutlet } from '../context/OutletContext';
-import OutletToggle from '../shared/components/OutletToggle';
+import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../services/apiConfig';
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
 import TodaySpecials from './TodaySpecials';
 import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { getBarId } from '../services/barApiConfig';
-import { getVenueId } from '../services/venueApiConfig';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
@@ -85,20 +83,33 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
 
   const { setTables } = useTableSync();
-  const { outlet, enabledModules } = useOutlet();
-  const socket = useSocket(outlet === 'bar' ? getBarId() : getCurrentRestaurantId());
+  const { restaurant, setRestaurant } = useAuth();
+  const enabledModules = restaurant?.enabledModules || {};
+  const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
+    : enabledModules.bar && !enabledModules.food ? 'bar'
+    : 'restaurant';
+  const socket = useSocket(getCurrentRestaurantId());
+
+  // ── Hydrate restaurant config on mount and sync into AuthContext so the
+  // header, theme, plan badge, and receipts all read live tenant data. ──
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/restaurant/me')
+      .then((data) => {
+        if (cancelled || !data?.restaurant) return;
+        setRestaurant(data.restaurant);
+      })
+      .catch((err) => console.warn('[AdminDashboard] restaurant/me failed:', err.message));
+    return () => { cancelled = true; };
+  }, [setRestaurant]);
 
   const loadStats = useCallback(async () => {
     try {
-      const [restaurantTxns, barTxns, venueTxns] = await Promise.allSettled([
+      const [restaurantTxns] = await Promise.allSettled([
         fetchTransactions(getCurrentRestaurantId(), 500),
-        fetchTransactions(getBarId(), 500),
-        fetchTransactions(getVenueId(), 500),
       ]);
       const transactions = [
         ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
-        ...(barTxns.status === 'fulfilled' ? barTxns.value : []),
-        ...(venueTxns.status === 'fulfilled' ? venueTxns.value : []),
       ];
 
       const todayStart = new Date();
@@ -191,17 +202,24 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       clearInterval(interval);
       if (socket) socket.off('order:paid', onOrderPaidRefresh);
     };
-  }, [socket, outlet, loadStats]);
+  }, [socket, activeOutlet, loadStats]);
 
-  const moduleGatedNavItems = enabledModules
-    ? navItems.filter(([key]) => {
-        if (key === 'specials') return true;
-        if (key === 'surveillance') return enabledModules.surveillance === true;
-        if (key === 'inventory') return enabledModules.inventory !== false;
-        if (key === 'pricing') return enabledModules.pricing !== false;
-        return enabledModules[key] !== false;
-      })
-    : navItems;
+  const moduleGatedNavItems = navItems.filter(([key]) => {
+    if (key === 'specials') return true;
+    if (key === 'surveillance') return enabledModules.surveillance === true;
+    if (key === 'inventory') return enabledModules.inventory !== false || enabledModules.bar_inventory === true;
+    if (key === 'pricing') return enabledModules.pricing !== false;
+    if (key === 'tables') return enabledModules.tables !== false || enabledModules.food !== false;
+    if (key === 'menu') return enabledModules.food !== false || enabledModules.bar !== false;
+    if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;
+    if (key === 'transactions') return true;
+    if (key === 'reports') return true;
+    if (key === 'captains') return true;
+    if (key === 'payroll') return enabledModules.payroll !== false;
+    if (key === 'marketing') return enabledModules.marketing !== false;
+    if (key === 'settings') return true;
+    return enabledModules[key] !== false;
+  });
 
   const displayNavItems = role === 'manager'
     ? moduleGatedNavItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
@@ -258,14 +276,25 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
             <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
               <LayoutDashboard size={18} />
             </button>
-            <div className="text-base md:text-xl font-black truncate tracking-tight">{title}</div>
+            <div className="flex flex-col overflow-hidden">
+              <div className="text-base md:text-xl font-black truncate tracking-tight">{title}</div>
+              {restaurant?.name && (
+                <div className="flex items-center gap-2 -mt-0.5">
+                  <span className="text-[11px] font-bold text-gray-500 truncate">{restaurant.name}</span>
+                  {restaurant.plan && (
+                    <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-[#B71C1C]">
+                      {restaurant.plan}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="hidden lg:block text-xs font-medium text-gray-500">
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
           <div className="flex items-center gap-3">
-            <OutletToggle className="flex" />
             <button className="relative rounded-md border border-[#FFCDD2] p-2">
               <Bell size={16} />
               <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E53935] text-[9px] text-white">3</span>
@@ -276,10 +305,10 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
           {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} statsLoading={statsLoading} />}
-          {page === "tables" && outlet === 'restaurant' && <Tables onOpen={() => { }} />}
-          {page === "tables" && outlet === 'bar' && <BarTables />}
-          {page === "menu" && outlet === 'restaurant' && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
-          {page === "menu" && outlet === 'bar' && <BarMenuPage />}
+          {page === "tables" && (activeOutlet === 'restaurant' || activeOutlet === 'both') && <Tables onOpen={() => { }} />}
+          {page === "tables" && activeOutlet === 'bar' && <BarTables />}
+          {page === "menu" && (activeOutlet === 'restaurant' || activeOutlet === 'both') && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
+          {page === "menu" && activeOutlet === 'bar' && <BarMenuPage />}
           {page === "specials" && <TodaySpecials />}
           {page === "orders" && <Orders />}
           {page === "transactions" && <AdminTransactions onStatsRefresh={loadStats} />}

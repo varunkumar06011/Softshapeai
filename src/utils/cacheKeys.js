@@ -1,6 +1,4 @@
 import { getCurrentRestaurantId } from './getCurrentRestaurantId';
-import { getBarId } from '../services/barApiConfig';
-import { getVenueId } from '../services/venueApiConfig';
 
 // Legacy, un-scoped cache keys that must be purged so they no longer leak
 // data across restaurants.
@@ -22,9 +20,7 @@ export const LEGACY_UNSCOPED_KEYS = [
 // Base keys that must always be scoped by a tenant ID before use.
 export const BASE_TABLES_CACHE_KEY = 'softshape_tables_cache';
 export const BASE_BAR_TABLES_CACHE_KEY = 'softshape_bar_tables_cache';
-export const BASE_VENUE_TABLES_CACHE_KEY = 'softshape_venue_tables_cache';
 export const BASE_BAR_MENU_CACHE_KEY = 'softshape_bar_menu_cache';
-export const BASE_VENUE_MENU_CACHE_KEY = 'softshape_venue_menu_cache';
 export const BASE_RECENTLY_TERMINATED_KEY = 'cashier_recently_terminated';
 
 /**
@@ -41,19 +37,11 @@ export function getTablesCacheKey(restaurantId) {
 }
 
 export function getBarTablesCacheKey(barId) {
-  return getScopedCacheKey(BASE_BAR_TABLES_CACHE_KEY, barId ?? getBarId());
-}
-
-export function getVenueTablesCacheKey(venueId) {
-  return getScopedCacheKey(BASE_VENUE_TABLES_CACHE_KEY, venueId ?? getVenueId());
+  return getScopedCacheKey(BASE_BAR_TABLES_CACHE_KEY, barId ?? getCurrentRestaurantId());
 }
 
 export function getBarMenuCacheKey(barId) {
-  return getScopedCacheKey(BASE_BAR_MENU_CACHE_KEY, barId ?? getBarId());
-}
-
-export function getVenueMenuCacheKey(venueId) {
-  return getScopedCacheKey(BASE_VENUE_MENU_CACHE_KEY, venueId ?? getVenueId());
+  return getScopedCacheKey(BASE_BAR_MENU_CACHE_KEY, barId ?? getCurrentRestaurantId());
 }
 
 export function getRecentlyTerminatedKey(restaurantId) {
@@ -84,9 +72,7 @@ export function clearTenantCaches(tenantId = getCurrentRestaurantId()) {
   const keys = [
     getTablesCacheKey(tenantId),
     getBarTablesCacheKey(tenantId),
-    getVenueTablesCacheKey(tenantId),
     getBarMenuCacheKey(tenantId),
-    getVenueMenuCacheKey(tenantId),
     getRecentlyTerminatedKey(tenantId),
   ];
   keys.forEach((key) => {

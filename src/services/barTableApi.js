@@ -1,5 +1,5 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
-import { getBarId } from "./barApiConfig";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -42,7 +42,7 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
 }
 
 export async function fetchBarTables(signal) {
-  const res = await fetchWithRetry(apiUrl(`/api/bar/tables?restaurantId=${getBarId()}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/bar/tables?restaurantId=${getCurrentRestaurantId()}`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
     signal,

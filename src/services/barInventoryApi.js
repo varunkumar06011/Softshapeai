@@ -1,5 +1,5 @@
 import { apiUrl, getAuthHeaders } from './apiConfig';
-import { getBarId } from './barApiConfig';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -34,7 +34,7 @@ function normalizeInventoryArray(items) {
 
 // Get all inventory items
 export async function fetchBarInventory() {
-  const res = await fetch(apiUrl(`/api/bar/inventory/items?restaurantId=${getBarId()}`), {
+  const res = await fetch(apiUrl(`/api/bar/inventory/items?restaurantId=${getCurrentRestaurantId()}`), {
     cache: 'no-store',
     headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
   });
@@ -47,7 +47,7 @@ export async function createInventoryItem(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/items'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ ...data, restaurantId: getBarId() }),
+    body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
   const item = await parseResponse(res);
   return normalizeInventoryItem(item);
@@ -78,7 +78,7 @@ export async function adjustStock(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/adjust-stock'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ ...data, restaurantId: getBarId() }),
+    body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
   const item = await parseResponse(res);
   return normalizeInventoryItem(item);
@@ -89,7 +89,7 @@ export async function recordPurchase(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/record-purchase'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ ...data, restaurantId: getBarId() }),
+    body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
   const item = await parseResponse(res);
   return normalizeInventoryItem(item);
@@ -97,7 +97,7 @@ export async function recordPurchase(data) {
 
 // Get transaction history
 export async function fetchTransactions(filters = {}) {
-  const params = new URLSearchParams({ restaurantId: getBarId(), ...filters });
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), ...filters });
   const res = await fetch(apiUrl(`/api/bar/inventory/transactions?${params}`), {
     cache: 'no-store',
     headers: getAuthHeaders(),
@@ -107,7 +107,7 @@ export async function fetchTransactions(filters = {}) {
 
 // Get daily report
 export async function fetchDailyReport(date) {
-  const params = new URLSearchParams({ restaurantId: getBarId(), date });
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
   const res = await fetch(apiUrl(`/api/bar/inventory/daily-report?${params}`), {
     cache: 'no-store',
     headers: getAuthHeaders(),
@@ -117,7 +117,7 @@ export async function fetchDailyReport(date) {
 
 // Get low stock items
 export async function fetchLowStockItems() {
-  const res = await fetch(apiUrl(`/api/bar/inventory/low-stock?restaurantId=${getBarId()}`), {
+  const res = await fetch(apiUrl(`/api/bar/inventory/low-stock?restaurantId=${getCurrentRestaurantId()}`), {
     cache: 'no-store',
     headers: getAuthHeaders(),
   });

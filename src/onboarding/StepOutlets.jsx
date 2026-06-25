@@ -4,6 +4,7 @@ import { Store, Plus, Trash2, Layout, Utensils, ChevronDown, ChevronUp } from 'l
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant' },
   { value: 'BAR_LOUNGE', label: 'Bar & Lounge' },
+  { value: 'BAR_WITH_DINING', label: 'Bar with Dining' },
   { value: 'CAFE', label: 'Cafe' },
   { value: 'CLOUD_KITCHEN', label: 'Cloud Kitchen' },
 ];
