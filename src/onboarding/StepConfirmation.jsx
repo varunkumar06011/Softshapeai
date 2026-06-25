@@ -9,7 +9,7 @@ const RESTAURANT_TYPE_LABELS = {
   CLOUD_KITCHEN: 'Cloud Kitchen',
 };
 
-const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error }) => {
+const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoToOwnerStep }) => {
   const { restaurant, owner, captains, cashiers, sections, tables, menu, selectedPlan, outlets, outletCount } = wizardData;
 
   const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
@@ -35,11 +35,28 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error }) => 
         <p className="text-gray-500">Please review your configuration before creating your restaurant</p>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-600">
-          {error}
-        </div>
-      )}
+      {error && (() => {
+        const isVerificationExpired =
+          error.toLowerCase().includes('verification') &&
+          (error.toLowerCase().includes('expired') || error.toLowerCase().includes('invalid'));
+        return (
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-600 space-y-2">
+            {isVerificationExpired ? (
+              <>
+                <p>Your email or phone verification has expired (30 min limit). Please go back to Step 2 and re-verify.</p>
+                <button
+                  onClick={onGoToOwnerStep}
+                  className="text-sm font-semibold underline text-red-700 hover:text-red-900"
+                >
+                  Go Back to Verify
+                </button>
+              </>
+            ) : (
+              error
+            )}
+          </div>
+        );
+      })()}
 
       {/* Restaurant Info Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">

@@ -50,7 +50,7 @@ function computeSteps(restaurantType, outletCount) {
 const defaultWizardData = {
   restaurant: { name: '', address: '', phone: '', email: '', gstin: '', restaurantType: '', outletCount: 1, barUnitMl: 30, fullBottleMl: 750, halfBottleMl: 375, deliveryPlatforms: [] },
   branding: { receiptHeader: '', receiptSubHeader: '', fssai: '', themePrimary: '#E53935', logoUrl: '' },
-  owner: { name: '', email: '', password: '', confirmPassword: '' },
+  owner: { name: '', email: '', phone: '', password: '', confirmPassword: '' },
   captains: [{ name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }],
   cashiers: [{ name: '', pin: '', shift: 'Full Day' }],
   sections: [{ name: '', kotPrinterName: '' }],
@@ -217,7 +217,10 @@ const OnboardingWizard = () => {
         sectionRouting: wizardData.sectionRouting,
         outlets: cleanOutlets.length > 0 ? cleanOutlets : undefined,
         plan: wizardData.selectedPlan,
-        paymentReference: wizardData.paymentReference
+        paymentReference: wizardData.paymentReference,
+        sessionId: wizardData.sessionId,
+        emailVerificationProof: wizardData.owner.emailVerificationProof,
+        phoneVerificationProof: wizardData.owner.phoneVerificationProof,
       };
 
       const data = await apiFetch('/api/onboard', {
@@ -255,7 +258,7 @@ const OnboardingWizard = () => {
       case 'branding':
         return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} restaurantGstin={wizardData.restaurant.gstin} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
       case 'owner':
-        return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
+        return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} sessionId={wizardData.sessionId} />;
       case 'staff':
         return (
           <StepStaff
@@ -310,7 +313,7 @@ const OnboardingWizard = () => {
       case 'payment':
         return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
       case 'confirm':
-        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} />;
+        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToOwnerStep={() => setCurrentStepId('owner')} />;
       default:
         return null;
     }
