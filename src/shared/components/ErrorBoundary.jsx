@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+import { authService } from '../../services/authService';
 
 export class ErrorBoundary extends Component {
   constructor(props) {
@@ -26,10 +27,8 @@ export class ErrorBoundary extends Component {
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
-    if (this.props.onRetry) {
-      this.props.onRetry();
-    }
+    authService.logout();
+    window.location.href = '/';
   };
 
   render() {

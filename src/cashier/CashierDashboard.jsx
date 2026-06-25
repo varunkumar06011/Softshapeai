@@ -20,7 +20,6 @@ import LiveTimer from '../shared/components/LiveTimer';
 import { updateTableSession } from '../services/tableApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { useAuth } from '../context/AuthContext';
-import BarMenuToggle from '../shared/components/BarMenuToggle';
 import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
@@ -30,7 +29,6 @@ import ItemAnalytics from './ItemAnalytics';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
-import { useVenuePrices } from '../hooks/useVenuePrices';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -38,13 +36,6 @@ import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../util
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 function getVenueTableLabel(sectionTag, tableNumber) {
-  const tag = (sectionTag || '').toLowerCase();
-  if (tag.includes('bar-ac-hall') || tag.includes('bar')) return `B${tableNumber}`;
-  if (tag.includes('conference')) return `C${tableNumber}`;
-  if (tag.includes('pdr')) return `PDR${tableNumber}`;
-  if (tag.includes('rooms')) return `R${tableNumber}`;
-  if (tag.includes('family') || tag.includes('restaurant-parcel')) return `F${tableNumber}`;
-  if (tag.includes('parcel') || tag.includes('gobox')) return `P${tableNumber}`;
   return String(tableNumber);
 }
 
@@ -422,8 +413,6 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   // ── Moved up: these must be declared before activeTablesRef ──
-  const venuePrices = useVenuePrices();
-
   const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
   const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
 
@@ -2596,7 +2585,7 @@ const CashierDashboard = ({ onLogout }) => {
       else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
     }
 
-    const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
+    const venueSpecificPrices = {};
 
     const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && Boolean(currentVenueId);
 
@@ -2680,7 +2669,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return filtered;
-  }, [activeOutlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, venuePrices, tableSubCategory]);
+  }, [activeOutlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, tableSubCategory]);
 
   const handleTableSelect = (table) => {
     setIsModalDataLoading(false);

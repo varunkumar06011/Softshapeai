@@ -37,7 +37,6 @@ import { API_BASE } from '../services/apiConfig.js';
 import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 // ── Configurable print rooms ──
 // Usage: /print-station?rooms=<restaurant-id>      (only current restaurant)
@@ -148,23 +147,6 @@ try {
 
 
 
-// ── Backend printer config override ──────────────────────────────────────────
-
-try {
-  const config = getRestaurantConfig();
-  if (config.printerConfig && typeof config.printerConfig === 'object') {
-    const pc = config.printerConfig;
-    if (pc.kitchen)           KITCHEN_PRINTER           = pc.kitchen;
-    if (pc.bar)               BAR_PRINTER               = pc.bar;
-    if (pc.billing)           BILLING_PRINTER           = pc.billing;
-    if (pc.restaurantKitchen) RESTAURANT_KITCHEN_PRINTER = pc.restaurantKitchen;
-    if (pc.kotFamily)         KOT_FAMILY_PRINTER        = pc.kotFamily;
-    if (pc.billing)           DINE_IN_BILL_PRINTER      = pc.billing;
-    if (pc.kotPrinter)        KOT_PRINTER               = pc.kotPrinter;
-  }
-} catch {
-  // ignore — fall back to env/localStorage values
-}
 
 // ── ESC/POS constants ────────────────────────────────────────────────────────
 
@@ -814,6 +796,20 @@ export default function PrintStation() {
       console.warn('[PrintStation] Failed to load printedKotIds from sessionStorage:', err);
     }
   }, []);
+
+  // ── Apply backend printer config from AuthContext ─────────────────────────
+  useEffect(() => {
+    const pc = restaurant?.printerConfig;
+    if (pc && typeof pc === 'object') {
+      if (pc.kitchen)           KITCHEN_PRINTER           = pc.kitchen;
+      if (pc.bar)               BAR_PRINTER               = pc.bar;
+      if (pc.billing)           BILLING_PRINTER           = pc.billing;
+      if (pc.restaurantKitchen) RESTAURANT_KITCHEN_PRINTER = pc.restaurantKitchen;
+      if (pc.kotFamily)         KOT_FAMILY_PRINTER        = pc.kotFamily;
+      if (pc.billing)           DINE_IN_BILL_PRINTER      = pc.billing;
+      if (pc.kotPrinter)        KOT_PRINTER               = pc.kotPrinter;
+    }
+  }, [restaurant?.printerConfig]);
 
 
 

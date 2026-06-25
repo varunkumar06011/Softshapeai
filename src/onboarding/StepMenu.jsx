@@ -338,15 +338,29 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
           onImported={(rows) => {
             const grouped = rows.reduce((acc, row) => {
               const cat = acc.find(c => c.name === row.category);
-              const item = { name: row.name, price: row.price, isVeg: row.isVeg, taxRate: defaultTax, platforms: [] };
-              if (cat) {
-                cat.items.push(item);
+              if (activeTab === 'bar') {
+                const item = { name: row.name, price: row.price, availableSizes: [] };
+                if (cat) {
+                  cat.items.push(item);
+                } else {
+                  acc.push({ name: row.category, items: [item] });
+                }
               } else {
-                acc.push({ name: row.category, items: [item] });
+                const item = { name: row.name, price: row.price, isVeg: row.isVeg, taxRate: defaultTax, platforms: [] };
+                if (cat) {
+                  cat.items.push(item);
+                } else {
+                  acc.push({ name: row.category, items: [item] });
+                }
               }
               return acc;
             }, []);
-            onChange({ ...data, categories: grouped.length > 0 ? grouped : data.categories });
+            if (activeTab === 'bar') {
+              const targetBar = data.barMenu || { categories: [] };
+              onChange({ ...data, barMenu: { ...targetBar, categories: grouped.length > 0 ? grouped : targetBar.categories } });
+            } else {
+              onChange({ ...data, categories: grouped.length > 0 ? grouped : data.categories });
+            }
           }}
         />
       )}

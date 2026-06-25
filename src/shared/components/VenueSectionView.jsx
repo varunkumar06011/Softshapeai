@@ -52,15 +52,10 @@ export default function VenueSectionView({
     
     // Exact name match first (most reliable)
     if (currentName === target) return true;
-    
-    // sectionTag match: 'venue-bar-gobox' contains 'gobox', 'venue-bar-conference' contains 'conference'
-    const tag = (table.sectionTag || '').toLowerCase();
-    const targetSlug = target.replace(/\s+/g, '-');
-    if (tag.endsWith(`-${targetSlug}`) || tag === `venue-${targetSlug}`) return true;
-    
-    // Loose includes only if target is long enough to avoid false positives (e.g. avoid 'parcel' matching 'gobox')
+
+    // Loose includes only if target is long enough to avoid false positives
     if (target.length > 4 && currentName.includes(target)) return true;
-    
+
     return false;
   });
 

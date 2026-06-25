@@ -176,6 +176,16 @@ const OnboardingWizard = () => {
           .filter(cat => cat.items.length > 0)
       };
 
+      const cleanBarMenu = {
+        categories: (wizardData.menu.barMenu?.categories || [])
+          .filter(cat => cat.name.trim().length >= 1)
+          .map(cat => ({
+            ...cat,
+            items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
+          }))
+          .filter(cat => cat.items.length > 0)
+      };
+
       if (!isCloud && cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
       if (cleanCashiers.length === 0) { setError('Add at least one cashier with a 4-digit PIN'); setLoading(false); return; }
       if (!isCloud && cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
@@ -203,6 +213,8 @@ const OnboardingWizard = () => {
 
       const { confirmPassword, ...ownerData } = wizardData.owner;
 
+      const isBarType = wizardData.restaurant.restaurantType === 'BAR_LOUNGE' || wizardData.restaurant.restaurantType === 'BAR_WITH_DINING';
+
       const payload = {
         restaurant: wizardData.restaurant,
         branding: wizardData.branding,
@@ -221,6 +233,7 @@ const OnboardingWizard = () => {
         sessionId: wizardData.sessionId,
         emailVerificationProof: wizardData.owner.emailVerificationProof,
         phoneVerificationProof: wizardData.owner.phoneVerificationProof,
+        ...(isBarType && cleanBarMenu.categories.length > 0 ? { barMenu: cleanBarMenu } : {}),
       };
 
       const data = await apiFetch('/api/onboard', {

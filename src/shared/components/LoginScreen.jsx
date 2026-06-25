@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, Users } from 'lucide-react';
 import { authService } from '../../services/authService';
+import { useAuth } from '../../context/AuthContext';
+import { reconnectSocket } from '../../hooks/useSocket';
 
 function getApiBase() {
   return (
@@ -11,6 +13,7 @@ function getApiBase() {
 
 const LoginScreen = ({ role, onLogin, onBack }) => {
   const navigate = useNavigate();
+  const { setAuth } = useAuth();
   const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
   const isCashier = role === 'cashier';
 
@@ -50,7 +53,9 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const { user } = await authService.login(email.trim(), password, restaurantCode.trim());
+      const { token, user, restaurant } = await authService.login(email.trim(), password, restaurantCode.trim());
+      setAuth({ token, user, restaurant });
+      reconnectSocket(token);
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid credentials');
@@ -98,7 +103,9 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const { user } = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
+      const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
+      setAuth({ token, user, restaurant });
+      reconnectSocket(token);
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid PIN');
