@@ -171,18 +171,20 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         window.recaptchaVerifier = null;
       }
 
-      // Wipe and re-inject the container div so reCAPTCHA sees a clean element
+      // Wipe the container div so reCAPTCHA sees a clean element
       const container = document.getElementById(recaptchaContainerId);
       if (container) {
         container.innerHTML = '';
-        // Force DOM reset by replacing the node
-        const fresh = document.createElement('div');
-        fresh.id = recaptchaContainerId;
-        container.parentNode.replaceChild(fresh, container);
       }
 
       // Small delay to let DOM settle
       await new Promise(r => setTimeout(r, 100));
+
+      // Guard: container must still be in the DOM
+      const liveContainer = document.getElementById(recaptchaContainerId);
+      if (!liveContainer) {
+        throw new Error('reCAPTCHA container missing from DOM');
+      }
 
       recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
         size: 'invisible',

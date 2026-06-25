@@ -75,6 +75,10 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
     await clearRecaptcha();
 
     try {
+      const liveContainer = document.getElementById(recaptchaContainerId);
+      if (!liveContainer) {
+        throw new Error('reCAPTCHA container missing from DOM');
+      }
       recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
         size: 'invisible',
         callback: () => {},
