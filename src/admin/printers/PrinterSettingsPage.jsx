@@ -1,0 +1,311 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Printer, Download, RefreshCw, CheckCircle, Clock,
+  Copy, AlertTriangle, BookOpen
+} from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { apiUrl, getAuthHeaders } from '../../services/apiConfig.js';
+import { useAuth } from '../../context/AuthContext.jsx';
+
+const POLL_INTERVAL_MS = 30_000;
+
+function StatusDot({ status }) {
+  const colors = {
+    online: { dot: 'bg-green-500', text: 'text-green-600', label: 'Online' },
+    offline: { dot: 'bg-red-500', text: 'text-red-600', label: 'Offline' },
+    unknown: { dot: 'bg-amber-500', text: 'text-amber-600', label: 'Unknown' },
+  };
+  const c = colors[status] || colors.unknown;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-2.5 w-2.5 rounded-full ${c.dot} shadow-sm`} />
+      <span className={`text-xs font-bold ${c.text}`}>{c.label}</span>
+    </span>
+  );
+}
+
+export default function PrinterSettingsPage() {
+  const { user } = useAuth();
+  const [agentStatus, setAgentStatus] = useState(null);
+  const [setupToken, setSetupToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(null);
+  const [showManual, setShowManual] = useState(false);
+  const pollRef = useRef(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch(apiUrl('/api/print/agent-status'), {
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAgentStatus(data);
+        setError(null);
+      }
+    } catch {
+      setError('Could not reach backend. Check internet connection.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+    pollRef.current = setInterval(fetchStatus, POLL_INTERVAL_MS);
+    return () => clearInterval(pollRef.current);
+  }, [fetchStatus]);
+
+  const generateToken = async () => {
+    setTokenLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(apiUrl('/api/print/agent-token'), {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+      const data = await res.json();
+      setSetupToken(data);
+    } catch (err) {
+      setError(err.message || 'Failed to generate setup token');
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const copyCode = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const restaurantCode = agentStatus?.restaurantCode || setupToken?.restaurantCode || user?.restaurantCode || '';
+
+  const printers = [
+    { key: 'kitchen', label: 'Kitchen Printer', icon: '🍳' },
+    { key: 'bar', label: 'Bar Printer', icon: '🍺' },
+    { key: 'bill', label: 'Bill Printer', icon: '🧾' },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+        Loading printer status…
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Printer size={28} className="text-[#B71C1C]" />
+        <div>
+          <h2 className="text-xl font-black tracking-tight">Print Agent Setup</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Replace QZ Tray with a lightweight Windows app — no Java, no certificates, no browser setup.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+          <AlertTriangle size={16} className="shrink-0" /> {error}
+        </div>
+      )}
+
+      {/* Agent Connection Status */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="font-bold text-base mb-1.5">Windows Print Agent</div>
+            <StatusDot status={agentStatus?.online ? 'online' : 'offline'} />
+            {agentStatus?.lastSeen && (
+              <div className="text-[11px] text-gray-400 mt-1">
+                Last seen: {new Date(agentStatus.lastSeen).toLocaleTimeString('en-IN')}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={fetchStatus}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50"
+          >
+            <RefreshCw size={13} /> Refresh
+          </button>
+        </div>
+
+        {/* Per-printer status */}
+        <div className="grid grid-cols-3 gap-3 mt-4">
+          {printers.map(({ key, label, icon }) => {
+            const pStatus = agentStatus?.printerStatus?.[key];
+            const mapped = agentStatus?.agentMapping?.[key];
+            return (
+              <div key={key} className="rounded-xl border border-gray-200 p-3.5 text-center">
+                <div className="text-2xl mb-1">{icon}</div>
+                <div className="font-bold text-xs mb-1">{label}</div>
+                {mapped ? (
+                  <div className="text-[11px] text-gray-500 mb-1.5 truncate">{mapped}</div>
+                ) : (
+                  <div className="text-[11px] text-gray-400 mb-1.5">Not mapped</div>
+                )}
+                <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                  pStatus === 'online' ? 'bg-green-100 text-green-700' :
+                  pStatus === 'offline' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }`}>
+                  {pStatus || 'Unknown'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legacy QZ notice */}
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <div className="font-bold text-amber-800 text-sm mb-1">Legacy QZ Tray Still Active</div>
+        <div className="text-xs text-amber-700">
+          Your existing <strong>Print Station</strong> at{' '}
+          <code className="bg-amber-100 px-1 rounded">/print-station</code> continues to work unchanged.
+          Both systems can run side by side. Once the Windows agent is verified stable, you can stop using the Print Station tab.
+        </div>
+      </div>
+
+      {/* Download & Setup */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-5">
+        {/* Step 1 — Download */}
+        <div>
+          <div className="font-bold text-base mb-1">Step 1 — Download the App</div>
+          <p className="text-xs text-gray-500 mb-3">
+            Install on the Windows PC that is connected (USB/WiFi) to your printers.
+          </p>
+          <a
+            href="https://github.com/softshape-ai/softshape-print-agent/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#B71C1C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8B0000]"
+          >
+            <Download size={16} /> Download Print Agent (Windows)
+          </a>
+        </div>
+
+        {/* Step 2 — Restaurant Code */}
+        <div>
+          <div className="font-bold text-base mb-1">Step 2 — Get Your Restaurant Code</div>
+          <p className="text-xs text-gray-500 mb-2">
+            Open the downloaded app and enter the code below, or scan the QR code.
+          </p>
+          {restaurantCode ? (
+            <div className="flex gap-4 items-start flex-wrap">
+              <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <span className="font-mono text-lg font-bold tracking-widest text-gray-900">{restaurantCode}</span>
+                <button
+                  onClick={() => copyCode(restaurantCode)}
+                  className="rounded-lg border border-gray-200 p-1.5 hover:bg-white"
+                >
+                  {copied ? <CheckCircle size={14} className="text-green-500" /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div className="text-center">
+                <div className="inline-block rounded-lg border border-gray-200 p-2 bg-white">
+                  <QRCodeSVG value={restaurantCode} size={100} marginSize={2} />
+                </div>
+                <div className="text-[10px] text-gray-400 mt-1">Scan to fill code</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400 mt-1">Restaurant code not available. Try refreshing.</div>
+          )}
+        </div>
+
+        {/* Step 3 — Setup Token */}
+        <div>
+          <div className="font-bold text-base mb-1">Step 3 — Generate a Setup Token</div>
+          <p className="text-xs text-gray-500 mb-2">
+            If the agent asks for a one-time setup token, generate one here. Valid for 15 minutes.
+          </p>
+          <button
+            onClick={generateToken}
+            disabled={tokenLoading}
+            className="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            {tokenLoading ? 'Generating…' : 'Generate Setup Token'}
+          </button>
+
+          {setupToken && (
+            <div className="mt-3">
+              <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <span className="font-mono text-xs font-bold break-all flex-1 text-gray-900">
+                  {setupToken.token}
+                </span>
+                <button
+                  onClick={() => copyCode(setupToken.token)}
+                  className="rounded-lg border border-gray-200 p-1.5 hover:bg-white shrink-0"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-red-500 mt-1.5">
+                <Clock size={12} /> Expires: {new Date(setupToken.expiresAt).toLocaleTimeString('en-IN')}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Manual Book Toggle */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-5">
+        <button
+          onClick={() => setShowManual(!showManual)}
+          className="flex items-center gap-2 font-bold text-base text-[#B71C1C]"
+        >
+          <BookOpen size={18} /> Connect Your Printers in 5 Minutes
+          <span className="text-xs font-normal text-gray-400 ml-auto">{showManual ? 'Hide' : 'Show'}</span>
+        </button>
+
+        {showManual && (
+          <div className="mt-4 space-y-3 text-sm text-gray-700">
+            <div className="font-bold text-gray-900">What you need</div>
+            <p className="text-xs text-gray-600">Windows PC near the printer and an 80mm thermal printer (USB or WiFi).</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 1 — Download</div>
+            <p className="text-xs text-gray-600">Go to Dashboard → Printers, click <strong>Download Print Agent</strong>.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 2 — Install</div>
+            <p className="text-xs text-gray-600">Double-click the <code className="bg-gray-100 px-1 rounded">.exe</code> and press Next until it finishes.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 3 — Open</div>
+            <p className="text-xs text-gray-600">The app sits near the clock (system tray). Click it to open.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 4 — Enter your code</div>
+            <p className="text-xs text-gray-600">Type the restaurant code shown above, or scan the QR code.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 5 — Generate setup token</div>
+            <p className="text-xs text-gray-600">Click <strong>Generate Setup Token</strong> above and paste it in the app.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 6 — Connect printers</div>
+            <p className="text-xs text-gray-600">Pick Kitchen, Bar, and Bill printer from the list in the app.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 7 — Test print</div>
+            <p className="text-xs text-gray-600">Press Test Print for each printer to verify.</p>
+
+            <div className="font-bold text-gray-900 pt-2">Step 8 — Done</div>
+            <p className="text-xs text-gray-600">Your KOTs and bills will now print automatically.</p>
+
+            <div className="font-bold text-gray-900 pt-3 border-t border-gray-100">Troubleshooting</div>
+            <ul className="text-xs text-gray-600 space-y-1.5 mt-1">
+              <li><strong>Printer not in the list</strong> — check power, USB cable, or WiFi connection.</li>
+              <li><strong>Agent shows Offline</strong> — check internet on the PC and open the app.</li>
+              <li><strong>Jobs not printing</strong> — re-check the printer mapping in the app.</li>
+              <li><strong>Want the old system back</strong> — open <code className="bg-gray-100 px-1 rounded">/print-station</code> in browser; QZ Tray still works.</li>
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

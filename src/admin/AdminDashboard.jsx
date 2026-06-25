@@ -18,7 +18,8 @@ import {
   Bot,
   Send,
   Star,
-  AlertCircle
+  AlertCircle,
+  Printer
 } from 'lucide-react';
 import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory
@@ -35,6 +36,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
 import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard';
+import PrinterSettingsPage from './printers/PrinterSettingsPage';
 import { motion } from 'framer-motion';
 
 const navItems = [
@@ -53,6 +55,7 @@ const navItems = [
   ["inventory", "Inventory", Package],
   ["pricing", "Pricing", Sparkles],
   ["settings", "Settings", Settings],
+  ["printers", "Printers", Printer],
 ];
 
 const AdminDashboard = ({ role = 'admin', onLogout }) => {
@@ -218,6 +221,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     if (key === 'payroll') return enabledModules.payroll !== false;
     if (key === 'marketing') return enabledModules.marketing !== false;
     if (key === 'settings') return true;
+    if (key === 'printers') return true;
     return enabledModules[key] !== false;
   });
 
@@ -323,6 +327,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "inventory" && <Inventory />}
           {page === "pricing" && <Pricing />}
           {page === "settings" && <SettingsPage />}
+          {page === "printers" && <PrinterSettingsPage />}
         </main>
       </div>
 
