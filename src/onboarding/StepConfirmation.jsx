@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Receipt, XCircle } from 'lucide-react';
+import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle } from 'lucide-react';
 
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
@@ -251,7 +251,12 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error }) => 
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           }`}
         >
-          {loading ? 'Creating Restaurant...' : (
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin" size={18} />
+              Creating Restaurant...
+            </>
+          ) : (
             <>
               Confirm & Create Restaurant
               <ArrowRight size={18} />

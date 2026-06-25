@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
+import { CheckCircle, ArrowRight, Sparkles, Store, Loader2 } from 'lucide-react';
 import { apiUrl } from '../services/apiConfig';
 
 const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading, error }) => {
@@ -163,7 +163,12 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           }`}
         >
-          {loading ? 'Processing...' : (
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin" size={18} />
+              Processing...
+            </>
+          ) : (
             <>
               Continue to Review
               <ArrowRight size={18} />

@@ -5291,6 +5291,7 @@ export function Pricing() {
 }
 
 export function SettingsPage() {
+
   const { restaurant, setRestaurant } = useAuth();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -5312,6 +5313,101 @@ export function SettingsPage() {
   const updateField = (key, value) => {
     setForm(prev => ({ ...prev, [key]: value }));
     setSaved(false);
+  };
+
+  const [printers, setPrinters] = useState({ kitchen: '', billing: '', bar: '' });
+  const [staff, setStaff] = useState([]);
+  const [loadingExtras, setLoadingExtras] = useState(true);
+  const [savingStatus, setSavingStatus] = useState(null);
+
+  useEffect(() => {
+    const loadExtras = async () => {
+      try {
+        const slug = localStorage.getItem('tenant_slug');
+        if (!slug) return;
+        
+        const token = localStorage.getItem('ss_token');
+        const res = await fetch(`${API_BASE}/api/restaurants/${slug}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const resData = await res.json();
+        setStaff([...(resData.captains || []), ...(resData.cashiers || [])]);
+
+        try {
+          const printRes = await fetch(`${API_BASE}/api/printers`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const printData = await printRes.json();
+          if (Array.isArray(printData)) {
+            const kitchen = printData.find(p => p.type === 'kitchen')?.ipAddress || '';
+            const billing = printData.find(p => p.type === 'billing')?.ipAddress || '';
+            const bar = printData.find(p => p.type === 'bar')?.ipAddress || '';
+            setPrinters({ kitchen, billing, bar });
+          }
+        } catch (e) {
+          console.warn('Printers not configured yet');
+        }
+      } catch (err) {
+        console.error("Failed to load extra settings data", err);
+      } finally {
+        setLoadingExtras(false);
+      }
+    };
+    loadExtras();
+  }, []);
+
+  const handleSavePrinters = async () => {
+    try {
+      setSavingStatus('printers');
+      const token = localStorage.getItem('ss_token');
+      await fetch(`${API_BASE}/api/printers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify([
+          { type: 'kitchen', ipAddress: printers.kitchen },
+          { type: 'billing', ipAddress: printers.billing },
+          { type: 'bar', ipAddress: printers.bar }
+        ])
+      });
+      alert('Printers saved successfully');
+    } catch (err) {
+      alert('Failed to save printers');
+    } finally {
+      setSavingStatus(null);
+    }
+  };
+
+  const handleTestPrint = async (type) => {
+    try {
+      const token = localStorage.getItem('ss_token');
+      await fetch(`${API_BASE}/api/printers/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type })
+      });
+      alert('Test print sent to ' + type);
+    } catch (err) {
+      alert('Test print failed for ' + type);
+    }
+  };
+
+  const handleResetPin = async (userId) => {
+    const newPin = prompt("Enter new 4-digit PIN:");
+    if (!newPin || !/^\d{4}$/.test(newPin)) {
+      alert("Invalid PIN. Must be 4 digits.");
+      return;
+    }
+    try {
+      const token = localStorage.getItem('ss_token');
+      await fetch(`${API_BASE}/api/staff/${userId}/reset-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pin: newPin })
+      });
+      alert('PIN reset successfully');
+    } catch (err) {
+      alert('Failed to reset PIN');
+    }
   };
 
   const handleSave = async () => {
@@ -5430,6 +5526,70 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {/* Printer Config */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Printer Configuration</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="border border-gray-100 p-4 rounded-xl bg-gray-50">
+            <label className={labelClass}>Kitchen Printer IP</label>
+            <input type="text" placeholder="e.g. 192.168.1.100" value={printers.kitchen} onChange={(e) => setPrinters({...printers, kitchen: e.target.value})} className={fieldClass + " mb-2"} />
+            <button onClick={() => handleTestPrint('kitchen')} className="text-[10px] font-bold text-[#E53935] uppercase hover:underline">Test Print</button>
+          </div>
+          <div className="border border-gray-100 p-4 rounded-xl bg-gray-50">
+            <label className={labelClass}>Billing Printer IP</label>
+            <input type="text" placeholder="e.g. 192.168.1.101" value={printers.billing} onChange={(e) => setPrinters({...printers, billing: e.target.value})} className={fieldClass + " mb-2"} />
+            <button onClick={() => handleTestPrint('billing')} className="text-[10px] font-bold text-[#E53935] uppercase hover:underline">Test Print</button>
+          </div>
+          <div className="border border-gray-100 p-4 rounded-xl bg-gray-50">
+            <label className={labelClass}>Bar Printer IP</label>
+            <input type="text" placeholder="e.g. 192.168.1.102" value={printers.bar} onChange={(e) => setPrinters({...printers, bar: e.target.value})} className={fieldClass + " mb-2"} />
+            <button onClick={() => handleTestPrint('bar')} className="text-[10px] font-bold text-[#E53935] uppercase hover:underline">Test Print</button>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button onClick={handleSavePrinters} disabled={savingStatus === 'printers'} className="px-6 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-gray-800 transition-all disabled:opacity-50">
+            {savingStatus === 'printers' ? 'Saving...' : 'Save Printers'}
+          </button>
+        </div>
+      </div>
+
+      {/* Staff Management */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b border-gray-100 pb-2">Staff List & PINs</h3>
+        {loadingExtras ? (
+          <div className="text-sm text-gray-400">Loading staff...</div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-gray-200">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50">
+                <tr className="border-b border-gray-200">
+                  <th className="px-4 py-3 font-semibold text-gray-600">Name</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff.length === 0 ? (
+                  <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">No staff found.</td></tr>
+                ) : (
+                  staff.map((s, i) => (
+                    <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                      <td className="px-4 py-3 text-gray-500 capitalize">{s.role?.toLowerCase() || 'staff'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => handleResetPin(s.id)} className="text-[#E53935] hover:bg-[#FFEBEE] px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                          Reset PIN
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Actions */}
       <div className="flex items-center gap-4 pt-4">
         <button
@@ -5441,6 +5601,7 @@ export function SettingsPage() {
         </button>
         {saved && <span className="text-sm font-bold text-green-600">Saved successfully!</span>}
       </div>
+
     </div>
   );
 }

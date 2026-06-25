@@ -221,7 +221,7 @@ const OnboardingWizard = () => {
     } else {
       switch (currentStep) {
         case 1:
-          return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
+          return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} onBack={handleBack} />;
         case 2:
           return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} />;
         case 3:
@@ -371,27 +371,6 @@ const OnboardingWizard = () => {
           {renderStep()}
         </div>
 
-        {/* Navigation (for steps that don't have their own) */}
-        {currentStep !== maxStep && (
-          <div className="flex justify-between mt-6">
-            <button
-              onClick={handleBack}
-              className="flex items-center gap-2 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl transition-all"
-            >
-              <ChevronLeft size={20} />
-              Back
-            </button>
-            {currentStep !== 1 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && !(hasMultipleOutlets && currentStep === 6) && currentStep !== 7 && currentStep !== 8 && !(hasMultipleOutlets && currentStep === 7) && (
-              <button
-                onClick={handleNext}
-                className="flex items-center gap-2 px-6 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl transition-all"
-              >
-                Next
-                <ChevronRight size={20} />
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
