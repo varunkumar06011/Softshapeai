@@ -60,3 +60,11 @@ export async function apiFetch(path, options = {}) {
   }
 }
 
+console.log("[API] Backend base:", API_BASE);
+
+// Keep Render backend warm — ping every 10 minutes
+(function startKeepAlive() {
+  const ping = () => fetch(apiUrl('/api/health'), { method: 'GET', cache: 'no-store' }).catch(() => {});
+  ping(); // immediate ping on load
+  setInterval(ping, 10 * 60 * 1000);
+})();

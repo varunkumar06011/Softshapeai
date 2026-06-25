@@ -19,6 +19,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { useSocket, getSocket } from '../hooks/useSocket';
 import { useTableSync } from '../services/tableSyncService';
+import { useLongPress } from '../hooks/useLongPress';
+import KotConfirmModal from '../shared/components/KotConfirmModal';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable } from '../services/orderApi';
 
@@ -379,6 +381,15 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
   );
 
+}
+
+function ItemCard({ item, onAdd, children, className }) {
+  const lp = useLongPress(() => onAdd(item));
+  return (
+    <div {...lp.handlers} className={className} style={{ touchAction: 'pan-y', userSelect: 'none' }}>
+      {children}
+    </div>
+  );
 }
 
 export default function CaptainApp({ onLogout }) {
@@ -749,6 +760,8 @@ export default function CaptainApp({ onLogout }) {
   const [kotError, setKotError] = useState(null);
 
   const [sendingKOT, setSendingKOT] = useState(false);
+
+  const [showKotConfirm, setShowKotConfirm] = useState(false);
 
 
 
@@ -4369,13 +4382,7 @@ export default function CaptainApp({ onLogout }) {
 
                         return (
 
-                          <div
-
-                            key={idx}
-
-                            className="bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden"
-
-                          >
+                          <ItemCard key={idx} item={item} onAdd={(item) => handleItemClick({ stopPropagation: () => {} }, item)} className="cursor-pointer bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden">
 
                             {/* Chef Special Badge */}
 
@@ -4621,7 +4628,7 @@ export default function CaptainApp({ onLogout }) {
 
                             </div>
 
-                          </div>
+                          </ItemCard>
 
                         );
 
@@ -5105,7 +5112,7 @@ export default function CaptainApp({ onLogout }) {
 
                   <button
 
-                    onClick={sendIncrementalKOT}
+                    onClick={() => setShowKotConfirm(true)}
 
                     disabled={currentSessionItems.length === 0 || sendingKOT}
 
@@ -5618,6 +5625,16 @@ export default function CaptainApp({ onLogout }) {
 
         onClose={() => setActiveVariantItem(null)}
 
+      />
+
+      <KotConfirmModal
+        isOpen={showKotConfirm}
+        itemCount={currentSessionItems.length}
+        totalQty={currentSessionItems.reduce((s, i) => s + (i.q ?? 1), 0)}
+        amount={calculateOrderTotal(currentSessionItems).subtotal}
+        label="Send KOT"
+        onConfirm={() => { setShowKotConfirm(false); sendIncrementalKOT(); }}
+        onCancel={() => setShowKotConfirm(false)}
       />
 
     </div>
