@@ -19,6 +19,7 @@ import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
 import { updateTableSession } from '../services/tableApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getTenantScopedKey, getTablesCacheKey, getBarTablesCacheKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext';
 import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
@@ -213,14 +214,14 @@ const CashierDashboard = ({ onLogout }) => {
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
     : 'restaurant';
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cashier_active_tab') || 'dashboard');
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem(getTenantScopedKey('cashier_active_tab')) || 'dashboard');
   const [tableSubCategory, setTableSubCategory] = useState(() => {
-    const saved = localStorage.getItem('softshape_selected_subcategory');
+    const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
     if (saved) return saved;
     return 'family-restaurant';
   }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel' | 'bar-gobox', restaurant: 'family-restaurant' | 'parcel'
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
-    const saved = localStorage.getItem('cashier_selected_pdr_room');
+    const saved = localStorage.getItem(getTenantScopedKey('cashier_selected_pdr_room'));
     return saved ? Number(saved) : null;
   }); // 1-4
   const [searchQuery, setSearchQuery] = useState('');
@@ -289,7 +290,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
   const [cart, setCart] = useState(() => {
     try {
-      const savedTableStr = localStorage.getItem('cashier_selected_table');
+      const savedTableStr = localStorage.getItem(getTenantScopedKey('cashier_selected_table'));
       const savedTable = savedTableStr ? JSON.parse(savedTableStr) : null;
       if (!savedTable || savedTable.status === 'Free' || savedTable.status === 'AVAILABLE') {
         return [];
@@ -307,7 +308,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(() => {
     try {
-      const saved = localStorage.getItem('cashier_selected_table');
+      const saved = localStorage.getItem(getTenantScopedKey('cashier_selected_table'));
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       // NEVER restore activeOrder/items from localStorage — prevents stale/wrong items on refresh
@@ -351,7 +352,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
   const recentlyTerminatedRef = useRef((() => {
     try {
-      const raw = localStorage.getItem('cashier_recently_terminated');
+      const raw = localStorage.getItem(getTenantScopedKey('cashier_recently_terminated'));
       const map = raw ? JSON.parse(raw) : {};
       const now = Date.now();
       // 30-second TTL: keeps terminated tables hidden briefly to prevent flicker
@@ -367,7 +368,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [billPrintedTableIds, setBillPrintedTableIds] = useState(() => {
     // Restore any bill_printed state from localStorage on mount
     try {
-      const stored = localStorage.getItem('cashier_bill_printed_tables');
+      const stored = localStorage.getItem(getTenantScopedKey('cashier_bill_printed_tables'));
       return stored ? new Set(JSON.parse(stored)) : new Set();
     } catch { return new Set(); }
   });
@@ -396,20 +397,20 @@ const CashierDashboard = ({ onLogout }) => {
   // Helper: namespaced cart key so tables never bleed into each other
   const getCartStorageKey = (table) => {
     if (!table) return 'cashier_cart_none';
-    if (table.isWalkIn || !table.backendId) return 'cashier_cart_walkin';
-    if (table.isExtra) return `cashier_cart_extra_${table.id}`;
-    return `cashier_cart_${table.backendId}`;
+    if (table.isWalkIn || !table.backendId) return getTenantScopedKey('cashier_cart_walkin');
+    if (table.isExtra) return getTenantScopedKey(`cashier_cart_extra_${table.id}`);
+    return getTenantScopedKey(`cashier_cart_${table.backendId}`);
   };
 
   const clearCashierTableCache = (table) => {
-    localStorage.removeItem('cashier_selected_table');
+    localStorage.removeItem(getTenantScopedKey('cashier_selected_table'));
     if (table?.backendId) {
-      localStorage.removeItem(`cashier_cart_${table.backendId}`);
+      localStorage.removeItem(getTenantScopedKey(`cashier_cart_${table.backendId}`));
     }
     if (table?.isExtra) {
-      localStorage.removeItem(`cashier_cart_extra_${table.id}`);
+      localStorage.removeItem(getTenantScopedKey(`cashier_cart_extra_${table.id}`));
     }
-    localStorage.removeItem('cashier_cart_walkin');
+    localStorage.removeItem(getTenantScopedKey('cashier_cart_walkin'));
     localStorage.removeItem('cashier_cart');
   };
 
@@ -423,7 +424,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [variantPickerItem, setVariantPickerItem] = useState(null);
   const [extraTables, setExtraTables] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('cashier_extra_tables') || '[]'); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(getTenantScopedKey('cashier_extra_tables')) || '[]'); } catch { return []; }
   });
 
   // Derived — based on enabledModules
@@ -439,7 +440,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Persist extraTables to localStorage so they survive page refresh
   useEffect(() => {
-    try { localStorage.setItem('cashier_extra_tables', JSON.stringify(extraTables)); } catch {}
+    try { localStorage.setItem(getTenantScopedKey('cashier_extra_tables'), JSON.stringify(extraTables)); } catch {}
   }, [extraTables]);
 
   // On mount: purge any extra tables that were recently terminated but survived in localStorage
@@ -453,12 +454,12 @@ const CashierDashboard = ({ onLogout }) => {
     });
     // Also clean up stale entries in localStorage itself so they don't grow forever
     try {
-      const raw = localStorage.getItem('cashier_recently_terminated');
+      const raw = localStorage.getItem(getTenantScopedKey('cashier_recently_terminated'));
       const map = raw ? JSON.parse(raw) : {};
       const now = Date.now();
       let changed = false;
       Object.keys(map).forEach(k => { if (now - map[k] > 30000) { delete map[k]; changed = true; } });
-      if (changed) localStorage.setItem('cashier_recently_terminated', JSON.stringify(map));
+      if (changed) localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(map));
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -566,22 +567,22 @@ const CashierDashboard = ({ onLogout }) => {
           kotHistory: [],
           currentBill: 0,
         };
-        localStorage.setItem('cashier_selected_table', JSON.stringify(toSave));
+        localStorage.setItem(getTenantScopedKey('cashier_selected_table'), JSON.stringify(toSave));
       }, 300);
     } else {
-      localStorage.removeItem('cashier_selected_table');
+      localStorage.removeItem(getTenantScopedKey('cashier_selected_table'));
     }
     return () => clearTimeout(lsWriteTimerRef.current);
   }, [selectedTable]);
 
   useEffect(() => {
-    localStorage.setItem('softshape_selected_subcategory', tableSubCategory);
+    localStorage.setItem(getTenantScopedKey('softshape_selected_subcategory'), tableSubCategory);
   }, [tableSubCategory]);
 
   // Cross-tab sync: update venue selection when changed in another tab (Captain / Cashier)
   useEffect(() => {
     const onStorage = (e) => {
-      if (e.key === 'softshape_selected_subcategory' && e.newValue && e.newValue !== tableSubCategory) {
+      if (e.key === getTenantScopedKey('softshape_selected_subcategory') && e.newValue && e.newValue !== tableSubCategory) {
         setTableSubCategory(e.newValue);
       }
     };
@@ -591,9 +592,9 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     if (selectedPDRRoom) {
-      localStorage.setItem('cashier_selected_pdr_room', String(selectedPDRRoom));
+      localStorage.setItem(getTenantScopedKey('cashier_selected_pdr_room'), String(selectedPDRRoom));
     } else {
-      localStorage.removeItem('cashier_selected_pdr_room');
+      localStorage.removeItem(getTenantScopedKey('cashier_selected_pdr_room'));
     }
   }, [selectedPDRRoom]);
 
@@ -649,7 +650,7 @@ const CashierDashboard = ({ onLogout }) => {
     setIsSwappingItems(false);
   }, [selectedTable?.backendId]);
 
-  const TX_CACHE_KEY = `softshape_transactions_${activeOutlet}_${getKolkataDateString()}`;
+  const TX_CACHE_KEY = `softshape_transactions_${activeRestaurantId}_${activeOutlet}_${getKolkataDateString()}`;
 
   const [pastTransactions, setPastTransactions] = useState(() => {
     // Start with localStorage cache for instant display
@@ -1261,8 +1262,8 @@ const CashierDashboard = ({ onLogout }) => {
       // If cashier had the source table open, switch selection to the new table
       if (selectedTable?.backendId === sourceTableId && mappedTarget) {
         // Clear stale localStorage for the source table before switching
-        localStorage.removeItem('cashier_selected_table');
-        localStorage.removeItem(`cashier_cart_${sourceTableId}`);
+        localStorage.removeItem(getTenantScopedKey('cashier_selected_table'));
+        localStorage.removeItem(getTenantScopedKey(`cashier_cart_${sourceTableId}`));
         // Only re-open to target if it has live data (session fully transferred)
         if ((mappedTarget.kotHistory?.length > 0) || mappedTarget.activeOrder || (mappedTarget.currentBill > 0)) {
           setSelectedTable(mappedTarget);
@@ -1396,8 +1397,8 @@ const CashierDashboard = ({ onLogout }) => {
           billPrintCooldownRef.current.delete(selectedTable.backendId);
           // Persist removal
           try {
-            const stored = JSON.parse(localStorage.getItem('cashier_bill_printed_tables') || '[]');
-            localStorage.setItem('cashier_bill_printed_tables', JSON.stringify(stored.filter(id => id !== selectedTable.backendId)));
+            const stored = JSON.parse(localStorage.getItem(getTenantScopedKey('cashier_bill_printed_tables')) || '[]');
+            localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify(stored.filter(id => id !== selectedTable.backendId)));
           } catch {}
           setSelectedTable(null); setSelectedOrder(null); setCart([]);
           lastConfirmedItemsRef.current = [];
@@ -1486,7 +1487,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
     // Fallback: restore from localStorage if server discount is missing
     try {
-      const stored = localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+      const stored = localStorage.getItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`));
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed?.value) setRawDiscountInput(parsed.value);
@@ -1824,7 +1825,7 @@ const CashierDashboard = ({ onLogout }) => {
         next.add(tableId);
         // Persist so the flag survives component remount
         try {
-          localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next]));
+          localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
         } catch {}
         return next;
       });
@@ -1846,7 +1847,7 @@ const CashierDashboard = ({ onLogout }) => {
         setActiveTables(updateBillStatus);
         // Also persist 'bill_printed' in the table localStorage cache
         try {
-          const cacheKey = activeOutlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
+          const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
           const updatedCache = cached.map(t =>
             t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
@@ -1865,7 +1866,7 @@ const CashierDashboard = ({ onLogout }) => {
             body: JSON.stringify({ discount: discountPercent })
           });
           // Persist discount so it survives modal close/reopen until settlement
-          localStorage.setItem(`cashier_table_discount_${selectedTable.backendId}`, JSON.stringify({
+          localStorage.setItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`), JSON.stringify({
             value: String(discountPercent),
             mode: 'percent'
           }));
@@ -1933,7 +1934,7 @@ const CashierDashboard = ({ onLogout }) => {
         setBillPrintedTableIds(prev => {
           const next = new Set(prev);
           next.delete(tableId);
-          try { localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next])); } catch {}
+          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
           return next;
         });
         billPrintCooldownRef.current.delete(tableId);
@@ -2196,7 +2197,7 @@ const CashierDashboard = ({ onLogout }) => {
         // Extra table: remove from extraTables state and return user to tables view
         setExtraTables(prev => prev.filter(et => et.id !== selectedTable.id));
         setActiveTab('tables');
-        localStorage.setItem('cashier_active_tab', 'tables');
+        localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables');
       } else {
         // Regular table: update in tables state
         setTargetTables((prev) =>
@@ -2229,7 +2230,7 @@ const CashierDashboard = ({ onLogout }) => {
         setBillPrintedTableIds(prev => {
           const next = new Set(prev);
           next.delete(settledId);
-          try { localStorage.setItem('cashier_bill_printed_tables', JSON.stringify([...next])); } catch {}
+          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
           return next;
         });
         billPrintCooldownRef.current.delete(settledId);
@@ -2247,7 +2248,7 @@ const CashierDashboard = ({ onLogout }) => {
       clearCashierTableCache(selectedTable);
       // Clean up persisted discount now that table is settled
       if (selectedTable?.backendId) {
-        localStorage.removeItem(`cashier_table_discount_${selectedTable.backendId}`);
+        localStorage.removeItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`));
       }
       setRawDiscountInput('');
       setExpandedNoteItemId(null);
@@ -2271,7 +2272,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedTable?.backendId && !selectedTable.isExtra) {
         setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
         syncPauseUntilRef.current = Date.now() + 2000;
-        const cacheKey = activeOutlet === 'bar' ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
+        const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
         try {
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
           const updated = cached.map(t =>
@@ -2389,14 +2390,14 @@ const CashierDashboard = ({ onLogout }) => {
       terminatedTableIdsRef.current.add(tableSnap.id);
       recentlyTerminatedRef.current[tableSnap.id] = Date.now();
       try {
-        localStorage.setItem('cashier_recently_terminated', JSON.stringify(recentlyTerminatedRef.current));
+        localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
       } catch {}
       setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.id), 6000);
     } else if (tableSnap.backendId) {
       terminatedTableIdsRef.current.add(tableSnap.backendId);
       recentlyTerminatedRef.current[tableSnap.backendId] = Date.now();
       try {
-        localStorage.setItem('cashier_recently_terminated', JSON.stringify(recentlyTerminatedRef.current));
+        localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
       } catch {}
       setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.backendId), 6000);
     }
@@ -2477,14 +2478,14 @@ const CashierDashboard = ({ onLogout }) => {
       // Clean up persisted discount on terminate
 
       // Step 6: Evict terminated table from localStorage cache so hard refresh never shows it again
-      const cacheKey = (activeOutlet === 'bar' || activeOutlet === 'both') ? 'softshape_bar_tables_cache_v4' : 'softshape_tables_cache_v6';
+      const cacheKey = (activeOutlet === 'bar' || activeOutlet === 'both') ? getBarTablesCacheKey() : getTablesCacheKey();
       try {
         const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
         const filtered = cached.filter(t => t.backendId !== tableSnap.backendId);
         localStorage.setItem(cacheKey, JSON.stringify(filtered));
       } catch { /* ignore */ }
       if (tableSnap?.backendId) {
-        localStorage.removeItem(`cashier_table_discount_${tableSnap.backendId}`);
+        localStorage.removeItem(getTenantScopedKey(`cashier_table_discount_${tableSnap.backendId}`));
       }
 
       addNotification('Session Terminated', `Table ${tableSnap.displayName ?? tableSnap.number ?? tableSnap.id} freed`, 'info');
@@ -2721,7 +2722,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       if (isFreeExtra) {
         setActiveTab('pos');
-        localStorage.setItem('cashier_active_tab', 'pos');
+        localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'pos');
       } else {
         setShowTableModal(true);
       }
@@ -2740,14 +2741,14 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (!table.status || table.status === 'Free' || table.status === 'AVAILABLE') {
       setActiveTab('pos');
-      localStorage.setItem('cashier_active_tab', 'pos');
+      localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'pos');
     } else {
       // Open modal immediately — don't block on network
       setShowTableModal(true);
       if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
       else refetchRestaurantTables();
       // Restore saved discount for this table if one exists
-      const savedDiscount = localStorage.getItem(`cashier_table_discount_${table.backendId}`);
+      const savedDiscount = localStorage.getItem(getTenantScopedKey(`cashier_table_discount_${table.backendId}`));
       if (savedDiscount) {
         try {
           const parsed = JSON.parse(savedDiscount);
@@ -2876,7 +2877,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (!selectedTable) {
       addNotification('Select Table', 'Please assign a table before adding items.', 'warning');
       setActiveTab('tables');
-      localStorage.setItem('cashier_active_tab', 'tables');
+      localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables');
       return;
     }
     const now = Date.now();
@@ -3188,7 +3189,7 @@ const CashierDashboard = ({ onLogout }) => {
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() => { setActiveTab(item.id); localStorage.setItem('cashier_active_tab', item.id); }}
+              onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
               className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-4 px-5 sm:px-4 py-2.5 sm:py-3.5 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 ${activeTab === item.id
                 ? 'bg-[#E53935] text-white font-black shadow-lg shadow-red-500/15 scale-[1.01]'
                 : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
@@ -3254,7 +3255,7 @@ const CashierDashboard = ({ onLogout }) => {
                           setSelectedTable(t);
                           setShowPaymentModal(true);
                           setActiveTab('tables');
-                          localStorage.setItem('cashier_active_tab', 'tables');
+                          localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables');
                         }
                       }}
                     >
@@ -3730,7 +3731,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     setSelectedTable(wt);
                                     setCart([]);
                                     setActiveTab('pos');
-                                    localStorage.setItem('cashier_active_tab', 'pos');
+                                    localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'pos');
                                   }}
                                   className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50 hover:scale-105 active:scale-95"
                                 >
@@ -4563,7 +4564,7 @@ const CashierDashboard = ({ onLogout }) => {
                               <p className="text-xs text-gray-405 font-black uppercase tracking-widest leading-none mt-1">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
                             </div>
                           </div>
-                          <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem('cashier_active_tab', 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
+                          <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
                             {selectedTable ? 'Change' : '+ Table'}
                           </button>
                         </div>
@@ -4771,7 +4772,7 @@ const CashierDashboard = ({ onLogout }) => {
             setExpandedNoteItemId(null);
             // Only clear discount if no saved discount persisted for this table
             const hasSavedDiscount = selectedTable?.backendId &&
-              localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+              localStorage.getItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`));
             if (!hasSavedDiscount) {
               setRawDiscountInput('');
             }
@@ -4799,7 +4800,7 @@ const CashierDashboard = ({ onLogout }) => {
                   setExpandedNoteItemId(null);
                   // Only clear discount if no saved discount persisted for this table
                   const hasSavedDiscount = selectedTable?.backendId &&
-                    localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+                    localStorage.getItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`));
                   if (!hasSavedDiscount) {
                     setRawDiscountInput('');
                   }
@@ -4944,11 +4945,11 @@ const CashierDashboard = ({ onLogout }) => {
                   <button
                     onClick={() => {
                       setActiveTab('pos');
-                      localStorage.setItem('cashier_active_tab', 'pos');
+                      localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'pos');
                       setShowTableModal(false);
                       setExpandedNoteItemId(null);
                       const hasSavedDiscount = selectedTable?.backendId &&
-                        localStorage.getItem(`cashier_table_discount_${selectedTable.backendId}`);
+                        localStorage.getItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`));
                       if (!hasSavedDiscount) {
                         setRawDiscountInput('');
                       }

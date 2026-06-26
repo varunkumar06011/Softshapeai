@@ -64,6 +64,15 @@ export function purgeLegacyCaches() {
 }
 
 /**
+ * Returns a tenant-scoped localStorage key for any UI state.
+ * Use this for captain, cashier, admin, or any panel-specific localStorage.
+ */
+export function getTenantScopedKey(key, tenantId = getCurrentRestaurantId()) {
+  if (!tenantId) return `${key}:unknown`;
+  return `${key}:${tenantId}`;
+}
+
+/**
  * Clears all tenant-scoped caches for a given restaurant id. Useful on logout
  * or when switching restaurants.
  */

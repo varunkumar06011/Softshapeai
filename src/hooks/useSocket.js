@@ -13,6 +13,18 @@ export function reconnectSocket(token) {
   socketInstance.disconnect().connect();
 }
 
+export function disconnectSocket() {
+  if (!socketInstance) return;
+  try {
+    socketInstance.disconnect();
+  } catch {
+    /* ignore */
+  }
+  socketInstance = null;
+  eventQueue = [];
+  isProcessingQueue = false;
+}
+
 export function getSocket() {
   if (!socketInstance) {
     socketInstance = io(API_BASE, {

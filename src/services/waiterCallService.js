@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getSocket } from "../hooks/useSocket";
+import { getTenantScopedKey } from "../utils/cacheKeys";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 const subscribers = new Set();
 let isListenerAttached = false;
@@ -14,13 +16,18 @@ export function initSocket() {
   const socket = getSocket();
 
   // ── Room join logic ──────────────────────────────────────────
+  const restaurantId = getCurrentRestaurantId();
   const joinRoom = () => {
     if (!socket.connected) {
       console.log("[WaiterCallSync] joinRoom called but socket not connected — will join on connect");
       return;
     }
-    socket.emit("join", "softshape-restaurant");
-    console.log("[WaiterCallSync] Joined room softshape-restaurant (id:", socket.id, ")");
+    if (!restaurantId) {
+      console.warn("[WaiterCallSync] No restaurantId available — cannot join room");
+      return;
+    }
+    socket.emit("join", restaurantId);
+    console.log("[WaiterCallSync] Joined room", restaurantId, "(id:", socket.id, ")");
   };
 
   // Join immediately if already connected
@@ -187,7 +194,7 @@ export function useWaiterCalls() {
         } catch (err) {
           console.error("[WaiterCallSync] Failed to parse localStorage event", err);
         }
-      } else if (e.key === 'softshape_waiter_calls' && e.newValue) {
+      } else if (e.key === getTenantScopedKey('softshape_waiter_calls') && e.newValue) {
         try {
           const db = JSON.parse(e.newValue);
           const pending = Object.values(db).filter(c => c.status === 'pending');
@@ -211,7 +218,7 @@ export function useWaiterCalls() {
 
     // ── Load persisted calls from localStorage (survive refresh) ──
     try {
-      const db = JSON.parse(localStorage.getItem('softshape_waiter_calls') || '{}');
+      const db = JSON.parse(localStorage.getItem(getTenantScopedKey('softshape_waiter_calls')) || '{}');
       const now = Date.now();
       const STALE_MS = 5 * 60 * 1000; // 5 min
       const pending = Object.values(db).filter(c =>
@@ -246,11 +253,11 @@ export function useWaiterCalls() {
     console.log("[WaiterCallSync] Clearing call:", callId);
     setActiveCalls(prev => prev.filter(c => c.callId !== callId));
     try {
-      const db = JSON.parse(localStorage.getItem('softshape_waiter_calls') || '{}');
+      const db = JSON.parse(localStorage.getItem(getTenantScopedKey('softshape_waiter_calls')) || '{}');
       const tableKey = Object.keys(db).find(key => db[key].callId === callId);
       if (tableKey) {
         delete db[tableKey];
-        localStorage.setItem('softshape_waiter_calls', JSON.stringify(db));
+        localStorage.setItem(getTenantScopedKey('softshape_waiter_calls'), JSON.stringify(db));
       }
     } catch (e) {
       console.error("[WaiterCallSync] Failed to clear call from localStorage", e);

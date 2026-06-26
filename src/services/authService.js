@@ -1,4 +1,5 @@
-import { purgeLegacyCaches } from '../utils/cacheKeys';
+import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
+import { disconnectSocket } from '../hooks/useSocket';
 
 function getApiBase() {
   return (
@@ -57,9 +58,12 @@ export const authService = {
     } catch {
       // ignore network errors on logout
     }
+    const restaurantId = this.getRestaurantId();
+    disconnectSocket();
     localStorage.removeItem('ss_token');
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
+    clearTenantCaches(restaurantId);
   },
 
   getToken() {
@@ -74,6 +78,15 @@ export const authService = {
     try {
       const raw = localStorage.getItem('ss_user');
       return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  getRestaurantId() {
+    try {
+      const raw = localStorage.getItem('ss_restaurant');
+      return raw ? JSON.parse(raw).id : null;
     } catch {
       return null;
     }

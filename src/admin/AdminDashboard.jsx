@@ -33,6 +33,7 @@ import TodaySpecials from './TodaySpecials';
 import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getTenantScopedKey } from '../utils/cacheKeys';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
@@ -62,7 +63,7 @@ const navItems = [
 
 const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [page, setPage] = useState(() => {
-    const saved = localStorage.getItem('admin_active_tab');
+    const saved = localStorage.getItem(getTenantScopedKey('admin_active_tab'));
     if (role === 'manager' && saved !== 'tables' && saved !== 'captains') return 'tables';
     if (saved === 'pos') return 'dashboard';
     return saved || (role === 'manager' ? 'tables' : 'dashboard');
@@ -290,7 +291,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             {displayNavItems.map(([k, label, Icon]) => (
-              <button key={k} onClick={() => { setPage(k); localStorage.setItem('admin_active_tab', k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
+              <button key={k} onClick={() => { setPage(k); localStorage.setItem(getTenantScopedKey('admin_active_tab'), k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
                 <Icon size={16} /> {label}
               </button>
             ))}

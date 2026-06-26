@@ -30,6 +30,7 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
+import { getTenantScopedKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext.jsx';
 
 import { isBeerItem } from '../utils/itemHelpers';
@@ -424,7 +425,7 @@ export default function CaptainApp({ onLogout }) {
 
   const [currentCaptain, setCurrentCaptain] = useState(() => {
 
-    const saved = localStorage.getItem('active_captain');
+    const saved = localStorage.getItem(getTenantScopedKey('active_captain'));
 
     return saved ? JSON.parse(saved) : null;
 
@@ -432,9 +433,9 @@ export default function CaptainApp({ onLogout }) {
 
   const [isLoginView, setIsLoginView] = useState(() => {
 
-    const auth = localStorage.getItem('captain_auth_v2') === 'true';
+    const auth = localStorage.getItem(getTenantScopedKey('captain_auth_v2')) === 'true';
 
-    const hasCaptain = !!localStorage.getItem('active_captain');
+    const hasCaptain = !!localStorage.getItem(getTenantScopedKey('active_captain'));
 
     return !(auth && hasCaptain);
 
@@ -467,9 +468,9 @@ export default function CaptainApp({ onLogout }) {
 
   const [selectedProfile, setSelectedProfile] = useState(null);
 
-  const [view, setView] = useState(() => localStorage.getItem('captain_view') || 'tables'); // tables, session
+  const [view, setView] = useState(() => localStorage.getItem(getTenantScopedKey('captain_view')) || 'tables'); // tables, session
 
-  const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem('captain_activeTableId') || null);
+  const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem(getTenantScopedKey('captain_activeTableId')) || null);
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -529,9 +530,9 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('captain_activeCategory') || 'All');
+  const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem(getTenantScopedKey('captain_activeCategory')) || 'All');
 
-  const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem('captain_activeDiet') || 'All');
+  const [activeDiet, setActiveDiet] = useState(() => localStorage.getItem(getTenantScopedKey('captain_activeDiet')) || 'All');
 
   const [notifications, setNotifications] = useState([]);
 
@@ -541,7 +542,7 @@ export default function CaptainApp({ onLogout }) {
 
   const [editingItem, setEditingItem] = useState(null);
 
-  const [isCartMinimized, setIsCartMinimized] = useState(() => localStorage.getItem('captain_isCartMinimized') !== 'false');
+  const [isCartMinimized, setIsCartMinimized] = useState(() => localStorage.getItem(getTenantScopedKey('captain_isCartMinimized')) !== 'false');
 
   const [removedItem, setRemovedItem] = useState(null);
 
@@ -568,11 +569,11 @@ export default function CaptainApp({ onLogout }) {
 
   // Assignment tracking state
 
-  const [activeView, setActiveView] = useState(() => localStorage.getItem('captain_active_tab') || 'assignment');
+  const [activeView, setActiveView] = useState(() => localStorage.getItem(getTenantScopedKey('captain_active_tab')) || 'assignment');
 
   const [tableSubCategory, setTableSubCategory] = useState(() => {
 
-    const saved = localStorage.getItem('softshape_selected_subcategory');
+    const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
 
     if (saved) return saved;
 
@@ -582,7 +583,7 @@ export default function CaptainApp({ onLogout }) {
 
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
 
-    const saved = localStorage.getItem('captain_selectedPDRRoom');
+    const saved = localStorage.getItem(getTenantScopedKey('captain_selectedPDRRoom'));
 
     return saved ? Number(saved) : null;
 
@@ -594,13 +595,13 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  const [activeBarMenu, setActiveBarMenu] = useState(() => localStorage.getItem('captain_activeBarMenu') || 'food');
+  const [activeBarMenu, setActiveBarMenu] = useState(() => localStorage.getItem(getTenantScopedKey('captain_activeBarMenu')) || 'food');
 
   const [tableCarts, setTableCarts] = useState(() => {
 
     try {
 
-      const saved = localStorage.getItem('captain_tableCarts');
+      const saved = localStorage.getItem(getTenantScopedKey('captain_tableCarts'));
 
       return saved ? JSON.parse(saved) : {};
 
@@ -775,7 +776,7 @@ export default function CaptainApp({ onLogout }) {
 
   const [tableFilter, setTableFilter] = useState(() => {
 
-    return localStorage.getItem('softshape_captain_table_filter') || 'my';
+    return localStorage.getItem(getTenantScopedKey('softshape_captain_table_filter')) || 'my';
 
   });
 
@@ -791,45 +792,45 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
 
-    localStorage.setItem('captain_view', view);
+    localStorage.setItem(getTenantScopedKey('captain_view'), view);
 
     if (activeTableId) {
 
-      localStorage.setItem('captain_activeTableId', activeTableId);
+      localStorage.setItem(getTenantScopedKey('captain_activeTableId'), activeTableId);
 
     } else {
 
-      localStorage.removeItem('captain_activeTableId');
+      localStorage.removeItem(getTenantScopedKey('captain_activeTableId'));
 
     }
 
-    localStorage.setItem('captain_searchQuery', searchQuery);
+    localStorage.setItem(getTenantScopedKey('captain_searchQuery'), searchQuery);
 
-    localStorage.setItem('captain_activeCategory', activeCategory);
+    localStorage.setItem(getTenantScopedKey('captain_activeCategory'), activeCategory);
 
-    localStorage.setItem('captain_activeDiet', activeDiet);
+    localStorage.setItem(getTenantScopedKey('captain_activeDiet'), activeDiet);
 
-    localStorage.setItem('captain_isCartMinimized', isCartMinimized);
+    localStorage.setItem(getTenantScopedKey('captain_isCartMinimized'), isCartMinimized);
 
-    localStorage.setItem('captain_tableSubCategory', tableSubCategory);
+    localStorage.setItem(getTenantScopedKey('captain_tableSubCategory'), tableSubCategory);
 
     if (selectedPDRRoom) {
 
-      localStorage.setItem('captain_selectedPDRRoom', selectedPDRRoom);
+      localStorage.setItem(getTenantScopedKey('captain_selectedPDRRoom'), selectedPDRRoom);
 
     } else {
 
-      localStorage.removeItem('captain_selectedPDRRoom');
+      localStorage.removeItem(getTenantScopedKey('captain_selectedPDRRoom'));
 
     }
 
-    localStorage.setItem('captain_activeBarMenu', activeBarMenu);
+    localStorage.setItem(getTenantScopedKey('captain_activeBarMenu'), activeBarMenu);
 
-    localStorage.setItem('captain_tableCarts', JSON.stringify(tableCarts));
+    localStorage.setItem(getTenantScopedKey('captain_tableCarts'), JSON.stringify(tableCarts));
 
-    localStorage.setItem('captain_active_tab', activeView);
+    localStorage.setItem(getTenantScopedKey('captain_active_tab'), activeView);
 
-    localStorage.setItem('softshape_captain_table_filter', tableFilter);
+    localStorage.setItem(getTenantScopedKey('softshape_captain_table_filter'), tableFilter);
 
   }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter]);
 
@@ -1570,7 +1571,7 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
 
-    localStorage.setItem('softshape_captain_table_filter', tableFilter);
+    localStorage.setItem(getTenantScopedKey('softshape_captain_table_filter'), tableFilter);
 
   }, [tableFilter]);
 
@@ -1618,7 +1619,7 @@ export default function CaptainApp({ onLogout }) {
 
   useEffect(() => {
 
-    localStorage.setItem('softshape_selected_subcategory', tableSubCategory);
+    localStorage.setItem(getTenantScopedKey('softshape_selected_subcategory'), tableSubCategory);
 
   }, [tableSubCategory]);
 
@@ -1630,7 +1631,7 @@ export default function CaptainApp({ onLogout }) {
 
     const onStorage = (e) => {
 
-      if (e.key === 'softshape_selected_subcategory' && e.newValue && e.newValue !== tableSubCategory) {
+      if (e.key === getTenantScopedKey('softshape_selected_subcategory') && e.newValue && e.newValue !== tableSubCategory) {
 
         setTableSubCategory(e.newValue);
 
@@ -1899,7 +1900,7 @@ export default function CaptainApp({ onLogout }) {
 
       if (data.restaurantId) {
 
-        localStorage.setItem('pending_restaurant_id', data.restaurantId);
+        localStorage.setItem(getTenantScopedKey('pending_restaurant_id'), data.restaurantId);
 
       }
 
@@ -1943,7 +1944,7 @@ export default function CaptainApp({ onLogout }) {
 
           try {
 
-            const restaurantId = localStorage.getItem('pending_restaurant_id') || getCurrentRestaurantId();
+            const restaurantId = localStorage.getItem(getTenantScopedKey('pending_restaurant_id')) || getCurrentRestaurantId();
             if (!restaurantId) {
               setPinError('Session expired, please reload and log in again.');
               setIsAuthenticating(false);
@@ -1965,9 +1966,9 @@ export default function CaptainApp({ onLogout }) {
 
             setIsLoginView(false);
 
-            localStorage.setItem('captain_auth_v2', 'true');
+            localStorage.setItem(getTenantScopedKey('captain_auth_v2'), 'true');
 
-            localStorage.setItem('active_captain', JSON.stringify(enriched));
+            localStorage.setItem(getTenantScopedKey('active_captain'), JSON.stringify(enriched));
 
             unlockAudioContext();
 
@@ -3190,9 +3191,9 @@ export default function CaptainApp({ onLogout }) {
 
           <button onClick={() => {
 
-            localStorage.removeItem('captain_auth_v2');
+            localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
 
-            localStorage.removeItem('active_captain');
+            localStorage.removeItem(getTenantScopedKey('active_captain'));
 
             setIsLoginView(true);
 
@@ -3210,7 +3211,7 @@ export default function CaptainApp({ onLogout }) {
 
         <button
 
-          onClick={() => { setActiveView('assignment'); localStorage.setItem('captain_active_tab', 'assignment'); }}
+          onClick={() => { setActiveView('assignment'); localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'assignment'); }}
 
           className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeView === 'assignment'
 
@@ -3238,7 +3239,7 @@ export default function CaptainApp({ onLogout }) {
 
         <button
 
-          onClick={() => { setActiveView('tables'); localStorage.setItem('captain_active_tab', 'tables'); }}
+          onClick={() => { setActiveView('tables'); localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'tables'); }}
 
           className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeView === 'tables'
 
