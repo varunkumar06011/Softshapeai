@@ -342,6 +342,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
   const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
   // Set of table backendIds settled this session — prevents socket/sync from reverting UI
@@ -931,8 +932,11 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!socket) return;
 
+    setSocketConnected(socket.connected);
+
     // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
     const onConnect = () => {
+      setSocketConnected(true);
       if (activeOutlet === 'bar' || activeOutlet === 'both') {
         refetchBarTables();
       }
@@ -941,7 +945,17 @@ const CashierDashboard = ({ onLogout }) => {
       loadTransactions(txnDateFilterRef.current);
     };
 
+    const onDisconnect = () => {
+      setSocketConnected(false);
+    };
+
+    // If socket is already connected when the component mounts, refetch immediately
+    if (socket.connected) {
+      onConnect();
+    }
+
     socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
 
     const onBillingRequested = (payload) => {
       const { table, order } = payload;
@@ -1308,6 +1322,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     return () => {
       socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:created', onOrderCreated);
       socket.off('order:updated', onOrderUpdated);
@@ -3309,6 +3324,12 @@ const CashierDashboard = ({ onLogout }) => {
                           <span className="bg-[#E53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
                             {dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length} Running
                           </span>
+                          {!socketConnected && (
+                            <span className="bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              Offline — KOT still works
+                            </span>
+                          )}
                         </h3>
                         <div className="flex gap-4">
                           <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#E53935]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>

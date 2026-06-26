@@ -98,15 +98,28 @@ export async function fetchTableOrder(tableId) {
 }
 
 export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null) {
+  const body = { items: toOrderItems(items) };
+  if (requestId) body.requestId = requestId;
+  if (captainName) body.captainName = captainName;
+  if (isExtraTable) { body.isExtraTable = true; }
+  if (tableNumber) { body.tableNumber = tableNumber; }
+  if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
+
+  // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
+  if (!navigator.onLine) {
+    await addPendingAction({
+      url: `/api/orders/${orderId}/items`,
+      method: 'PATCH',
+      body,
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Update order items queued for sync:', orderId);
+    }
+    return { id: orderId, offline: true, order: { id: orderId, items: body.items } };
+  }
+
   return withRetry(
     async () => {
-      const body = { items: toOrderItems(items) };
-      if (requestId) body.requestId = requestId;
-      if (captainName) body.captainName = captainName;
-      if (isExtraTable) { body.isExtraTable = true; }
-      if (tableNumber) { body.tableNumber = tableNumber; }
-      if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
-
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 45000);
 

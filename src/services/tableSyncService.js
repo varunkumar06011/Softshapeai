@@ -356,8 +356,13 @@ export function useTableSync() {
     }
 
     setTablesState((current) => {
-      const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-      const merged = useFallback ? [] : mergeTablesFromApi(apiTables, current);
+      const apiEmpty = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
+      const occupiedCount = current.filter(t => t.status && t.status !== 'Free' && t.status !== 'AVAILABLE').length;
+      if (apiEmpty && occupiedCount > 0) {
+        console.warn('[TableSync] Refetch returned empty but local cache has occupied tables; keeping cache to avoid data loss');
+        return current;
+      }
+      const merged = apiEmpty ? [] : mergeTablesFromApi(apiTables, current);
       // Deduplicate by backendId to prevent duplicate cards
       const deduped = merged.filter((table, index, self) =>
         index === self.findIndex(t => t.backendId === table.backendId)
