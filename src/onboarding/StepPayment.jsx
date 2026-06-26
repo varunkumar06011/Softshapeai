@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CreditCard, Lock, CheckCircle2, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
-import { apiFetch } from '../services/apiConfig';
+import { apiFetch, pingBackend } from '../services/apiConfig';
 
 const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onPaymentComplete, onBack }) => {
   const [processing, setProcessing] = useState(false);
@@ -9,24 +9,47 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
 
   const isMockMode = !import.meta.env.VITE_RAZORPAY_KEY_ID;
 
-  const handleMockPayment = async () => {
+  // Wake up the Render backend before the user clicks Pay
+  useEffect(() => {
+    pingBackend();
+  }, []);
+
+  const callMockPayment = async () => {
+    return apiFetch('/api/onboard/payment/mock', {
+      method: 'POST',
+      body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
+      timeout: 45000,
+    });
+  };
+
+  const handleMockPayment = async (isRetry = false) => {
     setProcessing(true);
     setError(null);
     try {
-      const result = await apiFetch('/api/onboard/payment/mock', {
-        method: 'POST',
-        body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
-      });
+      const result = await callMockPayment();
       setPaymentReference(result.paymentReference);
       onPaymentComplete(result.paymentReference);
     } catch (err) {
-      setError(err.message || 'Payment failed');
+      if (!isRetry && (err.message?.toLowerCase().includes('timed out') || err.message?.toLowerCase().includes('network'))) {
+        setError('Connection slow. Retrying once...');
+        try {
+          await pingBackend();
+          const result = await callMockPayment();
+          setPaymentReference(result.paymentReference);
+          onPaymentComplete(result.paymentReference);
+          return;
+        } catch (retryErr) {
+          setError(retryErr.message || 'Payment failed after retry');
+        }
+      } else {
+        setError(err.message || 'Payment failed');
+      }
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleRazorpayPayment = async () => {
+  const handleRazorpayPayment = async (isRetry = false) => {
     setProcessing(true);
     setError(null);
     try {
@@ -34,6 +57,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
       const { gatewayOrderId, amount } = await apiFetch('/api/onboard/payment/initiate', {
         method: 'POST',
         body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
+        timeout: 45000,
       });
 
       // 2. Load Razorpay checkout script
@@ -48,52 +72,73 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
       });
 
       // 3. Open Razorpay modal
-      const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-        amount: amount * 100,
-        currency: 'INR',
-        name: 'Softshape.ai',
-        description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan — Monthly`,
-        order_id: gatewayOrderId,
-        handler: async (response) => {
-          // 4. Verify on backend
-          const { paymentReference: ref } = await apiFetch('/api/onboard/payment/verify', {
-            method: 'POST',
-            body: JSON.stringify({
-              gatewayOrderId,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              sessionId,
-            }),
-          });
-          setPaymentReference(ref);
-          onPaymentComplete(ref);
-        },
-        prefill: {
-          email: ownerEmail || '',
-          contact: ownerPhone || '',
-        },
-        theme: { color: '#E53935' },
-        modal: {
-          ondismiss: () => {
-            setProcessing(false);
-          },
-        },
-      };
-
-      const rzp = new window.Razorpay(options);
+      const rzp = new window.Razorpay(buildRazorpayOptions(gatewayOrderId, amount));
       rzp.on('payment.failed', () => {
         setError('Payment was cancelled or failed. Please try again.');
         setProcessing(false);
       });
       rzp.open();
     } catch (err) {
-      setError(err.message || 'Payment failed');
+      if (!isRetry && (err.message?.toLowerCase().includes('timed out') || err.message?.toLowerCase().includes('network'))) {
+        setError('Connection slow. Retrying once...');
+        try {
+          await pingBackend();
+          const { gatewayOrderId, amount } = await apiFetch('/api/onboard/payment/initiate', {
+            method: 'POST',
+            body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
+            timeout: 45000,
+          });
+          // Re-open Razorpay with the new order
+          const rzp = new window.Razorpay(buildRazorpayOptions(gatewayOrderId, amount));
+          rzp.on('payment.failed', () => {
+            setError('Payment was cancelled or failed. Please try again.');
+            setProcessing(false);
+          });
+          rzp.open();
+          return;
+        } catch (retryErr) {
+          setError(retryErr.message || 'Payment failed after retry');
+        }
+      } else {
+        setError(err.message || 'Payment failed');
+      }
       setProcessing(false);
     }
   };
 
-  const handlePayment = isMockMode ? handleMockPayment : handleRazorpayPayment;
+  const buildRazorpayOptions = (gatewayOrderId, amount) => ({
+    key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+    amount: amount * 100,
+    currency: 'INR',
+    name: 'Softshape.ai',
+    description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan — Monthly`,
+    order_id: gatewayOrderId,
+    handler: async (response) => {
+      // 4. Verify on backend
+      const { paymentReference: ref } = await apiFetch('/api/onboard/payment/verify', {
+        method: 'POST',
+        body: JSON.stringify({
+          gatewayOrderId,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature,
+          sessionId,
+        }),
+        timeout: 45000,
+      });
+      setPaymentReference(ref);
+      onPaymentComplete(ref);
+    },
+    prefill: {
+      email: ownerEmail || '',
+      contact: ownerPhone || '',
+    },
+    theme: { color: '#E53935' },
+    modal: {
+      ondismiss: () => {
+        setProcessing(false);
+      },
+    },
+  });
 
   if (paymentReference) {
     return (

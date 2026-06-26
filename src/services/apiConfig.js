@@ -37,7 +37,8 @@ export async function apiFetch(path, options = {}) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeoutMs = Number(options.timeout) || 15000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(apiUrl(path), {
@@ -47,8 +48,22 @@ export async function apiFetch(path, options = {}) {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new Error(error.error || 'Request failed');
+      let errorText = '';
+      try {
+        errorText = await response.text();
+      } catch {
+        errorText = '';
+      }
+      let message = `Request failed (HTTP ${response.status})`;
+      if (errorText) {
+        try {
+          const parsed = JSON.parse(errorText);
+          if (parsed.error) message = parsed.error;
+        } catch {
+          message = errorText.length > 200 ? `${errorText.slice(0, 200)}...` : errorText;
+        }
+      }
+      throw new Error(message);
     }
 
     return response.json();
@@ -57,6 +72,16 @@ export async function apiFetch(path, options = {}) {
     throw err;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/** Ping the backend to wake it up. Useful before heavy requests. */
+export async function pingBackend() {
+  try {
+    await fetch(apiUrl('/api/health'), { method: 'GET', cache: 'no-store' });
+    return true;
+  } catch {
+    return false;
   }
 }
 
