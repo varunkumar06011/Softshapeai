@@ -228,6 +228,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedMenuType, setSelectedMenuType] = useState('ALL');
   const [activeDiet, setActiveDiet] = useState('All');
+  const [selectedOrderPlatform, setSelectedOrderPlatform] = useState('DINE_IN');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
@@ -278,27 +279,35 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedCategory('All');
   }, [selectedMenuType]);
 
-  // Fallback: refresh restaurantType/enabledModules for existing sessions
+  // Fallback: refresh restaurantType/enabledModules and live permissions for existing sessions
+  const [userPermissions, setUserPermissions] = useState({});
   useEffect(() => {
-    if (!restaurant?.enabledModules) {
-      fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data?.restaurant?.enabledModules) {
-            // Merge into auth context via localStorage since we can't directly setAuth here
-            const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
-            if (authKey) {
-              try {
-                const parsed = JSON.parse(localStorage.getItem(authKey));
-                parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
-                localStorage.setItem(authKey, JSON.stringify(parsed));
-              } catch {}
-            }
+    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.permissions) setUserPermissions(data.permissions);
+        if (!restaurant?.enabledModules && data?.restaurant?.enabledModules) {
+          // Merge into auth context via localStorage since we can't directly setAuth here
+          const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
+          if (authKey) {
+            try {
+              const parsed = JSON.parse(localStorage.getItem(authKey));
+              parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
+              localStorage.setItem(authKey, JSON.stringify(parsed));
+            } catch {}
           }
-        })
-        .catch(() => {});
-    }
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  // If online permission is removed, switch away from the online tab
+  useEffect(() => {
+    if (activeTab === 'online' && userPermissions?.onlineOrders !== true) {
+      setActiveTab('dashboard');
+      localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'dashboard');
+    }
+  }, [activeTab, userPermissions]);
 
   // Fetch sections dynamically for tab labels
   const [fetchedSections, setFetchedSections] = useState([]);
@@ -3222,6 +3231,7 @@ const CashierDashboard = ({ onLogout }) => {
                 captainName: 'Cashier',
                 isExtraTable: true,
                 sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
               });
               // Store the returned real orderId in both extraTables and selectedTable
               if (orderResponse?.id) {
@@ -3253,6 +3263,7 @@ const CashierDashboard = ({ onLogout }) => {
               requestId,
               captainName: 'Cashier',
               sectionTag: selectedTable.sectionTag || undefined,
+              platform: selectedOrderPlatform,
             });
           }
         }
@@ -3301,8 +3312,8 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
             { id: 'online', label: 'Online Orders', icon: Monitor },
-
-          ].map((item) => (
+          ].filter(item => item.id !== 'online' || userPermissions?.onlineOrders === true)
+           .map((item) => (
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
@@ -4704,6 +4715,25 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">
                         <ChevronDown size={18} className={`transition-transform duration-300 ${isCartMinimized ? 'rotate-180' : ''}`} />
                       </div>
+                    </div>
+
+                    <div className="px-4.5 pt-2">
+                      <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Order Platform</label>
+                      <select
+                        value={selectedOrderPlatform}
+                        onChange={(e) => setSelectedOrderPlatform(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:border-[#E53935] focus:outline-none"
+                      >
+                        <option value="DINE_IN">Dine In</option>
+                        <option value="SWIGGY">Swiggy</option>
+                        <option value="ZOMATO">Zomato</option>
+                        <option value="MAGICPIN">Magicpin</option>
+                        <option value="EAT_CLUB">Eat Club</option>
+                        <option value="INSTAMART">Instamart</option>
+                        <option value="BLINKIT">Blinkit</option>
+                        <option value="ZEPTO">Zepto</option>
+                        <option value="BAR_MENU">Bar Menu</option>
+                      </select>
                     </div>
 
                     <div className="flex-grow overflow-y-auto p-4.5 space-y-4 custom-scrollbar bg-white">

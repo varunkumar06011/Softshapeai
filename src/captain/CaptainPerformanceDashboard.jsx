@@ -1,224 +1,81 @@
 import { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Users, TrendingUp } from "lucide-react";
-import { fetchTransactions } from "../services/orderApi";
+import { Users, TrendingUp, Calendar } from "lucide-react";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+
+const API_BASE = import.meta.env.VITE_API_BASE || '';
+
+function toISODate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function getRangeDates(range, customStart, customEnd) {
+  if (range === 'Custom') {
+    return { startDate: customStart, endDate: customEnd };
+  }
+  const now = new Date();
+  const endDate = toISODate(now);
+  if (range === 'Today') {
+    return { startDate: endDate, endDate };
+  }
+  if (range === 'Weekly') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    return { startDate: toISODate(start), endDate };
+  }
+  // Monthly
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { startDate: toISODate(start), endDate };
+}
 
 export default function CaptainPerformanceDashboard() {
   const [range, setRange] = useState("Today");
-  const [transactions, setTransactions] = useState([]);
+  const [customStart, setCustomStart] = useState(() => toISODate(new Date()));
+  const [customEnd, setCustomEnd] = useState(() => toISODate(new Date()));
+  const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const { startDate, endDate } = useMemo(() => getRangeDates(range, customStart, customEnd), [range, customStart, customEnd]);
+
   useEffect(() => {
+    const restaurantId = getCurrentRestaurantId();
+    if (!restaurantId) return;
     setLoading(true);
-
-    // FIX #4: Proper date parameters for each range
-    let dateParam = undefined;
-    let monthParam = undefined;
-    const limit = 1000;
-
-    const now = new Date();
-    if (range === "Today") {
-      // Fetch today's transactions only (IST day)
-      dateParam = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
-    } else if (range === "Weekly") {
-      // For weekly, fetch ALL transactions (client-side filter handles 7-day range)
-      // Don't pass date param - let backend return all recent transactions
-      dateParam = undefined;
-    } else if (range === "Monthly") {
-      // Fetch entire current month (IST month)
-      monthParam = now.toISOString().slice(0, 7); // "YYYY-MM"
-    }
-
-    fetchTransactions(getCurrentRestaurantId(), limit, dateParam, monthParam)
-      .then(data => {
-        setTransactions(Array.isArray(data) ? data : []);
-        setLoading(false);
-      }).catch(() => {
-        setLoading(false);
-      });
-  }, [range]);
+    fetch(`${API_BASE}/api/reports/captain-performance?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setReport(data || null))
+      .catch(() => setReport(null))
+      .finally(() => setLoading(false));
+  }, [startDate, endDate]);
 
   const { captains, trends, hasData } = useMemo(() => {
-    // FIX #7: Use fixed timestamp instead of Date.now() for purity
-    const nowTimestamp = Date.now();
-
-    // Client-side filter for transaction time ranges
-    // Backend handles date filtering, but we apply additional client-side filter
-    const filteredTxns = transactions.filter(t => {
-      // Get transaction timestamp (backend returns paidAt or createdAt)
-      const txnTime = new Date(t.paidAt || t.createdAt).getTime();
-
-      // Validate timestamp is valid
-      if (!txnTime || isNaN(txnTime)) return false;
-
-      // For Today and Weekly, apply time-based filter
-      // Monthly already filtered by backend, so include all
-      if (range === "Today") {
-        // Only show today's transactions (last 24 hours)
-        return (nowTimestamp - txnTime) <= (24 * 60 * 60 * 1000);
-      } else if (range === "Weekly") {
-        // Only show last 7 days
-        return (nowTimestamp - txnTime) <= (7 * 24 * 60 * 60 * 1000);
-      } else {
-        // Monthly - include all (backend already filtered)
-        return true;
-      }
-    });
-
-    // Build captain map dynamically from transaction data
-    const captainMap = {};
-
-    filteredTxns.forEach(t => {
-      const cid = t.captainId;
-
-      // FIX #5: Handle CASHIER and null captainId
-      if (!cid || cid === 'CASHIER' || cid === 'cashier') {
-        return; // Skip cashier transactions (not captain sales)
-      }
-
-      // FIX #6: If captain not in config, create entry dynamically
-      if (!captainMap[cid]) {
-        captainMap[cid] = {
-          id: cid,
-          name: cid, // Use ID as name for unknown captains
-          initials: cid.slice(0, 2).toUpperCase(),
-          color: 'bg-gray-50 text-gray-600',
-          sales: 0,
-          orders: 0,
-          itemsCount: {}
-        };
-      }
-
-      // Add sales and orders
-      captainMap[cid].sales += Number(t.amount || 0);
-      captainMap[cid].orders += 1;
-
-      // FIX #1 & #3: Safely handle items with null checks
-      // Backend returns 'items', Cashier maps to 'itemsList' - support both
-      const itemsArray = t.itemsList || t.items;
-      if (Array.isArray(itemsArray)) {
-        itemsArray.forEach(item => {
-          // Validate item name exists and is not empty
-          const name = String(item?.n || item?.name || '').trim();
-          if (!name || name === 'undefined' || name === 'null') {
-            return; // Skip items with invalid names
-          }
-
-          const qty = Number(item?.q || item?.quantity || 1);
-          if (isNaN(qty) || qty <= 0) {
-            return; // Skip invalid quantities
-          }
-
-          captainMap[cid].itemsCount[name] = (captainMap[cid].itemsCount[name] || 0) + qty;
-        });
-      }
-    });
-
-    // FIX #10: More efficient top item calculation using Array.reduce
-    const processedCaptains = Object.values(captainMap).map(c => {
-      let topItem = "None";
-
-      if (Object.keys(c.itemsCount).length > 0) {
-        // Find max using reduce (more efficient than forEach)
-        const entries = Object.entries(c.itemsCount);
-        const maxEntry = entries.reduce((max, current) =>
-          current[1] > max[1] ? current : max
-        , entries[0]);
-
-        topItem = maxEntry[0];
-      }
-
-      return { ...c, topItem };
-    }).sort((a, b) => b.sales - a.sales);
-
-    // FIX #2: Dynamic hourly/daily buckets with IST timezone handling
-    let trendBuckets = {};
-
-    if (range === "Today") {
-      // Dynamic hourly buckets - show ALL hours with transactions
-      filteredTxns.forEach(t => {
-        const txnDate = new Date(t.paidAt || t.createdAt);
-
-        // Get IST hour using native timezone-aware formatting
-        const hourLabel = txnDate.toLocaleTimeString('en-IN', {
-          timeZone: 'Asia/Kolkata',
-          hour: 'numeric',
-          hour12: true,
-        }).toUpperCase().replace('.', '').trim();
-
-        trendBuckets[hourLabel] = (trendBuckets[hourLabel] || 0) + Number(t.amount || 0);
-      });
-    } else {
-      // Daily buckets for Weekly/Monthly with consistent IST date formatting
-      filteredTxns.forEach(t => {
-        const txnDate = new Date(t.paidAt || t.createdAt);
-
-        // Convert to IST date using native timezone-aware formatting
-        const dateKey = txnDate.toLocaleDateString('en-IN', {
-          timeZone: 'Asia/Kolkata',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-        });
-
-        trendBuckets[dateKey] = (trendBuckets[dateKey] || 0) + Number(t.amount || 0);
-      });
+    if (!report || !Array.isArray(report.captains)) {
+      return { captains: [], trends: [], hasData: false };
     }
+    const captains = report.captains.map(c => ({
+      id: c.id,
+      name: c.name || c.id,
+      initials: String(c.name || c.id).slice(0, 2).toUpperCase(),
+      sales: Number(c.sales || 0),
+      orders: Number(c.orders || 0),
+      topItem: c.highestSellingItem?.name || 'None',
+    })).sort((a, b) => b.sales - a.sales);
 
-    // FIX #9: Validate sales data before creating trends array
-    let trendsArray = Object.entries(trendBuckets)
-      .map(([hourOrDay, sales]) => ({
-        hour: hourOrDay,
-        sales: Number.isFinite(sales) ? Math.max(0, sales) : 0, // Ensure valid number
-      }))
-      .filter(t => t.sales >= 0); // Remove any negative values
+    const trendMap = {};
+    (report.trends || []).forEach(t => {
+      const key = t.hour || t.day || t.label;
+      if (!key) return;
+      trendMap[key] = (trendMap[key] || 0) + Number(t.sales || 0);
+    });
+    const trends = Object.entries(trendMap).map(([hour, sales]) => ({ hour, sales: Math.max(0, sales) }));
 
-    // Sort chronologically for all ranges
-    if (trendsArray.length > 0) {
-      if (range === "Today") {
-        // Sort hours chronologically (12 AM, 1 AM, ..., 11 PM)
-        const hourOrder = (label) => {
-          const match = label.match(/^(\d+) (AM|PM)$/);
-          if (!match) return 0;
-          let hour = parseInt(match[1]);
-          const period = match[2];
-
-          // Convert to 24-hour for sorting
-          if (period === 'AM') {
-            if (hour === 12) hour = 0; // 12 AM = 0 hours
-          } else {
-            if (hour !== 12) hour += 12; // PM hours (except 12 PM)
-          }
-          return hour;
-        };
-
-        trendsArray.sort((a, b) => hourOrder(a.hour) - hourOrder(b.hour));
-      } else {
-        // Sort dates chronologically for Weekly/Monthly
-        trendsArray.sort((a, b) => {
-          // Parse DD/MM/YYYY format to Date objects for comparison
-          const [dayA, monthA, yearA] = a.hour.split('/').map(Number);
-          const [dayB, monthB, yearB] = b.hour.split('/').map(Number);
-          const dateA = new Date(yearA, monthA - 1, dayA);
-          const dateB = new Date(yearB, monthB - 1, dayB);
-          return dateA - dateB; // Ascending chronological order
-        });
-      }
-    }
-
-    return {
-      captains: processedCaptains,
-      trends: trendsArray,
-      // Show UI even with zero sales - only hide if no captains configured
-      hasData: processedCaptains.length > 0
-    };
-  }, [transactions, range]);
+    return { captains, trends, hasData: captains.length > 0 };
+  }, [report]);
 
   return (
     <div className="space-y-6 font-sans">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-[#FFCDD2] shadow-sm">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-[#FFCDD2] shadow-sm">
+        <div className="flex items-center gap-3 w-full lg:w-auto">
           <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center text-[#B71C1C] shrink-0">
             <Users size={20} />
           </div>
@@ -227,16 +84,26 @@ export default function CaptainPerformanceDashboard() {
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">Performance &amp; Service Quality</p>
           </div>
         </div>
-        <div className="flex bg-[#F4F4F5] p-1 rounded-xl w-full sm:w-auto overflow-x-auto scrollbar-hide shrink-0">
-          {["Today", "Weekly", "Monthly"].map(r => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? "bg-white text-[#B71C1C] shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
-            >
-              {r}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+          <div className="flex bg-[#F4F4F5] p-1 rounded-xl overflow-x-auto scrollbar-hide">
+            {["Today", "Weekly", "Monthly", "Custom"].map(r => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${range === r ? "bg-white text-[#B71C1C] shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          {range === 'Custom' && (
+            <div className="flex items-center gap-2">
+              <Calendar size={14} className="text-gray-400" />
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold" />
+              <span className="text-xs text-gray-400">to</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold" />
+            </div>
+          )}
         </div>
       </div>
 

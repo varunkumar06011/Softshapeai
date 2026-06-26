@@ -660,6 +660,8 @@ export function Tables({ onOpen }) {
 
 export function MenuPage({ onAddDish }) {
   const { menuItems, allMenuItems, updateMenu, loading, error, refreshMenu, setGlobalMenu } = useMenu();
+  const { restaurant } = useAuth();
+  const configuredPrinters = restaurant?.printerConfig?.printers || [];
   const [filter, setFilter] = useState("");
   const [activeVenueId, setActiveVenueId] = useState(null);
   const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
@@ -712,6 +714,8 @@ export function MenuPage({ onAddDish }) {
         isAvailable: item.isAvailable,
         venuePrices: item.venuePrices || {},
         categoryPrinterTarget: item.categoryPrinterTarget,
+        printerTarget: item.printerTarget,
+        printerName: item.printerName,
       })));
     } catch (err) {
       console.error('[MenuPage] Failed to load admin items:', err);
@@ -926,6 +930,12 @@ export function MenuPage({ onAddDish }) {
         ...(activeOutlet === 'restaurant' && editingItem.categoryPrinterTarget !== undefined
           ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
           : {}),
+        ...(activeOutlet === 'restaurant' && editingItem.printerTarget !== undefined
+          ? { printerTarget: editingItem.printerTarget }
+          : {}),
+        ...(activeOutlet === 'restaurant' && editingItem.printerName !== undefined
+          ? { printerName: editingItem.printerName || null }
+          : {}),
         ...(imageUrl !== undefined ? { imageUrl } : {}),
       };
 
@@ -1047,6 +1057,12 @@ export function MenuPage({ onAddDish }) {
           ),
           ...(activeOutlet === 'restaurant' && addingItem.categoryPrinterTarget !== undefined
             ? { categoryPrinterTarget: addingItem.categoryPrinterTarget }
+            : {}),
+          ...(activeOutlet === 'restaurant' && addingItem.printerTarget !== undefined
+            ? { printerTarget: addingItem.printerTarget }
+            : {}),
+          ...(activeOutlet === 'restaurant' && addingItem.printerName !== undefined
+            ? { printerName: addingItem.printerName || null }
             : {}),
           ...(imageUrl ? { imageUrl } : {}),
         }),
@@ -1430,6 +1446,50 @@ export function MenuPage({ onAddDish }) {
               </div>
             </div>
 
+            {activeOutlet === 'restaurant' && (
+              <div>
+                <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
+                <div className="flex gap-2 mb-2">
+                  {[
+                    { value: null, label: 'Default', sub: 'Use category' },
+                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'KOT printer' },
+                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Bill/Counter printer' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value ?? 'default'}
+                      type="button"
+                      onClick={() => setEditingItem({ ...editingItem, printerTarget: opt.value })}
+                      className={`flex-1 py-2 px-2 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                        (editingItem.printerTarget || null) === opt.value
+                          ? opt.value === 'BAR_PRINTER'
+                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      <div>{opt.label}</div>
+                      <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                    </button>
+                  ))}
+                </div>
+                {configuredPrinters.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Physical Printer</label>
+                    <select
+                      value={editingItem.printerName || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
+                      className={input + ' w-full bg-gray-50'}
+                    >
+                      <option value="">Auto (from role above)</option>
+                      {configuredPrinters.map((p) => (
+                        <option key={p.name} value={p.name}>{p.name}{p.type ? ` (${p.type})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Recipe Editor (Phase 5) — only for FOOD items */}
             {editingItem.menuType !== 'LIQUOR' && (
               <div className="border-t border-gray-100 pt-4">
@@ -1631,6 +1691,49 @@ export function MenuPage({ onAddDish }) {
                     ))}
               </div>
             </div>
+            {activeOutlet === 'restaurant' && (
+              <div>
+                <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
+                <div className="flex gap-2 mb-2">
+                  {[
+                    { value: null, label: 'Default', sub: 'Use category' },
+                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'KOT printer' },
+                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Bill/Counter printer' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value ?? 'default'}
+                      type="button"
+                      onClick={() => setAddingItem({ ...addingItem, printerTarget: opt.value })}
+                      className={`flex-1 py-2 px-2 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                        (addingItem.printerTarget || null) === opt.value
+                          ? opt.value === 'BAR_PRINTER'
+                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      <div>{opt.label}</div>
+                      <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
+                    </button>
+                  ))}
+                </div>
+                {configuredPrinters.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Physical Printer</label>
+                    <select
+                      value={addingItem.printerName || ''}
+                      onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
+                      className={input + ' w-full bg-gray-50'}
+                    >
+                      <option value="">Auto (from role above)</option>
+                      {configuredPrinters.map((p) => (
+                        <option key={p.name} value={p.name}>{p.name}{p.type ? ` (${p.type})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
             <button onClick={() => setAddingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
@@ -1663,6 +1766,36 @@ export function MenuPage({ onAddDish }) {
 
 export function Orders() {
   const { tables } = useTableSync();
+  const { user } = useAuth();
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadReport = useCallback(async () => {
+    const restaurantId = getCurrentRestaurantId();
+    if (!restaurantId || !startDate || !endDate) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/online-orders?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (res.ok) setReport(await res.json());
+    } catch (err) {
+      console.error('[Online Orders] load report failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate]);
+
+  useEffect(() => { loadReport(); }, [loadReport]);
+
   const rows = tables
     .filter((table) => table.status && table.status !== 'Free')
     .map((table) => {
@@ -1678,7 +1811,37 @@ export function Orders() {
         action: table.status === 'Waiting Bill' ? 'Bill' : 'View',
       };
     });
+
   return <div className="space-y-4 font-sans">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-[#6B6B6B]">Date Range:</span>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-md border border-[#FFCDD2] px-2 py-1 text-sm" />
+        <span className="text-sm text-[#6B6B6B]">to</span>
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-md border border-[#FFCDD2] px-2 py-1 text-sm" />
+        <button onClick={loadReport} className="rounded-md bg-[#B71C1C] px-3 py-1 text-sm text-white hover:bg-[#9A1313]">Refresh</button>
+      </div>
+      {report?.highestSellingItem && (
+        <div className="text-sm text-[#6B6B6B]">
+          Highest Selling: <span className="font-semibold text-[#B71C1C]">{report.highestSellingItem.name}</span> ({report.highestSellingItem.quantity} sold)
+        </div>
+      )}
+    </div>
+
+    {loading && <div className="text-sm text-[#6B6B6B]">Loading app-wise sales...</div>}
+
+    {report && !loading && (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {report.platforms.map((p) => (
+          <div key={p.platform} className={card + ' p-4'}>
+            <div className="text-xs font-semibold uppercase tracking-wide text-[#6B6B6B]">{p.platform.replace(/_/g, ' ')}</div>
+            <div className="mt-1 text-2xl font-bold text-[#B71C1C]">₹{p.sales.toFixed(2)}</div>
+            <div className="mt-1 text-xs text-[#6B6B6B]">{p.orders} orders · {p.items} items</div>
+          </div>
+        ))}
+      </div>
+    )}
+
     <UnifiedOrdersDashboard />
     <div className="flex gap-2 overflow-x-auto pb-1">{[`Dine-In (${rows.length})`, `Billing (${rows.filter((row) => row.status === 'Waiting Bill').length})`, `Preparing (${rows.filter((row) => row.status === 'Preparing').length})`, `All (${rows.length})`].map((x, i) => <button key={x} className={`whitespace-nowrap rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
     <div className={card + " overflow-x-auto"}>
@@ -6996,7 +7159,7 @@ export function StaffManagement() {
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '' });
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '', permissions: {} });
   const [saving, setSaving] = useState(false);
 
   const fetchStaff = useCallback(async () => {
@@ -7020,7 +7183,7 @@ export function StaffManagement() {
   }, [fetchStaff]);
 
   const resetForm = () => {
-    setForm({ name: '', role: 'CAPTAIN', pin: '' });
+    setForm({ name: '', role: 'CAPTAIN', pin: '', permissions: {} });
     setEditing(null);
     setModalOpen(false);
   };
@@ -7032,7 +7195,7 @@ export function StaffManagement() {
       const url = `${API_BASE}/api/auth/staff${editing ? `/${editing.id}` : ''}`;
       const method = editing ? 'PATCH' : 'POST';
       const body = editing
-        ? { name: form.name, pin: form.pin }
+        ? { name: form.name, pin: form.pin, permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
         : { name: form.name, role: form.role, pin: form.pin };
       const res = await fetch(url, {
         method,
@@ -7108,7 +7271,7 @@ export function StaffManagement() {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => { setEditing(member); setForm({ name: member.name, role: member.role, pin: '' }); setModalOpen(true); }}
+                    onClick={() => { setEditing(member); setForm({ name: member.name, role: member.role, pin: '', permissions: member.permissions || {} }); setModalOpen(true); }}
                     className="text-[10px] font-bold text-gray-500 hover:text-[#E53935] mr-3"
                   >
                     Edit
@@ -7169,6 +7332,18 @@ export function StaffManagement() {
                 placeholder="0000"
               />
             </div>
+            {editing && editing.role === 'CASHIER' && (
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Can view online orders</label>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, permissions: { ...form.permissions, onlineOrders: !form.permissions?.onlineOrders } })}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${form.permissions?.onlineOrders ? 'bg-[#E53935]' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.permissions?.onlineOrders ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            )}
             <div className="flex gap-2 pt-1">
               <button onClick={resetForm} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
               <button

@@ -46,21 +46,27 @@ const navItems = [
   ["tables", "Tables", Table2],
   ["menu", "Menu", UtensilsCrossed],
   ["specials", "Today Specials", Star],
-  ["orders", "Orders", ClipboardList],
+  ["orders", "Online Orders", ClipboardList],
   ["transactions", "Transactions", Receipt],
   ["reports", "Reports", ChartNoAxesCombined],
   ["staff", "Staff", Users],
   ["captains", "Captain Analytics", ChartNoAxesCombined],
   ["payroll", "Payroll", DollarSign],
-  ["kitchen-inventory", "Kitchen Inventory", UtensilsCrossed],
+  ["kitchen-inventory", "Kitchen/Bar Inventory", UtensilsCrossed],
   ["marketing", "Marketing AI", Megaphone],
   ["surveillance", "Surveillance", Camera],
-  ["inventory", "Inventory", Package],
   ["pricing", "Pricing", Sparkles],
   ["settings", "Settings", Settings],
   ["printers", "Printers", Printer],
   ["qr-codes", "QR Codes", QrCode],
 ];
+
+function getInventoryLabel(enabledModules) {
+  if (enabledModules?.bar && enabledModules?.food) return "Kitchen/Bar Inventory";
+  if (enabledModules?.bar) return "Bar Inventory";
+  if (enabledModules?.food) return "Kitchen Inventory";
+  return "Inventory";
+}
 
 const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [page, setPage] = useState(() => {
@@ -221,24 +227,30 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     };
   }, [socket, activeOutlet, loadStats]);
 
-  const moduleGatedNavItems = navItems.filter(([key]) => {
-    if (key === 'specials') return true;
-    if (key === 'surveillance') return enabledModules.surveillance === true;
-    if (key === 'inventory') return enabledModules.inventory !== false || enabledModules.bar_inventory === true;
-    if (key === 'pricing') return enabledModules.pricing !== false;
-    if (key === 'tables') return enabledModules.tables !== false || enabledModules.food !== false;
-    if (key === 'menu') return enabledModules.food !== false || enabledModules.bar !== false;
-    if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;
-    if (key === 'transactions') return true;
-    if (key === 'reports') return true;
-    if (key === 'captains') return enabledModules.tables !== false;
-    if (key === 'payroll') return enabledModules.payroll !== false;
-    if (key === 'marketing') return enabledModules.marketing !== false;
-    if (key === 'kitchen-inventory') return enabledModules.food !== false;
-    if (key === 'settings') return true;
-    if (key === 'printers') return true;
-    return enabledModules[key] !== false;
-  });
+  const moduleGatedNavItems = navItems
+    .map(([key, label, Icon]) => {
+      if (key === 'kitchen-inventory') {
+        return [key, getInventoryLabel(enabledModules), Icon];
+      }
+      return [key, label, Icon];
+    })
+    .filter(([key]) => {
+      if (key === 'specials') return true;
+      if (key === 'surveillance') return enabledModules.surveillance === true;
+      if (key === 'pricing') return enabledModules.pricing !== false;
+      if (key === 'tables') return enabledModules.tables !== false || enabledModules.food !== false;
+      if (key === 'menu') return enabledModules.food !== false || enabledModules.bar !== false;
+      if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;
+      if (key === 'transactions') return true;
+      if (key === 'reports') return true;
+      if (key === 'captains') return enabledModules.tables !== false;
+      if (key === 'payroll') return enabledModules.payroll !== false;
+      if (key === 'marketing') return enabledModules.marketing !== false;
+      if (key === 'kitchen-inventory') return enabledModules.food !== false || enabledModules.bar_inventory === true || enabledModules.bar !== false;
+      if (key === 'settings') return true;
+      if (key === 'printers') return true;
+      return enabledModules[key] !== false;
+    });
 
   const displayNavItems = role === 'manager'
     ? moduleGatedNavItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
