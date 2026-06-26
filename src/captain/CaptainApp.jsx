@@ -57,6 +57,7 @@ import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelper
 
 
 import { authService } from '../services/authService';
+import { API_BASE } from '../services/apiConfig';
 
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -399,6 +400,36 @@ export default function CaptainApp({ onLogout }) {
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
     : 'restaurant';
+
+  // Fallback: refresh restaurantType/enabledModules for existing sessions
+  useEffect(() => {
+    if (!restaurant?.enabledModules) {
+      fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.restaurant?.enabledModules) {
+            const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
+            if (authKey) {
+              try {
+                const parsed = JSON.parse(localStorage.getItem(authKey));
+                parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
+                localStorage.setItem(authKey, JSON.stringify(parsed));
+              } catch {}
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Fetch sections dynamically
+  const [fetchedSections, setFetchedSections] = useState([]);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setFetchedSections(Array.isArray(data) ? data : data.sections || []))
+      .catch(() => setFetchedSections([]));
+  }, []);
 
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
 
@@ -1596,11 +1627,15 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  // Reset tableSubCategory when switching outlets
-
+  // Reset tableSubCategory when switching outlets — use first fetched section
   useEffect(() => {
-
-    setTableSubCategory((activeOutlet === 'bar' || activeOutlet === 'both') ? 'bar-ac-hall' : 'family-restaurant');
+    const firstSection = fetchedSections[0];
+    if (firstSection) {
+      const sourceKey = firstSection.sectionTag || firstSection.name;
+      setTableSubCategory(sourceKey);
+    } else {
+      setTableSubCategory((activeOutlet === 'bar' || activeOutlet === 'both') ? 'bar-ac-hall' : 'family-restaurant');
+    }
 
 
 
@@ -3604,67 +3639,60 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-              {/* VENUE SUBCATEGORY PILLS — inside floor overview, not a separate screen */}
-
-              <div className="flex gap-2 flex-wrap mb-4">
-
-                {[
-
-                  ...((activeOutlet === 'bar' || activeOutlet === 'both')
-
-                    ? [
-
-                        { id: 'bar-ac-hall', label: 'Bar AC Hall' },
-
-                        { id: 'bar-conference', label: 'Conference Hall' },
-
-                        { id: 'bar-pdr', label: 'PDR' },
-
-                        { id: 'bar-rooms', label: 'Rooms' },
-
-                        { id: 'bar-gobox', label: 'GoBox' },
-
-                      ]
-
+              {/* VENUE SUBCATEGORY PILLS — dynamically from fetched sections */}
+              {enabledModules.tables !== false && (
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {fetchedSections.length > 0
+                    ? fetchedSections.map(section => {
+                        const sourceKey = section.sectionTag || section.name;
+                        return (
+                          <button
+                            key={sourceKey}
+                            onClick={() => { setTableSubCategory(sourceKey); setSelectedPDRRoom(null); }}
+                            className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 uppercase tracking-widest transition-all shadow-sm ${
+                              tableSubCategory === sourceKey
+                                ? 'bg-[#E53935] text-white border-[#E53935]'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            {section.name}
+                          </button>
+                        );
+                      })
                     : [
+                        ...((activeOutlet === 'bar' || activeOutlet === 'both')
+                          ? [
+                              { id: 'bar-ac-hall', label: 'Bar AC Hall' },
+                              { id: 'bar-conference', label: 'Conference Hall' },
+                              { id: 'bar-pdr', label: 'PDR' },
+                              { id: 'bar-rooms', label: 'Rooms' },
+                              { id: 'bar-gobox', label: 'GoBox' },
+                            ]
+                          : [
+                              { id: 'family-restaurant', label: 'Family Restaurant' },
+                              { id: 'parcel', label: 'GoBox' },
+                            ]),
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
+                          className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 uppercase tracking-widest transition-all shadow-sm ${
+                            tableSubCategory === tab.id
+                              ? 'bg-[#E53935] text-white border-[#E53935]'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                </div>
+              )}
 
-                        { id: 'family-restaurant', label: 'Family Restaurant' },
-
-                        { id: 'parcel', label: 'GoBox' },
-
-                      ]),
-
-                ].map(tab => (
-
-                  <button
-
-                    key={tab.id}
-
-                    onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
-
-                    className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 uppercase tracking-widest transition-all shadow-sm ${
-
-                      tableSubCategory === tab.id
-
-                        ? 'bg-[#E53935] text-white border-[#E53935]'
-
-                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-
-                    }`}
-
-                  >
-
-                    {tab.label}
-
-                  </button>
-
-                ))}
-
-              </div>
-
-
-
-              {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall' ? (
+              {enabledModules.tables === false ? (
+                <div className="text-center p-10 text-gray-500">
+                  <p className="text-lg font-semibold">Table management is not enabled for this restaurant type.</p>
+                </div>
+              ) : (activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall' ? (
 
                 <>
 

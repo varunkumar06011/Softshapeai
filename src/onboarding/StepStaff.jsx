@@ -6,7 +6,8 @@ const SHIFTS = ['Morning', 'Evening', 'Night', 'Full Day'];
 const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBack }) => {
   const isCloud = restaurantType === 'CLOUD_KITCHEN';
   const isCafe = restaurantType === 'CAFE';
-  const showCaptains = !isCloud;
+  const showCaptains = true;
+  const captainLabel = isCloud || isCafe ? 'Order Managers' : 'Captains';
 
   const handleCaptainChange = (index, field, value) => {
     const newCaptains = [...captains];
@@ -52,7 +53,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
         <Users size={48} className="mx-auto text-[#E53935] mb-4" />
         <h2 className="text-2xl font-bold mb-2">Staff Setup</h2>
         <p className="text-gray-500">
-          {isCloud ? 'Add your order managers with 4-digit PINs' : 'Add your captains and cashiers with 4-digit PINs'}
+          {isCloud || isCafe ? 'Add your order managers with 4-digit PINs' : 'Add your captains and cashiers with 4-digit PINs'}
         </p>
       </div>
 
@@ -61,17 +62,19 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
-              Captains {isCafe && <span className="text-sm font-normal text-gray-500">(Optional)</span>}
+              {captainLabel} {(isCafe || isCloud) && <span className="text-sm font-normal text-gray-500">(Optional)</span>}
             </h3>
             <button
               onClick={addCaptain}
               className="flex items-center gap-2 text-sm text-[#E53935] hover:text-[#B71C1C]"
             >
-              <Plus size={16} /> Add Captain
+              <Plus size={16} /> Add {captainLabel.slice(0, -1)}
             </button>
           </div>
-          {isCafe && (
-            <p className="text-xs text-gray-500 -mt-2">Optional for cafes — add counter staff if needed.</p>
+          {(isCafe || isCloud) && (
+            <p className="text-xs text-gray-500 -mt-2">
+              {isCloud ? 'For Cloud Kitchen, order managers handle incoming delivery orders.' : 'Optional for cafes — add counter staff if needed.'}
+            </p>
           )}
           {captains.map((captain, index) => (
             <div key={index} className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
@@ -82,7 +85,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
                     value={captain.name}
                     onChange={(e) => handleCaptainChange(index, 'name', e.target.value)}
                     className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
-                    placeholder="Captain name"
+                    placeholder={`${captainLabel.slice(0, -1)} name`}
                   />
                 </div>
                 {captains.length > 1 && (

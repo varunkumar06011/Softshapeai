@@ -6,7 +6,7 @@ const DELIVERY_PLATFORMS = ['Swiggy', 'Zomato', 'Direct'];
 
 const defaultBarMenu = { categories: [{ name: '', items: [{ name: '', price: 0, availableSizes: [] }] }] };
 
-const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack }) => {
+const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onChange, onDeliveryPlatformsChange, onNext, onBack }) => {
   const [mode, setMode] = useState('manual'); // 'manual', 'upload-json', or 'upload-file'
   const [hasInteracted, setHasInteracted] = useState(false);
   const [activeTab, setActiveTab] = useState('food');
@@ -117,6 +117,29 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
         <h2 className="text-2xl font-bold mb-2">Menu Setup</h2>
         <p className="text-gray-500">Add your menu items</p>
       </div>
+
+      {isCloud && onDeliveryPlatformsChange && (
+        <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Which platforms will you receive orders from?</h3>
+          <div className="flex flex-wrap gap-4">
+            {DELIVERY_PLATFORMS.map(p => (
+              <label key={p} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deliveryPlatforms.includes(p)}
+                  onChange={(e) => {
+                    const current = deliveryPlatforms;
+                    const next = e.target.checked ? [...current, p] : current.filter(x => x !== p);
+                    onDeliveryPlatformsChange(next);
+                  }}
+                  className="w-4 h-4 text-[#E53935] rounded border-gray-300"
+                />
+                <span className="text-gray-700">{p}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isBarType && (
         <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">

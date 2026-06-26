@@ -10,6 +10,17 @@ Sentry.init({
   environment: import.meta.env.MODE,
   tracesSampleRate: 0.1,
   enabled: !!import.meta.env.VITE_SENTRY_DSN,
+  integrations: [
+    Sentry.replayIntegration(),
+  ],
+  // Session Replay
+  replaysSessionSampleRate: 1.0, // Set to 100% during testing. Lower for production.
+  replaysOnErrorSampleRate: 1.0,
+  // Propagate trace headers to backend so backend errors appear in replays
+  tracePropagationTargets: [
+    "localhost",
+    /softshape/i,
+  ],
 });
 
 // Catch unhandled promise rejections that React Error Boundaries cannot intercept

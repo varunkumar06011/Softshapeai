@@ -7,7 +7,8 @@ const GST_CATEGORIES = [
   { value: 'TAKEAWAY', label: 'Takeaway / Parcel only', rate: '5%', desc: 'No service charge' },
 ];
 
-const StepTax = ({ data, onChange, onNext, onBack }) => {
+const StepTax = ({ restaurantType, data, onChange, onNext, onBack }) => {
+  const isCloud = restaurantType === 'CLOUD_KITCHEN';
   const handleChange = (field, value) => {
     onChange({ ...data, [field]: value });
   };
@@ -217,6 +218,34 @@ const StepTax = ({ data, onChange, onNext, onBack }) => {
           NRAI guidelines — service charge is optional and must be disclosed.
         </p>
       </div>
+
+      {isCloud && (
+        <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Receipt size={16} className="text-gray-500" />
+            <p className="text-sm font-semibold text-gray-700">Packaging charge per order</p>
+          </div>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
+            <input
+              type="number"
+              value={data.packagingCharge === 0 ? '' : data.packagingCharge}
+              onChange={(e) => {
+                const val = e.target.value;
+                const num = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
+                handleChange('packagingCharge', num);
+              }}
+              className="w-full pl-8 pr-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+              min="0"
+              step="1"
+              placeholder="0"
+            />
+          </div>
+          <p className="text-xs text-gray-400">
+            Added to every delivery order for packaging materials.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-4">
         <button
