@@ -1,8 +1,19 @@
+import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
+
 /**
  * Calculates the subtotal, taxes, and total for a given array of items.
  * Each item must have `p` (price) and `q` (quantity).
+ * GST options default to the logged-in restaurant's configuration; pass `options` to override.
  */
-export const calculateOrderTotal = (items, discountPercent = 0) => {
+export const calculateOrderTotal = (items, discountPercent = 0, options = {}) => {
+  const config = getRestaurantConfig();
+  const gstCategory = options.gstCategory ?? config.gstCategory ?? 'NON_AC';
+  const pricesIncludeGst = options.pricesIncludeGst ?? config.pricesIncludeGst ?? false;
+  const isAc = String(gstCategory).toUpperCase() === 'AC';
+  const totalGstRate = isAc ? 0.18 : 0.05;
+  const cgstRate = isAc ? 0.09 : 0.025;
+  const sgstRate = isAc ? 0.09 : 0.025;
+
   if (!items || !Array.isArray(items) || items.length === 0) {
     return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
   }
@@ -14,14 +25,14 @@ export const calculateOrderTotal = (items, discountPercent = 0) => {
     if (item.removedFromBill) return;
     const price = Number(item.p ?? item.price ?? 0);
     const qty = Number(item.q ?? item.quantity ?? 1);
-    
+
     // Detect liquor/bar items by checking all possible field shapes from captain cart,
     // DB order items, and legacy kotHistory items.
     // BAR items (water bottles, packaged drinks, beer) are treated same as LIQUOR — no food GST.
     const rawType = item.menuType || item.menuItem?.menuType || item.type || '';
     const typeUpper = rawType.toString().toUpperCase();
     const type = (typeUpper === 'LIQUOR' || typeUpper === 'BAR') ? 'liquor' : 'food';
-    
+
     if (type === 'liquor') {
       liquorSubtotal += price * qty;
     } else {
@@ -29,8 +40,8 @@ export const calculateOrderTotal = (items, discountPercent = 0) => {
     }
   });
 
-  // GST Calculation: 5% total on food only (2.5% CGST + 2.5% SGST), 0% on liquor
-  // Single-pass: compute CGST/SGST once on the discounted food subtotal to avoid rounding drift
+  // GST Calculation: use configured category and inclusive/exclusive mode.
+  // Liquor is always 0% food GST. Tax is applied on discounted food subtotal only.
   const subtotal = foodSubtotal + liquorSubtotal;
   const discountAmount = discountPercent > 0
     ? Math.round(subtotal * (discountPercent / 100) * 100) / 100
@@ -39,13 +50,30 @@ export const calculateOrderTotal = (items, discountPercent = 0) => {
   const discountedFood = foodSubtotal - (discountAmount > 0 && subtotal > 0
     ? discountAmount * (foodSubtotal / subtotal)
     : 0);
-  const cgst = Math.round(discountedFood * 0.025 * 100) / 100;
-  const sgst = Math.round(discountedFood * 0.025 * 100) / 100;
-  const taxes = cgst + sgst;
-  const grandTotal = Number((subtotal - discountAmount + taxes).toFixed(2));
+  const liquorAfterDiscount = liquorSubtotal - (discountAmount > 0 && subtotal > 0
+    ? discountAmount * (liquorSubtotal / subtotal)
+    : 0);
+
+  let baseAmount, cgst, sgst, taxes;
+  if (pricesIncludeGst) {
+    // Prices include GST: extract the base, then split tax evenly from the base.
+    baseAmount = Math.round((discountedFood / (1 + totalGstRate)) * 100) / 100;
+    cgst = Math.round(baseAmount * cgstRate * 100) / 100;
+    sgst = Math.round(baseAmount * sgstRate * 100) / 100;
+    taxes = cgst + sgst;
+  } else {
+    // Prices exclude GST: add tax on top of discounted food.
+    baseAmount = discountedFood;
+    cgst = Math.round(discountedFood * cgstRate * 100) / 100;
+    sgst = Math.round(discountedFood * sgstRate * 100) / 100;
+    taxes = cgst + sgst;
+  }
+
+  const displayedSubtotal = Math.round((baseAmount + liquorAfterDiscount) * 100) / 100;
+  const grandTotal = Number((displayedSubtotal + taxes).toFixed(2));
 
   return {
-    subtotal: Number(subtotal.toFixed(2)),
+    subtotal: displayedSubtotal,
     taxes,
     total: grandTotal,
     grandTotal,

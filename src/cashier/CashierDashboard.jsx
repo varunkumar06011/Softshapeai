@@ -381,6 +381,7 @@ const CashierDashboard = ({ onLogout }) => {
   const cancelInProgressRef = useRef(false); // blocks print-bill while cancel API is in flight
   const lastAnyItemAddedRef = useRef(0); // global 2s cooldown across all item adds
   const lsWriteTimerRef = useRef(null);
+  const lastFetchUpdateRef = useRef({ backendId: null, ts: 0 }); // guards selectedTable against stale activeTables sync
 
   function shallowEqualSelectedTable(prev, next) {
     if (!prev || !next) return prev === next;
@@ -1422,6 +1423,14 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
+
+    // Guard: if fetchFreshOrderData just updated this selectedTable, skip the activeTables-driven
+    // merge for a few seconds to avoid a stale activeTables snapshot overwriting a fresh order.
+    const fetchGuard = lastFetchUpdateRef.current.backendId === selectedTable.backendId &&
+      Date.now() - lastFetchUpdateRef.current.ts < 3000;
+    if (liveTable && fetchGuard) {
+      return;
+    }
 
     if (liveTable) {
       if (liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free') {
@@ -2776,6 +2785,7 @@ const CashierDashboard = ({ onLogout }) => {
             const freshIds = new Set(freshItems.map(i => i.id).filter(Boolean));
             const localOnlyItems = existingItems.filter(i => i.id && !freshIds.has(i.id) && !i.removedFromBill);
             const mergedItems = [...freshItems, ...localOnlyItems];
+            lastFetchUpdateRef.current = { backendId: table.backendId, ts: Date.now() };
             return {
               ...prev,
               activeOrder: { ...freshOrder, items: mergedItems },
@@ -4001,11 +4011,11 @@ const CashierDashboard = ({ onLogout }) => {
                                                   <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(0)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                                  <span>CGST (2.5%)</span>
+                                                  <span>CGST</span>
                                                   <span className="text-gray-800">₹{Number(txn.cgst ?? 0).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
-                                                  <span>SGST (2.5%)</span>
+                                                  <span>SGST</span>
                                                   <span className="text-gray-800">₹{Number(txn.sgst ?? 0).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
@@ -4712,11 +4722,11 @@ const CashierDashboard = ({ onLogout }) => {
                         {(selectedTable ? activeCgst : cartCgst) > 0 && (
                           <>
                             <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
-                              <span>CGST (2.5%)</span>
+                              <span>CGST</span>
                               <span>₹{(selectedTable ? activeCgst : cartCgst).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
-                              <span>SGST (2.5%)</span>
+                              <span>SGST</span>
                               <span>₹{(selectedTable ? activeSgst : cartSgst).toFixed(2)}</span>
                             </div>
                           </>

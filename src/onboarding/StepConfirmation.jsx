@@ -22,6 +22,15 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
   const firstSection = sections[0]?.name || 'Main Hall';
   const firstTable = tables[0]?.number || 1;
   const sampleItems = menu.categories.flatMap(cat => cat.items).slice(0, 3);
+  const sampleSubtotal = sampleItems.reduce((sum, item) => sum + (item.price || 0), 0);
+  const taxConfig = wizardData.taxConfig || { gstCategory: 'NON_AC', pricesIncludeGst: false };
+  const isAcPreview = String(taxConfig.gstCategory).toUpperCase() === 'AC';
+  const sampleGstRate = isAcPreview ? 0.18 : 0.05;
+  const sampleGstAmount = taxConfig.pricesIncludeGst
+    ? Math.round((sampleSubtotal - sampleSubtotal / (1 + sampleGstRate)) * 100) / 100
+    : Math.round(sampleSubtotal * sampleGstRate * 100) / 100;
+  const sampleTotal = taxConfig.pricesIncludeGst ? sampleSubtotal : Math.round((sampleSubtotal + sampleGstAmount) * 100) / 100;
+  const sampleDisplayedSubtotal = Math.round((sampleTotal - sampleGstAmount) * 100) / 100;
 
   const now = new Date();
   const istTime = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
@@ -195,15 +204,15 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
               <div className="border-t border-dashed border-gray-300 mt-2 pt-2 space-y-1">
                 <div className="flex justify-between text-xs">
                   <span>Subtotal</span>
-                  <span>₹{sampleItems.reduce((sum, item) => sum + (item.price || 0), 0)}</span>
+                  <span>₹{sampleDisplayedSubtotal}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span>GST (5%)</span>
-                  <span>₹{(sampleItems.reduce((sum, item) => sum + (item.price || 0), 0) * 0.05).toFixed(2)}</span>
+                  <span>GST ({isAcPreview ? '18%' : '5%'})</span>
+                  <span>₹{sampleGstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm font-bold">
                   <span>Total</span>
-                  <span>₹{(sampleItems.reduce((sum, item) => sum + (item.price || 0), 0) * 1.05).toFixed(2)}</span>
+                  <span>₹{sampleTotal.toFixed(2)}</span>
                 </div>
               </div>
             </div>

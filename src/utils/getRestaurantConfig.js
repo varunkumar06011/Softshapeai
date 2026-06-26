@@ -25,6 +25,8 @@ function getDefaultConfig() {
     plan: 'starter',
     billingStatus: 'trialing',
     features: null,
+    gstCategory: 'NON_AC',
+    pricesIncludeGst: false,
   };
 }
 

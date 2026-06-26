@@ -82,7 +82,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
 
-  const incomingOrder = row.orders?.[0] || row.activeOrder || null;
+  const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
+  // Defensive: an order can only belong to this table if its tableId matches the row id.
+  const incomingOrder = rawIncomingOrder && rawIncomingOrder.tableId === row.id ? rawIncomingOrder : null;
   const existingOrder = existing?.activeOrder;
   let activeOrder = incomingOrder;
 

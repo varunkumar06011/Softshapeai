@@ -36,6 +36,7 @@ import { API_BASE } from '../services/apiConfig.js';
 
 import { connectQZ, sendToPrinter, warmSignature, startKeepAlive, getQZ } from '../utils/qzTray.js';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig';
 import { useAuth } from '../context/AuthContext.jsx';
 
 // ── Configurable print rooms ──
@@ -583,9 +584,14 @@ function padRight(left, right, width = LINE_NORMAL) {
 
 
 
-function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag, restaurant }) {
+function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag, restaurant, gstCategory, pricesIncludeGst }) {
 
   const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
+  const config = getRestaurantConfig();
+  const effectiveGstCategory = gstCategory || config.gstCategory || 'NON_AC';
+  const effectivePricesIncludeGst = pricesIncludeGst ?? config.pricesIncludeGst ?? false;
+  const isAc = String(effectiveGstCategory).toUpperCase() === 'AC';
+  const totalGstRate = isAc ? 0.18 : 0.05;
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
     ? receiptHeader
@@ -666,19 +672,28 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
 
   });
 
-  const subtotal = Number(totalAmount) || 0;
-
-  const tax = subtotal * 0.05;
-
-  const total = subtotal + tax;
+  const foodSubtotal = (items || [])
+    .filter((i) => (i.menuType || i.type || 'FOOD').toString().toUpperCase() === 'FOOD')
+    .reduce((s, i) => s + Number(i.price || i.p || 0) * Number(i.quantity || i.q || 1), 0);
+  const liquorSubtotal = (items || [])
+    .filter((i) => (i.menuType || i.type || 'FOOD').toString().toUpperCase() !== 'FOOD')
+    .reduce((s, i) => s + Number(i.price || i.p || 0) * Number(i.quantity || i.q || 1), 0);
+  const foodBase = effectivePricesIncludeGst
+    ? Math.round((foodSubtotal / (1 + totalGstRate)) * 100) / 100
+    : foodSubtotal;
+  const tax = effectivePricesIncludeGst
+    ? Math.round((foodSubtotal - foodBase) * 100) / 100
+    : Math.round(foodSubtotal * totalGstRate * 100) / 100;
+  const displayedSubtotal = Math.round((foodBase + liquorSubtotal) * 100) / 100;
+  const total = Math.round((displayedSubtotal + tax) * 100) / 100;
 
   cmds.push(
 
     separator(),
 
-    padRight('Subtotal', 'Rs.' + subtotal.toFixed(0)) + '\n',
+    padRight('Subtotal', 'Rs.' + displayedSubtotal.toFixed(0)) + '\n',
 
-    padRight('GST (5%)', 'Rs.' + tax.toFixed(0)) + '\n',
+    padRight('GST', 'Rs.' + tax.toFixed(0)) + '\n',
 
     separator('='),
 

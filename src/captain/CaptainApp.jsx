@@ -1384,22 +1384,23 @@ export default function CaptainApp({ onLogout }) {
     const mergeOrderItems = (existing = [], incoming = []) => {
       const map = new Map();
       const incomingByName = new Map(incoming.map(i => [i.name ?? i.n, i]).filter(([k]) => !!k));
-      // Add all incoming items — incoming is authoritative for cancellation state
-      incoming.forEach(i => map.set(i.id, { ...(map.get(i.id) || {}), ...i }));
-      // Add existing items only if not already covered by incoming
+
+      // Keep existing items unless they are optimistic placeholders (no id) that the backend
+      // has now confirmed with a real id. Cancelled items stay in the map so the captain can
+      // render them as struck-through.
       existing.forEach(i => {
         const name = i.name ?? i.n;
-        // Drop optimistic items (no id) whose name matches a real incoming item
         if (!i.id && name && incomingByName.has(name)) return;
-        if (map.has(i.id)) {
-          // Incoming is authoritative — if incoming says removedFromBill, honour it
-          const incomingItem = map.get(i.id);
-          if (incomingItem.removedFromBill) return; // keep incoming's cancelled state
-          map.set(i.id, { ...i, ...incomingItem }); // incoming wins on all fields
-        } else {
-          map.set(i.id, i);
-        }
+        if (i.id) map.set(i.id, i);
       });
+
+      // Merge incoming items on top. Incoming is authoritative for cancellation state.
+      incoming.forEach(i => {
+        if (!i.id) return;
+        const existingItem = map.get(i.id);
+        map.set(i.id, { ...(existingItem || {}), ...i });
+      });
+
       return Array.from(map.values());
     };
 
@@ -5097,11 +5098,11 @@ export default function CaptainApp({ onLogout }) {
                       <span className="block text-sm font-black text-gray-700">₹{sessionBill.subtotal}</span>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-2">
-                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">CGST 2.5%</span>
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">CGST</span>
                       <span className="block text-sm font-black text-gray-700">₹{sessionBill.cgst}</span>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-2">
-                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">SGST 2.5%</span>
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">SGST</span>
                       <span className="block text-sm font-black text-gray-700">₹{sessionBill.sgst}</span>
                     </div>
                     <div className="bg-red-50 rounded-lg p-2">

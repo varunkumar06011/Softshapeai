@@ -90,7 +90,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
   const mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
 
-  const incomingOrder = row.orders?.[0] || row.activeOrder || null;
+  const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
+  // Defensive: an order can only belong to this table if its tableId matches the row id.
+  const incomingOrder = rawIncomingOrder && rawIncomingOrder.tableId === row.id ? rawIncomingOrder : null;
   const existingOrder = existing?.activeOrder;
   let activeOrder = incomingOrder;
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
