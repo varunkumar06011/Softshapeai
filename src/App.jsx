@@ -237,7 +237,8 @@ function App() {
             <Route path="/admin/qr-codes" element={<TableQRCodesWrapper />} />
             <Route path="/cashier" element={<CashierLoginWrapper />} />
             <Route path="/cashier/dashboard" element={<ErrorBoundary><CashierDashboardWrapper /></ErrorBoundary>} />
-            <Route path="/captain/*" element={<ErrorBoundary><CaptainAppWrapper /></ErrorBoundary>} />
+            <Route path="/captain" element={<CaptainLoginWrapper />} />
+            <Route path="/captain/dashboard/*" element={<ErrorBoundary><CaptainAppWrapper /></ErrorBoundary>} />
             <Route path="/kitchen" element={<KitchenView />} />
             <Route path="/print-station" element={<PrintStation />} />
             <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
