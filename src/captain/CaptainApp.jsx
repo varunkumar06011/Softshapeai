@@ -424,21 +424,27 @@ export default function CaptainApp({ onLogout }) {
   // ── All useState/useRef declarations FIRST (before any useMemo that references them) ──
 
   const [currentCaptain, setCurrentCaptain] = useState(() => {
-
     const saved = localStorage.getItem(getTenantScopedKey('active_captain'));
-
-    return saved ? JSON.parse(saved) : null;
-
+    if (saved) return JSON.parse(saved);
+    // Respect main auth context when captain logged in via shared LoginScreen
+    if (user?.role === 'CAPTAIN' && user?.name) {
+      return {
+        id: user.id,
+        name: user.name,
+        initials: user.name.split(' ').map(n => n[0]).join('').toUpperCase(),
+        color: 'bg-[#EFF6FF] text-[#1D4ED8]',
+      };
+    }
+    return null;
   });
 
   const [isLoginView, setIsLoginView] = useState(() => {
-
     const auth = localStorage.getItem(getTenantScopedKey('captain_auth_v2')) === 'true';
-
     const hasCaptain = !!localStorage.getItem(getTenantScopedKey('active_captain'));
-
-    return !(auth && hasCaptain);
-
+    if (auth && hasCaptain) return false;
+    // Also respect main auth context (captain logged in via shared LoginScreen PIN flow)
+    if (user?.role === 'CAPTAIN') return false;
+    return true;
   });
 
   const [availableCaptains, setAvailableCaptains] = useState([]);
@@ -649,7 +655,10 @@ export default function CaptainApp({ onLogout }) {
 
   }, []);
 
-
+  // ── Debug: log mount and key state ──
+  useEffect(() => {
+    console.log('[CaptainApp] mounted. user:', user?.id, 'role:', user?.role, 'restaurant:', restaurant?.id);
+  }, []);
 
   useEffect(() => {
     const handleViewportResize = () => {
@@ -959,29 +968,38 @@ export default function CaptainApp({ onLogout }) {
   const outletFilteredMenuItems = useMemo(() => {
     const base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
-    let currentVenueId = null;
-
-    if (activeOutlet === 'bar' || activeOutlet === 'both') {
-
-      if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
-
-      else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
-
-      else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
-
-      else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
-
-      else if (tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
-
-    } else {
-
-      if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
-
-      else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
-
+    // Map section names to subcategory tags (reverse of backend getSectionTag)
+    function getSubCategoryFromSectionName(sectionName) {
+      const n = (sectionName || '').trim().toLowerCase();
+      if (n.includes('bar ac') || n === 'bar hall' || n === 'main hall') return 'bar-ac-hall';
+      if (n.includes('conference')) return 'bar-conference';
+      if (n.includes('pdr')) return 'bar-pdr';
+      if (n.includes('rooms') || n.includes('room')) return 'bar-rooms';
+      if (n.includes('gobox') || n.includes('go box') || (n.includes('bar') && n.includes('parcel'))) return 'bar-gobox';
+      if (n.includes('parcel') && n.includes('restaurant')) return 'parcel';
+      if (n.includes('family restaurant')) return 'family-restaurant';
+      return null;
     }
 
+    // Resolve currentVenueId from actual table section ID (not hardcoded tag)
+    let currentVenueId = activeTable?.sectionId || activeTable?.section?.id || null;
+    if (!currentVenueId) {
+      for (const t of activeTables) {
+        const tag = getSubCategoryFromSectionName(t.sectionName || t.section?.name);
+        if (tag === tableSubCategory) {
+          currentVenueId = t.sectionId || t.section?.id;
+          break;
+        }
+      }
+    }
+
+    // Build venue price map from item.venuePrices keyed by section ID
     const venueSpecificPrices = {};
+    for (const item of base) {
+      const vp = item.venuePrices?.[currentVenueId];
+      if (vp !== undefined) venueSpecificPrices[item.id] = vp;
+    }
+
     const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && currentVenueId !== null;
 
     return base.map(item => {
@@ -1009,7 +1027,7 @@ export default function CaptainApp({ onLogout }) {
       }
       return true;
     });
-  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory]);
+  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, activeTable, activeTables]);
 
 
 
@@ -2841,9 +2859,8 @@ export default function CaptainApp({ onLogout }) {
   );
 
   if (isLoginView) {
-
+    console.log('[CaptainApp] rendering login view');
     return (
-
       <div className="flex min-h-screen items-start justify-center bg-[#F4F4F5] p-4 sm:p-6 font-['Inter',sans-serif] overflow-y-auto">
 
         <div className="w-full max-w-lg bg-white rounded-[30px] sm:rounded-[40px] p-6 sm:p-10 shadow-[0_40px_80px_rgba(0,0,0,0.06)] border border-gray-100 my-auto">
@@ -3055,16 +3072,25 @@ export default function CaptainApp({ onLogout }) {
 
   }
 
+  // ── Guard: never render the dashboard with missing auth or still-loading critical data ──
+  if (!restaurant || !user) {
+    console.warn('[CaptainApp] dashboard blocked: missing restaurant or user');
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#F4F4F5]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 size={32} className="animate-spin text-[#E53935]" />
+          <p className="text-sm font-bold text-gray-500">Loading restaurant data…</p>
+        </div>
+      </div>
+    );
+  }
 
+  console.log('[CaptainApp] rendering dashboard. tables:', tables?.length, 'menu:', restaurantMenu?.length);
 
   return (
-
     <div
-
       className="flex flex-col bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]"
-
       style={{ height: 'calc(var(--captain-vh, 1dvh) * 100)' }}
-
     >
 
 

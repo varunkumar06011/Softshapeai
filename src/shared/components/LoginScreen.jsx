@@ -247,9 +247,12 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
                   type="text"
                   value={restaurantCode}
                   onChange={e => { setRestaurantCode(e.target.value); setError(''); }}
-                  placeholder="e.g. your-restaurant-code"
+                  placeholder="e.g. A3BK9Z"
                   className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-5 text-sm font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
                 />
+                <p className="text-[10px] font-bold text-gray-400 ml-1 mt-1">
+                  The 6-character code shown after onboarding
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">

@@ -23,6 +23,7 @@ export const authService = {
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
+    console.log('[AuthService] login stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
     purgeLegacyCaches();
     return data;
   },
@@ -42,6 +43,7 @@ export const authService = {
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
+    console.log('[AuthService] captainLogin stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
     purgeLegacyCaches();
     return data;
   },
@@ -106,6 +108,11 @@ export const authService = {
 
   getAuthHeader() {
     const token = localStorage.getItem('ss_token');
+    if (token) {
+      console.log('[AuthService] getAuthHeader: token present');
+    } else {
+      console.warn('[AuthService] getAuthHeader: NO token');
+    }
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
 
