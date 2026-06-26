@@ -241,6 +241,8 @@ function App() {
             <Route path="/captain/dashboard/*" element={<ErrorBoundary><CaptainAppWrapper /></ErrorBoundary>} />
             <Route path="/kitchen" element={<KitchenView />} />
             <Route path="/print-station" element={<PrintStation />} />
+            <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
+            <Route path="/user-menu/:slug" element={<UserMenuApp />} />
             <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

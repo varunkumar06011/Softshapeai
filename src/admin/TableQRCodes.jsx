@@ -11,6 +11,8 @@ export default function TableQRCodes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [qrSignatures, setQrSignatures] = useState({});
+
   useEffect(() => {
     async function load() {
       try {
@@ -20,6 +22,26 @@ export default function TableQRCodes() {
         const data = await res.json();
         setRestaurant(data.restaurant);
         setTables(data.tables || []);
+
+        // Fetch HMAC signatures for each table
+        const sigPromises = (data.tables || []).map(async (t) => {
+          try {
+            const sigRes = await apiFetch(`/api/tables/${t.id}/qr-url`);
+            if (sigRes.ok) {
+              const sigData = await sigRes.json();
+              return { tableId: t.id, sig: sigData.sig, url: sigData.url };
+            }
+          } catch (e) {
+            console.warn(`[TableQRCodes] Failed to fetch sig for table ${t.id}:`, e);
+          }
+          return null;
+        });
+        const sigResults = await Promise.all(sigPromises);
+        const sigMap = {};
+        sigResults.forEach(r => {
+          if (r) sigMap[r.tableId] = r;
+        });
+        setQrSignatures(sigMap);
       } catch (err) {
         setError(err.message || 'Failed to load tables');
       } finally {
@@ -31,8 +53,12 @@ export default function TableQRCodes() {
 
   const getQrUrl = (tableId) => {
     if (!restaurant?.slug || !tableId) return '';
-    // Use the same origin as the current page so it works in dev and prod
     const base = window.location.origin;
+    const sigData = qrSignatures[tableId];
+    if (sigData && sigData.sig) {
+      return `${base}/user-menu/${encodeURIComponent(restaurant.slug)}/${encodeURIComponent(tableId)}/${sigData.sig}`;
+    }
+    // Fallback: no signature (menu-only mode)
     return `${base}/user-menu/${encodeURIComponent(restaurant.slug)}/${encodeURIComponent(tableId)}`;
   };
 

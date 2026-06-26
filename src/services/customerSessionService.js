@@ -42,11 +42,24 @@ export function getDeviceSessionId() {
 const WAITER_CALL_COOLDOWN_MS = 15000; // 15 seconds
 
 /**
+ * Generate a unique call ID for waiter calls.
+ * Used by the backend API flow (cooldown is now enforced server-side).
+ */
+export function generateCallId() {
+  return `wc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+}
+
+/**
  * Validates if a table is allowed to call a waiter.
  * Enforces the 15-second cooldown securely on the "backend".
  *
  * Also cleans up stale calls older than 5 minutes to prevent
  * ghost entries from blocking future calls.
+ *
+ * @deprecated Cooldown is now enforced by the backend (Table.lastWaiterCallAt).
+ *             This function is kept for backward compatibility but should not
+ *             be used for new waiter call flows — use the /api/public/call-waiter
+ *             endpoint instead.
  */
 export function validateAndCreateWaiterCall(tableId, source) {
   const db = readDB(WAITER_CALLS_KEY);

@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSocket } from "../hooks/useSocket";
+import { getSocket, getPublicSocket } from "../hooks/useSocket";
+import { API_BASE } from "./apiConfig";
 import { getTenantScopedKey } from "../utils/cacheKeys";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
+export { API_BASE };
+
 const subscribers = new Set();
 let isListenerAttached = false;
+let isPublicListenerAttached = false;
 
 /**
  * Ensures the socket is connected to the restaurant room and
@@ -60,6 +64,28 @@ export function initSocket() {
 
     isListenerAttached = true;
     console.log("[WaiterCallSync] Global listeners registered");
+  }
+}
+
+/**
+ * Initialize public socket for customer-facing pages.
+ * Uses a separate socket instance (getPublicSocket) with HMAC signature
+ * verification instead of JWT auth.
+ */
+export function initPublicSocket(slug, tableId, sig) {
+  const socket = getPublicSocket(slug, tableId, sig);
+
+  if (!isPublicListenerAttached) {
+    // Listen for waiter events (captain acknowledgments relayed by server)
+    socket.on("waiter:event", (data) => {
+      console.log("[WaiterCallSync] Received waiter:event via public socket", data);
+      subscribers.forEach(callback => {
+        try { callback(data); } catch (e) { console.error("[WaiterCallSync] Subscriber error", e); }
+      });
+    });
+
+    isPublicListenerAttached = true;
+    console.log("[WaiterCallSync] Public socket listeners registered");
   }
 }
 

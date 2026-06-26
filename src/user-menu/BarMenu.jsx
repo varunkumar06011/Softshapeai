@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater } from 'lucide-react';
 
-import { validateAndCreateWaiterCall } from '../services/customerSessionService';
+import { generateCallId } from '../services/customerSessionService';
 
-import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
+import { initPublicSocket, useWaiterCalls } from '../services/waiterCallService';
 
 import { fetchBarTables } from '../services/barTableApi';
 
@@ -14,7 +14,7 @@ import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
-import { fetchUnifiedMenu } from '../services/unifiedMenuService';
+import { fetchPublicMenu } from '../services/unifiedMenuService';
 
 import VariantPicker from '../shared/components/VariantPicker';
 
@@ -117,7 +117,7 @@ const flattenSections = (payload) => {
 
 
 
-export default function BarMenu({ tableId }) {
+export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
   const getEngagement = useCallback((id, name) => {
 
@@ -201,6 +201,8 @@ export default function BarMenu({ tableId }) {
 
   const [callCooldown, setCallCooldown] = useState(0);
 
+  const [tableNumber, setTableNumber] = useState(null);
+
 
 
   const [isScrolledDown, setIsScrolledDown] = useState(false);
@@ -267,7 +269,9 @@ export default function BarMenu({ tableId }) {
 
   useEffect(() => {
 
-    initSocket();
+    if (!isMenuOnly && slug && tableId && sig) {
+      initPublicSocket(slug, tableId, sig);
+    }
 
 
 
@@ -337,7 +341,7 @@ export default function BarMenu({ tableId }) {
 
     // Get socket from waiterCallService
 
-    const socket = window.__softshape_socket;
+    const socket = window.__softshape_public_socket;
 
     if (socket) {
 
@@ -381,7 +385,11 @@ export default function BarMenu({ tableId }) {
 
         try {
 
-          unifiedData = await fetchUnifiedMenu('bar');
+          unifiedData = await fetchPublicMenu(slug, 'bar', tableId, sig);
+
+          if (unifiedData && unifiedData.tableNumber) {
+            setTableNumber(unifiedData.tableNumber);
+          }
 
         } catch (e) {
 
@@ -852,7 +860,7 @@ export default function BarMenu({ tableId }) {
 
   // Call Waiter handler
 
-  const handleCallWaiter = () => {
+  const handleCallWaiter = async () => {
 
     if (callCooldown > 0) return;
 
@@ -860,42 +868,29 @@ export default function BarMenu({ tableId }) {
 
     console.log(`[BarMenu] Call Waiter clicked for table ${tableId}`);
 
-    const validation = validateAndCreateWaiterCall(tableId, 'bar');
+    const callId = generateCallId();
 
+    try {
+      const res = await fetch(apiUrl('/api/public/call-waiter'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, tableId, sig, callId, source: 'bar' }),
+      });
+      const result = await res.json();
 
-
-    if (validation.success) {
-
-      const payload = {
-
-        tableId,
-
-        callId: validation.callId,
-
-        timestamp: Date.now(),
-
-        source: 'bar'
-
-      };
-
-      console.log('[BarMenu] Broadcasting waiter call:', payload);
-
-      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload, 'bar');
-
-      if (!wasConnected) {
-
-        console.warn('[BarMenu] Socket was disconnected during emit — event queued');
-
+      if (result.success) {
+        console.log('[BarMenu] Waiter call successful:', result);
+        setCallCooldown(15);
+      } else if (result.reason === 'COOLDOWN') {
+        console.log(`[BarMenu] Call blocked — cooldown: ${result.retryAfter}s remaining`);
+        setCallCooldown(result.retryAfter);
+      } else {
+        console.warn('[BarMenu] Waiter call failed:', result.error);
+        setCallCooldown(5);
       }
-
-      setCallCooldown(15);
-
-    } else {
-
-      console.log(`[BarMenu] Call blocked — cooldown: ${validation.retryAfter}s remaining`);
-
-      setCallCooldown(validation.retryAfter);
-
+    } catch (err) {
+      console.error('[BarMenu] Failed to call waiter:', err);
+      setCallCooldown(5);
     }
 
   };
@@ -1106,7 +1101,7 @@ export default function BarMenu({ tableId }) {
 
             <div className="animate-in fade-in slide-in-from-left-4">
 
-              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">BAR TABLE {tableId.replace('table-', '')}</h1>
+              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">BAR TABLE {tableNumber || (tableId ? tableId.replace('table-', '') : '—')}</h1>
 
               <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1.5">
 
@@ -1468,8 +1463,8 @@ export default function BarMenu({ tableId }) {
 
 
 
-      {/* Floating Call Waiter Button */}
-
+      {/* Floating Call Waiter Button — hidden in menu-only mode */}
+      {!isMenuOnly && (
       <div
 
         className={`absolute right-4 sm:right-6 z-50 transition-all duration-300 ease-in-out ${cart.length > 0
@@ -1551,6 +1546,7 @@ export default function BarMenu({ tableId }) {
         )}
 
       </div>
+      )}
 
 
 

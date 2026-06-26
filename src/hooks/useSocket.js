@@ -133,3 +133,60 @@ export function useSocket(restaurantId) {
 
   return socket;
 }
+
+// ─── Public (customer-facing) socket — separate instance ─────────────
+// Customers don't have JWT tokens. This is a completely separate socket
+// instance from the staff singleton above, avoiding auth conflicts.
+let publicSocketInstance = null;
+
+export function getPublicSocket(slug, tableId, sig) {
+  if (!publicSocketInstance) {
+    publicSocketInstance = io(API_BASE, {
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 15000,
+      randomizationFactor: 0.5,
+      timeout: 45000,
+      autoConnect: true,
+      forceNew: true,
+      addTrailingSlash: false,
+      pingInterval: 25000,
+      pingTimeout: 60000,
+      // No auth token — public connection
+    });
+
+    // Re-emit join:public on every connect/reconnect
+    publicSocketInstance.on("connect", () => {
+      console.log("[PublicSocket] Connected — joining public room");
+      publicSocketInstance.emit("join:public", { slug, tableId, sig });
+    });
+
+    publicSocketInstance.on("connect_error", (err) => {
+      console.warn("[PublicSocket] Connection error:", err.message);
+    });
+
+    publicSocketInstance.on("auth:error", (err) => {
+      console.warn("[PublicSocket] Auth error:", err.message);
+    });
+
+    // Store globally for menu-item-updated listeners
+    window.__softshape_public_socket = publicSocketInstance;
+  }
+
+  return publicSocketInstance;
+}
+
+export function disconnectPublicSocket() {
+  if (publicSocketInstance) {
+    try {
+      publicSocketInstance.disconnect();
+    } catch {
+      /* ignore */
+    }
+    publicSocketInstance = null;
+    window.__softshape_public_socket = null;
+  }
+}

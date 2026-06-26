@@ -7,17 +7,19 @@ import { motion } from 'framer-motion';
 import { UtensilsCrossed, GlassWater, Sparkles, ArrowRight, AlertTriangle } from 'lucide-react';
 
 export default function UserMenuApp() {
-  const { slug, tableId } = useParams();
+  const { slug, tableId, sig } = useParams();
 
   // 'selection', 'engagement', 'menu', 'bar-menu'
   const [view, setView] = useState('selection');
   const [discountAmount, setDiscountAmount] = useState(0);
 
+  // Menu-only mode: no tableId or no sig → show menu without waiter call
+  const isMenuOnly = !tableId || !sig;
+
   // ── Fallback UX for malformed URLs ──
   const isValidSlug = slug && slug.trim().length > 0;
-  const isValidTableId = tableId && tableId.trim().length > 0;
 
-  if (!isValidSlug || !isValidTableId) {
+  if (!isValidSlug) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#FFF5F5] p-6 font-['Inter',sans-serif]">
         <div className="bg-white rounded-[32px] p-8 sm:p-12 shadow-[0_20px_60px_rgba(0,0,0,0.06)] max-w-md w-full text-center">
@@ -142,9 +144,9 @@ export default function UserMenuApp() {
   }
 
   if (view === 'bar-menu') {
-    return <BarMenu slug={slug} tableId={tableId} />;
+    return <BarMenu slug={slug} tableId={tableId} sig={sig} isMenuOnly={isMenuOnly} />;
   }
 
-  return <CustomerMenu slug={slug} tableId={tableId} discountPercentage={discountAmount} />;
+  return <CustomerMenu slug={slug} tableId={tableId} sig={sig} isMenuOnly={isMenuOnly} discountPercentage={discountAmount} />;
 }
 

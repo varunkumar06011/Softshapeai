@@ -1,40 +1,43 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useMenuSync } from '../hooks/useMenuSync';
-import { fetchUnifiedMenu } from '../services/unifiedMenuService';
+import { fetchPublicMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
-import { validateAndCreateWaiterCall } from '../services/customerSessionService';
-import { broadcastWaiterEvent, initSocket, useWaiterCalls } from '../services/waiterCallService';
+import { generateCallId } from '../services/customerSessionService';
+import { initPublicSocket, useWaiterCalls, API_BASE } from '../services/waiterCallService';
+import { apiUrl } from '../services/apiConfig';
 
 
-export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) {
+export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, discountPercentage = 0 }) {
   const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
   const [unifiedMenu, setUnifiedMenu] = useState(null);
   const [unifiedLoading, setUnifiedLoading] = useState(true);
   const [menuError, setMenuError] = useState(false);
+  const [tableNumber, setTableNumber] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [dietFilter, setDietFilter] = useState('All'); // All, Veg, Non-Veg
   const [cart, setCart] = useState([]);
 
-  // Fetch unified menu
+  // Fetch public menu by slug
   useEffect(() => {
     setUnifiedLoading(true);
     setMenuError(false);
-    fetchUnifiedMenu('family-restaurant', slug, tableId)
+    fetchPublicMenu(slug, 'family-restaurant', tableId, sig)
       .then(data => {
         if (!data.success || data.error) {
           setMenuError(true);
         }
         setUnifiedMenu(data);
+        if (data.tableNumber) setTableNumber(data.tableNumber);
         setUnifiedLoading(false);
       })
       .catch(err => {
-        console.error('[CustomerMenu] Failed to fetch unified menu:', err);
+        console.error('[CustomerMenu] Failed to fetch public menu:', err);
         setMenuError(true);
         setUnifiedLoading(false);
       });
-  }, [slug, tableId]);
+  }, [slug, tableId, sig]);
 
   // Derive menu items and categories from unified menu
   const menuItems = useMemo(() => {
@@ -129,17 +132,18 @@ export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) 
   }, [callCooldown]);
 
   useEffect(() => {
-    initSocket();
+    // Only init public socket if we have table context (not menu-only mode)
+    if (!isMenuOnly && slug && tableId && sig) {
+      initPublicSocket(slug, tableId, sig);
+    }
 
     // Listen for socket menu update events from admin panel
     const onMenuItemUpdated = (payload) => {
       console.log('[CustomerMenu] Received menu-item-updated:', payload);
-      // Dispatch window event for menuSyncService to pick up
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
     };
 
-    // Get socket from waiterCallService
-    const socket = window.__softshape_socket;
+    const socket = window.__softshape_public_socket;
     if (socket) {
       socket.on('menu-item-updated', onMenuItemUpdated);
     }
@@ -149,7 +153,7 @@ export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) 
         socket.off('menu-item-updated', onMenuItemUpdated);
       }
     };
-  }, []);
+  }, [isMenuOnly, slug, tableId, sig]);
 
   const filteredMenu = useMemo(() => {
     if (!menuItems) return [];
@@ -208,28 +212,33 @@ export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) 
   const discountAmount = Math.floor(subtotal * (discountPercentage / 100));
   const total = subtotal - discountAmount;
 
-  const handleCallWaiter = () => {
+  const handleCallWaiter = async () => {
     if (callCooldown > 0) return;
     
     console.log(`[CustomerMenu] Call Waiter clicked for table ${tableId}`);
-    const validation = validateAndCreateWaiterCall(tableId, 'restaurant');
+    const callId = generateCallId();
 
-    if (validation.success) {
-      const payload = {
-        tableId,
-        callId: validation.callId,
-        timestamp: Date.now(),
-        source: 'restaurant'
-      };
-      console.log('[CustomerMenu] Broadcasting waiter call:', payload);
-      const wasConnected = broadcastWaiterEvent('customer:call_waiter', payload, 'restaurant');
-      if (!wasConnected) {
-        console.warn('[CustomerMenu] Socket was disconnected during emit — event queued');
+    try {
+      const res = await fetch(apiUrl('/api/public/call-waiter'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, tableId, sig, callId, source: 'restaurant' }),
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        console.log('[CustomerMenu] Waiter call successful:', result);
+        setCallCooldown(15);
+      } else if (result.reason === 'COOLDOWN') {
+        console.log(`[CustomerMenu] Call blocked — cooldown: ${result.retryAfter}s remaining`);
+        setCallCooldown(result.retryAfter);
+      } else {
+        console.warn('[CustomerMenu] Waiter call failed:', result.error);
+        setCallCooldown(5);
       }
-      setCallCooldown(15);
-    } else {
-      console.log(`[CustomerMenu] Call blocked — cooldown: ${validation.retryAfter}s remaining`);
-      setCallCooldown(validation.retryAfter);
+    } catch (err) {
+      console.error('[CustomerMenu] Failed to call waiter:', err);
+      setCallCooldown(5);
     }
   };
 
@@ -312,7 +321,7 @@ export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) 
           }`}>
           <div className="flex justify-between items-start">
             <div className="animate-in fade-in slide-in-from-left-4">
-              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">TABLE {tableId}</h1>
+              <h1 className="text-3xl font-black tracking-tighter text-gray-900 uppercase">TABLE {tableNumber || '—'}</h1>
               <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#FF4D4F] animate-pulse" />
                 Live Interactive Dining Experience
@@ -557,7 +566,8 @@ export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) 
         )}
       </div>
 
-      {/* Floating Call Waiter Button */}
+      {/* Floating Call Waiter Button — hidden in menu-only mode */}
+      {!isMenuOnly && (
       <div
         className={`absolute right-4 sm:right-6 z-50 transition-all duration-300 ease-in-out ${cart.length > 0
             ? 'bottom-[84px] xs:bottom-[92px] sm:bottom-[100px]'
@@ -599,6 +609,7 @@ export default function CustomerMenu({ slug, tableId, discountPercentage = 0 }) 
           </button>
         )}
       </div>
+      )}
 
       {/* Sticky Bottom Cart Bar */}
       {cart.length > 0 && (
