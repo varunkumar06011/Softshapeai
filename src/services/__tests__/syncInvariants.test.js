@@ -51,7 +51,7 @@ function mergeItems(incomingItems, existingItems) {
   if (!incomingItems || incomingItems.length === 0) return existingItems;
   const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
   const missingFromIncoming = existingItems.filter(
-    i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
+    i => i.id && !incomingIds.has(i.id)
   );
   return [...incomingItems, ...missingFromIncoming];
 }

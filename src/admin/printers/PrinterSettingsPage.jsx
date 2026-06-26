@@ -9,6 +9,10 @@ import { useAuth } from '../../context/AuthContext.jsx';
 
 const POLL_INTERVAL_MS = 30_000;
 
+const PRINT_AGENT_DOWNLOAD_URL =
+  import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL ||
+  "https://github.com/varunkumar06011/softshape-print-agent/releases/download/v0.1.0/SoftShape.Print.Agent_0.1.0_x64-setup.exe";
+
 function StatusDot({ status }) {
   const colors = {
     online: { dot: 'bg-green-500', text: 'text-green-600', label: 'Online' },
@@ -186,11 +190,12 @@ export default function PrinterSettingsPage() {
 
       {/* Legacy QZ notice */}
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-        <div className="font-bold text-amber-800 text-sm mb-1">Legacy QZ Tray Still Active</div>
+        <div className="font-bold text-amber-800 text-sm mb-1">QZ Tray / Print Station is deprecated</div>
         <div className="text-xs text-amber-700">
-          Your existing <strong>Print Station</strong> at{' '}
-          <code className="bg-amber-100 px-1 rounded">/print-station</code> continues to work unchanged.
-          Both systems can run side by side. Once the Windows agent is verified stable, you can stop using the Print Station tab.
+          The Windows Print Agent below is the supported print path. The old{' '}
+          <strong>Print Station</strong> at{' '}
+          <code className="bg-amber-100 px-1 rounded">/print-station</code> still works as a fallback
+          but will be removed in a future release.
         </div>
       </div>
 
@@ -203,7 +208,7 @@ export default function PrinterSettingsPage() {
             Install on the Windows PC that is connected (USB/WiFi) to your printers.
           </p>
           <a
-            href="https://github.com/varunkumar06011/softshape-print-agent/releases/download/v0.1.0/SoftShape.Print.Agent_0.1.0_x64-setup.exe"
+            href={PRINT_AGENT_DOWNLOAD_URL}
             download="SoftShape-Print-Agent-Setup.exe"
             className="inline-flex items-center gap-2 rounded-xl bg-[#B71C1C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8B0000]"
           >
