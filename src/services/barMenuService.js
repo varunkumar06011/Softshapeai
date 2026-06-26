@@ -326,7 +326,7 @@ export async function fetchBarMenuFromBackend() {
   const [barRes, restaurantItems] = await Promise.all([
     fetchWithRetry(apiUrl("/api/bar/menu/items"), {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
     }),
     fetchRestaurantItemsRaw(),
   ]);
