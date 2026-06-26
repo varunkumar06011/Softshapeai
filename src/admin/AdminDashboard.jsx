@@ -19,7 +19,8 @@ import {
   AlertCircle,
   Printer,
   Users,
-  QrCode
+  QrCode,
+  Tag
 } from 'lucide-react';
 import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
@@ -39,6 +40,7 @@ import { fetchTransactions } from '../services/orderApi';
 import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard';
 import PrinterSettingsPage from './printers/PrinterSettingsPage';
 import TableQRCodes from './TableQRCodes';
+import PriceProfilesPage from './PriceProfilesPage';
 import { motion } from 'framer-motion';
 
 const navItems = [
@@ -57,6 +59,7 @@ const navItems = [
   ["surveillance", "Surveillance", Camera],
   ["inventory", "Inventory", Package],
   ["pricing", "Pricing", Sparkles],
+  ["price-profiles", "Price Profiles", Tag],
   ["settings", "Settings", Settings],
   ["printers", "Printers", Printer],
   ["qr-codes", "QR Codes", QrCode],
@@ -371,6 +374,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "surveillance" && <SurveillanceDashboard onIncident={() => { }} />}
           {page === "inventory" && <Inventory />}
           {page === "pricing" && <Pricing />}
+          {page === "price-profiles" && <PriceProfilesPage />}
           {page === "settings" && <SettingsPage />}
           {page === "printers" && <PrinterSettingsPage />}
           {page === "qr-codes" && <TableQRCodes />}

@@ -3,7 +3,7 @@ import { Users, Plus, Trash2, Key, Clock, Eye, EyeOff, Copy, Check } from 'lucid
 
 const SHIFTS = ['Morning', 'Evening', 'Night', 'Full Day'];
 
-const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBack }) => {
+const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNext, onBack }) => {
   const isCloud = restaurantType === 'CLOUD_KITCHEN';
   const isCafe = restaurantType === 'CAFE';
   const captainLabel = isCloud || isCafe ? 'Order Managers' : 'Captains';
@@ -35,7 +35,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
 
   const addCaptain = () => {
     setCaptainsExpanded(true);
-    onChange([...captains, { name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }], cashiers);
+    onChange([...captains, { name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day', venueName: '' }], cashiers);
   };
 
   const removeCaptain = (index) => {
@@ -45,7 +45,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
   };
 
   const addCashier = () => {
-    onChange(captains, [...cashiers, { name: '', pin: '', shift: 'Full Day' }]);
+    onChange(captains, [...cashiers, { name: '', pin: '', shift: 'Full Day', venueName: '' }]);
   };
 
   const removeCashier = (index) => {
@@ -190,6 +190,16 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
                   <option value="CAPTAIN">Captain</option>
                   <option value="MANAGER">Manager</option>
                 </select>
+                {venues && venues.length > 0 && (
+                  <select
+                    value={captain.venueName || ''}
+                    onChange={(e) => handleCaptainChange(index, 'venueName', e.target.value)}
+                    className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E53935] text-gray-900"
+                  >
+                    <option value="">All Venues</option>
+                    {venues.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}
+                  </select>
+                )}
                 {!sameShift && (
                   <select
                     value={captain.shift || 'Full Day'}
@@ -267,6 +277,16 @@ const StepStaff = ({ restaurantType, captains, cashiers, onChange, onNext, onBac
                   {showPinMap[`x-${index}`] ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {venues && venues.length > 0 && (
+                <select
+                  value={cashier.venueName || ''}
+                  onChange={(e) => handleCashierChange(index, 'venueName', e.target.value)}
+                  className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E53935] text-gray-900"
+                >
+                  <option value="">All Venues</option>
+                  {venues.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}
+                </select>
+              )}
               {!sameShift && (
                 <select
                   value={cashier.shift || 'Full Day'}

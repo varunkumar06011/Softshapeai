@@ -8,6 +8,7 @@ import StepBranding from './StepBranding';
 import StepOwner from './StepOwner';
 import StepStaff from './StepStaff';
 import StepFloorPlan from './StepFloorPlan';
+import StepBusinessAreas from './StepBusinessAreas';
 import StepMenu from './StepMenu';
 import StepTax from './StepTax';
 import StepPrinters from './StepPrinters';
@@ -20,16 +21,19 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const STORAGE_KEY = 'onboarding_wizard_v2';
 
-function computeSteps(restaurantType, outletCount) {
+function computeSteps(restaurantType, outletCount, hasVenues) {
   const base = [
     { id: 'restaurant', title: 'Restaurant Info' },
     { id: 'branding', title: 'Branding' },
     { id: 'owner', title: 'Owner Account' },
-    { id: 'staff', title: 'Staff Setup' },
   ];
 
   if (restaurantType !== 'CLOUD_KITCHEN') {
+    base.push({ id: 'businessareas', title: 'Business Areas' });
+    base.push({ id: 'staff', title: 'Staff Setup' });
     base.push({ id: 'floorplan', title: 'Floor Plan' });
+  } else {
+    base.push({ id: 'staff', title: 'Staff Setup' });
   }
 
   base.push({ id: 'menu', title: 'Menu Setup' });
@@ -55,6 +59,10 @@ const defaultWizardData = {
   cashiers: [{ name: '', pin: '', shift: 'Full Day' }],
   sections: [{ name: '', kotPrinterName: '' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
+  venues: [],
+  menuSharing: 'SHARED',
+  pricingMode: 'UNIFIED',
+  priceProfiles: [{ name: 'Default', isDefault: true }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
   taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', gstRate: null, pricesIncludeGst: false, serviceChargePercent: 0, packagingCharge: 0 },
   printers: [
@@ -93,8 +101,8 @@ const OnboardingWizard = () => {
   const [wizardData, setWizardData] = useState(saved?.wizardData || defaultWizardData);
 
   const steps = useMemo(
-    () => computeSteps(wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount),
-    [wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount]
+    () => computeSteps(wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount, (wizardData.venues || []).length > 0),
+    [wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount, wizardData.venues]
   );
 
   const maxStep = steps.length;
@@ -201,6 +209,20 @@ const OnboardingWizard = () => {
           .filter(cat => cat.items.length > 0)
       };
 
+      const cleanVenues = (wizardData.venues || []).map(v => ({
+        ...v,
+        name: v.name.trim(),
+        floors: (v.floors || []).map(f => ({
+          ...f,
+          name: f.name.trim(),
+          sections: (f.sections || []).map(s => ({
+            ...s,
+            name: s.name.trim(),
+            tables: (s.tables || []).filter(t => t.number > 0),
+          })).filter(s => s.name.length >= 1),
+        })).filter(f => f.name.length >= 1 && f.sections.length > 0),
+      })).filter(v => v.name.length >= 1);
+
       if (!isCloud && !isCafe && cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
       if (cleanCashiers.length === 0) { setError('Add at least one cashier with a 4-digit PIN'); setLoading(false); return; }
       if (!isCloud && cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
@@ -239,6 +261,10 @@ const OnboardingWizard = () => {
         cashiers: cleanCashiers,
         sections: isCloud ? [] : cleanSections,
         tables: isCloud ? [] : wizardData.tables,
+        venues: cleanVenues.length > 0 ? cleanVenues : undefined,
+        menuSharing: wizardData.menuSharing,
+        pricingMode: wizardData.pricingMode,
+        priceProfiles: wizardData.priceProfiles || [],
         menu: cleanMenu,
         printers: wizardData.printers,
         sectionRouting: wizardData.sectionRouting,
@@ -288,12 +314,22 @@ const OnboardingWizard = () => {
         return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} restaurantGstin={wizardData.restaurant.gstin} logoPreview={wizardData.restaurant.logoPreview} menu={wizardData.menu} taxConfig={wizardData.taxConfig} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
       case 'owner':
         return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} sessionId={wizardData.sessionId} />;
+      case 'businessareas':
+        return (
+          <StepBusinessAreas
+            data={{ venues: wizardData.venues }}
+            onChange={(data) => updateWizardData('venues', data.venues)}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
       case 'staff':
         return (
           <StepStaff
             restaurantType={wizardData.restaurant.restaurantType}
             captains={wizardData.captains}
             cashiers={wizardData.cashiers}
+            venues={wizardData.venues || []}
             onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }}
             onNext={handleNext}
             onBack={handleBack}
