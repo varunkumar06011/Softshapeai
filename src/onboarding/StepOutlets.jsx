@@ -206,16 +206,32 @@ function OutletFloorPlan({ outlet, onSectionsChange, onTablesChange }) {
               <div key={tableIdx} className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1">
                 <input
                   type="number"
-                  value={table.number}
-                  onChange={(e) => updateTable(sectionIndex, tableIdx, 'number', parseInt(e.target.value) || 0)}
+                  value={table.number === 0 ? '' : table.number}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateTable(sectionIndex, tableIdx, 'number', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value || parseInt(e.target.value) < 1) {
+                      updateTable(sectionIndex, tableIdx, 'number', 1);
+                    }
+                  }}
                   className="w-12 px-1 py-1 bg-white border border-gray-100 rounded text-center text-sm text-gray-900"
                   min="1"
                 />
                 <span className="text-xs text-gray-400">seats</span>
                 <input
                   type="number"
-                  value={table.capacity}
-                  onChange={(e) => updateTable(sectionIndex, tableIdx, 'capacity', parseInt(e.target.value) || 4)}
+                  value={table.capacity === 0 ? '' : table.capacity}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateTable(sectionIndex, tableIdx, 'capacity', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value || parseInt(e.target.value) < 1) {
+                      updateTable(sectionIndex, tableIdx, 'capacity', 4);
+                    }
+                  }}
                   className="w-12 px-1 py-1 bg-white border border-gray-100 rounded text-center text-sm text-gray-900"
                   min="1"
                 />

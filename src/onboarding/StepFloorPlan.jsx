@@ -176,8 +176,16 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
                         <Users size={16} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500" />
                         <input
                           type="number"
-                          value={table.capacity}
-                          onChange={(e) => handleTableChange(sectionIndex, tableIndex, 'capacity', parseInt(e.target.value) || 4)}
+                          value={table.capacity === 0 ? '' : table.capacity}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleTableChange(sectionIndex, tableIndex, 'capacity', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
+                          }}
+                          onBlur={(e) => {
+                            if (!e.target.value || parseInt(e.target.value) < 1) {
+                              handleTableChange(sectionIndex, tableIndex, 'capacity', 4);
+                            }
+                          }}
                           className="w-full pl-8 pr-2 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                           min="1"
                         />
