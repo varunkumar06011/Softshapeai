@@ -63,7 +63,6 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { authService } from '../services/authService';
 import { fetchSections } from '../services/tableApi';
-import BarMenuToggle from '../shared/components/BarMenuToggle';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
 
@@ -6629,7 +6628,19 @@ export function BarMenuPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h3 className="font-semibold">Bar Menu</h3>
         <div className="flex items-center gap-2 flex-wrap">
-          <BarMenuToggle active={barMenuTab} onChange={setBarMenuTab} variant="admin" />
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            {['food', 'liquor'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setBarMenuTab(tab)}
+                className={`px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition ${
+                  barMenuTab === tab ? 'bg-[#E53935] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -6934,6 +6945,203 @@ export function BarMenuPage() {
               <button onClick={confirmDelete} disabled={deleteWorking}
                 className="flex-1 py-2 bg-red-600 text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition">
                 {deleteWorking ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function StaffManagement() {
+  const { token } = useAuth();
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '' });
+  const [saving, setSaving] = useState(false);
+
+  const fetchStaff = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/staff`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load staff');
+      setStaff(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchStaff();
+  }, [fetchStaff]);
+
+  const resetForm = () => {
+    setForm({ name: '', role: 'CAPTAIN', pin: '' });
+    setEditing(null);
+    setModalOpen(false);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.pin || form.pin.length !== 4) return;
+    setSaving(true);
+    try {
+      const url = `${API_BASE}/api/auth/staff${editing ? `/${editing.id}` : ''}`;
+      const method = editing ? 'PATCH' : 'POST';
+      const body = editing
+        ? { name: form.name, pin: form.pin }
+        : { name: form.name, role: form.role, pin: form.pin };
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      fetchStaff();
+      resetForm();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeactivate = async (id) => {
+    if (!confirm('Deactivate this staff member?')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/staff/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to deactivate');
+      fetchStaff();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 font-sans">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-[12px] font-bold">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Staff Management</h3>
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-3 py-1.5 bg-[#E53935] text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition"
+        >
+          + Add Staff
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-[12px]">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Name</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Role</th>
+              <th className="px-4 py-2 text-right font-bold text-gray-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {staff.map((member) => (
+              <tr key={member.id} className="border-t border-gray-100 hover:bg-gray-50">
+                <td className="px-4 py-3 font-bold text-gray-900">{member.name}</td>
+                <td className="px-4 py-3 text-gray-600">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                    {member.role}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => { setEditing(member); setForm({ name: member.name, role: member.role, pin: '' }); setModalOpen(true); }}
+                    className="text-[10px] font-bold text-gray-500 hover:text-[#E53935] mr-3"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeactivate(member.id)}
+                    className="text-[10px] font-bold text-red-500 hover:text-red-700"
+                  >
+                    Deactivate
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {staff.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
+                  No staff members found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl">
+            <h4 className="font-black text-[14px]">{editing ? 'Edit Staff' : 'Add Staff'}</h4>
+            <div>
+              <label className="text-[10px] font-bold text-gray-500 uppercase">Name</label>
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                placeholder="Staff name"
+              />
+            </div>
+            {!editing && (
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Role</label>
+                <select
+                  value={form.role}
+                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                >
+                  <option value="CAPTAIN">Captain</option>
+                  <option value="CASHIER">Cashier</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="text-[10px] font-bold text-gray-500 uppercase">{editing ? 'New PIN (4 digits)' : 'PIN (4 digits)'}</label>
+              <input
+                value={form.pin}
+                onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                maxLength={4}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                placeholder="0000"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={resetForm} className="flex-1 py-2 border border-gray-200 rounded-xl text-[12px] font-bold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !form.name.trim() || form.pin.length !== 4}
+                className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition"
+              >
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

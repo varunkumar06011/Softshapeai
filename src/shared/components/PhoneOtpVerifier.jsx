@@ -83,7 +83,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       confirmationResultRef.current = result;
       setDigits(['', '', '', '', '', '']);
       setStatus('sent');
-      startTimer();
+      startTimer(); 
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err) {
       await clearRecaptcha();

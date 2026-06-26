@@ -16,7 +16,6 @@ import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
-import { authService } from "./services/authService";
 import { purgeLegacyCaches } from "./utils/cacheKeys";
 
 
@@ -234,21 +233,11 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/admin" element={<AdminLoginWrapper />} />
-            <Route path="/admin/dashboard/*" element={<AdminDashboardWrapper />} />
+            <Route path="/admin/dashboard/*" element={<ErrorBoundary><AdminDashboardWrapper /></ErrorBoundary>} />
             <Route path="/admin/qr-codes" element={<TableQRCodesWrapper />} />
             <Route path="/cashier" element={<CashierLoginWrapper />} />
-            <Route path="/cashier/dashboard" element={<CashierDashboardWrapper />} />
-            <Route path="/captain/*" element={
-              <ErrorBoundary
-                showDetails={import.meta.env.DEV}
-                onRetry={() => window.location.reload()}
-              >
-                <CaptainApp
-                  key="captain-app"
-                  onLogout={() => { localStorage.removeItem('captain_auth'); window.location.href = '/'; }}
-                />
-              </ErrorBoundary>
-            } />
+            <Route path="/cashier/dashboard" element={<ErrorBoundary><CashierDashboardWrapper /></ErrorBoundary>} />
+            <Route path="/captain/*" element={<ErrorBoundary><CaptainAppWrapper /></ErrorBoundary>} />
             <Route path="/kitchen" element={<KitchenView />} />
             <Route path="/print-station" element={<PrintStation />} />
             <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
@@ -267,58 +256,62 @@ function PortalSelectionWrapper() {
 
 function AdminLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role));
+  const { user } = useAuth();
+  const isLoggedIn = user && ['ADMIN','OWNER'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/admin/dashboard" replace />;
   return (
-    <LoginScreen role="admin" onLogin={(roleType) => {
-      setIsLoggedIn(true);
-    }} onBack={() => navigate('/')} />
+    <LoginScreen role="admin" onLogin={() => {}} onBack={() => navigate('/')} />
   );
 }
 
 function AdminDashboardWrapper() {
   const navigate = useNavigate();
-  if (!(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
-  const role = authService.getUser()?.role || 'admin';
-  return <AdminDashboard role={role} onLogout={() => { authService.logout(); navigate('/admin'); }} />;
+  const { user, logout } = useAuth();
+  if (!(user && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
+  const role = user?.role || 'admin';
+  return <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />;
 }
 
 function TableQRCodesWrapper() {
-  const navigate = useNavigate();
-  if (!(authService.isAuthenticated() && ['ADMIN','OWNER'].includes(authService.getUser()?.role))) return <Navigate to="/admin" replace />;
+  const { user } = useAuth();
+  if (!(user && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
   return <TableQRCodes />;
 }
 
 function CashierLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && ['CASHIER','OWNER','ADMIN'].includes(authService.getUser()?.role));
+  const { user } = useAuth();
+  const isLoggedIn = user && ['CASHIER','OWNER','ADMIN'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
   return (
-    <LoginScreen role="cashier" onLogin={() => { setIsLoggedIn(true); }} onBack={() => navigate('/')} />
+    <LoginScreen role="cashier" onLogin={() => {}} onBack={() => navigate('/')} />
   );
 }
 
 function CashierDashboardWrapper() {
   const navigate = useNavigate();
-  if (!(authService.isAuthenticated() && ['CASHIER','OWNER','ADMIN'].includes(authService.getUser()?.role))) return <Navigate to="/cashier" replace />;
-  return <CashierDashboard onLogout={() => { authService.logout(); navigate('/cashier'); }} />;
+  const { user, logout } = useAuth();
+  if (!(user && ['CASHIER','OWNER','ADMIN'].includes(user.role))) return <Navigate to="/cashier" replace />;
+  return <CashierDashboard onLogout={() => { logout(); navigate('/cashier'); }} />;
 }
 
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated() && authService.getUser()?.role === 'CAPTAIN');
+  const { user } = useAuth();
+  const isLoggedIn = user && user.role === 'CAPTAIN';
   if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
   return (
-    <LoginScreen role="captain" onLogin={() => { setIsLoggedIn(true); }} onBack={() => navigate('/')} />
+    <LoginScreen role="captain" onLogin={() => {}} onBack={() => navigate('/')} />
   );
 }
 
 function CaptainAppWrapper() {
   const navigate = useNavigate();
-  if (!(authService.isAuthenticated() && authService.getUser()?.role === 'CAPTAIN')) return <Navigate to="/captain" replace />;
+  const { user, logout } = useAuth();
+  if (!(user && user.role === 'CAPTAIN')) return <Navigate to="/captain" replace />;
   return (
     <CaptainApp
-      onLogout={() => { authService.logout(); navigate('/captain'); }}
+      onLogout={() => { logout(); navigate('/captain'); }}
     />
   );
 }

@@ -170,24 +170,7 @@ function mergeTablesFromApi(apiTables, currentTables) {
     return true;
   });
   
-  // Strictly enforce 30 tables capacity locally
-  const existingNumbers = new Set(flat.map((t) => Number(t.number)));
-  const missing = [];
-  for (let i = 1; i <= 30; i++) {
-    if (!existingNumbers.has(i)) {
-      missing.push({
-        id: `local-${i}`,
-        number: i,
-        status: "AVAILABLE",
-        capacity: 4,
-        sectionId: "main-hall",
-        section: { id: "main-hall", name: "Main Hall" },
-      });
-    }
-  }
-  
-  // Combine API tables with any missing local tables, sorted by table number
-  flat = [...flat, ...missing].sort((a, b) => Number(a.number) - Number(b.number));
+  flat = flat.sort((a, b) => Number(a.number) - Number(b.number));
 
   return flat.map((row) => {
     const existing = currentTables.find((t) => t.backendId === row.id || (row.id.startsWith("local-") && t.number === row.number));
@@ -197,20 +180,9 @@ function mergeTablesFromApi(apiTables, currentTables) {
   });
 }
 
-function createFallbackApiTables() {
-  return Array.from({ length: 30 }, (_, i) => ({
-    id: `local-${i + 1}`,
-    number: i + 1,
-    status: "AVAILABLE",
-    capacity: 4,
-    sectionId: "main-hall",
-    section: { id: "main-hall", name: "Main Hall" },
-  }));
-}
-
-function getFallbackTables(currentTables = []) {
-  console.warn("[TableSync] Using fallback tables (fetch failed or empty)");
-  return mergeTablesFromApi(createFallbackApiTables(), currentTables);
+function getFallbackTables() {
+  console.warn("[TableSync] Fetch failed or returned empty; showing no tables.");
+  return [];
 }
 
 function findTableIndex(tables, backendId) {
@@ -343,7 +315,7 @@ export function useTableSync() {
         return t;
       });
     }
-    return getFallbackTables([]);
+    return [];
   });
   const [isSyncing, setIsSyncing] = useState(true);
   const tablesRef = useRef(tables);
@@ -385,7 +357,7 @@ export function useTableSync() {
 
     setTablesState((current) => {
       const useFallback = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-      const merged = useFallback ? getFallbackTables(current) : mergeTablesFromApi(apiTables, current);
+      const merged = useFallback ? [] : mergeTablesFromApi(apiTables, current);
       // Deduplicate by backendId to prevent duplicate cards
       const deduped = merged.filter((table, index, self) =>
         index === self.findIndex(t => t.backendId === table.backendId)

@@ -7,6 +7,12 @@ let socketInstance = null;
 let eventQueue = [];
 let isProcessingQueue = false;
 
+export function reconnectSocket(token) {
+  if (!socketInstance) return;
+  socketInstance.auth = { token };
+  socketInstance.disconnect().connect();
+}
+
 export function getSocket() {
   if (!socketInstance) {
     socketInstance = io(API_BASE, {

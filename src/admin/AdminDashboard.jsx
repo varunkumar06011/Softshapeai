@@ -19,10 +19,11 @@ import {
   Send,
   Star,
   AlertCircle,
-  Printer
+  Printer,
+  Users
 } from 'lucide-react';
 import {
-  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory
+  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
 } from './AdminComponents';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
@@ -47,6 +48,7 @@ const navItems = [
   ["orders", "Orders", ClipboardList],
   ["transactions", "Transactions", Receipt],
   ["reports", "Reports", ChartNoAxesCombined],
+  ["staff", "Staff", Users],
   ["captains", "Captain Analytics", ChartNoAxesCombined],
   ["payroll", "Payroll", DollarSign],
   ["kitchen-inventory", "Kitchen Inventory", UtensilsCrossed],
@@ -231,8 +233,40 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   const title = displayNavItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 
+  const trialDaysLeft = restaurant?.trialEndsAt
+    ? Math.max(0, Math.ceil((new Date(restaurant.trialEndsAt) - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A] font-sans">
+      {/* Trial banner */}
+      {restaurant?.billingStatus === 'trialing' && trialDaysLeft !== null && (
+        <div className={`sticky top-0 z-[70] px-4 py-2 text-center text-xs font-black uppercase tracking-widest ${trialDaysLeft <= 7 ? 'bg-red-600 text-white' : 'bg-yellow-400 text-yellow-900'}`}>
+          {trialDaysLeft <= 0
+            ? 'Your trial has expired. Please upgrade to continue.'
+            : `Trial ends in ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'}. Upgrade now to keep full access.`}
+        </div>
+      )}
+
+      {/* Suspension overlay */}
+      {restaurant?.billingStatus === 'suspended' && (
+        <div className="fixed inset-0 z-[100] bg-white/95 flex flex-col items-center justify-center p-8">
+          <AlertCircle size={64} className="text-red-600 mb-6" />
+          <h2 className="text-2xl font-black text-gray-900 mb-2">Account Suspended</h2>
+          <p className="text-gray-600 mb-8 text-center max-w-md">
+            Your subscription has been suspended. Please contact support to reactivate your account.
+          </p>
+          <a
+            href="https://wa.me/919999999999"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase tracking-widest hover:bg-[#B71C1C] transition-colors"
+          >
+            Contact Support
+          </a>
+        </div>
+      )}
+
       {isSidebarOpen && (
         <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
@@ -328,6 +362,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "pricing" && <Pricing />}
           {page === "settings" && <SettingsPage />}
           {page === "printers" && <PrinterSettingsPage />}
+          {page === "staff" && <StaffManagement />}
         </main>
       </div>
 

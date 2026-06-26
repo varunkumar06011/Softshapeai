@@ -45,8 +45,6 @@ import { markWaiterCallAccepted } from '../services/customerSessionService';
 
 import { useBarTableSync } from '../services/barTableSyncService';
 
-import BarMenuToggle from '../shared/components/BarMenuToggle';
-import { useVenuePrices } from '../hooks/useVenuePrices';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
 import VariantPicker from '../shared/components/VariantPicker';
@@ -463,7 +461,7 @@ export default function CaptainApp({ onLogout }) {
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  const [pinError, setPinError] = useState(false);
+  const [pinError, setPinError] = useState('');
 
   const [pin, setPin] = useState('');
 
@@ -957,8 +955,6 @@ export default function CaptainApp({ onLogout }) {
 
   }, [activeOutlet, tableSubCategory]);
 
-  const venuePrices = useVenuePrices();
-
   const outletFilteredMenuItems = useMemo(() => {
     const base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
@@ -984,7 +980,7 @@ export default function CaptainApp({ onLogout }) {
 
     }
 
-    const venueSpecificPrices = currentVenueId ? (venuePrices?.[currentVenueId] || {}) : {};
+    const venueSpecificPrices = {};
     const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && currentVenueId !== null;
 
     return base.map(item => {
@@ -1012,7 +1008,7 @@ export default function CaptainApp({ onLogout }) {
       }
       return true;
     });
-  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, venuePrices]);
+  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory]);
 
 
 
@@ -1929,7 +1925,7 @@ export default function CaptainApp({ onLogout }) {
 
   const handlePinInput = (num) => {
 
-    setPinError(false);
+    setPinError('');
 
     if (pin.length < 4 && !isAuthenticating) {
 
@@ -1948,6 +1944,11 @@ export default function CaptainApp({ onLogout }) {
           try {
 
             const restaurantId = localStorage.getItem('pending_restaurant_id') || getCurrentRestaurantId();
+            if (!restaurantId) {
+              setPinError('Session expired, please reload and log in again.');
+              setIsAuthenticating(false);
+              return;
+            }
             const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedProfile.id, newPin);
 
             if (token && user) {
@@ -1974,7 +1975,7 @@ export default function CaptainApp({ onLogout }) {
 
             setPin('');
 
-            setPinError(true);
+            setPinError('Invalid PIN. Please try again.');
 
           } finally {
 
@@ -3032,9 +3033,7 @@ export default function CaptainApp({ onLogout }) {
 
                   <div className="text-center animate-in fade-in slide-in-from-bottom-2">
 
-                    <p className="text-sm font-bold text-[#E53935]">plz enter right password</p>
-
-                    <p className="text-sm font-bold text-[#E53935] mt-1">దయచేసి సరైన పాస్వర్డ్ను నమోదు చేయండి.</p>
+                    <p className="text-sm font-bold text-[#E53935]">{pinError}</p>
 
                   </div>
 

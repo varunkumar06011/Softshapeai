@@ -1,3 +1,5 @@
+import { purgeLegacyCaches } from '../utils/cacheKeys';
+
 function getApiBase() {
   return (
     import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
@@ -20,6 +22,7 @@ export const authService = {
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
+    purgeLegacyCaches();
     return data;
   },
 
@@ -38,6 +41,7 @@ export const authService = {
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
+    purgeLegacyCaches();
     return data;
   },
 
