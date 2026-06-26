@@ -56,7 +56,7 @@ const defaultWizardData = {
   sections: [{ name: '', kotPrinterName: '' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
-  taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', pricesIncludeGst: false, serviceChargePercent: 0 },
+  taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', gstRate: null, pricesIncludeGst: false, serviceChargePercent: 0 },
   printers: [
     { name: 'Kitchen Printer', paperWidth: '80mm', type: 'KITCHEN' },
     { name: 'Bill Printer', paperWidth: '80mm', type: 'BILL' },

@@ -457,7 +457,7 @@ export function Pos() {
           </div>
           <div className="mt-4 border-t border-[#FFCDD2] pt-3 space-y-1">
             <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST (5%)</span><span>₹{gst.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST ({(() => { const c = getRestaurantConfig(); const isAc = String(c.gstCategory).toUpperCase() === 'AC'; const r = c.gstRegistered === false ? 0 : (c.gstRate ?? (isAc ? 18 : 5)); return r; })()}%)</span><span>₹{gst.toFixed(2)}</span></div>
             <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">

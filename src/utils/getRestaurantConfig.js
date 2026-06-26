@@ -26,6 +26,8 @@ function getDefaultConfig() {
     billingStatus: 'trialing',
     features: null,
     gstCategory: 'NON_AC',
+    gstRate: null,
+    gstRegistered: true,
     pricesIncludeGst: false,
   };
 }

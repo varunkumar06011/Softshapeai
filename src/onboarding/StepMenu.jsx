@@ -2,12 +2,6 @@ import React, { useState } from 'react';
 import { Utensils, Plus, Trash2, Upload, Leaf, Wine, FileSpreadsheet } from 'lucide-react';
 import MenuUpload from './MenuUpload';
 
-const TAX_OPTIONS = [
-  { value: '5', label: '5% GST' },
-  { value: '18', label: '18% GST' },
-  { value: '0', label: '0% Exempt' },
-];
-
 const DELIVERY_PLATFORMS = ['Swiggy', 'Zomato', 'Direct'];
 
 const defaultBarMenu = { categories: [{ name: '', items: [{ name: '', price: 0, availableSizes: [] }] }] };
@@ -19,7 +13,6 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
 
   const isBarType = restaurantType === 'BAR_LOUNGE' || restaurantType === 'BAR_WITH_DINING';
   const isCloud = restaurantType === 'CLOUD_KITCHEN';
-  const defaultTax = taxConfig?.gstCategory === 'AC' ? '18' : '5';
 
   const foodCategories = data.categories || [];
   const barMenu = data.barMenu || defaultBarMenu;
@@ -54,7 +47,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
 
   const addCategory = () => {
     const baseItem = activeTab === 'food'
-      ? { name: '', price: 0, isVeg: true, taxRate: defaultTax, platforms: [] }
+      ? { name: '', price: 0, isVeg: true, platforms: [] }
       : { name: '', price: 0, availableSizes: [] };
     setTargetCategories([...getTargetCategories(), { name: '', items: [baseItem] }]);
   };
@@ -69,7 +62,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
   const addItem = (categoryIndex) => {
     const cats = [...getTargetCategories()];
     const baseItem = activeTab === 'food'
-      ? { name: '', price: 0, isVeg: true, taxRate: defaultTax, platforms: [] }
+      ? { name: '', price: 0, isVeg: true, platforms: [] }
       : { name: '', price: 0, availableSizes: [] };
     cats[categoryIndex] = { ...cats[categoryIndex], items: [...cats[categoryIndex].items, baseItem] };
     setTargetCategories(cats);
@@ -112,7 +105,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
     // Seed with a dummy category so validation passes in wizard
     onChange({
       ...data,
-      categories: data.categories?.length > 0 ? data.categories : [{ name: 'Sample', items: [{ name: 'Sample Item', price: 1, isVeg: true, taxRate: defaultTax, platforms: [] }] }]
+      categories: data.categories?.length > 0 ? data.categories : [{ name: 'Sample', items: [{ name: 'Sample Item', price: 1, isVeg: true, platforms: [] }] }]
     });
     onNext();
   };
@@ -188,20 +181,6 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
                   </button>
                 )}
               </div>
-
-              {/* Tax rate per category for food */}
-              {!isBarType && (
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-medium text-gray-500">Tax Rate:</label>
-                  <select
-                    value={category.taxRate || defaultTax}
-                    onChange={(e) => handleCategoryChange(categoryIndex, 'taxRate', e.target.value)}
-                    className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E53935] text-gray-900"
-                  >
-                    {TAX_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-              )}
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -346,7 +325,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, onChange, onNext, onBack })
                   acc.push({ name: row.category, items: [item] });
                 }
               } else {
-                const item = { name: row.name, price: row.price, isVeg: row.isVeg, taxRate: defaultTax, platforms: [] };
+                const item = { name: row.name, price: row.price, isVeg: row.isVeg, platforms: [] };
                 if (cat) {
                   cat.items.push(item);
                 } else {

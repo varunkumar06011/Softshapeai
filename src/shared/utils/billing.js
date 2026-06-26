@@ -9,10 +9,12 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
   const config = getRestaurantConfig();
   const gstCategory = options.gstCategory ?? config.gstCategory ?? 'NON_AC';
   const pricesIncludeGst = options.pricesIncludeGst ?? config.pricesIncludeGst ?? false;
+  const gstRegistered = options.gstRegistered ?? config.gstRegistered ?? true;
   const isAc = String(gstCategory).toUpperCase() === 'AC';
-  const totalGstRate = isAc ? 0.18 : 0.05;
-  const cgstRate = isAc ? 0.09 : 0.025;
-  const sgstRate = isAc ? 0.09 : 0.025;
+  const ratePercent = gstRegistered === false ? 0 : (options.gstRate ?? config.gstRate ?? (isAc ? 18 : 5));
+  const totalGstRate = ratePercent / 100;
+  const cgstRate = totalGstRate / 2;
+  const sgstRate = totalGstRate / 2;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };

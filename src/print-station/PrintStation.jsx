@@ -584,14 +584,17 @@ function padRight(left, right, width = LINE_NORMAL) {
 
 
 
-function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag, restaurant, gstCategory, pricesIncludeGst }) {
+function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sectionTag, restaurant, gstCategory, gstRate, gstRegistered, pricesIncludeGst }) {
 
   const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
   const config = getRestaurantConfig();
   const effectiveGstCategory = gstCategory || config.gstCategory || 'NON_AC';
+  const effectiveGstRate = gstRate ?? config.gstRate ?? null;
+  const effectiveGstRegistered = gstRegistered ?? config.gstRegistered ?? true;
   const effectivePricesIncludeGst = pricesIncludeGst ?? config.pricesIncludeGst ?? false;
   const isAc = String(effectiveGstCategory).toUpperCase() === 'AC';
-  const totalGstRate = isAc ? 0.18 : 0.05;
+  const ratePercent = effectiveGstRegistered === false ? 0 : (effectiveGstRate ?? (isAc ? 18 : 5));
+  const totalGstRate = ratePercent / 100;
 
   const venueLabel = sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
     ? receiptHeader
@@ -644,7 +647,7 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
 
     LEFT,
 
-    `Table : ${tableNumber}\n`,
+    `Table : ${String(effectiveGstCategory).toUpperCase() === 'TAKEAWAY' ? 'TAKEAWAY' : tableNumber}\n`,
 
     `Date  : ${new Date().toLocaleString('en-IN')}\n`,
 
@@ -684,6 +687,9 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
   const tax = effectivePricesIncludeGst
     ? Math.round((foodSubtotal - foodBase) * 100) / 100
     : Math.round(foodSubtotal * totalGstRate * 100) / 100;
+  const halfTax = Math.round(tax / 2 * 100) / 100;
+  const cgst = halfTax;
+  const sgst = Math.round((tax - halfTax) * 100) / 100;
   const displayedSubtotal = Math.round((foodBase + liquorSubtotal) * 100) / 100;
   const total = Math.round((displayedSubtotal + tax) * 100) / 100;
 
@@ -693,7 +699,10 @@ function buildBillCommands({ tableNumber, items, totalAmount, restaurantId, sect
 
     padRight('Subtotal', 'Rs.' + displayedSubtotal.toFixed(0)) + '\n',
 
-    padRight('GST', 'Rs.' + tax.toFixed(0)) + '\n',
+    ...(tax > 0 ? [
+      padRight('CGST', 'Rs.' + cgst.toFixed(0)) + '\n',
+      padRight('SGST', 'Rs.' + sgst.toFixed(0)) + '\n',
+    ] : []),
 
     separator('='),
 

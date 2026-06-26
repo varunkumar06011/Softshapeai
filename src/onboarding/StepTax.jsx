@@ -75,6 +75,65 @@ const StepTax = ({ data, onChange, onNext, onBack }) => {
             </div>
           </div>
 
+          {/* Optional GST rate override */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-700">Override GST rate (optional)</p>
+              <button
+                type="button"
+                onClick={() => handleChange('gstRate', data.gstRate != null ? null : (data.gstCategory === 'AC' ? 18 : 5))}
+                className="flex items-center gap-2"
+              >
+                {data.gstRate != null ? (
+                  <ToggleRight size={28} className="text-[#E53935]" />
+                ) : (
+                  <ToggleLeft size={28} className="text-gray-400" />
+                )}
+              </button>
+            </div>
+            {data.gstRate != null && (
+              <div>
+                <p className="text-xs text-gray-500 mb-2">
+                  Enter a custom GST rate. Most restaurants use 5% or 18%.
+                </p>
+                <div className="flex gap-2">
+                  {[5, 12, 18, 28].map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => handleChange('gstRate', r)}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                        data.gstRate === r
+                          ? 'bg-[#E53935] text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {r}%
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    value={data.gstRate ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleChange('gstRate', val === '' ? null : Math.min(100, Math.max(0, parseFloat(val) || 0)));
+                    }}
+                    placeholder="Custom"
+                    className="w-24 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 text-sm"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                  />
+                </div>
+              </div>
+            )}
+            {data.gstRate == null && (
+              <p className="text-xs text-gray-400">
+                Rate auto-derives from category ({data.gstCategory === 'AC' ? '18%' : '5%'}). Enable to override.
+              </p>
+            )}
+          </div>
+
           {/* Price type */}
           <div className="space-y-3">
             <p className="text-sm font-semibold text-gray-700">Are prices inclusive or exclusive of GST?</p>

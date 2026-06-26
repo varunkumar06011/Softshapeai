@@ -23,9 +23,10 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
   const firstTable = tables[0]?.number || 1;
   const sampleItems = menu.categories.flatMap(cat => cat.items).slice(0, 3);
   const sampleSubtotal = sampleItems.reduce((sum, item) => sum + (item.price || 0), 0);
-  const taxConfig = wizardData.taxConfig || { gstCategory: 'NON_AC', pricesIncludeGst: false };
+  const taxConfig = wizardData.taxConfig || { gstCategory: 'NON_AC', gstRate: null, gstRegistered: true, pricesIncludeGst: false };
   const isAcPreview = String(taxConfig.gstCategory).toUpperCase() === 'AC';
-  const sampleGstRate = isAcPreview ? 0.18 : 0.05;
+  const ratePercent = taxConfig.gstRegistered === false ? 0 : (taxConfig.gstRate ?? (isAcPreview ? 18 : 5));
+  const sampleGstRate = ratePercent / 100;
   const sampleGstAmount = taxConfig.pricesIncludeGst
     ? Math.round((sampleSubtotal - sampleSubtotal / (1 + sampleGstRate)) * 100) / 100
     : Math.round(sampleSubtotal * sampleGstRate * 100) / 100;
