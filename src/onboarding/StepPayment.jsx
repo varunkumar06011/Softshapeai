@@ -106,6 +106,14 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
     }
   };
 
+  const handlePayment = () => {
+    if (isMockMode) {
+      handleMockPayment();
+    } else {
+      handleRazorpayPayment();
+    }
+  };
+
   const buildRazorpayOptions = (gatewayOrderId, amount) => ({
     key: import.meta.env.VITE_RAZORPAY_KEY_ID,
     amount: amount * 100,
