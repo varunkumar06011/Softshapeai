@@ -33,7 +33,7 @@ async function request(method, url, body, isRetry = false) {
     } catch {
       /* refresh failed — fall through to logout */
     }
-    authService.logout();
+    await authService.logout();
     window.location.href = '/';
     throw new Error('Session expired. Please log in again.');
   }

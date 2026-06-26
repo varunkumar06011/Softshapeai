@@ -301,7 +301,7 @@ function CashierDashboardWrapper() {
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isLoggedIn = user && user.role === 'CAPTAIN';
+  const isLoggedIn = user && ['CAPTAIN', 'CASHIER'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
   return (
     <LoginScreen role="captain" onLogin={() => {}} onBack={() => navigate('/')} />
@@ -311,7 +311,7 @@ function CaptainLoginWrapper() {
 function CaptainAppWrapper() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  if (!(user && user.role === 'CAPTAIN')) return <Navigate to="/captain" replace />;
+  if (!(user && ['CAPTAIN', 'CASHIER'].includes(user.role))) return <Navigate to="/captain" replace />;
   return (
     <CaptainApp
       onLogout={() => { logout(); navigate('/captain'); }}

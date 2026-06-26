@@ -2,13 +2,49 @@ import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 
+/**
+ * Client-side token expiry check — UX only, NOT security validation.
+ * A malicious token with a forged expiry could pass this check.
+ * The backend always verifies the signature; this just prevents showing
+ * a logged-in UI with an obviously expired token.
+ */
+function isTokenValid(token) {
+  if (!token) return false;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (!payload.exp) return true;
+    return Date.now() < payload.exp * 1000;
+  } catch {
+    return false;
+  }
+}
+
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(() => localStorage.getItem('ss_token'));
+  const [token, setToken] = useState(() => {
+    const saved = localStorage.getItem('ss_token');
+    if (!isTokenValid(saved)) {
+      localStorage.removeItem('ss_token');
+      localStorage.removeItem('ss_user');
+      localStorage.removeItem('ss_restaurant');
+      return null;
+    }
+    return saved;
+  });
   const [user, setUser] = useState(() => {
+    const savedToken = localStorage.getItem('ss_token');
+    if (!isTokenValid(savedToken)) {
+      localStorage.removeItem('ss_user');
+      return null;
+    }
     const saved = localStorage.getItem('ss_user');
     return saved ? JSON.parse(saved) : null;
   });
   const [restaurant, setRestaurantState] = useState(() => {
+    const savedToken = localStorage.getItem('ss_token');
+    if (!isTokenValid(savedToken)) {
+      localStorage.removeItem('ss_restaurant');
+      return null;
+    }
     const saved = localStorage.getItem('ss_restaurant');
     return saved ? JSON.parse(saved) : null;
   });
