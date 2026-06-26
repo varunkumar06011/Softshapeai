@@ -278,6 +278,40 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedCategory('All');
   }, [selectedMenuType]);
 
+  // Fallback: refresh restaurantType/enabledModules for existing sessions
+  useEffect(() => {
+    if (!restaurant?.enabledModules) {
+      fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.restaurant?.enabledModules) {
+            // Merge into auth context via localStorage since we can't directly setAuth here
+            const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
+            if (authKey) {
+              try {
+                const parsed = JSON.parse(localStorage.getItem(authKey));
+                parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
+                localStorage.setItem(authKey, JSON.stringify(parsed));
+              } catch {}
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Fetch sections dynamically for tab labels
+  const [fetchedSections, setFetchedSections] = useState([]);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const sections = Array.isArray(data) ? data : data.sections || [];
+        setFetchedSections(sections);
+      })
+      .catch(() => setFetchedSections([]));
+  }, []);
+
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
@@ -3445,42 +3479,58 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="flex items-center justify-between">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
-                          ? ((activeOutlet === 'bar' || activeOutlet === 'both')
-                            ? (tableSubCategory === 'bar-ac-hall' ? 'Bar AC Hall' : tableSubCategory === 'bar-conference' ? 'Conference Hall' : tableSubCategory === 'bar-pdr' ? 'PDR' : tableSubCategory === 'bar-rooms' ? 'Rooms' : 'GoBox')
-                            : (tableSubCategory === 'family-restaurant' ? 'Family Restaurant' : 'GoBox'))
+                          ? (fetchedSections.find(s => s.name === tableSubCategory)?.name
+                            || fetchedSections.find(s => SECTION_TAG_TO_SOURCE[s.sectionTag || ''] === tableSubCategory)?.name
+                            || tableSubCategory)
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
                     </div>
 
-                    {activeTab === 'tables' && (
+                    {activeTab === 'tables' && enabledModules.tables !== false && (
                       <div className="space-y-4">
-                        {/* ── SUBCATEGORY PILLS — sit inside Tables screen, not a separate toggle ── */}
+                        {/* ── SUBCATEGORY PILLS — dynamically from fetched sections ── */}
                         <div className="flex gap-2 flex-wrap">
-                          {[
-                            ...((activeOutlet === 'bar' || activeOutlet === 'both')
-                              ? [
-                                  { id: 'bar-ac-hall', label: 'Bar AC Hall', emoji: '' },
-                                  { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
-                                  { id: 'bar-pdr', label: 'PDR', emoji: '' },
-                                  { id: 'bar-rooms', label: 'Rooms', emoji: '' },
-                                  { id: 'bar-parcel', label: 'GoBox', emoji: '' },
-                                ]
-                              : [
-                                  { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
-                                  { id: 'parcel', label: 'GoBox', emoji: '' },
-                                ]),
-                          ].map(tab => (
-                            <button
-                              key={tab.id}
-                              onClick={() => handleTabSwitch(tab.id)}
-                              className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === tab.id
-                                  ? 'bg-[#E53935] text-white border-[#E53935]'
-                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                                }`}
-                            >
-                              {tab.label}
-                            </button>
-                          ))}
+                          {fetchedSections.length > 0
+                            ? fetchedSections.map(section => {
+                                const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
+                                return (
+                                  <button
+                                    key={sourceKey}
+                                    onClick={() => handleTabSwitch(sourceKey)}
+                                    className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === sourceKey
+                                        ? 'bg-[#E53935] text-white border-[#E53935]'
+                                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                                      }`}
+                                  >
+                                    {section.name}
+                                  </button>
+                                );
+                              })
+                            : [
+                                ...((activeOutlet === 'bar' || activeOutlet === 'both')
+                                  ? [
+                                      { id: 'bar-ac-hall', label: 'Bar AC Hall', emoji: '' },
+                                      { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
+                                      { id: 'bar-pdr', label: 'PDR', emoji: '' },
+                                      { id: 'bar-rooms', label: 'Rooms', emoji: '' },
+                                      { id: 'bar-parcel', label: 'GoBox', emoji: '' },
+                                    ]
+                                  : [
+                                      { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
+                                      { id: 'parcel', label: 'GoBox', emoji: '' },
+                                    ]),
+                              ].map(tab => (
+                                <button
+                                  key={tab.id}
+                                  onClick={() => handleTabSwitch(tab.id)}
+                                  className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === tab.id
+                                      ? 'bg-[#E53935] text-white border-[#E53935]'
+                                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                                    }`}
+                                >
+                                  {tab.label}
+                                </button>
+                              ))}
                         </div>
 
                         {/* ── MAIN TABLES ── */}

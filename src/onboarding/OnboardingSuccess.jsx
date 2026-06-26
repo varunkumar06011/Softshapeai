@@ -17,6 +17,10 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
   const restaurant = onboardResult?.restaurant || {};
   const user = onboardResult?.user || {};
   const token = onboardResult?.token;
+  const restaurantType = formData?.restaurant?.restaurantType || restaurant?.restaurantType || '';
+  const isCloud = restaurantType === 'CLOUD_KITCHEN';
+  const isCafe = restaurantType === 'CAFE';
+  const showCaptainCard = !isCloud && !isCafe;
 
   // Auto-log the owner in so /admin navigation works without a second login
   useEffect(() => {
@@ -92,8 +96,8 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
           </div>
         </div>
 
-        {/* Three App Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* App Cards */}
+        <div className={`grid grid-cols-1 md:grid-cols-${showCaptainCard ? '3' : isCloud ? '3' : '2'} gap-6`}>
           {/* Admin Panel */}
           <div className="bg-white rounded-3xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all flex flex-col">
             <div className="w-12 h-12 rounded-2xl bg-[#FFEBEE] flex items-center justify-center mb-4">
@@ -169,60 +173,84 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
             </button>
           </div>
 
-          {/* Captain App */}
-          <div className="bg-white rounded-3xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all flex flex-col">
-            <div className="w-12 h-12 rounded-2xl bg-[#FFEBEE] flex items-center justify-center mb-4">
-              <Users size={24} className="text-[#E53935]" />
-            </div>
-            <h3 className="font-black text-lg mb-1">Captain App</h3>
-            <p className="text-xs text-gray-400 font-bold mb-4 leading-relaxed">
-              Floor staff — take orders, manage tables, and send KOTs.
-            </p>
-
-            {/* Captain PIN table */}
-            {(formData?.captains?.length > 0) && (
-              <div className="mb-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Captain Credentials</p>
-                <div className="bg-gray-50 rounded-xl overflow-hidden border border-gray-100">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left px-3 py-2 text-gray-400 font-black uppercase tracking-widest">Name</th>
-                        <th className="text-left px-3 py-2 text-gray-400 font-black uppercase tracking-widest">PIN</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {formData.captains.map((c, i) => (
-                        <tr key={i} className="border-b border-gray-100 last:border-0">
-                          <td className="px-3 py-2 font-bold text-gray-900">{c.name}</td>
-                          <td className="px-3 py-2 font-mono font-bold text-[#E53935]">{c.pin}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+          {/* Captain App — hidden for CAFE and CLOUD_KITCHEN */}
+          {showCaptainCard && (
+            <div className="bg-white rounded-3xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all flex flex-col">
+              <div className="w-12 h-12 rounded-2xl bg-[#FFEBEE] flex items-center justify-center mb-4">
+                <Users size={24} className="text-[#E53935]" />
               </div>
-            )}
+              <h3 className="font-black text-lg mb-1">Captain App</h3>
+              <p className="text-xs text-gray-400 font-bold mb-4 leading-relaxed">
+                Floor staff — take orders, manage tables, and send KOTs.
+              </p>
 
-            <div className="flex items-center gap-2 mb-3 text-xs">
-              <span className="text-gray-400 font-bold">Code:</span>
-              <span className="font-mono font-black text-gray-900">{restaurant.restaurantCode}</span>
+              {/* Captain PIN table */}
+              {(formData?.captains?.length > 0) && (
+                <div className="mb-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Captain Credentials</p>
+                  <div className="bg-gray-50 rounded-xl overflow-hidden border border-gray-100">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left px-3 py-2 text-gray-400 font-black uppercase tracking-widest">Name</th>
+                          <th className="text-left px-3 py-2 text-gray-400 font-black uppercase tracking-widest">PIN</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formData.captains.map((c, i) => (
+                          <tr key={i} className="border-b border-gray-100 last:border-0">
+                            <td className="px-3 py-2 font-bold text-gray-900">{c.name}</td>
+                            <td className="px-3 py-2 font-mono font-bold text-[#E53935]">{c.pin}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 mb-3 text-xs">
+                <span className="text-gray-400 font-bold">Code:</span>
+                <span className="font-mono font-black text-gray-900">{restaurant.restaurantCode}</span>
+                <button
+                  onClick={() => handleCopyCode(restaurant.restaurantCode, setCopiedCaptainCode)}
+                  className="p-1 rounded hover:bg-gray-100 transition-all"
+                  title="Copy"
+                >
+                  {copiedCaptainCode ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-gray-400" />}
+                </button>
+              </div>
+
               <button
-                onClick={() => handleCopyCode(restaurant.restaurantCode, setCopiedCaptainCode)}
-                className="p-1 rounded hover:bg-gray-100 transition-all"
-                title="Copy"
+                onClick={() => navigate(`/captain?code=${encodeURIComponent(restaurant.restaurantCode || '')}`)}
+                className="mt-auto w-full py-3 bg-gray-900 hover:bg-black text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2"
               >
-                {copiedCaptainCode ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-gray-400" />}
+                Go to Captain Login <ArrowRight size={16} />
               </button>
             </div>
+          )}
 
-            <button
-              onClick={() => navigate(`/captain?code=${encodeURIComponent(restaurant.restaurantCode || '')}`)}
-              className="mt-auto w-full py-3 bg-gray-900 hover:bg-black text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-            >
-              Go to Captain Login <ArrowRight size={16} />
-            </button>
-          </div>
+          {/* Delivery Setup — shown only for CLOUD_KITCHEN */}
+          {isCloud && (
+            <div className="bg-white rounded-3xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100 hover:border-[#E53935] transition-all flex flex-col">
+              <div className="w-12 h-12 rounded-2xl bg-[#FFEBEE] flex items-center justify-center mb-4">
+                <Store size={24} className="text-[#E53935]" />
+              </div>
+              <h3 className="font-black text-lg mb-1">Delivery Setup</h3>
+              <p className="text-xs text-gray-400 font-bold mb-4 leading-relaxed">
+                Configure delivery platform integrations (Swiggy, Zomato, Direct) from the Admin panel.
+              </p>
+              <span className="inline-flex self-start rounded-full bg-[#FFEBEE] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#B71C1C] mb-4">
+                Setup Required
+              </span>
+              <button
+                onClick={onGoToDashboard}
+                className="mt-auto w-full py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+              >
+                Open Admin Dashboard <ArrowRight size={16} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* What was created checklist */}

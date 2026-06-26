@@ -28,7 +28,7 @@ function computeSteps(restaurantType, outletCount) {
     { id: 'staff', title: 'Staff Setup' },
   ];
 
-  if (restaurantType !== 'CLOUD_KITCHEN') {
+  if (restaurantType !== 'CLOUD_KITCHEN' && restaurantType !== 'CAFE') {
     base.push({ id: 'floorplan', title: 'Floor Plan' });
   }
 
@@ -56,11 +56,8 @@ const defaultWizardData = {
   sections: [{ name: '', kotPrinterName: '' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
-  taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', pricesIncludeGst: false, serviceChargePercent: 0 },
-  printers: [
-    { name: 'Kitchen Printer', paperWidth: '80mm', type: 'KITCHEN' },
-    { name: 'Bill Printer', paperWidth: '80mm', type: 'BILL' },
-  ],
+  taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', pricesIncludeGst: false, serviceChargePercent: 0, packagingCharge: 0 },
+  printers: [],
   sectionRouting: {},
   outlets: [],
   selectedPlan: 'starter',
@@ -115,8 +112,8 @@ const OnboardingWizard = () => {
     if (newType && prevType && newType !== prevType) {
       setWizardData(prev => {
         const reset = { ...prev };
-        // Clear floor-plan data for cloud kitchen
-        if (newType === 'CLOUD_KITCHEN') {
+        // Clear floor-plan data for cloud kitchen and cafe
+        if (newType === 'CLOUD_KITCHEN' || newType === 'CAFE') {
           reset.sections = [{ name: '', kotPrinterName: '' }];
           reset.tables = [{ number: 1, capacity: 4, sectionIndex: 0 }];
           reset.captains = [{ name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }];
@@ -302,16 +299,19 @@ const OnboardingWizard = () => {
             restaurantType={wizardData.restaurant.restaurantType}
             taxConfig={wizardData.taxConfig}
             data={wizardData.menu}
+            deliveryPlatforms={wizardData.restaurant.deliveryPlatforms || []}
             onChange={(data) => updateWizardData('menu', data)}
+            onDeliveryPlatformsChange={(platforms) => updateWizardData('restaurant', { ...wizardData.restaurant, deliveryPlatforms: platforms })}
             onNext={handleNext}
             onBack={handleBack}
           />
         );
       case 'tax':
-        return <StepTax data={wizardData.taxConfig} onChange={(data) => updateWizardData('taxConfig', data)} onNext={handleNext} onBack={handleBack} />;
+        return <StepTax restaurantType={wizardData.restaurant.restaurantType} data={wizardData.taxConfig} onChange={(data) => updateWizardData('taxConfig', data)} onNext={handleNext} onBack={handleBack} />;
       case 'printers':
         return (
           <StepPrinters
+            restaurantType={wizardData.restaurant.restaurantType}
             printers={wizardData.printers}
             sectionRouting={wizardData.sectionRouting}
             sectionsData={wizardData.sections}

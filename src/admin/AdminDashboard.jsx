@@ -109,6 +109,19 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     return () => { cancelled = true; };
   }, [setRestaurant]);
 
+  // Fallback: refresh enabledModules for existing sessions
+  useEffect(() => {
+    if (!restaurant?.enabledModules) {
+      apiFetch('/api/auth/me')
+        .then(data => {
+          if (data?.restaurant?.enabledModules) {
+            setRestaurant(prev => ({ ...prev, ...data.restaurant }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   const loadStats = useCallback(async () => {
     try {
       const [restaurantTxns] = await Promise.allSettled([
@@ -220,9 +233,10 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;
     if (key === 'transactions') return true;
     if (key === 'reports') return true;
-    if (key === 'captains') return true;
+    if (key === 'captains') return enabledModules.tables !== false;
     if (key === 'payroll') return enabledModules.payroll !== false;
     if (key === 'marketing') return enabledModules.marketing !== false;
+    if (key === 'kitchen-inventory') return enabledModules.food !== false;
     if (key === 'settings') return true;
     if (key === 'printers') return true;
     return enabledModules[key] !== false;

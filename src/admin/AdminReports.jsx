@@ -13,6 +13,8 @@ import {
   fetchReportPaymentMethods, fetchReportDiscounts, fetchReportGST,
 } from '../services/reportsApi.js';
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
+import { useAuth } from '../context/AuthContext';
+import { API_BASE, apiFetch } from '../services/apiConfig';
 
 const REPORT_CATEGORIES = [
   {
@@ -54,7 +56,6 @@ const REPORT_CATEGORIES = [
   },
 ];
 
-const ALL_REPORTS = REPORT_CATEGORIES.flatMap((c) => c.reports);
 const DEFAULT_REPORT = 'overview';
 
 function getDateRange(type) {
@@ -1098,16 +1099,62 @@ export default function AdminReports() {
   const [exportOpen, setExportOpen] = useState(false);
   const downloadRef = useRef({ pdf: () => {}, excel: () => {} });
 
+  const { restaurant } = useAuth();
+  const enabledModules = restaurant?.enabledModules || {};
+  const restaurantType = restaurant?.restaurantType || '';
+
+  // Fallback: refresh enabledModules for existing sessions
+  useEffect(() => {
+    if (!restaurant?.enabledModules) {
+      apiFetch('/api/auth/me')
+        .then(data => {
+          if (data?.restaurant?.enabledModules) {
+            // localStorage merge fallback
+            const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
+            if (authKey) {
+              try {
+                const parsed = JSON.parse(localStorage.getItem(authKey));
+                parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
+                localStorage.setItem(authKey, JSON.stringify(parsed));
+              } catch {}
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   const filteredCategories = useMemo(() => {
-    if (!search.trim()) return REPORT_CATEGORIES;
+    let categories = REPORT_CATEGORIES;
+    // Filter reports based on enabledModules
+    categories = categories.map(cat => ({
+      ...cat,
+      reports: cat.reports.filter(r => {
+        if (r.id === 'captain-performance') return enabledModules.tables !== false;
+        if (r.id === 'table-utilization') return enabledModules.tables !== false;
+        if (r.id === 'venue-revenue') return enabledModules.food !== false || enabledModules.bar !== false;
+        return true;
+      }),
+    })).filter(cat => cat.reports.length > 0);
+
+    // Add delivery platform report for CLOUD_KITCHEN
+    if (restaurantType === 'CLOUD_KITCHEN') {
+      const salesCat = categories.find(c => c.key === 'sales');
+      if (salesCat) {
+        salesCat.reports.push({ id: 'delivery-platforms', label: 'Delivery Platform Breakdown', icon: Smartphone, urgent: false });
+      }
+    }
+
+    if (!search.trim()) return categories;
     const q = search.toLowerCase();
-    return REPORT_CATEGORIES.map((cat) => ({
+    return categories.map((cat) => ({
       ...cat,
       reports: cat.reports.filter((r) => r.label.toLowerCase().includes(q)),
     })).filter((cat) => cat.reports.length > 0);
-  }, [search]);
+  }, [search, enabledModules, restaurantType]);
 
-  const activeReportMeta = ALL_REPORTS.find((r) => r.id === activeReport);
+  const allReports = filteredCategories.flatMap((c) => c.reports);
+  const activeReportMeta = allReports.find((r) => r.id === activeReport);
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] font-sans">
@@ -1199,8 +1246,56 @@ export default function AdminReports() {
             {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
+            {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
           </div>
         </main>
+      </div>
+    </div>
+  );
+}
+
+function DeliveryPlatformsReport({ dateFilter }) {
+  const [data, setData] = useState({ platforms: [], totalRevenue: 0 });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    // Fetch transactions and group by delivery platform
+    fetch(`${API_BASE}/api/transactions?date=${dateFilter.startDate}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(txns => {
+        const platformMap = {};
+        let total = 0;
+        txns.forEach(t => {
+          const platform = t.deliveryPlatform || 'Direct';
+          platformMap[platform] = (platformMap[platform] || 0) + Number(t.amount || 0);
+          total += Number(t.amount || 0);
+        });
+        const platforms = Object.entries(platformMap).map(([name, revenue]) => ({
+          name,
+          revenue,
+          percent: total > 0 ? Math.round((revenue / total) * 100) : 0,
+        }));
+        setData({ platforms, totalRevenue: total });
+      })
+      .catch(() => setData({ platforms: [], totalRevenue: 0 }))
+      .finally(() => setLoading(false));
+  }, [dateFilter]);
+
+  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (!data.platforms.length) return <p className="text-gray-500">No delivery data for this period.</p>;
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Delivery Platform Breakdown" subtitle="Revenue by delivery channel" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {data.platforms.map(p => (
+          <div key={p.name} className="bg-white rounded-xl p-5 border border-[#FFCDD2]">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{p.name}</h3>
+            <p className="text-2xl font-black text-[#B71C1C] mt-2">₹{p.revenue.toLocaleString()}</p>
+            <p className="text-sm text-gray-500 mt-1">{p.percent}% of total</p>
+          </div>
+        ))}
       </div>
     </div>
   );

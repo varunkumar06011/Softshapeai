@@ -9,7 +9,18 @@ const PRINTER_TYPES = [
   { value: 'ALL', label: 'All' },
 ];
 
-const StepPrinters = ({ printers, sectionRouting, sectionsData, onChange, onNext, onBack }) => {
+const getDefaultPrinters = (restaurantType) => {
+  if (restaurantType === 'CLOUD_KITCHEN') {
+    return [{ name: 'Kitchen Printer', paperWidth: '80mm', type: 'KITCHEN' }];
+  }
+  // CAFE and all others
+  return [
+    { name: 'Kitchen Printer', paperWidth: '80mm', type: 'KITCHEN' },
+    { name: 'Bill Printer', paperWidth: '80mm', type: 'BILL' },
+  ];
+};
+
+const StepPrinters = ({ restaurantType, printers, sectionRouting, sectionsData, onChange, onNext, onBack }) => {
   const [printingMode, setPrintingMode] = useState(printers.length > 0 ? 'qz' : 'none');
 
   const handleModeChange = (mode) => {
@@ -17,14 +28,8 @@ const StepPrinters = ({ printers, sectionRouting, sectionsData, onChange, onNext
     if (mode === 'none') {
       onChange([], {});
     } else if (printers.length === 0) {
-      // Restore defaults
-      onChange(
-        [
-          { name: 'Kitchen Printer', paperWidth: '80mm', type: 'KITCHEN' },
-          { name: 'Bill Printer', paperWidth: '80mm', type: 'BILL' },
-        ],
-        {}
-      );
+      // Restore type-aware defaults
+      onChange(getDefaultPrinters(restaurantType), {});
     }
   };
 
