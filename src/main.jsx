@@ -14,7 +14,7 @@ Sentry.init({
     Sentry.replayIntegration(),
   ],
   // Session Replay
-  replaysSessionSampleRate: 1.0, // Set to 100% during testing. Lower for production.
+  replaysSessionSampleRate: 0.1,  // 10% of sessions — production-safe
   replaysOnErrorSampleRate: 1.0,
   // Propagate trace headers to backend so backend errors appear in replays
   tracePropagationTargets: [
