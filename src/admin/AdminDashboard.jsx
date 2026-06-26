@@ -13,8 +13,6 @@ import {
   Sparkles,
   Settings,
   LogOut,
-  Bell,
-  Search,
   Bot,
   Send,
   Star,
@@ -85,10 +83,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [revenue, setRevenue] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [activityLog, setActivityLog] = useState([
-    { id: 1, text: "Raju closed Table 4 bill for â‚¹2,450", time: "2 min ago", type: "success" },
-    { id: 2, text: "Lakshmi sent KOT for Table 12", time: "5 min ago", type: "info" },
-  ]);
+  const [activityLog, setActivityLog] = useState([]);
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
 
   const { setTables } = useTableSync();
@@ -142,7 +137,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
         return txnDate >= todayStart;
       });
 
-      setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + Number(txn.amount || 0), 0)));
+      setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0)));
       setOrdersCount(todayTxns.length);
     } catch (err) {
       console.warn('[AdminStats] Failed to load stats:', err.message);
@@ -351,11 +346,9 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative rounded-md border border-[#FFCDD2] p-2">
-              <Bell size={16} />
-              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E53935] text-[9px] text-white">3</span>
-            </button>
-            <div className="h-8 w-8 rounded-full bg-[#FFEBEE]" />
+            <div className="h-8 w-8 rounded-full bg-[#B71C1C] text-white flex items-center justify-center text-sm font-black">
+              {(restaurant?.name?.[0] || 'A').toUpperCase()}
+            </div>
           </div>
         </header>
 

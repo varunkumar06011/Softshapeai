@@ -1243,9 +1243,44 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const onOrderPaid = (payload) => {
-      const { tableId, isExtraTable, orderId: paidOrderId } = payload;
+      const { tableId, isExtraTable, orderId: paidOrderId, transaction: socketTxn } = payload;
       console.log(`[Socket] order:paid received tableId=${tableId} orderId=${paidOrderId}`);
       // Terminal event — must always clear table, never blocked by cooldown.
+
+      // Merge transaction from socket into pastTransactions if present (fixes fast-settlement disappearing bills)
+      if (socketTxn) {
+        const mappedTxn = {
+          id: socketTxn.id,
+          orderId: socketTxn.orderId || null,
+          txnNumber: socketTxn.txnNumber || null,
+          billNumber: socketTxn.billNumber || null,
+          displayId: socketTxn.billNumber ? `B${socketTxn.billNumber}` : (socketTxn.txnNumber ? `T${socketTxn.txnNumber}` : '—'),
+          kot: socketTxn.orderId ? `ORD-${socketTxn.orderId.slice(-6).toUpperCase()}` : '—',
+          amount: socketTxn.grandTotal != null ? Number(socketTxn.grandTotal) : Number(socketTxn.amount ?? 0),
+          grandTotal: socketTxn.grandTotal != null ? Number(socketTxn.grandTotal) : Number(socketTxn.amount ?? 0),
+          subtotal: Number(socketTxn.subtotal ?? 0),
+          discountPercent: Number(socketTxn.discountPercent ?? 0),
+          discountAmount: Number(socketTxn.discountAmount ?? 0),
+          cgst: Number(socketTxn.cgst ?? 0),
+          sgst: Number(socketTxn.sgst ?? 0),
+          time: (() => { try { const d = new Date(socketTxn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+          date: (() => { try { const d = new Date(socketTxn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+          timestamp: (() => { try { const d = new Date(socketTxn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
+          items: socketTxn.itemCount || (Array.isArray(socketTxn.items) ? socketTxn.items.length : 0),
+          itemsList: socketTxn.items || [],
+          captainId: socketTxn.captainId || 'CASHIER',
+          captainName: socketTxn.captainId && socketTxn.captainId !== 'CASHIER' ? socketTxn.captainId : 'Head Cashier',
+          method: socketTxn.method || 'UPI',
+          tableNumber: socketTxn.tableNumber || null,
+          tableDisplayName: socketTxn.tableLabel || (socketTxn.tableNumber ? `T${socketTxn.tableNumber}` : '—'),
+          source: activeOutlet,
+          restaurantId: activeRestaurantId,
+        };
+        setPastTransactions(prev => {
+          if (prev.some(t => t.id === mappedTxn.id)) return prev;
+          return [mappedTxn, ...prev];
+        });
+      }
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
       if (!isExtraTable) {
@@ -2385,6 +2420,43 @@ const CashierDashboard = ({ onLogout }) => {
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.error || 'Settlement failed on server');
+          }
+
+          // Merge returned transaction into pastTransactions immediately (fixes fast-settlement disappearing bills)
+          const settleData = await response.json().catch(() => ({}));
+          if (settleData?.transaction) {
+            const txn = settleData.transaction;
+            const mappedTxn = {
+              id: txn.id,
+              orderId: txn.orderId || null,
+              txnNumber: txn.txnNumber || null,
+              billNumber: txn.billNumber || null,
+              displayId: txn.billNumber ? `B${txn.billNumber}` : (txn.txnNumber ? `T${txn.txnNumber}` : '—'),
+              kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
+              amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+              grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+              subtotal: Number(txn.subtotal ?? 0),
+              discountPercent: Number(txn.discountPercent ?? 0),
+              discountAmount: Number(txn.discountAmount ?? 0),
+              cgst: Number(txn.cgst ?? 0),
+              sgst: Number(txn.sgst ?? 0),
+              time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+              date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+              timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
+              items: txn.itemCount || (Array.isArray(txn.items) ? txn.items.length : 0),
+              itemsList: txn.items || [],
+              captainId: txn.captainId || 'CASHIER',
+              captainName: txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier',
+              method: txn.method || method,
+              tableNumber: txn.tableNumber || null,
+              tableDisplayName: txn.tableLabel || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
+              source: activeOutlet,
+              restaurantId: activeRestaurantId,
+            };
+            setPastTransactions(prev => {
+              if (prev.some(t => t.id === mappedTxn.id)) return prev;
+              return [mappedTxn, ...prev];
+            });
           }
 
           // Mark as settled locally to prevent retries

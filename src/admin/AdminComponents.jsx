@@ -236,7 +236,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
         recentTxns.forEach(txn => {
           const txnDate = new Date(txn.paidAt || txn.createdAt);
           const dayIdx = txnDate.getDay(); // 0 = Sunday, 6 = Saturday
-          dailyData[dayIdx].revenue += Number(txn.amount || 0);
+          dailyData[dayIdx].revenue += Number(txn.grandTotal ?? txn.amount ?? 0);
         });
 
         // Reorder to start from Monday (chart format)
@@ -318,19 +318,23 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
           <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
         </div>
         <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
-          {activityLog.map((log) => (
-            <div key={log.id} className="flex gap-3 animate-slide-in">
-              <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
-                log.type === "success" ? "bg-green-500" : 
-                log.type === "info" ? "bg-blue-500" : 
-                log.type === "tip" ? "bg-amber-500" : "bg-red-500"
-              }`} />
-              <div className="flex-grow min-w-0">
-                <p className="text-xs font-medium text-[#1A1A1A] leading-relaxed">{log.text}</p>
-                <p className="text-[10px] text-[#6B6B6B] mt-1">{log.time}</p>
+          {activityLog.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">No live activity yet</p>
+          ) : (
+            activityLog.map((log) => (
+              <div key={log.id} className="flex gap-3 animate-slide-in">
+                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
+                  log.type === "success" ? "bg-green-500" : 
+                  log.type === "info" ? "bg-blue-500" : 
+                  log.type === "tip" ? "bg-amber-500" : "bg-red-500"
+                }`} />
+                <div className="flex-grow min-w-0">
+                  <p className="text-xs font-medium text-[#1A1A1A] leading-relaxed">{log.text}</p>
+                  <p className="text-[10px] text-[#6B6B6B] mt-1">{log.time}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -1816,6 +1820,37 @@ export function Payroll() {
               onChange={(e) => setMonthYear(e.target.value)}
               className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
             />
+            <button
+              onClick={() => {
+                if (records.length === 0) return;
+                const headers = ['Employee Name', 'Base Salary', 'Absent Days', 'OT Days', 'OT Amount', 'Advance', 'Net Payable', 'Paid Amount', 'Status', 'Month'];
+                const rows = records.map(r => [
+                  r.employee?.name || '',
+                  Number(r.baseSalary),
+                  r.absentDays || 0,
+                  r.otDays || 0,
+                  Number(r.otAmount || 0),
+                  Number(r.advanceAmount || 0),
+                  Number(r.netPayable),
+                  Number(r.paidAmount),
+                  r.status || 'PENDING',
+                  monthYear,
+                ].join(','));
+                const csv = [headers.join(','), ...rows].join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `payroll-${monthYear}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              disabled={records.length === 0}
+              className="text-xs font-bold bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download size={14} className="inline mr-1" />
+              CSV
+            </button>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-10">
