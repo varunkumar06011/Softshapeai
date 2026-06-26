@@ -136,10 +136,16 @@ const StepTax = ({ data, onChange, onNext, onBack }) => {
             <label className="block text-xs font-medium text-gray-500 mb-1">Service charge %</label>
             <input
               type="number"
-              value={data.serviceChargePercent}
+              value={data.serviceChargePercent === 0 ? '' : data.serviceChargePercent}
               onChange={(e) => {
-                const val = parseFloat(e.target.value) || 0;
-                handleChange('serviceChargePercent', Math.min(20, Math.max(0, val)));
+                const val = e.target.value;
+                const num = val === '' ? 0 : Math.min(20, Math.max(0, parseFloat(val) || 0));
+                handleChange('serviceChargePercent', num);
+              }}
+              onBlur={(e) => {
+                if (!e.target.value || parseFloat(e.target.value) <= 0) {
+                  handleChange('serviceChargePercent', 0);
+                }
               }}
               className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
               min="0"

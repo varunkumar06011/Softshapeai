@@ -179,8 +179,16 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                 <label className="block text-xs font-medium text-gray-500 mb-1">Default pour size (ML)</label>
                 <input
                   type="number"
-                  value={data.barUnitMl ?? 30}
-                  onChange={(e) => handleChange('barUnitMl', parseInt(e.target.value) || 30)}
+                  value={data.barUnitMl === 0 ? '' : (data.barUnitMl ?? 30)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    handleChange('barUnitMl', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value || parseInt(e.target.value) < 1) {
+                      handleChange('barUnitMl', 30);
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                   placeholder="30"
                 />
@@ -189,8 +197,16 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                 <label className="block text-xs font-medium text-gray-500 mb-1">Full bottle size (ML)</label>
                 <input
                   type="number"
-                  value={data.fullBottleMl ?? 750}
-                  onChange={(e) => handleChange('fullBottleMl', parseInt(e.target.value) || 750)}
+                  value={data.fullBottleMl === 0 ? '' : (data.fullBottleMl ?? 750)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    handleChange('fullBottleMl', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value || parseInt(e.target.value) < 1) {
+                      handleChange('fullBottleMl', 750);
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                   placeholder="750"
                 />
@@ -199,8 +215,16 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                 <label className="block text-xs font-medium text-gray-500 mb-1">Half bottle size (ML)</label>
                 <input
                   type="number"
-                  value={data.halfBottleMl ?? 375}
-                  onChange={(e) => handleChange('halfBottleMl', parseInt(e.target.value) || 375)}
+                  value={data.halfBottleMl === 0 ? '' : (data.halfBottleMl ?? 375)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    handleChange('halfBottleMl', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value || parseInt(e.target.value) < 1) {
+                      handleChange('halfBottleMl', 375);
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                   placeholder="375"
                 />
