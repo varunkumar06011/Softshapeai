@@ -20,6 +20,6 @@ export default defineConfig({
     // ESM circular references — it produces incorrect initialization order, causing
     // "Cannot access 'X' before initialization" (TDZ) at runtime.
     // Using esbuild as the minifier is the stable workaround.
-    minify: 'oxc',
+    minify: 'esbuild',
   },
 })
