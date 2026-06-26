@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Store, Plus, Trash2, Layout, ChevronDown, ChevronUp } from 'lucide-react';
+import { Store, Plus, Trash2, Layout, ChevronDown, ChevronUp, Copy, AlertTriangle, Utensils } from 'lucide-react';
 
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant' },
@@ -14,10 +14,12 @@ const defaultOutlet = (index, parentType) => ({
   restaurantType: parentType || 'DINE_IN',
   sections: [{ name: 'Main Hall' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
+  menu: { categories: [{ name: 'My Menu', items: [{ name: 'Placeholder', price: 1, isVeg: true }] }] },
+  useMainMenu: true,
 });
 
-const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBack }) => {
-  const [expandedIdx, setExpandedIdx] = useState(0);
+const StepOutlets = ({ outlets, outletCount, parentType, mainSections, mainTables, mainMenu, onChange, onNext, onBack }) => {
+  const [expandedIdxs, setExpandedIdxs] = useState(new Set([0]));
 
   const ensureOutlets = () => {
     const needed = outletCount - 1;
@@ -47,13 +49,32 @@ const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBac
     updateOutlet(index, { tables });
   };
 
+  const toggleExpand = (idx) => {
+    setExpandedIdxs(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const copyFloorPlanFromMain = (idx) => {
+    const sections = (mainSections || []).map(s => ({ name: s.name }));
+    const tables = (mainTables || []).map((t, i) => ({ ...t, sectionIndex: t.sectionIndex }));
+    updateOutlet(idx, { sections, tables });
+  };
+
+  const names = currentOutlets.map(o => o.name.trim().toLowerCase());
+  const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+  const hasDuplicates = dupes.length > 0;
+
   const isValid = currentOutlets.every(o =>
     o.name.length >= 2 &&
     o.restaurantType &&
     o.sections.every(s => s.name.length >= 1) &&
     o.tables.length >= 1 &&
     o.tables.every(t => t.number > 0 && t.capacity > 0)
-  );
+  ) && !hasDuplicates;
 
   return (
     <div className="space-y-6">
@@ -63,23 +84,30 @@ const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBac
         <p className="text-gray-500">Set up each additional outlet ({currentOutlets.length} outlet{currentOutlets.length > 1 ? 's' : ''})</p>
       </div>
 
+      {hasDuplicates && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2 text-yellow-800 text-sm">
+          <AlertTriangle size={18} />
+          <span>Duplicate outlet names detected. Each outlet needs a unique name.</span>
+        </div>
+      )}
+
       {currentOutlets.map((outlet, idx) => (
         <div key={idx} className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
           <button
-            onClick={() => setExpandedIdx(expandedIdx === idx ? -1 : idx)}
+            onClick={() => toggleExpand(idx)}
             className="w-full flex items-center justify-between p-4 hover:bg-gray-100 transition-all"
           >
             <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${expandedIdx === idx ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${expandedIdxs.has(idx) ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'}`}>
                 {idx + 1}
               </div>
               <span className="font-semibold text-gray-900">{outlet.name}</span>
               <span className="text-sm text-gray-400">{RESTAURANT_TYPES.find(t => t.value === outlet.restaurantType)?.label}</span>
             </div>
-            {expandedIdx === idx ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+            {expandedIdxs.has(idx) ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
           </button>
 
-          {expandedIdx === idx && (
+          {expandedIdxs.has(idx) && (
             <div className="p-4 space-y-4 border-t border-gray-100">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -106,11 +134,34 @@ const StepOutlets = ({ outlets, outletCount, parentType, onChange, onNext, onBac
                 </div>
               </div>
 
+              {mainSections && mainSections.length > 0 && mainTables && mainTables.length > 0 && (
+                <button
+                  onClick={() => copyFloorPlanFromMain(idx)}
+                  className="flex items-center gap-2 text-xs text-[#E53935] hover:text-[#B71C1C] font-medium"
+                >
+                  <Copy size={14} /> Copy floor plan from main restaurant
+                </button>
+              )}
+
               <OutletFloorPlan
                 outlet={outlet}
                 onSectionsChange={(sections) => updateOutletSections(idx, sections)}
                 onTablesChange={(tables) => updateOutletTables(idx, tables)}
               />
+
+              {/* Menu toggle */}
+              <div className="flex items-center gap-3 bg-white rounded-lg p-3 border border-gray-100">
+                <Utensils size={16} className="text-gray-500" />
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer flex-1">
+                  <input
+                    type="checkbox"
+                    checked={outlet.useMainMenu !== false}
+                    onChange={(e) => updateOutlet(idx, { useMainMenu: e.target.checked })}
+                    className="w-4 h-4 text-[#E53935] rounded border-gray-300"
+                  />
+                  Use same menu as main restaurant
+                </label>
+              </div>
             </div>
           )}
         </div>
@@ -155,9 +206,18 @@ function OutletFloorPlan({ outlet, onSectionsChange, onTablesChange }) {
   };
 
   const addTable = (sectionIndex) => {
-    const sectionTables = outlet.tables.filter(t => t.sectionIndex === sectionIndex);
-    const maxNumber = sectionTables.length > 0 ? Math.max(...sectionTables.map(t => t.number)) : 0;
+    const maxNumber = outlet.tables.length > 0 ? Math.max(...outlet.tables.map(t => t.number)) : 0;
     onTablesChange([...outlet.tables, { number: maxNumber + 1, capacity: 4, sectionIndex }]);
+  };
+
+  const addBulkTables = (sectionIndex, count, capacity) => {
+    const maxNumber = outlet.tables.length > 0 ? Math.max(...outlet.tables.map(t => t.number)) : 0;
+    const newTables = Array.from({ length: count }, (_, i) => ({
+      number: maxNumber + 1 + i,
+      capacity,
+      sectionIndex
+    }));
+    onTablesChange([...outlet.tables, ...newTables]);
   };
 
   const removeTable = (sectionIndex, tableIdx) => {
@@ -201,6 +261,42 @@ function OutletFloorPlan({ outlet, onSectionsChange, onTablesChange }) {
               </button>
             )}
           </div>
+
+          {/* Bulk add */}
+          <div className="flex gap-2 items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 block mb-0.5">Add multiple</label>
+              <input
+                type="number"
+                id={`bulk-count-${sectionIndex}`}
+                defaultValue="4"
+                min="1"
+                max="50"
+                className="w-full px-2 py-1 bg-white border border-gray-100 rounded text-sm text-gray-900"
+              />
+            </div>
+            <div className="w-24">
+              <label className="text-xs text-gray-500 block mb-0.5">Capacity</label>
+              <select
+                id={`bulk-capacity-${sectionIndex}`}
+                defaultValue="4"
+                className="w-full px-2 py-1 bg-white border border-gray-100 rounded text-sm text-gray-900"
+              >
+                {[2, 4, 6, 8, 12].map(n => <option key={n} value={n}>{n} seats</option>)}
+              </select>
+            </div>
+            <button
+              onClick={() => {
+                const count = parseInt(document.getElementById(`bulk-count-${sectionIndex}`).value) || 4;
+                const capacity = parseInt(document.getElementById(`bulk-capacity-${sectionIndex}`).value) || 4;
+                addBulkTables(sectionIndex, Math.min(50, Math.max(1, count)), capacity);
+              }}
+              className="mt-4 px-3 py-1.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-lg text-xs font-medium transition-all"
+            >
+              Add
+            </button>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {outlet.tables.filter(t => t.sectionIndex === sectionIndex).map((table, tableIdx) => (
               <div key={tableIdx} className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1">
@@ -219,22 +315,21 @@ function OutletFloorPlan({ outlet, onSectionsChange, onTablesChange }) {
                   className="w-12 px-1 py-1 bg-white border border-gray-100 rounded text-center text-sm text-gray-900"
                   min="1"
                 />
-                <span className="text-xs text-gray-400">seats</span>
-                <input
-                  type="number"
-                  value={table.capacity === 0 ? '' : table.capacity}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    updateTable(sectionIndex, tableIdx, 'capacity', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
-                  }}
-                  onBlur={(e) => {
-                    if (!e.target.value || parseInt(e.target.value) < 1) {
-                      updateTable(sectionIndex, tableIdx, 'capacity', 4);
-                    }
-                  }}
-                  className="w-12 px-1 py-1 bg-white border border-gray-100 rounded text-center text-sm text-gray-900"
-                  min="1"
-                />
+                <div className="flex gap-0.5">
+                  {[2, 4, 6, 8, 12].map(cap => (
+                    <button
+                      key={cap}
+                      onClick={() => updateTable(sectionIndex, tableIdx, 'capacity', cap)}
+                      className={`px-1.5 py-0.5 rounded text-xs font-medium transition-all ${
+                        table.capacity === cap
+                          ? 'bg-[#E53935] text-white'
+                          : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {cap}
+                    </button>
+                  ))}
+                </div>
                 <button onClick={() => removeTable(sectionIndex, tableIdx)} className="text-red-600 hover:text-red-500 ml-1">
                   <Trash2 size={14} />
                 </button>

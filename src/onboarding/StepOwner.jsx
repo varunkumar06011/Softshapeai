@@ -1,11 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, Mail, Lock, ShieldCheck, Eye, EyeOff, Smartphone, Send, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { User, Mail, Lock, ShieldCheck, Eye, EyeOff, Smartphone, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { firebaseAuth, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
 import { apiFetch } from '../services/apiConfig';
-
-function getApiBase() {
-  return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
-}
 
 function normalizePhone(raw) {
   const digits = raw.replace(/\D/g, '');
@@ -15,30 +11,41 @@ function normalizePhone(raw) {
   return '+' + digits;
 }
 
+function getPasswordStrength(password) {
+  if (!password || password.length < 8) return { label: 'Too short', color: 'bg-gray-200', width: '10%', score: 0 };
+  let score = 1;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+  if (password.length >= 12) score++;
+  const map = [
+    { label: 'Weak', color: 'bg-red-500', width: '25%' },
+    { label: 'Fair', color: 'bg-yellow-500', width: '50%' },
+    { label: 'Good', color: 'bg-blue-500', width: '75%' },
+    { label: 'Strong', color: 'bg-green-500', width: '100%' },
+  ];
+  return { ...map[score - 1], score };
+}
+
 const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // Email OTP state
-  const [emailOtpStatus, setEmailOtpStatus] = useState('idle'); // idle | sending | sent | verifying | verified | error
-  const [emailOtp, setEmailOtp] = useState('');
-  const [emailError, setEmailError] = useState('');
-
   // Phone OTP state
   const [phoneOtpStatus, setPhoneOtpStatus] = useState('idle');
   const [phoneOtp, setPhoneOtp] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [phoneAttempts, setPhoneAttempts] = useState(0);
   const recaptchaRef = useRef(null);
   const recaptchaWrapperRef = useRef(null);
   const confirmationResultRef = useRef(null);
   const lastPhoneOtpAttemptRef = useRef(0);
 
   // Timer state
-  const [emailTimeLeft, setEmailTimeLeft] = useState(300);
-  const [phoneTimeLeft, setPhoneTimeLeft] = useState(120);
-  const emailTimerRef = useRef(null);
+  const [phoneTimeLeft, setPhoneTimeLeft] = useState(300);
   const phoneTimerRef = useRef(null);
+
+  const strength = getPasswordStrength(data.password);
 
   // Clear phone verification state and timers on unmount
   useEffect(() => {
@@ -48,26 +55,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         recaptchaRef.current = null;
       }
       confirmationResultRef.current = null;
-      clearInterval(emailTimerRef.current);
       clearInterval(phoneTimerRef.current);
     };
   }, []);
 
   const formatTimer = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-  const startEmailTimer = () => {
-    setEmailTimeLeft(300);
-    clearInterval(emailTimerRef.current);
-    emailTimerRef.current = setInterval(() => {
-      setEmailTimeLeft(prev => {
-        if (prev <= 1) { clearInterval(emailTimerRef.current); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
   const startPhoneTimer = () => {
-    setPhoneTimeLeft(120);
+    setPhoneTimeLeft(300);
     clearInterval(phoneTimerRef.current);
     phoneTimerRef.current = setInterval(() => {
       setPhoneTimeLeft(prev => {
@@ -78,10 +73,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   };
 
   const handleChange = (field, value) => {
-    // Proof invalidation: if email changes after verification, clear the proof
-    if (field === 'email' && data.emailVerificationProof && value !== data.email) {
-      onChange({ ...data, [field]: value, emailVerificationProof: undefined });
-    } else if (field === 'phone' && data.phoneVerificationProof && value !== data.phone) {
+    if (field === 'phone' && data.phoneVerificationProof && value !== data.phone) {
       onChange({ ...data, [field]: value, phoneVerificationProof: undefined });
     } else {
       onChange({ ...data, [field]: value });
@@ -98,6 +90,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     if (!data.phone || data.phone.length < 10) newErrors.phone = 'Please enter a valid phone number';
     if (!data.password || data.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
     if (data.password !== data.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+    if (!data.termsAccepted) newErrors.termsAccepted = 'You must agree to the Terms of Service';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -106,47 +99,6 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const handleContinue = () => {
     if (validate()) {
       onNext();
-    }
-  };
-
-  // ── Email OTP ──────────────────────────────────────────────
-  const sendEmailOtp = async () => {
-    if (!data.email || !data.email.includes('@')) {
-      setEmailError('Please enter a valid email first');
-      return;
-    }
-    setEmailOtpStatus('sending');
-    setEmailError('');
-    try {
-      await apiFetch('/api/verify/email/send', {
-        method: 'POST',
-        body: JSON.stringify({ email: data.email, sessionId })
-      });
-      setEmailOtpStatus('sent');
-      startEmailTimer();
-    } catch (err) {
-      setEmailError(err.message || 'Failed to send code');
-      setEmailOtpStatus('error');
-    }
-  };
-
-  const verifyEmailOtp = async () => {
-    if (!emailOtp || emailOtp.length !== 6) {
-      setEmailError('Enter the 6-digit code');
-      return;
-    }
-    setEmailOtpStatus('verifying');
-    setEmailError('');
-    try {
-      const res = await apiFetch('/api/verify/email/verify', {
-        method: 'POST',
-        body: JSON.stringify({ email: data.email, sessionId, otp: emailOtp })
-      });
-      onChange({ ...data, emailVerificationProof: res.proof });
-      setEmailOtpStatus('verified');
-    } catch (err) {
-      setEmailError(err.message || 'Invalid code');
-      setEmailOtpStatus('sent');
     }
   };
 
@@ -197,6 +149,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       lastPhoneOtpAttemptRef.current = Date.now();
       setPhoneOtpStatus('sent');
       startPhoneTimer();
+      setPhoneAttempts(prev => prev + 1);
     } catch (err) {
       console.error('[sendPhoneOtp] error:', err.code, err.message);
       // Let Firebase's clear() handle widget teardown properly
@@ -246,7 +199,8 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     }
   };
 
-  const allVerified = data.emailVerificationProof && data.phoneVerificationProof;
+  const phoneVerified = !!data.phoneVerificationProof;
+  const canSkipVerification = phoneAttempts >= 3;
 
   return (
     <div className="space-y-6">
@@ -273,7 +227,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
           {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
         </div>
 
-        {/* Email + OTP */}
+        {/* Email */}
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-2">Email Address *</label>
           <div className="relative">
@@ -282,62 +236,12 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
               type="email"
               value={data.email}
               onChange={(e) => handleChange('email', e.target.value)}
-              disabled={data.emailVerificationProof}
-              className={`w-full pl-10 pr-24 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 disabled:opacity-60 ${errors.email ? 'border-red-500' : 'border-gray-100'}`}
+              className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.email ? 'border-red-500' : 'border-gray-100'}`}
               placeholder="e.g., owner@example.com"
             />
-            <button
-              type="button"
-              onClick={sendEmailOtp}
-              disabled={emailOtpStatus === 'sending' || emailOtpStatus === 'verifying' || data.emailVerificationProof}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-semibold bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              {data.emailVerificationProof ? 'Verified' : emailOtpStatus === 'sending' ? 'Sending…' : 'Send Code'}
-            </button>
           </div>
           {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
-          {emailError && <p className="text-red-400 text-xs mt-1">{emailError}</p>}
-
-          {emailOtpStatus === 'error' && !data.emailVerificationProof && (
-            <div className="mt-1">
-              <button type="button" onClick={sendEmailOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend Code</button>
-            </div>
-          )}
-          {(emailOtpStatus === 'sent' || emailOtpStatus === 'verifying') && !data.emailVerificationProof && (
-            <div className="mt-2 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={emailOtp}
-                  onChange={(e) => setEmailOtp(e.target.value)}
-                  placeholder="6-digit code"
-                  className="w-32 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 text-center text-sm font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={verifyEmailOtp}
-                  disabled={emailOtpStatus === 'verifying'}
-                  className="px-4 py-2 text-xs font-semibold bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C] disabled:opacity-50 transition-all"
-                >
-                  {emailOtpStatus === 'verifying' ? <Loader2 size={14} className="animate-spin inline" /> : 'Verify'}
-                </button>
-              </div>
-              <div className="flex items-center justify-between px-0.5">
-                <span className="text-xs text-gray-400">
-                  {emailTimeLeft > 0 ? `Code expires in ${formatTimer(emailTimeLeft)}` : 'Code expired.'}
-                </span>
-                {(emailTimeLeft === 0 || emailTimeLeft <= 240) ? (
-                  <button type="button" onClick={sendEmailOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend Code</button>
-                ) : (
-                  <span className="text-xs text-gray-400">Resend in {formatTimer(emailTimeLeft - 240)}</span>
-                )}
-              </div>
-            </div>
-          )}
-          {data.emailVerificationProof && (
-            <p className="text-green-600 text-xs mt-1 flex items-center gap-1"><CheckCircle size={12} /> Email verified</p>
-          )}
+          <p className="text-xs text-gray-400 mt-1">You&apos;ll verify this later from your account settings</p>
         </div>
 
         {/* Phone + OTP */}
@@ -398,11 +302,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
                 <span className="text-xs text-gray-400">
                   {phoneTimeLeft > 0 ? `Code expires in ${formatTimer(phoneTimeLeft)}` : 'Code expired.'}
                 </span>
-                {(phoneTimeLeft === 0 || phoneTimeLeft <= 60) ? (
-                  <button type="button" onClick={sendPhoneOtp} className="text-xs text-[#E53935] cursor-pointer hover:underline">Resend OTP</button>
-                ) : (
-                  <span className="text-xs text-gray-400">Resend in {formatTimer(phoneTimeLeft - 60)}</span>
-                )}
+                <button
+                  type="button"
+                  onClick={sendPhoneOtp}
+                  disabled={phoneTimeLeft > 0 && phoneTimeLeft > 240}
+                  className={`text-xs transition-all ${phoneTimeLeft > 0 && phoneTimeLeft > 240 ? 'text-gray-400 cursor-not-allowed' : 'text-[#E53935] hover:underline'}`}
+                >
+                  {phoneTimeLeft > 0 && phoneTimeLeft > 240 ? `Resend in ${formatTimer(phoneTimeLeft - 240)}` : 'Resend OTP'}
+                </button>
               </div>
             </div>
           )}
@@ -432,11 +339,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
-          {errors.password ? (
-            <p className="text-red-400 text-xs mt-1">{errors.password}</p>
-          ) : (
-            <p className="text-xs text-gray-400 mt-1">Must be at least 8 characters</p>
-          )}
+          {/* Strength meter */}
+          <div className="mt-2 space-y-1">
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full ${strength.color} transition-all duration-300`} style={{ width: strength.width }} />
+            </div>
+            <p className="text-xs text-gray-400">{strength.label} {strength.score >= 2 ? '' : '— add numbers & symbols'}</p>
+          </div>
+          {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password}</p>}
         </div>
 
         {/* Confirm Password */}
@@ -462,6 +372,38 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
           </div>
           {errors.confirmPassword && <p className="text-red-400 text-xs mt-1">{errors.confirmPassword}</p>}
         </div>
+
+        {/* Terms & Conditions */}
+        <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={data.termsAccepted || false}
+              onChange={(e) => handleChange('termsAccepted', e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-[#E53935] rounded border-gray-300 focus:ring-[#E53935]"
+            />
+            <span className="text-sm text-gray-700">
+              I agree to the{' '}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-[#E53935] hover:underline font-medium">Terms of Service</a>
+              {' '}and{' '}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-[#E53935] hover:underline font-medium">Privacy Policy</a>
+              {' '}*
+            </span>
+          </label>
+          {errors.termsAccepted && <p className="text-red-400 text-xs">{errors.termsAccepted}</p>}
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={data.marketingConsent || false}
+              onChange={(e) => handleChange('marketingConsent', e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-[#E53935] rounded border-gray-300 focus:ring-[#E53935]"
+            />
+            <span className="text-sm text-gray-700">
+              Send me product updates and tips via email (optional)
+            </span>
+          </label>
+        </div>
       </div>
 
       <div className="flex gap-4">
@@ -473,15 +415,28 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         </button>
         <button
           onClick={handleContinue}
-          disabled={!allVerified}
+          disabled={!phoneVerified}
           className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Continue
         </button>
       </div>
-      {!allVerified && (
+      {!phoneVerified && (
         <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
-          <AlertCircle size={12} /> Verify both email and phone to continue
+          <AlertCircle size={12} /> Verify your phone number to continue
+        </p>
+      )}
+      {canSkipVerification && !phoneVerified && (
+        <p className="text-xs text-gray-400 text-center">
+          Having trouble?{' '}
+          <button
+            type="button"
+            onClick={() => onChange({ ...data, phoneVerificationProof: 'skipped' })}
+            className="text-[#E53935] hover:underline font-medium"
+          >
+            Continue without verifying
+          </button>{' '}
+          (you can verify later from Settings)
         </p>
       )}
     </div>

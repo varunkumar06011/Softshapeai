@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Printer, Plus, Trash2, Monitor, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Printer, Plus, Trash2, Monitor, X, ArrowRight, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
 
 const PAPER_WIDTHS = ['58mm', '80mm'];
 const PRINTER_TYPES = [
@@ -20,22 +20,40 @@ const getDefaultPrinters = (restaurantType) => {
   ];
 };
 
+const PRESET_NAMES = ['Kitchen Printer', 'Bar Printer', 'Bill Printer', 'Counter KOT'];
+
 const StepPrinters = ({ restaurantType, printers, sectionRouting, sectionsData, onChange, onNext, onBack }) => {
   const [printingMode, setPrintingMode] = useState(printers.length > 0 ? 'qz' : 'none');
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testPrinter, setTestPrinter] = useState(null);
+  const savedPrintersRef = useRef(printers);
+  const savedRoutingRef = useRef(sectionRouting);
 
   const handleModeChange = (mode) => {
     setPrintingMode(mode);
     if (mode === 'none') {
+      savedPrintersRef.current = printers;
+      savedRoutingRef.current = sectionRouting;
       onChange([], {});
     } else if (printers.length === 0) {
-      // Restore type-aware defaults
-      onChange(getDefaultPrinters(restaurantType), {});
+      const restored = savedPrintersRef.current.length > 0
+        ? savedPrintersRef.current
+        : getDefaultPrinters(restaurantType);
+      onChange(restored, savedRoutingRef.current);
     }
   };
 
   const updatePrinter = (index, field, value) => {
     const next = printers.map((p, i) => (i === index ? { ...p, [field]: value } : p));
     onChange(next, sectionRouting);
+  };
+
+  const setPresetName = (index, preset) => {
+    if (preset === 'custom') {
+      updatePrinter(index, 'name', '');
+    } else {
+      updatePrinter(index, 'name', preset);
+    }
   };
 
   const addPrinter = () => {
@@ -127,21 +145,61 @@ const StepPrinters = ({ restaurantType, printers, sectionRouting, sectionsData, 
             {printers.map((printer, index) => (
               <div key={index} className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
                 <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={printer.name}
-                    onChange={(e) => updatePrinter(index, 'name', e.target.value)}
-                    className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
-                    placeholder="Printer name"
-                  />
-                  {printers.length > 1 && (
+                  <div className="flex-1 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {PRESET_NAMES.map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setPresetName(index, preset)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            printer.name === preset
+                              ? 'bg-[#E53935] text-white'
+                              : 'bg-white border border-gray-200 text-gray-600 hover:border-[#E53935]'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setPresetName(index, 'custom')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          printer.name && !PRESET_NAMES.includes(printer.name)
+                            ? 'bg-[#E53935] text-white'
+                            : 'bg-white border border-gray-200 text-gray-600 hover:border-[#E53935]'
+                        }`}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                    {(!printer.name || !PRESET_NAMES.includes(printer.name)) && (
+                      <input
+                        type="text"
+                        value={printer.name}
+                        onChange={(e) => updatePrinter(index, 'name', e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                        placeholder="Enter custom printer name"
+                      />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
                     <button
-                      onClick={() => removePrinter(index)}
-                      className="p-2 text-red-600 hover:text-red-500"
+                      onClick={() => { setTestPrinter(printer); setShowTestModal(true); }}
+                      className="text-xs text-[#E53935] hover:text-[#B71C1C] font-medium"
+                      disabled={!printer.name}
                     >
-                      <Trash2 size={18} />
+                      Test
                     </button>
-                  )}
+                    {printers.length > 1 && (
+                      <button
+                        onClick={() => removePrinter(index)}
+                        className="p-1 text-red-600 hover:text-red-500"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -185,24 +243,94 @@ const StepPrinters = ({ restaurantType, printers, sectionRouting, sectionsData, 
             <div className="space-y-3">
               <p className="text-sm font-semibold text-gray-700">Section Printer Routing</p>
               <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
-                {sectionsData.map((section, idx) => (
-                  <div key={idx} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">{section.name || `Section ${idx + 1}`}</span>
-                    <select
-                      value={sectionRouting[section.name] || printers[0]?.name || ''}
-                      onChange={(e) => updateRouting(section.name, e.target.value)}
-                      className="px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 text-sm"
-                    >
-                      {printers.map(p => (
-                        <option key={p.name} value={p.name}>{p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+                {sectionsData.map((section, idx) => {
+                  const assigned = sectionRouting[section.name] || printers[0]?.name || '';
+                  const hasName = section.name && section.name.trim().length > 0;
+                  return (
+                    <div key={idx} className="flex items-center justify-between">
+                      <span className={`text-sm ${hasName ? 'text-gray-700' : 'text-gray-400 italic'}`}>
+                        {hasName ? section.name : 'Unnamed Section'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {!sectionRouting[section.name] && (
+                          <span className="text-xs text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded">Not assigned</span>
+                        )}
+                        <select
+                          value={assigned}
+                          onChange={(e) => updateRouting(section.name, e.target.value)}
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 text-sm"
+                        >
+                          {printers.map(p => (
+                            <option key={p.name} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Print Flow Diagram */}
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Print Flow</p>
+                <div className="space-y-2">
+                  {sectionsData.map((section, idx) => {
+                    const assigned = sectionRouting[section.name] || printers[0]?.name || '—';
+                    const hasName = section.name && section.name.trim().length > 0;
+                    return (
+                      <div key={idx} className="flex items-center gap-3 text-sm">
+                        <div className={`flex-1 px-3 py-2 rounded-lg border ${hasName ? 'bg-gray-50 border-gray-100 text-gray-700' : 'bg-gray-50 border-gray-100 text-gray-400 italic'}`}>
+                          {hasName ? section.name : 'Unnamed Section'}
+                        </div>
+                        <ArrowRight size={16} className="text-gray-300 shrink-0" />
+                        <div className="flex-1 px-3 py-2 rounded-lg bg-[#FFF5F5] border border-[#E53935]/20 text-[#E53935] font-medium">
+                          {assigned}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
         </>
+      )}
+
+      {printingMode === 'none' && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+          <p className="text-sm text-blue-800 font-medium mb-1">Digital KOT mode</p>
+          <p className="text-xs text-blue-600">Orders will be sent to the Captain app as digital KOTs. You can add printers later from Settings.</p>
+        </div>
+      )}
+
+      {/* Test Print Modal */}
+      {showTestModal && testPrinter && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Test Print — {testPrinter.name}</h3>
+              <button onClick={() => setShowTestModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 font-mono text-xs text-gray-600 space-y-1 border border-gray-100">
+              <p className="font-bold text-center border-b border-gray-200 pb-1">SAMPLE KOT</p>
+              <p>Table: T1</p>
+              <p>Captain: Ravi</p>
+              <p>Time: {new Date().toLocaleTimeString()}</p>
+              <p className="border-t border-gray-200 pt-1">1 x Paneer Tikka</p>
+              <p>1 x Butter Naan</p>
+              <p className="border-t border-gray-200 pt-1 text-center">--- KOT END ---</p>
+            </div>
+            <p className="text-xs text-gray-500">In a real setup, this would print to {testPrinter.name} via QZ Tray.</p>
+            <button
+              onClick={() => setShowTestModal(false)}
+              className="w-full py-2.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="flex gap-4">

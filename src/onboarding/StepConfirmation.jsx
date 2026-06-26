@@ -1,5 +1,5 @@
-import React from 'react';
-import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle, Pencil, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
@@ -9,8 +9,11 @@ const RESTAURANT_TYPE_LABELS = {
   CLOUD_KITCHEN: 'Cloud Kitchen',
 };
 
-const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoToOwnerStep }) => {
-  const { restaurant, owner, captains, cashiers, sections, tables, menu, selectedPlan, outlets, outletCount } = wizardData;
+const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoToStep, onGoToOwnerStep }) => {
+  const { restaurant, owner, captains, cashiers, sections, tables, menu, selectedPlan, outlets, outletCount, taxConfig, printers } = wizardData;
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(wizardData.owner?.termsAccepted || false);
 
   const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
 
@@ -23,19 +26,37 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
   const firstTable = tables[0]?.number || 1;
   const sampleItems = menu.categories.flatMap(cat => cat.items).slice(0, 3);
   const sampleSubtotal = sampleItems.reduce((sum, item) => sum + (item.price || 0), 0);
-  const taxConfig = wizardData.taxConfig || { gstCategory: 'NON_AC', gstRate: null, gstRegistered: true, pricesIncludeGst: false };
-  const isAcPreview = String(taxConfig.gstCategory).toUpperCase() === 'AC';
-  const ratePercent = taxConfig.gstRegistered === false ? 0 : (taxConfig.gstRate ?? (isAcPreview ? 18 : 5));
-  const sampleGstRate = ratePercent / 100;
-  const sampleGstAmount = taxConfig.pricesIncludeGst
+  const effectiveTaxConfig = taxConfig || { gstCategory: 'NON_AC', pricesIncludeGst: false };
+  const isAcPreview = String(effectiveTaxConfig.gstCategory).toUpperCase() === 'AC';
+  const sampleGstRate = isAcPreview ? 0.18 : 0.05;
+  const sampleGstAmount = effectiveTaxConfig.pricesIncludeGst
     ? Math.round((sampleSubtotal - sampleSubtotal / (1 + sampleGstRate)) * 100) / 100
     : Math.round(sampleSubtotal * sampleGstRate * 100) / 100;
-  const sampleTotal = taxConfig.pricesIncludeGst ? sampleSubtotal : Math.round((sampleSubtotal + sampleGstAmount) * 100) / 100;
+  const sampleTotal = effectiveTaxConfig.pricesIncludeGst ? sampleSubtotal : Math.round((sampleSubtotal + sampleGstAmount) * 100) / 100;
   const sampleDisplayedSubtotal = Math.round((sampleTotal - sampleGstAmount) * 100) / 100;
 
   const now = new Date();
   const istTime = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
   const istDate = now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const EditLink = ({ stepId, label }) => (
+    onGoToStep ? (
+      <button onClick={() => onGoToStep(stepId)} className="text-xs text-[#E53935] hover:text-[#B71C1C] font-medium flex items-center gap-1 ml-auto">
+        <Pencil size={12} /> {label}
+      </button>
+    ) : null
+  );
+
+  const SectionHeader = ({ icon, title, stepId, editLabel }) => (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        {icon} {title}
+      </div>
+      <EditLink stepId={stepId} label={editLabel || 'Edit'} />
+    </div>
+  );
+
+  const NotProvided = () => <span className="text-gray-400 italic">Not provided</span>;
 
   return (
     <div className="space-y-6">
@@ -70,40 +91,71 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
 
       {/* Restaurant Info Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Store size={18} className="text-[#E53935]" /> Restaurant Information
-        </div>
+        <SectionHeader icon={<Store size={18} className="text-[#E53935]" />} title="Restaurant Information" stepId="restaurant" />
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><span className="text-gray-400">Name:</span> <span className="font-medium text-gray-900">{restaurant.name}</span></div>
           <div><span className="text-gray-400">Type:</span> <span className="font-medium text-gray-900">{RESTAURANT_TYPE_LABELS[restaurant.restaurantType]}</span></div>
           <div><span className="text-gray-400">Phone:</span> <span className="font-medium text-gray-900">{restaurant.phone}</span></div>
           <div><span className="text-gray-400">Outlets:</span> <span className="font-medium text-gray-900">{outletCount}</span></div>
-          <div><span className="text-gray-400">GSTIN:</span> <span className="font-mono font-medium text-gray-900">{restaurant.gstin}</span></div>
-          {restaurant.email && <div><span className="text-gray-400">Email:</span> <span className="font-medium text-gray-900">{restaurant.email}</span></div>}
-          {restaurant.address && <div className="col-span-2"><span className="text-gray-400">Address:</span> <span className="font-medium text-gray-900">{restaurant.address}</span></div>}
+          <div><span className="text-gray-400">GSTIN:</span> <span className="font-mono font-medium text-gray-900">{restaurant.gstin || <NotProvided />}</span></div>
+          <div><span className="text-gray-400">Email:</span> <span className="font-medium text-gray-900">{restaurant.email || <NotProvided />}</span></div>
+          <div className="col-span-2"><span className="text-gray-400">Address:</span> <span className="font-medium text-gray-900">{restaurant.address || <NotProvided />}</span></div>
         </div>
       </div>
 
       {/* Owner & Staff Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Users size={18} className="text-[#E53935]" /> Owner & Staff
-        </div>
+        <SectionHeader icon={<Users size={18} className="text-[#E53935]" />} title="Owner & Staff" stepId="staff" />
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><span className="text-gray-400">Owner:</span> <span className="font-medium text-gray-900">{owner.name}</span></div>
           <div><span className="text-gray-400">Owner Email:</span> <span className="font-medium text-gray-900">{owner.email}</span></div>
           <div><span className="text-gray-400">Captains:</span> <span className="font-medium text-gray-900">{totalCaptains}</span></div>
           <div><span className="text-gray-400">Cashiers:</span> <span className="font-medium text-gray-900">{totalCashiers}</span></div>
         </div>
+        {(captains?.length > 0 || cashiers?.length > 0) && (
+          <div className="pt-2 border-t border-gray-200">
+            <button onClick={() => setShowPins(!showPins)} className="text-xs text-[#E53935] hover:text-[#B71C1C] font-medium flex items-center gap-1">
+              {showPins ? <EyeOff size={12} /> : <Eye size={12} />}
+              {showPins ? 'Hide staff PINs' : 'View staff PINs'}
+            </button>
+            {showPins && (
+              <div className="mt-2 bg-white rounded-lg border border-gray-100 overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left px-3 py-2 text-gray-400 font-bold uppercase">Role</th>
+                      <th className="text-left px-3 py-2 text-gray-400 font-bold uppercase">Name</th>
+                      <th className="text-left px-3 py-2 text-gray-400 font-bold uppercase">PIN</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {captains.map((c, i) => (
+                      <tr key={`cap-${i}`} className="border-b border-gray-100">
+                        <td className="px-3 py-2 text-gray-500">Captain</td>
+                        <td className="px-3 py-2 font-medium text-gray-900">{c.name}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-[#E53935]">{c.pin}</td>
+                      </tr>
+                    ))}
+                    {cashiers.map((c, i) => (
+                      <tr key={`cash-${i}`} className="border-b border-gray-100">
+                        <td className="px-3 py-2 text-gray-500">Cashier</td>
+                        <td className="px-3 py-2 font-medium text-gray-900">{c.name}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-[#E53935]">{c.pin}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Floor Plan Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Layout size={18} className="text-[#E53935]" /> Floor Plan
-        </div>
+        <SectionHeader icon={<Layout size={18} className="text-[#E53935]" />} title="Floor Plan" stepId="floorplan" />
         <div className="text-sm">
-          <span className="text-gray-400">Sections:</span> <span className="font-medium text-gray-900">{sections.map(s => s.name).join(', ')}</span>
+          <span className="text-gray-400">Sections:</span> <span className="font-medium text-gray-900">{sections.map(s => s.name).join(', ') || <NotProvided />}</span>
         </div>
         <div className="text-sm">
           <span className="text-gray-400">Total Tables:</span> <span className="font-medium text-gray-900">{totalTables}</span>
@@ -117,9 +169,7 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
 
       {/* Menu Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Utensils size={18} className="text-[#E53935]" /> Menu
-        </div>
+        <SectionHeader icon={<Utensils size={18} className="text-[#E53935]" />} title="Menu" stepId="menu" />
         <div className="text-sm">
           <span className="text-gray-400">Categories:</span> <span className="font-medium text-gray-900">{menu.categories.length}</span>
           <span className="text-gray-400 ml-3">Items:</span> <span className="font-medium text-gray-900">{totalMenuItems}</span>
@@ -128,6 +178,43 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
           {menu.categories.map(cat => `${cat.name} (${cat.items.length})`).join(' • ')}
         </div>
       </div>
+
+      {/* Tax Summary */}
+      {taxConfig && (
+        <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+          <SectionHeader icon={<Receipt size={18} className="text-[#E53935]" />} title="Tax & GST" stepId="tax" />
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-gray-400">GST Registered:</span> <span className="font-medium text-gray-900">{taxConfig.gstRegistered ? 'Yes' : 'No'}</span></div>
+            {taxConfig.gstRegistered && (
+              <>
+                <div><span className="text-gray-400">Category:</span> <span className="font-medium text-gray-900">{taxConfig.gstCategory || 'NON_AC'}</span></div>
+                <div><span className="text-gray-400">Prices:</span> <span className="font-medium text-gray-900">{taxConfig.pricesIncludeGst ? 'Inclusive' : 'Exclusive'}</span></div>
+              </>
+            )}
+            {taxConfig.serviceChargePercent > 0 && (
+              <div><span className="text-gray-400">Service Charge:</span> <span className="font-medium text-gray-900">{taxConfig.serviceChargePercent}%</span></div>
+            )}
+            {taxConfig.packagingCharge > 0 && (
+              <div><span className="text-gray-400">Packaging:</span> <span className="font-medium text-gray-900">₹{taxConfig.packagingCharge}</span></div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Printers Summary */}
+      {printers && printers.length > 0 && (
+        <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+          <SectionHeader icon={<Printer size={18} className="text-[#E53935]" />} title="Printers" stepId="printers" />
+          <div className="text-sm">
+            {printers.map((p, i) => (
+              <span key={i} className="inline-block mr-3">
+                <span className="font-medium text-gray-900">{p.name}</span>
+                <span className="text-gray-400 text-xs"> ({p.type}, {p.paperWidth})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Plan Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
@@ -142,11 +229,19 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
 
       {/* Print Previews */}
       <div className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Printer size={18} className="text-[#E53935]" /> Sample Print Formats
-        </div>
+        <button
+          onClick={() => setShowPrintPreview(!showPrintPreview)}
+          className="w-full flex items-center justify-between text-sm font-semibold text-gray-700 bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition-all"
+        >
+          <div className="flex items-center gap-2">
+            <Printer size={18} className="text-[#E53935]" /> Sample Print Formats
+          </div>
+          {showPrintPreview ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+        </button>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {showPrintPreview && (
+          <div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* KOT Preview */}
           <PrintPreview title="KOT" icon={<Printer size={14} />}>
             <div className="text-center border-b border-dashed border-gray-300 pb-2 mb-2">
@@ -258,6 +353,22 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
           </PrintPreview>
         </div>
         <p className="text-xs text-gray-400 text-center">These are how your kitchen, final, and cancel bills will appear when printed</p>
+          </div>
+        )}
+      </div>
+
+      {/* Terms checkbox */}
+      <div className="bg-gray-50 rounded-xl p-4 flex items-start gap-3">
+        <input
+          id="terms"
+          type="checkbox"
+          checked={termsAccepted}
+          onChange={(e) => setTermsAccepted(e.target.checked)}
+          className="w-5 h-5 mt-0.5 text-[#E53935] rounded border-gray-300"
+        />
+        <label htmlFor="terms" className="text-sm text-gray-600">
+          I agree to the <a href="/terms" target="_blank" className="text-[#E53935] hover:underline">Terms of Service</a> and <a href="/privacy" target="_blank" className="text-[#E53935] hover:underline">Privacy Policy</a>.
+        </label>
       </div>
 
       {/* Action Buttons */}
@@ -272,9 +383,9 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
         </button>
         <button
           onClick={onConfirm}
-          disabled={loading}
+          disabled={loading || !termsAccepted}
           className={`flex-1 py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
-            !loading
+            !loading && termsAccepted
               ? 'bg-[#E53935] hover:bg-[#B71C1C] text-white'
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           }`}

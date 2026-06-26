@@ -2359,7 +2359,7 @@ const CashierDashboard = ({ onLogout }) => {
         // NO PRINTING - that already happened in handleFinalBill
         if (orderId) {
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+            `${API_BASE}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -2451,8 +2451,8 @@ const CashierDashboard = ({ onLogout }) => {
       if (tableSnap?.backendId) {
         const resId = tableSnap.section?.restaurantId || activeRestaurantId;
         const terminateUrl = (activeOutlet === 'bar' || activeOutlet === 'both')
-          ? `${import.meta.env.VITE_API_URL}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
-          : `${import.meta.env.VITE_API_URL}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
+          ? `${API_BASE}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
+          : `${API_BASE}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
         const response = await fetch(terminateUrl, {
           method: 'POST',

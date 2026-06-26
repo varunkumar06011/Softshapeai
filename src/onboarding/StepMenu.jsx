@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { Utensils, Plus, Trash2, Upload, Leaf, Wine, FileSpreadsheet } from 'lucide-react';
+import { Utensils, Plus, Trash2, Leaf, Wine, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import MenuUpload from './MenuUpload';
 
 const DELIVERY_PLATFORMS = ['Swiggy', 'Zomato', 'Direct'];
 
 const defaultBarMenu = { categories: [{ name: '', items: [{ name: '', price: 0, availableSizes: [] }] }] };
 
-const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onChange, onDeliveryPlatformsChange, onNext, onBack }) => {
-  const [mode, setMode] = useState('manual'); // 'manual', 'upload-json', or 'upload-file'
+const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], barConfig, onChange, onDeliveryPlatformsChange, onNext, onBack }) => {
+  const [mode, setMode] = useState('manual'); // 'manual' or 'upload-file'
   const [hasInteracted, setHasInteracted] = useState(false);
   const [activeTab, setActiveTab] = useState('food');
+  const [showItemTax, setShowItemTax] = useState({});
 
   const isBarType = restaurantType === 'BAR_LOUNGE' || restaurantType === 'BAR_WITH_DINING';
   const isCloud = restaurantType === 'CLOUD_KITCHEN';
@@ -79,21 +80,9 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
     }
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        if (parsed.categories && Array.isArray(parsed.categories)) {
-          onChange(parsed);
-        }
-      } catch {
-        alert('Invalid JSON file format');
-      }
-    };
-    reader.readAsText(file);
+  const toggleItemTax = (categoryIndex, itemIndex) => {
+    const key = `${categoryIndex}-${itemIndex}`;
+    setShowItemTax(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const cats = getTargetCategories();
@@ -101,11 +90,22 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
     cats.length >= 1 &&
     cats.every(cat => cat.name.length >= 1 && cat.items.length >= 1 && cat.items.every(item => item.name.length >= 1 && item.price > 0));
 
+  // Duplicate detection
+  const duplicateNames = [];
+  cats.forEach((cat, ci) => {
+    const names = cat.items.map(i => i.name.trim().toLowerCase()).filter(n => n);
+    const seen = new Set();
+    names.forEach((n, ii) => {
+      if (seen.has(n)) duplicateNames.push({ category: cat.name, name: cat.items[ii].name });
+      seen.add(n);
+    });
+  });
+
   const handleSkip = () => {
-    // Seed with a dummy category so validation passes in wizard
+    // Seed with a placeholder category so validation passes in wizard
     onChange({
       ...data,
-      categories: data.categories?.length > 0 ? data.categories : [{ name: 'Sample', items: [{ name: 'Sample Item', price: 1, isVeg: true, platforms: [] }] }]
+      categories: data.categories?.length > 0 ? data.categories : [{ name: 'My Menu', items: [{ name: 'Placeholder', price: 1, isVeg: true, taxRate: defaultTax, platforms: [] }] }]
     });
     onNext();
   };
@@ -166,14 +166,6 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
           className={`flex-1 py-2 px-4 rounded-lg transition-all ${mode === 'manual' ? 'bg-[#E53935] text-white' : 'text-gray-500 hover:text-gray-900'}`}
         >
           Manual Entry
-        </button>
-        <button
-          onClick={() => setMode('upload-json')}
-          className={`flex-1 py-2 px-4 rounded-lg transition-all ${
-            mode === 'upload-json' ? 'bg-[#E53935] text-white' : 'text-gray-500 hover:text-gray-900'
-          }`}
-        >
-          Upload JSON
         </button>
         <button
           onClick={() => setMode('upload-file')}
@@ -257,6 +249,26 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
                         </button>
                       )}
 
+                      {activeTab === 'food' && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleItemTax(categoryIndex, itemIndex)}
+                            className="text-xs text-gray-400 hover:text-[#E53935] underline"
+                          >
+                            {showItemTax[`${categoryIndex}-${itemIndex}`] ? 'Hide tax override' : 'Override tax'}
+                          </button>
+                          {showItemTax[`${categoryIndex}-${itemIndex}`] && (
+                            <select
+                              value={item.taxRate || category.taxRate || defaultTax}
+                              onChange={(e) => handleItemChange(categoryIndex, itemIndex, 'taxRate', e.target.value)}
+                              className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#E53935] text-gray-900"
+                            >
+                              {TAX_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      )}
+
                       {isCloud && (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">Platforms:</span>
@@ -278,24 +290,39 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
                         </div>
                       )}
 
-                      {activeTab === 'bar' && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500">Sizes:</span>
-                          {['Peg', 'Half', 'Full'].map(size => (
-                            <label key={size} className="flex items-center gap-1 text-xs cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={(item.availableSizes || []).includes(size)}
-                                onChange={(e) => {
-                                  const current = item.availableSizes || [];
-                                  const next = e.target.checked ? [...current, size] : current.filter(x => x !== size);
-                                  handleItemChange(categoryIndex, itemIndex, 'availableSizes', next);
-                                }}
-                                className="w-3 h-3 text-[#E53935] rounded border-gray-300"
-                              />
-                              <span className="text-gray-700">{size}</span>
-                            </label>
-                          ))}
+                      {activeTab === 'bar' && barConfig?.fullBottleMl && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Sizes:</span>
+                            {['Peg', 'Half', 'Full'].map(size => (
+                              <label key={size} className="flex items-center gap-1 text-xs cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={(item.availableSizes || []).includes(size)}
+                                  onChange={(e) => {
+                                    const current = item.availableSizes || [];
+                                    const next = e.target.checked ? [...current, size] : current.filter(x => x !== size);
+                                    handleItemChange(categoryIndex, itemIndex, 'availableSizes', next);
+                                  }}
+                                  className="w-3 h-3 text-[#E53935] rounded border-gray-300"
+                                />
+                                <span className="text-gray-700">{size}</span>
+                              </label>
+                            ))}
+                          </div>
+                          {(item.availableSizes || []).length > 0 && item.price > 0 && (
+                            <div className="flex gap-3 text-xs text-gray-500 bg-white rounded-lg px-2 py-1 border border-gray-100">
+                              {(item.availableSizes || []).includes('Peg') && (
+                                <span>Peg: ₹{Math.round((item.price / barConfig.fullBottleMl) * barConfig.barUnitMl)}</span>
+                              )}
+                              {(item.availableSizes || []).includes('Half') && (
+                                <span>Half: ₹{Math.round((item.price / barConfig.fullBottleMl) * barConfig.halfBottleMl)}</span>
+                              )}
+                              {(item.availableSizes || []).includes('Full') && (
+                                <span>Full: ₹{item.price}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -311,28 +338,6 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
           >
             <Plus size={20} /> Add Category
           </button>
-        </div>
-      ) : mode === 'upload-json' ? (
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50">
-            <Upload size={48} className="mx-auto text-gray-500 mb-4" />
-            <p className="text-gray-900 mb-2">Upload your menu as a JSON file</p>
-            <p className="text-sm text-gray-400 mb-4">Format: {`{"categories": [{"name": "Category", "items": [{"name": "Item", "price": 100, "isVeg": true}]}]}`}</p>
-            <input type="file" accept=".json,.txt" onChange={handleFileUpload} className="hidden" id="file-upload" />
-            <label htmlFor="file-upload" className="inline-block px-6 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl cursor-pointer transition-all">
-              Choose File
-            </label>
-          </div>
-          {cats.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-              <h4 className="font-semibold mb-3 text-gray-900">Preview</h4>
-              <div className="space-y-2">
-                {cats.map((cat, i) => (
-                  <div key={i} className="text-sm"><span className="font-medium">{cat.name}:</span> {cat.items.length} items</div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       ) : (
         <MenuUpload
@@ -367,6 +372,13 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
         />
       )}
 
+      {duplicateNames.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2 text-yellow-800 text-sm">
+          <AlertTriangle size={18} />
+          <span>{duplicateNames.length} duplicate item name(s) detected. Consider renaming them.</span>
+        </div>
+      )}
+
       {!isValid && hasInteracted && (
         <p className="text-sm text-red-600 text-center">
           Each category needs a name, and every item needs a name and a price greater than 0 before you can continue.
@@ -379,7 +391,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], onC
           onClick={handleSkip}
           className="text-sm text-[#E53935] hover:text-[#B71C1C] font-medium underline"
         >
-          Skip for now — seed with sample item
+          I'll add my menu later in Admin
         </button>
       </div>
 

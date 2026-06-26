@@ -1,18 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Lock, CheckCircle2, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
-import { apiFetch, pingBackend } from '../services/apiConfig';
+import { CreditCard, Lock, CheckCircle2, ArrowLeft, ArrowRight, Loader2, Smartphone, Wallet, Landmark } from 'lucide-react';
+import { apiFetch, apiUrl, pingBackend } from '../services/apiConfig';
 
-const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onPaymentComplete, onBack }) => {
+const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onPaymentComplete, onBack, onGoToPlan }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [paymentReference, setPaymentReference] = useState(null);
+  const [quote, setQuote] = useState(null);
+  const [progressStep, setProgressStep] = useState(0);
 
   const isMockMode = !import.meta.env.VITE_RAZORPAY_KEY_ID;
 
-  // Wake up the Render backend before the user clicks Pay
+  // Wake up the Render backend before the user clicks Pay + fetch quote
   useEffect(() => {
     pingBackend();
-  }, []);
+    fetch(apiUrl('/api/onboard/pricing/quote'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, numberOfOutlets: outletCount }),
+    }).then(r => r.json()).then(setQuote).catch(() => {});
+  }, [plan, outletCount]);
 
   const callMockPayment = async () => {
     return apiFetch('/api/onboard/payment/mock', {
@@ -25,10 +32,12 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
   const handleMockPayment = async (isRetry = false) => {
     setProcessing(true);
     setError(null);
+    setProgressStep(1);
     try {
       const result = await callMockPayment();
+      setProgressStep(3);
       setPaymentReference(result.paymentReference);
-      onPaymentComplete(result.paymentReference);
+      onPaymentComplete(result.paymentReference, true);
     } catch (err) {
       if (!isRetry && (err.message?.toLowerCase().includes('timed out') || err.message?.toLowerCase().includes('network'))) {
         setError('Connection slow. Retrying once...');
@@ -36,7 +45,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
           await pingBackend();
           const result = await callMockPayment();
           setPaymentReference(result.paymentReference);
-          onPaymentComplete(result.paymentReference);
+          onPaymentComplete(result.paymentReference, true);
           return;
         } catch (retryErr) {
           setError(retryErr.message || 'Payment failed after retry');
@@ -52,6 +61,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
   const handleRazorpayPayment = async (isRetry = false) => {
     setProcessing(true);
     setError(null);
+    setProgressStep(1);
     try {
       // 1. Create order on backend
       const { gatewayOrderId, amount } = await apiFetch('/api/onboard/payment/initiate', {
@@ -60,6 +70,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
         timeout: 45000,
       });
 
+      setProgressStep(2);
       // 2. Load Razorpay checkout script
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -76,6 +87,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
       rzp.on('payment.failed', () => {
         setError('Payment was cancelled or failed. Please try again.');
         setProcessing(false);
+        setProgressStep(0);
       });
       rzp.open();
     } catch (err) {
@@ -123,6 +135,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
     order_id: gatewayOrderId,
     handler: async (response) => {
       // 4. Verify on backend
+      setProgressStep(3);
       const { paymentReference: ref } = await apiFetch('/api/onboard/payment/verify', {
         method: 'POST',
         body: JSON.stringify({
@@ -134,7 +147,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
         timeout: 45000,
       });
       setPaymentReference(ref);
-      onPaymentComplete(ref);
+      onPaymentComplete(ref, true);
     },
     prefill: {
       email: ownerEmail || '',
@@ -182,7 +195,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
             onClick={() => onPaymentComplete(paymentReference, true)}
             className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2"
           >
-            Continue to Review
+            Continue to Final Review
             <ArrowRight size={18} />
           </button>
         </div>
@@ -213,7 +226,13 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><span className="text-gray-400">Plan:</span> <span className="font-medium text-gray-900 capitalize">{plan}</span></div>
           <div><span className="text-gray-400">Outlets:</span> <span className="font-medium text-gray-900">{outletCount}</span></div>
+          <div className="col-span-2"><span className="text-gray-400">Amount:</span> <span className="font-medium text-gray-900">{quote && !quote.isCustomQuote ? `₹${quote.totalMonthly.toLocaleString('en-IN')}/mo` : '—'}</span></div>
         </div>
+        {onGoToPlan && (
+          <button onClick={onGoToPlan} className="text-xs text-[#E53935] hover:text-[#B71C1C] font-medium">
+            Want a different plan?
+          </button>
+        )}
       </div>
 
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
@@ -223,6 +242,28 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
           <p>{isMockMode ? 'This is a sandbox environment. No real charges will be made. Click below to simulate a payment.' : 'Your payment is secured by Razorpay. You can pay via UPI, card, net banking, or wallet.'}</p>
         </div>
       </div>
+
+      {/* Payment method icons */}
+      <div className="flex items-center justify-center gap-4 text-gray-400">
+        <div className="flex flex-col items-center gap-1"><Smartphone size={20} /><span className="text-[10px]">UPI</span></div>
+        <div className="flex flex-col items-center gap-1"><CreditCard size={20} /><span className="text-[10px]">Card</span></div>
+        <div className="flex flex-col items-center gap-1"><Landmark size={20} /><span className="text-[10px]">NetBank</span></div>
+        <div className="flex flex-col items-center gap-1"><Wallet size={20} /><span className="text-[10px]">Wallet</span></div>
+      </div>
+
+      {/* Progress indicator */}
+      {processing && (
+        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+          <div className="flex justify-between text-xs text-gray-500">
+            {['Initiating', 'Waiting for gateway', 'Verifying'].map((label, i) => (
+              <span key={i} className={progressStep > i ? 'text-[#E53935] font-medium' : ''}>{label}</span>
+            ))}
+          </div>
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full bg-[#E53935] transition-all duration-500" style={{ width: `${(progressStep / 3) * 100}%` }} />
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4">
         <button
@@ -250,7 +291,9 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
           ) : (
             <>
               <Lock size={18} />
-              {isMockMode ? 'Pay Now (Mock)' : 'Pay Now'}
+              {isMockMode
+                ? `Pay (Mock)${quote && !quote.isCustomQuote ? ` ₹${quote.totalMonthly.toLocaleString('en-IN')}` : ''}`
+                : `Pay Now${quote && !quote.isCustomQuote ? ` ₹${quote.totalMonthly.toLocaleString('en-IN')}` : ''}`}
             </>
           )}
         </button>

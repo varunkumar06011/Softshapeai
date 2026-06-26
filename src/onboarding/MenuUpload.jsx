@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf, Download } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
@@ -10,15 +10,49 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [editedRows, setEditedRows] = useState(null);
   const fileInputRef = useRef(null);
 
-  const handleFileSelect = (e) => {
-    const selected = e.target.files[0];
+  const handleFileSelect = (selected) => {
     if (!selected) return;
     setFile(selected);
     setParsed(null);
     setImportResult(null);
+    setEditedRows(null);
     setError('');
+  };
+
+  const onFileInputChange = (e) => {
+    handleFileSelect(e.target.files[0]);
+  };
+
+  const onDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) handleFileSelect(dropped);
+  };
+
+  const downloadTemplate = () => {
+    const csv = 'Category,Item Name,Price,Veg\nStarters,Paneer Tikka,250,1\nStarters,Chicken Wings,320,0\nMain Course,Dal Makhani,180,1\nMain Course,Butter Chicken,380,0\nBeverages,Fresh Lime Soda,80,1\nBeverages,Masala Chai,40,1';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'menu-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleParse = async () => {
@@ -93,22 +127,36 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
     setFile(null);
     setParsed(null);
     setImportResult(null);
+    setEditedRows(null);
     setError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const updateRow = (index, field, value) => {
+    const target = editedRows || parsed.rows;
+    const next = target.map((r, i) => i === index ? { ...r, [field]: value } : r);
+    setEditedRows(next);
+  };
+
   return (
     <div className="space-y-4">
-      {/* File picker */}
-      <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50">
-        <Upload size={48} className="mx-auto text-gray-400 mb-4" />
-        <p className="text-gray-900 mb-2">Upload your menu file</p>
+      {/* File picker / drag-drop */}
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        className={`border-2 border-dashed rounded-xl p-8 text-center bg-gray-50 transition-all ${
+          isDragging ? 'border-[#E53935] bg-[#FFF5F5]' : 'border-gray-200'
+        }`}
+      >
+        <Upload size={48} className={`mx-auto mb-4 transition-all ${isDragging ? 'text-[#E53935]' : 'text-gray-400'}`} />
+        <p className="text-gray-900 mb-2">{isDragging ? 'Drop your file here' : 'Upload your menu file'}</p>
         <p className="text-sm text-gray-400 mb-4">Supported formats: Excel (.xlsx), CSV (.csv), PDF (.pdf)</p>
         <input
           ref={fileInputRef}
           type="file"
           accept=".xlsx,.xls,.csv,.pdf"
-          onChange={handleFileSelect}
+          onChange={onFileInputChange}
           className="hidden"
           id="menu-file-upload"
         />
@@ -118,6 +166,12 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
         >
           Choose File
         </label>
+        <button
+          onClick={downloadTemplate}
+          className="inline-flex items-center gap-2 ml-3 px-4 py-3 text-sm text-gray-600 hover:text-[#E53935] transition-all"
+        >
+          <Download size={16} /> Download template
+        </button>
         {file && (
           <div className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-600">
             {file.name.endsWith('.pdf') ? <FileText size={16} /> : <FileSpreadsheet size={16} />}
@@ -181,11 +235,30 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {parsed.rows.map((row, i) => (
+                  {(editedRows || parsed.rows).map((row, i) => (
                     <tr key={i} className="border-t border-gray-100">
-                      <td className="py-1.5 pr-2 text-gray-600">{row.category}</td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          type="text"
+                          value={row.category}
+                          onChange={(e) => updateRow(i, 'category', e.target.value)}
+                          className="w-full px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
+                        />
+                      </td>
                       <td className="py-1.5 pr-2 text-gray-900">{row.name}</td>
-                      <td className="py-1.5 pr-2 text-gray-600">₹{row.price}</td>
+                      <td className="py-1.5 pr-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-400 text-xs">₹</span>
+                          <input
+                            type="number"
+                            value={row.price}
+                            onChange={(e) => updateRow(i, 'price', parseFloat(e.target.value) || 0)}
+                            className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
+                            min="0"
+                            step="0.01"
+                          />
+                        </div>
+                      </td>
                       <td className="py-1.5 pr-2">
                         {row.isVeg ? <Leaf size={14} className="text-green-600" /> : <span className="text-red-600 text-xs">Non-Veg</span>}
                       </td>
@@ -204,12 +277,17 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
               Cancel
             </button>
             <button
-              onClick={handleImport}
+              onClick={() => {
+                if (editedRows) {
+                  setParsed(prev => ({ ...prev, rows: editedRows }));
+                }
+                handleImport();
+              }}
               disabled={importing || parsed.rows.length === 0}
               className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {importing ? <Loader size={18} className="animate-spin" /> : <CheckCircle size={18} />}
-              {importing ? 'Importing...' : `Import ${parsed.rows.length} Items`}
+              {importing ? 'Importing...' : `Import ${(editedRows || parsed.rows).length} Items`}
             </button>
           </div>
         </div>

@@ -72,16 +72,16 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const roleParam = isCashier ? 'CASHIER' : 'CAPTAIN';
-      const res = await fetch(`${getApiBase()}/api/restaurant/${encodeURIComponent(slug.trim())}/staff?role=${roleParam}`);
+      const res = await fetch(`${getApiBase()}/api/auth/crew?restaurantId=${encodeURIComponent(slug.trim())}`);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load staff');
       }
-      if (!data.staff || data.staff.length === 0) {
+      const staff = isCashier ? data.cashiers : data.captains;
+      if (!staff || staff.length === 0) {
         throw new Error('No staff found for this restaurant.');
       }
-      setStaffList(data.staff);
+      setStaffList(staff);
       setRestaurantId(data.restaurantId);
       setStep('staff');
     } catch (err) {

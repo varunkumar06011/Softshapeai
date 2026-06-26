@@ -1,5 +1,6 @@
-import React from 'react';
-import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { apiFetch } from '../services/apiConfig';
 
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant', desc: 'Tables, food menu, KOT printing', icon: Utensils },
@@ -12,6 +13,13 @@ const RESTAURANT_TYPES = [
 const BAR_TYPES = ['BAR_LOUNGE', 'BAR_WITH_DINING'];
 
 const StepRestaurant = ({ data, onChange, onNext }) => {
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [slugChecking, setSlugChecking] = useState(false);
+  const [slugAvailable, setSlugAvailable] = useState(null);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [pendingType, setPendingType] = useState(null);
+  const fileInputRef = useRef(null);
+
   const handleChange = (field, value) => {
     onChange({ ...data, [field]: value });
   };
@@ -20,14 +28,66 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
     return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12);
   };
 
-  const slug = generateSlug(data.name || '');
+  const slug = slugEdited ? (data.slug || '') : generateSlug(data.name || '');
 
-  const gstinValid = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(data.gstin || '');
+  const gstinValid = !data.gstin || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(data.gstin || '');
   const barMlValid = !BAR_TYPES.includes(data.restaurantType) || (
     (data.barUnitMl ?? 30) > 0 && (data.halfBottleMl ?? 375) > 0 && (data.fullBottleMl ?? 750) > 0
   );
   const phoneValid = /^[0-9]{10}$/.test(data.phone || '');
   const isValid = data.name.length >= 2 && phoneValid && gstinValid && data.restaurantType && data.outletCount >= 1 && barMlValid;
+
+  const handleSlugChange = (e) => {
+    const val = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+    setSlugEdited(true);
+    onChange({ ...data, slug: val });
+    setSlugAvailable(null);
+  };
+
+  const checkSlugAvailability = async () => {
+    if (!slug || slug.length < 2) return;
+    setSlugChecking(true);
+    try {
+      const res = await apiFetch(`/api/onboard/check-slug?slug=${encodeURIComponent(slug)}`, { method: 'GET' });
+      setSlugAvailable(res.available);
+    } catch {
+      setSlugAvailable(null);
+    } finally {
+      setSlugChecking(false);
+    }
+  };
+
+  const handleLogoSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      onChange({ ...data, logoPreview: ev.target.result, logoFile: file });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleTypeSelect = (typeValue) => {
+    if (data.restaurantType && data.restaurantType !== typeValue) {
+      setPendingType(typeValue);
+      setShowTypeModal(true);
+    } else {
+      onChange({ ...data, restaurantType: typeValue, barUnitMl: null, halfBottleMl: null, fullBottleMl: null, deliveryPlatforms: [] });
+    }
+  };
+
+  const confirmTypeChange = () => {
+    onChange({
+      ...data,
+      restaurantType: pendingType,
+      barUnitMl: null,
+      halfBottleMl: null,
+      fullBottleMl: null,
+      deliveryPlatforms: []
+    });
+    setShowTypeModal(false);
+    setPendingType(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -52,9 +112,24 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
         </div>
 
         {data.name && (
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-sm text-gray-500">Your restaurant URL preview:</p>
-            <p className="text-[#E53935] font-mono">{slug}.softshape.app</p>
+          <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+            <p className="text-sm text-gray-500">Your restaurant URL:</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={slug}
+                onChange={handleSlugChange}
+                onBlur={checkSlugAvailability}
+                className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-[#E53935] font-mono text-sm focus:outline-none focus:border-[#E53935]"
+                placeholder="your-restaurant"
+              />
+              <span className="text-gray-400 text-sm font-mono shrink-0">.softshape.app</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {slugChecking && <Loader2 size={14} className="animate-spin text-gray-400" />}
+              {!slugChecking && slugAvailable === true && <span className="text-xs text-green-600">Available</span>}
+              {!slugChecking && slugAvailable === false && <span className="text-xs text-red-600">Already taken</span>}
+            </div>
           </div>
         )}
 
@@ -62,12 +137,12 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
           <label className="block text-sm font-medium text-gray-500 mb-2">
             Address
           </label>
-          <input
-            type="text"
+          <textarea
+            rows={3}
             value={data.address}
             onChange={(e) => handleChange('address', e.target.value)}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
-            placeholder="e.g., 123 Main Street, City"
+            className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 resize-none"
+            placeholder="e.g., 123 Main Street, City, State, PIN"
           />
         </div>
 
@@ -77,16 +152,18 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
           </label>
           <div className="relative">
             <Phone size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+            <span className="absolute left-[2.25rem] top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 select-none pointer-events-none">+91</span>
             <input
               type="tel"
               inputMode="numeric"
               maxLength={10}
               value={data.phone}
               onChange={(e) => handleChange('phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
-              placeholder="e.g., 9876543210"
+              className="w-full pl-[5rem] pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              placeholder="9876543210"
             />
           </div>
+          <p className="text-xs text-gray-400 mt-1">We&apos;ll send an OTP to this number for verification</p>
         </div>
 
         <div>
@@ -107,7 +184,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-2">
-            GSTIN *
+            GSTIN <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <div className="relative">
             <FileText size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
@@ -120,6 +197,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               maxLength={15}
             />
           </div>
+          <p className="text-xs text-gray-400 mt-1">Required only if your annual turnover exceeds ₹20 lakhs</p>
           {data.gstin && !gstinValid && (
             <p className="text-xs text-red-600 mt-1">GSTIN must be 15 characters in standard format (e.g., 29ABCDE1234F1Z5)</p>
           )}
@@ -137,18 +215,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => {
-                    if (data.restaurantType !== t.value) {
-                      onChange({
-                        ...data,
-                        restaurantType: t.value,
-                        barUnitMl: null,
-                        halfBottleMl: null,
-                        fullBottleMl: null,
-                        deliveryPlatforms: []
-                      });
-                    }
-                  }}
+                  onClick={() => handleTypeSelect(t.value)}
                   className={`relative flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all ${
                     selected
                       ? 'border-[#E53935] bg-[#FFF5F5]'
@@ -281,6 +348,79 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
           )}
         </div>
       </div>
+
+        {/* Logo Upload */}
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-2">
+            Restaurant Logo <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center bg-gray-50 cursor-pointer hover:border-[#E53935] transition-all"
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleLogoSelect}
+            />
+            {data.logoPreview ? (
+              <div className="flex flex-col items-center gap-3">
+                <img src={data.logoPreview} alt="Logo preview" className="w-20 h-20 object-contain rounded-lg" />
+                <span className="text-sm text-gray-600">{data.logoFile?.name || 'Logo selected'}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChange({ ...data, logoPreview: undefined, logoFile: undefined });
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="text-xs text-red-600 hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <>
+                <ImageIcon size={32} className="mx-auto text-gray-400 mb-2" />
+                <p className="text-sm text-gray-600">Click to upload your logo</p>
+                <p className="text-xs text-gray-400">Recommended: square image, max 2MB</p>
+              </>
+            )}
+          </div>
+        </div>
+
+      {/* Type Change Confirmation Modal */}
+      {showTypeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-yellow-600" />
+              </div>
+              <h3 className="text-lg font-bold">Change restaurant type?</h3>
+            </div>
+            <p className="text-sm text-gray-500">
+              This will reset floor plan, staff, and menu data you&apos;ve entered so far for this restaurant type.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowTypeModal(false); setPendingType(null); }}
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold transition-all"
+              >
+                Keep current type
+              </button>
+              <button
+                onClick={confirmTypeChange}
+                className="flex-1 py-2.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"
+              >
+                Change & reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         onClick={onNext}

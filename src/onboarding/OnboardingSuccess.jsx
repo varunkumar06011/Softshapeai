@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   CheckCircle2, Copy, Check, ArrowRight, Store, Users, ShieldCheck,
-  LayoutDashboard, CreditCard, Printer, Utensils, Layout, Check as CheckIcon
+  LayoutDashboard, CreditCard, Printer, Utensils, Layout, Check as CheckIcon,
+  Smartphone, Mail, RotateCw, ChevronRight
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -33,6 +34,26 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
     navigator.clipboard.writeText(code);
     setter(true);
     setTimeout(() => setter(false), 2000);
+  };
+
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailResending, setEmailResending] = useState(false);
+
+  const handleResendEmail = async () => {
+    setEmailResending(true);
+    try {
+      await fetch('/api/onboard/resend-welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, restaurantCode: restaurant.restaurantCode }),
+      });
+      setEmailSent(true);
+      setTimeout(() => setEmailSent(false), 3000);
+    } catch {
+      // silently fail
+    } finally {
+      setEmailResending(false);
+    }
   };
 
   const totalMenuItems = formData?.menu?.categories?.reduce(
@@ -268,6 +289,57 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
           </div>
         </div>
 
+        {/* Next Steps checklist */}
+        <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
+          <h2 className="text-lg font-black mb-5 flex items-center gap-2 uppercase tracking-widest">
+            <ChevronRight size={20} className="text-[#E53935]" /> What to do next
+          </h2>
+          <div className="space-y-3">
+            <NextStep n={1} text="Print table QR codes from the Admin panel" action="Go to Admin" onClick={() => navigate('/admin/qr-codes')} />
+            <NextStep n={2} text="Train your captain on taking orders via the Captain app" action="Captain App" onClick={() => navigate(`/captain?code=${encodeURIComponent(restaurant.restaurantCode || '')}`)} />
+            <NextStep n={3} text="Add more menu items and categories from Admin" action="Menu Settings" onClick={() => navigate('/admin/dashboard?firstVisit=true')} />
+            {isCloud && <NextStep n={4} text="Connect delivery platforms (Swiggy, Zomato)" action="Delivery Setup" onClick={() => navigate('/admin/dashboard?firstVisit=true')} />}
+          </div>
+        </div>
+
+        {/* Mobile PWA Card */}
+        <div className="bg-white rounded-3xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Smartphone size={20} className="text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Captain App on Mobile</h3>
+              <p className="text-xs text-gray-400">Add to your phone's home screen for quick access</p>
+            </div>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
+            <p><strong>iOS Safari:</strong> Tap Share → "Add to Home Screen"</p>
+            <p><strong>Android Chrome:</strong> Tap Menu → "Add to Home screen"</p>
+          </div>
+        </div>
+
+        {/* Email resend */}
+        <div className="bg-white rounded-3xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)] border border-gray-100">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
+              <Mail size={20} className="text-green-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Welcome Email</h3>
+              <p className="text-xs text-gray-400">Sent to {user.email || 'your email'}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleResendEmail}
+            disabled={emailResending}
+            className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2"
+          >
+            {emailResending ? <RotateCw size={16} className="animate-spin" /> : <Mail size={16} />}
+            {emailSent ? 'Email sent!' : 'Resend welcome email'}
+          </button>
+        </div>
+
         {/* Print Setup Sheet */}
         <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100 text-center">
           <Printer size={32} className="mx-auto text-gray-300 mb-3" />
@@ -356,13 +428,13 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
           <div className="flex flex-col items-center mt-10">
             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">Scan to log in</p>
             <QRCodeSVG
-              value={`https://softshape.ai/login?code=${encodeURIComponent(restaurant.restaurantCode || '')}`}
+              value={`https://softshape.ai/cashier?code=${encodeURIComponent(restaurant.restaurantCode || '')}`}
               size={160}
               level="M"
               includeMargin={true}
             />
             <p className="text-[10px] text-gray-400 mt-3 font-bold">
-              https://softshape.ai/login?code={restaurant.restaurantCode}
+              https://softshape.ai/cashier?code={restaurant.restaurantCode}
             </p>
           </div>
 
@@ -385,6 +457,25 @@ function CheckItem({ label }) {
         <CheckIcon size={14} className="text-green-600" />
       </div>
       <span className="font-bold text-gray-900">{label}</span>
+    </div>
+  );
+}
+
+function NextStep({ n, text, action, onClick }) {
+  return (
+    <div className="flex items-center gap-4 bg-gray-50 rounded-xl p-4">
+      <div className="w-8 h-8 rounded-full bg-[#E53935] text-white flex items-center justify-center text-sm font-bold shrink-0">
+        {n}
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium text-gray-900">{text}</p>
+      </div>
+      <button
+        onClick={onClick}
+        className="text-xs font-semibold text-[#E53935] hover:text-[#B71C1C] flex items-center gap-1 shrink-0"
+      >
+        {action} <ArrowRight size={14} />
+      </button>
     </div>
   );
 }

@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, ArrowRight, Sparkles, Store, Loader2 } from 'lucide-react';
+import { CheckCircle, ArrowRight, Sparkles, Store, Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { apiUrl } from '../services/apiConfig';
 
-const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading, error }) => {
+const FALLBACK_PRICES = { starter: 999, pro: 2499 };
+
+const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, onBack, loading, error }) => {
   const [localPlan, setLocalPlan] = useState(selectedPlan);
   const [quotes, setQuotes] = useState({});
+  const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
 
   useEffect(() => {
     const fetchQuotes = async () => {
@@ -50,8 +54,11 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
   const formatPrice = (planId) => {
     if (planId === 'enterprise') return 'Custom';
     const q = quotes[planId];
-    if (!q || q.isCustomQuote) return '—';
-    return `₹${q.totalMonthly.toLocaleString('en-IN')}/mo`;
+    if (q && !q.isCustomQuote) return `₹${q.totalMonthly.toLocaleString('en-IN')}/mo`;
+    // Fallback to static base price
+    const fallback = FALLBACK_PRICES[planId];
+    if (fallback) return `₹${fallback.toLocaleString('en-IN')}/mo`;
+    return '—';
   };
 
   const formatBreakdown = (planId) => {
@@ -72,7 +79,7 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
 
   const handleContinue = () => {
     if (localPlan === 'enterprise') {
-      window.location.href = 'mailto:hello@softshape.ai?subject=Enterprise Plan Inquiry';
+      setShowEnterpriseModal(true);
     } else {
       onSelect(localPlan);
       onNext();
@@ -86,6 +93,13 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
         <h2 className="text-2xl font-bold mb-2">Choose Your Plan</h2>
         <p className="text-gray-500">Pricing adjusted for {outletCount} outlet{outletCount > 1 ? 's' : ''}</p>
       </div>
+
+      {wizardSummary && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+          <span className="font-semibold">Your setup so far:</span>{' '}
+          {wizardSummary.tables} tables, {wizardSummary.staff} staff, {wizardSummary.menuItems} menu items
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-600">
@@ -115,6 +129,11 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
               )}
 
               <div className="text-center mb-6">
+                {plan.id === 'pro' && (
+                  <span className="absolute -top-3 right-3 bg-[#E53935] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                    Most Popular
+                  </span>
+                )}
                 <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
                 <p className="text-2xl font-bold text-[#E53935]">{price}</p>
                 {breakdown && (
@@ -145,6 +164,72 @@ const StepPlan = ({ selectedPlan, outletCount, onSelect, onNext, onBack, loading
           );
         })}
       </div>
+
+      <button
+        onClick={() => setShowComparison(!showComparison)}
+        className="w-full text-sm text-gray-500 hover:text-[#E53935] flex items-center justify-center gap-1 py-2"
+      >
+        {showComparison ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        {showComparison ? 'Hide comparison' : 'Compare all features'}
+      </button>
+
+      {showComparison && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left py-2 pr-4 text-gray-400 font-medium">Feature</th>
+                <th className="text-center py-2 px-4 text-gray-900 font-semibold">Starter</th>
+                <th className="text-center py-2 px-4 text-[#E53935] font-semibold">Pro</th>
+                <th className="text-center py-2 px-4 text-gray-900 font-semibold">Enterprise</th>
+              </tr>
+            </thead>
+            <tbody className="text-gray-600">
+              {[
+                ['Outlets', '1', '1 + extras', 'Unlimited'],
+                ['Tables', '20', 'Unlimited', 'Unlimited'],
+                ['Staff', '3 captains', 'Unlimited', 'Unlimited'],
+                ['Support', 'Email', 'Priority', 'Dedicated'],
+                ['Custom Pricing', '—', '—', 'Yes'],
+              ].map(([feat, s, p, e], i) => (
+                <tr key={i} className="border-b border-gray-50">
+                  <td className="py-2 pr-4">{feat}</td>
+                  <td className="text-center py-2 px-4">{s}</td>
+                  <td className="text-center py-2 px-4 font-medium">{p}</td>
+                  <td className="text-center py-2 px-4">{e}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Enterprise Modal */}
+      {showEnterpriseModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Enterprise Plan</h3>
+              <button onClick={() => setShowEnterpriseModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500">Our team will reach out to discuss custom pricing for your needs.</p>
+            <a
+              href="mailto:hello@softshape.ai?subject=Enterprise Plan Inquiry"
+              className="block w-full py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold text-center transition-all"
+            >
+              Request a Call Back
+            </a>
+            <button
+              onClick={() => setShowEnterpriseModal(false)}
+              className="block w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold text-center transition-all"
+            >
+              Back to Plans
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4">
         <button

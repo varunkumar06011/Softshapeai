@@ -28,7 +28,7 @@ function computeSteps(restaurantType, outletCount) {
     { id: 'staff', title: 'Staff Setup' },
   ];
 
-  if (restaurantType !== 'CLOUD_KITCHEN' && restaurantType !== 'CAFE') {
+  if (restaurantType !== 'CLOUD_KITCHEN') {
     base.push({ id: 'floorplan', title: 'Floor Plan' });
   }
 
@@ -48,9 +48,9 @@ function computeSteps(restaurantType, outletCount) {
 }
 
 const defaultWizardData = {
-  restaurant: { name: '', address: '', phone: '', email: '', gstin: '', restaurantType: '', outletCount: 1, barUnitMl: 30, fullBottleMl: 750, halfBottleMl: 375, deliveryPlatforms: [] },
-  branding: { receiptHeader: '', receiptSubHeader: '', fssai: '', themePrimary: '#E53935', logoUrl: '' },
-  owner: { name: '', email: '', phone: '', password: '', confirmPassword: '' },
+  restaurant: { name: '', address: '', phone: '', email: '', gstin: '', restaurantType: '', outletCount: 1, barUnitMl: 30, fullBottleMl: 750, halfBottleMl: 375, deliveryPlatforms: [], slug: '', logoPreview: undefined, logoFile: undefined },
+  branding: { receiptHeader: '', receiptSubHeader: '', receiptFooter: '', fssai: '', themePrimary: '#E53935', logoUrl: '', logoPreview: undefined, logoFile: undefined, billPrefix: '', startingBillNumber: 1 },
+  owner: { name: '', email: '', phone: '', password: '', confirmPassword: '', termsAccepted: false, marketingConsent: false },
   captains: [{ name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }],
   cashiers: [{ name: '', pin: '', shift: 'Full Day' }],
   sections: [{ name: '', kotPrinterName: '' }],
@@ -115,12 +115,26 @@ const OnboardingWizard = () => {
     if (newType && prevType && newType !== prevType) {
       setWizardData(prev => {
         const reset = { ...prev };
-        // Clear floor-plan data for cloud kitchen and cafe
-        if (newType === 'CLOUD_KITCHEN' || newType === 'CAFE') {
+        // Clear floor-plan data for cloud kitchen; keep for cafe with counter default
+        if (newType === 'CLOUD_KITCHEN') {
           reset.sections = [{ name: '', kotPrinterName: '' }];
           reset.tables = [{ number: 1, capacity: 4, sectionIndex: 0 }];
-          reset.captains = [{ name: '', pin: '', role: 'CAPTAIN', shift: 'Full Day' }];
+          reset.captains = [];
         }
+        if (newType === 'CAFE') {
+          reset.sections = [{ name: 'Main Counter', kotPrinterName: '' }];
+          reset.tables = [{ number: 1, capacity: 1, sectionIndex: 0 }];
+          reset.captains = [];
+        }
+        // Smart GST default based on restaurant type
+        const isBar = newType === 'BAR_LOUNGE' || newType === 'BAR_WITH_DINING';
+        const isAc = newType === 'AC_RESTAURANT' || isBar;
+        reset.taxConfig = {
+          ...reset.taxConfig,
+          gstCategory: isAc ? 'AC' : (newType === 'CLOUD_KITCHEN' ? 'TAKEAWAY' : 'NON_AC'),
+          pricesIncludeGst: false,
+          serviceChargePercent: 0,
+        };
         // Reset type-specific fields
         reset.restaurant = {
           ...reset.restaurant,
@@ -161,6 +175,7 @@ const OnboardingWizard = () => {
 
     try {
       const isCloud = wizardData.restaurant.restaurantType === 'CLOUD_KITCHEN';
+      const isCafe = wizardData.restaurant.restaurantType === 'CAFE';
 
       // Sanitize: remove empty entries that fail Zod validation
       const cleanCaptains = wizardData.captains.filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin));
@@ -186,7 +201,7 @@ const OnboardingWizard = () => {
           .filter(cat => cat.items.length > 0)
       };
 
-      if (!isCloud && cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
+      if (!isCloud && !isCafe && cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
       if (cleanCashiers.length === 0) { setError('Add at least one cashier with a 4-digit PIN'); setLoading(false); return; }
       if (!isCloud && cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
       if (cleanMenu.categories.length === 0) { setError('Add at least one menu category with items'); setLoading(false); return; }
@@ -262,7 +277,7 @@ const OnboardingWizard = () => {
     if (onboardResult?.token) {
       setAuth({ token: onboardResult.token, user: onboardResult.user, restaurant: onboardResult.restaurant });
     }
-    navigate('/admin/dashboard');
+    navigate('/admin/dashboard?firstVisit=true');
   };
 
   const renderStep = () => {
@@ -270,7 +285,7 @@ const OnboardingWizard = () => {
       case 'restaurant':
         return <StepRestaurant data={wizardData.restaurant} onChange={(data) => updateWizardData('restaurant', data)} onNext={handleNext} />;
       case 'branding':
-        return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} restaurantGstin={wizardData.restaurant.gstin} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
+        return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} restaurantGstin={wizardData.restaurant.gstin} logoPreview={wizardData.restaurant.logoPreview} menu={wizardData.menu} taxConfig={wizardData.taxConfig} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
       case 'owner':
         return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} sessionId={wizardData.sessionId} />;
       case 'staff':
@@ -303,6 +318,11 @@ const OnboardingWizard = () => {
             taxConfig={wizardData.taxConfig}
             data={wizardData.menu}
             deliveryPlatforms={wizardData.restaurant.deliveryPlatforms || []}
+            barConfig={{
+              barUnitMl: wizardData.restaurant.barUnitMl,
+              halfBottleMl: wizardData.restaurant.halfBottleMl,
+              fullBottleMl: wizardData.restaurant.fullBottleMl,
+            }}
             onChange={(data) => updateWizardData('menu', data)}
             onDeliveryPlatformsChange={(platforms) => updateWizardData('restaurant', { ...wizardData.restaurant, deliveryPlatforms: platforms })}
             onNext={handleNext}
@@ -310,7 +330,7 @@ const OnboardingWizard = () => {
           />
         );
       case 'tax':
-        return <StepTax restaurantType={wizardData.restaurant.restaurantType} data={wizardData.taxConfig} onChange={(data) => updateWizardData('taxConfig', data)} onNext={handleNext} onBack={handleBack} />;
+        return <StepTax restaurantType={wizardData.restaurant.restaurantType} data={wizardData.taxConfig} sampleItems={wizardData.menu?.categories?.[0]?.items?.slice(0, 2) || []} onChange={(data) => updateWizardData('taxConfig', data)} onNext={handleNext} onBack={handleBack} />;
       case 'printers':
         return (
           <StepPrinters
@@ -324,13 +344,18 @@ const OnboardingWizard = () => {
           />
         );
       case 'outlets':
-        return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
+        return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} mainSections={wizardData.sections} mainTables={wizardData.tables} mainMenu={wizardData.menu} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
       case 'plan':
-        return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
+        const summary = {
+          tables: (wizardData.tables?.length || 0) + (wizardData.outlets || []).reduce((s, o) => s + (o.tables?.length || 0), 0),
+          staff: (wizardData.captains?.length || 0) + (wizardData.cashiers?.length || 0),
+          menuItems: wizardData.menu?.categories?.reduce((s, cat) => s + (cat.items?.length || 0), 0) || 0,
+        };
+        return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} wizardSummary={summary} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
       case 'payment':
-        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} ownerEmail={wizardData.owner.email} ownerPhone={wizardData.owner.phone} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} />;
+        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} ownerEmail={wizardData.owner.email} ownerPhone={wizardData.owner.phone} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} onGoToPlan={() => setCurrentStepId('plan')} />;
       case 'confirm':
-        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToOwnerStep={() => {
+        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToStep={(stepId) => setCurrentStepId(stepId)} onGoToOwnerStep={() => {
           setWizardData(prev => ({ ...prev, owner: { ...prev.owner, emailVerificationProof: undefined, phoneVerificationProof: undefined } }));
           setCurrentStepId('owner');
         }} />;

@@ -1,7 +1,14 @@
-import React, { useEffect } from 'react';
-import { Palette, FileText } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { Palette, FileText, Image as ImageIcon, Upload, Check } from 'lucide-react';
 
-const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext, onBack }) => {
+const SAMPLE_ITEMS = [
+  { name: 'Paneer Butter Masala', qty: 1, price: 280 },
+  { name: 'Naan', qty: 2, price: 30 },
+];
+
+const StepBranding = ({ data, restaurantName, restaurantGstin, logoPreview, menu, taxConfig, onChange, onNext, onBack }) => {
+  const fileInputRef = useRef(null);
+
   // Auto-fill receipt header from restaurant name if empty
   useEffect(() => {
     if (!data.receiptHeader && restaurantName) {
@@ -13,8 +20,41 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext,
     onChange({ ...data, [field]: value });
   };
 
+  const handleLogoSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      handleChange('logoPreview', ev.target.result);
+      handleChange('logoFile', file);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const fssaiValid = !data.fssai || /^\d{14}$/.test(data.fssai);
   const isValid = (data.receiptHeader || '').trim().length >= 2 && fssaiValid;
+
+  // Build preview items from real menu or fallback
+  const previewItems = (menu?.categories || []).flatMap(cat => cat.items || []).slice(0, 3);
+  const itemsToShow = previewItems.length > 0
+    ? previewItems.map(item => ({ name: item.name, qty: 1, price: item.price }))
+    : SAMPLE_ITEMS;
+
+  const subtotal = itemsToShow.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const gstRate = taxConfig?.gstCategory === 'AC' ? 0.18 : 0.05;
+  const gstAmount = taxConfig?.pricesIncludeGst
+    ? Math.round((subtotal - subtotal / (1 + gstRate)) * 100) / 100
+    : Math.round(subtotal * gstRate * 100) / 100;
+  const total = taxConfig?.pricesIncludeGst ? subtotal : Math.round((subtotal + gstAmount) * 100) / 100;
+  const displayedSubtotal = Math.round((total - gstAmount) * 100) / 100;
+
+  const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const gstLabel = taxConfig?.gstCategory === 'AC' ? 'GST 18%' : 'GST 5%';
+  const cgstLabel = taxConfig?.gstCategory === 'AC' ? 'CGST 9%' : 'CGST 2.5%';
+  const sgstLabel = taxConfig?.gstCategory === 'AC' ? 'SGST 9%' : 'SGST 2.5%';
+  const cgstAmount = Math.round(gstAmount / 2 * 100) / 100;
+  const sgstAmount = Math.round(gstAmount / 2 * 100) / 100;
 
   return (
     <div className="space-y-6">
@@ -27,6 +67,46 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext,
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Form */}
         <div className="space-y-4">
+          {/* Logo Upload */}
+          <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-700">Restaurant Logo</p>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center bg-white cursor-pointer hover:border-[#E53935] transition-all"
+            >
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoSelect} />
+              {logoPreview || data.logoPreview ? (
+                <div className="flex flex-col items-center gap-2">
+                  <img src={logoPreview || data.logoPreview} alt="Logo" className="w-16 h-16 object-contain rounded" />
+                  <span className="text-xs text-gray-500">Click to change logo</span>
+                </div>
+              ) : (
+                <>
+                  <ImageIcon size={28} className="mx-auto text-gray-400 mb-1" />
+                  <p className="text-sm text-gray-600">Upload logo</p>
+                  <p className="text-xs text-gray-400">Square, max 2MB</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Theme Color */}
+          <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-700">Theme Color</p>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={data.themePrimary || '#E53935'}
+                onChange={(e) => handleChange('themePrimary', e.target.value)}
+                className="w-12 h-12 rounded-lg border border-gray-200 cursor-pointer"
+              />
+              <div>
+                <p className="text-sm font-medium text-gray-900">{data.themePrimary || '#E53935'}</p>
+                <p className="text-xs text-gray-400">Used on receipts and app theme</p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-gray-50 rounded-xl p-4 space-y-4">
             <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <FileText size={16} /> Receipt Identity
@@ -57,6 +137,45 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext,
                 className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
                 placeholder="e.g., Fine Dining Experience | Hyderabad"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Receipt Footer
+              </label>
+              <textarea
+                rows={2}
+                value={data.receiptFooter || ''}
+                onChange={(e) => handleChange('receiptFooter', e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 resize-none"
+                placeholder="Thank you! Visit again."
+                maxLength={120}
+              />
+              <p className="text-xs text-gray-400 mt-1">{120 - (data.receiptFooter || '').length} chars remaining</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Bill Prefix</label>
+                <input
+                  type="text"
+                  value={data.billPrefix || ''}
+                  onChange={(e) => handleChange('billPrefix', e.target.value.slice(0, 10).toUpperCase())}
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  placeholder="BILL-"
+                  maxLength={10}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Starting Number</label>
+                <input
+                  type="number"
+                  value={data.startingBillNumber || 1}
+                  onChange={(e) => handleChange('startingBillNumber', Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  min={1}
+                />
+              </div>
             </div>
 
             <div>
@@ -119,9 +238,12 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext,
         <div className="space-y-3">
           <p className="text-sm font-semibold text-gray-700">Live Receipt Preview</p>
           <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 max-w-xs mx-auto">
+            <div className="border-2 border-dashed rounded-lg p-4 max-w-xs mx-auto" style={{ borderColor: data.themePrimary || '#E53935' }}>
               <div className="text-center border-b-2 border-dashed border-gray-300 pb-2 mb-2">
-                <div className="font-bold uppercase text-sm">{data.receiptHeader || restaurantName || 'Your Restaurant'}</div>
+                {(logoPreview || data.logoPreview) && (
+                  <img src={logoPreview || data.logoPreview} alt="" className="w-10 h-10 object-contain mx-auto mb-1 rounded" />
+                )}
+                <div className="font-bold uppercase text-sm" style={{ color: data.themePrimary || '#E53935' }}>{data.receiptHeader || restaurantName || 'Your Restaurant'}</div>
                 {data.receiptSubHeader && (
                   <div className="text-gray-500 text-xs mt-0.5">{data.receiptSubHeader}</div>
                 )}
@@ -131,38 +253,36 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, onChange, onNext,
               </div>
               <div className="flex justify-between mb-2 text-xs text-gray-500">
                 <span>Table 1 | 2 covers</span>
-                <span>25/06/2026</span>
+                <span>{today}</span>
               </div>
               <div className="border-t-2 border-dashed border-gray-300 pt-2 space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span>Paneer Butter Masala x1</span>
-                  <span>₹280</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span>Naan x2</span>
-                  <span>₹60</span>
-                </div>
+                {itemsToShow.map((item, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span>{item.name} x{item.qty}</span>
+                    <span>₹{item.price * item.qty}</span>
+                  </div>
+                ))}
               </div>
               <div className="border-t-2 border-dashed border-gray-300 mt-2 pt-2 space-y-1">
                 <div className="flex justify-between text-xs">
                   <span>Subtotal</span>
-                  <span>₹340</span>
+                  <span>₹{displayedSubtotal}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span>CGST 2.5%</span>
-                  <span>₹8.50</span>
+                  <span>{cgstLabel}</span>
+                  <span>₹{cgstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span>SGST 2.5%</span>
-                  <span>₹8.50</span>
+                  <span>{sgstLabel}</span>
+                  <span>₹{sgstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm font-bold border-t border-dashed border-gray-300 pt-1">
                   <span>Total</span>
-                  <span>₹357</span>
+                  <span>₹{total.toFixed(2)}</span>
                 </div>
               </div>
               <div className="border-t-2 border-dashed border-gray-300 mt-2 pt-2 text-center text-gray-500 text-xs">
-                Thank you! Visit again.
+                {data.receiptFooter || 'Thank you! Visit again.'}
               </div>
             </div>
           </div>

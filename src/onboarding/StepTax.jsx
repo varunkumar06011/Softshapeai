@@ -1,5 +1,5 @@
-import React from 'react';
-import { Receipt, Percent, ToggleLeft, ToggleRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Receipt, Percent, ToggleLeft, ToggleRight, Info, CheckCircle } from 'lucide-react';
 
 const GST_CATEGORIES = [
   { value: 'NON_AC', label: 'Non-AC / Standalone', rate: '5%', desc: 'Most Indian restaurants' },
@@ -7,13 +7,30 @@ const GST_CATEGORIES = [
   { value: 'TAKEAWAY', label: 'Takeaway / Parcel only', rate: '5%', desc: 'No service charge' },
 ];
 
-const StepTax = ({ restaurantType, data, onChange, onNext, onBack }) => {
+const FALLBACK_ITEMS = [
+  { name: 'Paneer Tikka', price: 250 },
+  { name: 'Butter Naan', price: 40 },
+];
+
+const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }) => {
   const isCloud = restaurantType === 'CLOUD_KITCHEN';
+  const [showServiceTooltip, setShowServiceTooltip] = useState(false);
   const handleChange = (field, value) => {
     onChange({ ...data, [field]: value });
   };
 
   const isValid = true; // All fields have sensible defaults
+
+  const previewItems = (sampleItems && sampleItems.length > 0)
+    ? sampleItems.slice(0, 2)
+    : FALLBACK_ITEMS;
+
+  const gstRate = data.gstCategory === 'AC' ? 18 : 5;
+  const subtotal = previewItems.reduce((s, i) => s + (i.price || 0), 0);
+  const gstAmount = data.pricesIncludeGst ? 0 : (subtotal * gstRate) / 100;
+  const serviceAmount = data.serviceChargePercent > 0 ? (subtotal * data.serviceChargePercent) / 100 : 0;
+  const packagingAmount = isCloud && data.packagingCharge > 0 ? data.packagingCharge : 0;
+  const total = subtotal + gstAmount + serviceAmount + packagingAmount;
 
   return (
     <div className="space-y-6">
@@ -41,6 +58,18 @@ const StepTax = ({ restaurantType, data, onChange, onNext, onBack }) => {
           )}
         </button>
       </div>
+
+      {!data.gstRegistered && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-5 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+            <CheckCircle size={20} className="text-green-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-green-800">Tax setup skipped</p>
+            <p className="text-xs text-green-600">No GST will be shown on bills. You can update this later from Admin Settings.</p>
+          </div>
+        </div>
+      )}
 
       {data.gstRegistered && (
         <>
@@ -169,6 +198,55 @@ const StepTax = ({ restaurantType, data, onChange, onNext, onBack }) => {
               </button>
             </div>
           </div>
+
+          {/* Live Receipt Preview */}
+          <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
+            <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Receipt size={16} className="text-[#E53935]" /> Live Preview
+            </h4>
+            <div className="space-y-1 text-sm">
+              {previewItems.map((item, i) => (
+                <div key={i} className="flex justify-between text-gray-700">
+                  <span>{item.name}</span>
+                  <span>₹{item.price.toFixed(2)}</span>
+                </div>
+              ))}
+              <div className="border-t border-dashed border-gray-200 pt-1 mt-1">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
+                </div>
+                {data.gstRegistered && !data.pricesIncludeGst && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>GST ({gstRate}%)</span>
+                    <span>₹{gstAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                {data.gstRegistered && data.pricesIncludeGst && (
+                  <div className="flex justify-between text-gray-500 text-xs">
+                    <span>Includes GST ({gstRate}%)</span>
+                    <span>₹{((subtotal * gstRate) / (100 + gstRate)).toFixed(2)}</span>
+                  </div>
+                )}
+                {serviceAmount > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Service Charge ({data.serviceChargePercent}%)</span>
+                    <span>₹{serviceAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                {packagingAmount > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Packaging</span>
+                    <span>₹{packagingAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-100">
+                  <span>Total</span>
+                  <span>₹{total.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </>
       )}
 
@@ -214,9 +292,24 @@ const StepTax = ({ restaurantType, data, onChange, onNext, onBack }) => {
             />
           </div>
         )}
-        <p className="text-xs text-gray-400">
-          NRAI guidelines — service charge is optional and must be disclosed.
-        </p>
+        {data.serviceChargePercent > 10 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-700">
+            Most restaurants charge 5–10%. Higher charges may invite customer disputes.
+          </div>
+        )}
+        <div className="relative">
+          <button
+            onClick={() => setShowServiceTooltip(!showServiceTooltip)}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-[#E53935] transition-colors"
+          >
+            <Info size={14} /> NRAI guidelines
+          </button>
+          {showServiceTooltip && (
+            <div className="absolute z-10 mt-1 bg-white border border-gray-200 rounded-lg p-2 shadow-lg text-xs text-gray-600 max-w-xs">
+              Service charge is voluntary as per NRAI guidelines. Customers can request it to be removed.
+            </div>
+          )}
+        </div>
       </div>
 
       {isCloud && (
@@ -243,6 +336,11 @@ const StepTax = ({ restaurantType, data, onChange, onNext, onBack }) => {
           </div>
           <p className="text-xs text-gray-400">
             Added to every delivery order for packaging materials.
+            {data.packagingCharge > 0 && (
+              <span className="block mt-1 text-gray-500">
+                Example: ₹{data.packagingCharge} × 20 orders/day = ₹{data.packagingCharge * 20}/day
+              </span>
+            )}
           </p>
         </div>
       )}

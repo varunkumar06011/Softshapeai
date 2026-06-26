@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Plus, Trash2, Users, Printer } from 'lucide-react';
+import { Layout, Plus, Trash2 } from 'lucide-react';
 
 const TYPE_CONFIG = {
   DINE_IN: { sectionLabel: 'Sections', tableLabel: 'Tables', sectionPlaceholder: 'Section name (e.g., Main Hall)', showTables: true },
@@ -40,9 +40,18 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
   };
 
   const addTable = (sectionIndex) => {
-    const existingTablesInSection = tables.filter(t => t.sectionIndex === sectionIndex);
-    const maxNumber = existingTablesInSection.length > 0 ? Math.max(...existingTablesInSection.map(t => t.number)) : 0;
+    const maxNumber = tables.length > 0 ? Math.max(...tables.map(t => t.number)) : 0;
     onChange(sections, [...tables, { number: maxNumber + 1, capacity: 4, sectionIndex }]);
+  };
+
+  const addBulkTables = (sectionIndex, count, capacity) => {
+    const maxNumber = tables.length > 0 ? Math.max(...tables.map(t => t.number)) : 0;
+    const newTables = Array.from({ length: count }, (_, i) => ({
+      number: maxNumber + 1 + i,
+      capacity,
+      sectionIndex
+    }));
+    onChange(sections, [...tables, ...newTables]);
   };
 
   const removeTable = (sectionIndex, tableIndex) => {
@@ -121,22 +130,6 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
               )}
             </div>
 
-            {printers.length > 0 && (
-              <div className="flex items-center gap-3">
-                <Printer size={16} className="text-gray-500" />
-                <label className="text-xs font-medium text-gray-500">KOT Printer</label>
-                <select
-                  value={section.kotPrinterName || printers[0]?.name || ''}
-                  onChange={(e) => handleSectionChange(sectionIndex, 'kotPrinterName', e.target.value)}
-                  className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 text-sm"
-                >
-                  {printers.map(p => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {config.showTables && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -147,6 +140,41 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
                   >
                     <Plus size={16} />
                     Add {config.tableLabel.slice(0, -1)}
+                  </button>
+                </div>
+
+                {/* Bulk add */}
+                <div className="flex gap-3 items-center bg-white rounded-lg p-3 border border-gray-200">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">Add multiple</label>
+                    <input
+                      type="number"
+                      id={`bulk-count-${sectionIndex}`}
+                      defaultValue="4"
+                      min="1"
+                      max="50"
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                    />
+                  </div>
+                  <div className="w-32">
+                    <label className="text-xs text-gray-500 mb-1 block">Capacity</label>
+                    <select
+                      id={`bulk-capacity-${sectionIndex}`}
+                      defaultValue="4"
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                    >
+                      {[2, 4, 6, 8, 12].map(n => <option key={n} value={n}>{n} seats</option>)}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const count = parseInt(document.getElementById(`bulk-count-${sectionIndex}`).value) || 4;
+                      const capacity = parseInt(document.getElementById(`bulk-capacity-${sectionIndex}`).value) || 4;
+                      addBulkTables(sectionIndex, Math.min(50, Math.max(1, count)), capacity);
+                    }}
+                    className="mt-5 px-4 py-2 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-lg text-sm font-medium transition-all"
+                  >
+                    Add
                   </button>
                 </div>
 
@@ -170,25 +198,22 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
                         min="1"
                       />
                     </div>
-                    <div className="w-24">
+                    <div className="w-40">
                       <label className="text-xs text-gray-500 mb-1 block">Capacity</label>
-                      <div className="relative">
-                        <Users size={16} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                        <input
-                          type="number"
-                          value={table.capacity === 0 ? '' : table.capacity}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleTableChange(sectionIndex, tableIndex, 'capacity', val === '' ? 0 : Math.max(1, parseInt(val) || 1));
-                          }}
-                          onBlur={(e) => {
-                            if (!e.target.value || parseInt(e.target.value) < 1) {
-                              handleTableChange(sectionIndex, tableIndex, 'capacity', 4);
-                            }
-                          }}
-                          className="w-full pl-8 pr-2 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
-                          min="1"
-                        />
+                      <div className="flex gap-1">
+                        {[2, 4, 6, 8, 12].map(cap => (
+                          <button
+                            key={cap}
+                            onClick={() => handleTableChange(sectionIndex, tableIndex, 'capacity', cap)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                              table.capacity === cap
+                                ? 'bg-[#E53935] text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {cap}
+                          </button>
+                        ))}
                       </div>
                     </div>
                     <button
@@ -209,9 +234,13 @@ const StepFloorPlan = ({ restaurantType, printers, sections, tables, onChange, o
         ))}
 
         {restaurantType === 'CAFE' && (
-          <p className="text-xs text-gray-500 -mt-2">
-            Most cafes use counter-based billing — add counters only if you have seating areas.
-          </p>
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <p className="text-sm text-blue-800 font-medium mb-1">Counter mode active</p>
+            <p className="text-xs text-blue-600">
+              Most cafes use counter billing. We added a default "Main Counter" with 1 slot.
+              Add seating sections only if you have tables.
+            </p>
+          </div>
         )}
 
         <button
