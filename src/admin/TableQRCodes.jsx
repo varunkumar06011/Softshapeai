@@ -18,19 +18,15 @@ export default function TableQRCodes() {
       try {
         setLoading(true);
         // Fetch current restaurant and its tables
-        const res = await apiFetch('/api/restaurant/me');
-        const data = await res.json();
+        const data = await apiFetch('/api/restaurant/me');
         setRestaurant(data.restaurant);
         setTables(data.tables || []);
 
         // Fetch HMAC signatures for each table
         const sigPromises = (data.tables || []).map(async (t) => {
           try {
-            const sigRes = await apiFetch(`/api/tables/${t.id}/qr-url`);
-            if (sigRes.ok) {
-              const sigData = await sigRes.json();
-              return { tableId: t.id, sig: sigData.sig, url: sigData.url };
-            }
+            const sigData = await apiFetch(`/api/tables/${t.id}/qr-url`);
+            return { tableId: t.id, sig: sigData.sig, url: sigData.url };
           } catch (e) {
             console.warn(`[TableQRCodes] Failed to fetch sig for table ${t.id}:`, e);
           }
