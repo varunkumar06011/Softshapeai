@@ -2,6 +2,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const PRINT_AGENT_DOWNLOAD_URL = process.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
+if (!PRINT_AGENT_DOWNLOAD_URL) {
+  throw new Error(
+    'VITE_PRINT_AGENT_DOWNLOAD_URL is required. Set it to the URL of the SoftShape Print Agent installer (e.g., a GitHub release asset URL).'
+  );
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],

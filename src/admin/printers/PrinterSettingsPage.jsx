@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Printer, Download, RefreshCw, CheckCircle, Clock,
-  Copy, AlertTriangle, BookOpen
+  Copy, AlertTriangle, BookOpen, Save, Trash2, Plus
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiUrl, getAuthHeaders } from '../../services/apiConfig.js';
@@ -9,9 +9,8 @@ import { useAuth } from '../../context/AuthContext.jsx';
 
 const POLL_INTERVAL_MS = 30_000;
 
-const PRINT_AGENT_DOWNLOAD_URL =
-  import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL ||
-  "https://github.com/varunkumar06011/softshape-print-agent/releases/download/v0.1.0/SoftShape.Print.Agent_0.1.0_x64-setup.exe";
+const PRINT_AGENT_DOWNLOAD_URL = import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
+const downloadUrlMissing = !PRINT_AGENT_DOWNLOAD_URL;
 
 function StatusDot({ status }) {
   const colors = {
@@ -29,7 +28,7 @@ function StatusDot({ status }) {
 }
 
 export default function PrinterSettingsPage() {
-  const { user } = useAuth();
+  const { user, restaurant } = useAuth();
   const [agentStatus, setAgentStatus] = useState(null);
   const [setupToken, setSetupToken] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +37,9 @@ export default function PrinterSettingsPage() {
   const [copiedToken, setCopiedToken] = useState(false);
   const [error, setError] = useState(null);
   const [showManual, setShowManual] = useState(false);
+  const [printersConfig, setPrintersConfig] = useState([]);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configMessage, setConfigMessage] = useState(null);
   const pollRef = useRef(null);
 
   const fetchStatus = useCallback(async () => {
@@ -56,6 +58,11 @@ export default function PrinterSettingsPage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const printers = restaurant?.printerConfig?.printers || [];
+    setPrintersConfig(Array.isArray(printers) ? printers : Object.values(printers));
+  }, [restaurant?.printerConfig?.printers]);
 
   useEffect(() => {
     fetchStatus();
@@ -108,11 +115,57 @@ export default function PrinterSettingsPage() {
 
   const restaurantCode = agentStatus?.restaurantCode || setupToken?.restaurantCode || user?.restaurantCode || '';
 
-  const printers = [
+  const printerRoles = [
     { key: 'kitchen', label: 'Kitchen Printer', icon: '🍳' },
     { key: 'bar', label: 'Bar Printer', icon: '🍺' },
     { key: 'bill', label: 'Bill Printer', icon: '🧾' },
   ];
+
+  const unmappedRoles = printerRoles
+    .filter(({ key }) => agentStatus?.online && !agentStatus?.agentMapping?.[key])
+    .map(({ label }) => label);
+
+  const addPrinter = () => {
+    setPrintersConfig((prev) => [...prev, { name: '', type: '' }]);
+  };
+
+  const updatePrinter = (index, field, value) => {
+    setPrintersConfig((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const removePrinter = (index) => {
+    setPrintersConfig((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const savePrinterConfig = async () => {
+    setConfigSaving(true);
+    setConfigMessage(null);
+    try {
+      const validPrinters = printersConfig
+        .map((p) => ({ name: String(p.name || '').trim(), type: String(p.type || '').trim().toUpperCase() }))
+        .filter((p) => p.name);
+      const mergedConfig = {
+        ...(restaurant?.printerConfig || {}),
+        printers: validPrinters,
+      };
+      const res = await fetch(apiUrl('/api/restaurant/profile'), {
+        method: 'PATCH',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ printerConfig: mergedConfig }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+      setConfigMessage({ type: 'success', text: 'Printer config saved.' });
+    } catch (err) {
+      setConfigMessage({ type: 'error', text: err.message || 'Failed to save printer config' });
+    } finally {
+      setConfigSaving(false);
+      setTimeout(() => setConfigMessage(null), 3000);
+    }
+  };
 
   if (loading) {
     return (
@@ -141,6 +194,20 @@ export default function PrinterSettingsPage() {
         </div>
       )}
 
+      {downloadUrlMissing && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+          <AlertTriangle size={16} className="shrink-0" />
+          Print agent download URL is not configured. Set <code className="bg-red-100 px-1 rounded">VITE_PRINT_AGENT_DOWNLOAD_URL</code> before building.
+        </div>
+      )}
+
+      {unmappedRoles.length > 0 && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-700">
+          <AlertTriangle size={16} className="shrink-0" />
+          Agent online but these printers are not mapped: {unmappedRoles.join(', ')}
+        </div>
+      )}
+
       {/* Agent Connection Status */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5">
         <div className="flex items-start justify-between">
@@ -163,7 +230,7 @@ export default function PrinterSettingsPage() {
 
         {/* Per-printer status */}
         <div className="grid grid-cols-3 gap-3 mt-4">
-          {printers.map(({ key, label, icon }) => {
+          {printerRoles.map(({ key, label, icon }) => {
             const pStatus = agentStatus?.printerStatus?.[key];
             const mapped = agentStatus?.agentMapping?.[key];
             return (
@@ -276,6 +343,71 @@ export default function PrinterSettingsPage() {
                 <Clock size={12} /> Expires: {new Date(setupToken.expiresAt).toLocaleTimeString('en-IN')}
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Printer Config Editor */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-bold text-base">Configured Printers</div>
+            <p className="text-xs text-gray-500">These names appear in the print agent mapping dropdown and menu item printer selector.</p>
+          </div>
+          <button
+            onClick={addPrinter}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50"
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
+
+        <div className="space-y-2">
+            {printersConfig.length === 0 && (
+              <div className="text-xs text-gray-400">No printers configured. Add at least one printer.</div>
+            )}
+            {printersConfig.map((printer, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Printer name (exact system name)"
+                  value={printer.name || ''}
+                  onChange={(e) => updatePrinter(index, 'name', e.target.value)}
+                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 focus:border-[#E53935] focus:outline-none"
+                />
+                <select
+                  value={printer.type || ''}
+                  onChange={(e) => updatePrinter(index, 'type', e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 focus:border-[#E53935] focus:outline-none"
+                >
+                  <option value="">No type</option>
+                  <option value="KITCHEN">Kitchen</option>
+                  <option value="BAR">Bar</option>
+                  <option value="KOT">KOT</option>
+                  <option value="BILL">Bill</option>
+                </select>
+                <button
+                  onClick={() => removePrinter(index)}
+                  className="rounded-lg border border-gray-200 p-2 text-red-500 hover:bg-red-50"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={savePrinterConfig}
+            disabled={configSaving}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#B71C1C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8B0000] disabled:opacity-50"
+          >
+            <Save size={16} /> {configSaving ? 'Saving…' : 'Save Printers'}
+          </button>
+          {configMessage && (
+            <span className={`text-xs font-bold ${configMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+              {configMessage.text}
+            </span>
           )}
         </div>
       </div>
