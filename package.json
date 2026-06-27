@@ -13,11 +13,12 @@
     "dev:cashier-desktop": "cd apps/cashier-desktop && npm run tauri:dev",
     "build:admin-desktop": "cd apps/admin-desktop && npm run tauri:build",
     "dev:admin-desktop": "cd apps/admin-desktop && npm run tauri:dev",
-    "build:cashier-android": "npx vite build && npx cap sync android",
-    "open:cashier-android": "npx cap open android",
-    "apk:cashier-android": "npx vite build && npx cap sync android && npx cap build android --apk",
-    "build:admin-android": "npx vite build && npx cap sync android",
-    "apk:admin-android": "npx vite build && npx cap sync android && npx cap build android --apk"
+    "build:cashier-android": "npx vite build && cd apps/cashier-android && npx cap sync android",
+    "open:cashier-android": "cd apps/cashier-android && npx cap open android",
+    "apk:cashier-android": "npx vite build && cd apps/cashier-android && npx cap sync android && npx cap build android --apk",
+    "build:admin-android": "npx vite build && cd apps/admin-android && npx cap sync android",
+    "open:admin-android": "cd apps/admin-android && npx cap open android",
+    "apk:admin-android": "npx vite build && cd apps/admin-android && npx cap sync android && npx cap build android --apk"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
