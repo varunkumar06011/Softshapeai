@@ -8,6 +8,7 @@ import CaptainApp from "./captain/CaptainApp";
 import UserMenuApp from "./user-menu/UserMenuApp";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
+import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import TableQRCodes from "./admin/TableQRCodes";
@@ -228,6 +229,7 @@ function App() {
       <AuthProvider>
         <SyncStatusProvider>
         <BrowserRouter>
+          <AppUpdateBanner />
           <ThemeInjector />
           <Routes>
             <Route path="/" element={<PortalSelectionWrapper />} />

@@ -18,7 +18,10 @@
     "apk:cashier-android": "npx vite build && cd apps/cashier-android && npx cap sync android && npx cap build android --apk",
     "build:admin-android": "npx vite build && cd apps/admin-android && npx cap sync android",
     "open:admin-android": "cd apps/admin-android && npx cap open android",
-    "apk:admin-android": "npx vite build && cd apps/admin-android && npx cap sync android && npx cap build android --apk"
+    "apk:admin-android": "npx vite build && cd apps/admin-android && npx cap sync android && npx cap build android --apk",
+    "build:captain-android": "npx vite build && cd apps/captain-android && npx cap sync android",
+    "open:captain-android": "cd apps/captain-android && npx cap open android",
+    "apk:captain-android": "npx vite build && cd apps/captain-android && npx cap sync android && npx cap build android --apk"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

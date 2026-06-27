@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { MenuProvider } from './context/MenuContext'
 import LoginScreen from './shared/components/LoginScreen'
 import CaptainApp from './captain/CaptainApp'
+import AppUpdateBanner from './shared/components/AppUpdateBanner'
 import { reconnectSocket } from './hooks/useSocket'
 import { ErrorBoundary } from './shared/components/ErrorBoundary'
 
@@ -37,6 +38,7 @@ function CaptainAppWrapper() {
 function CaptainRoutes() {
   return (
     <BrowserRouter>
+      <AppUpdateBanner />
       <Routes>
         <Route path="/captain" element={<CaptainLoginWrapper />} />
         <Route path="/captain/dashboard/*" element={<CaptainAppWrapper />} />

@@ -9,7 +9,9 @@ import { useAuth } from '../../context/AuthContext.jsx';
 
 const POLL_INTERVAL_MS = 30_000;
 
-const PRINT_AGENT_DOWNLOAD_URL = import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
+const PRINT_AGENT_DOWNLOAD_URL =
+  import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL ||
+  'https://github.com/varunkumar06011/softshape-print-agent/releases/latest';
 const downloadUrlMissing = !PRINT_AGENT_DOWNLOAD_URL;
 
 function StatusDot({ status }) {

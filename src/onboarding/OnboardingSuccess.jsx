@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   CheckCircle2, Copy, Check, ArrowRight, Store, Users, ShieldCheck,
   LayoutDashboard, CreditCard, Printer, Utensils, Layout, Check as CheckIcon,
-  Smartphone, Mail, RotateCw, ChevronRight
+  Smartphone, Mail, RotateCw, ChevronRight, Download, Monitor
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -274,6 +274,43 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
           )}
         </div>
 
+        {/* Download Apps */}
+        <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
+          <h2 className="text-lg font-black mb-5 flex items-center gap-2 uppercase tracking-widest">
+            <Download size={20} className="text-[#E53935]" /> Download Apps
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <DownloadAppCard
+              icon={Monitor}
+              title="Admin Desktop"
+              subtitle="Windows PC"
+              url={import.meta.env.VITE_ADMIN_DESKTOP_DOWNLOAD_URL}
+              fileName="SoftShape-Admin-Setup.exe"
+            />
+            <DownloadAppCard
+              icon={Smartphone}
+              title="Admin Android"
+              subtitle="Android phone/tablet"
+              url={import.meta.env.VITE_ADMIN_ANDROID_DOWNLOAD_URL}
+              fileName="SoftShape-Admin.apk"
+            />
+            <DownloadAppCard
+              icon={CreditCard}
+              title="Cashier Desktop"
+              subtitle="Windows PC"
+              url={import.meta.env.VITE_CASHIER_DESKTOP_DOWNLOAD_URL}
+              fileName="SoftShape-Cashier-Setup.exe"
+            />
+            <DownloadAppCard
+              icon={Smartphone}
+              title="Cashier Android"
+              subtitle="Android phone/tablet"
+              url={import.meta.env.VITE_CASHIER_ANDROID_DOWNLOAD_URL}
+              fileName="SoftShape-Cashier.apk"
+            />
+          </div>
+        </div>
+
         {/* What was created checklist */}
         <div className="bg-white rounded-3xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.06)] border border-gray-100">
           <h2 className="text-lg font-black mb-5 flex items-center gap-2 uppercase tracking-widest">
@@ -477,6 +514,26 @@ function NextStep({ n, text, action, onClick }) {
         {action} <ArrowRight size={14} />
       </button>
     </div>
+  );
+}
+
+function DownloadAppCard({ icon: Icon, title, subtitle, url, fileName }) {
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      download={fileName}
+      className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-4 hover:border-[#E53935] hover:bg-white transition-all"
+    >
+      <div className="rounded-xl bg-[#FFEBEE] p-2.5 text-[#E53935]">
+        <Icon size={20} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-gray-900 truncate">{title}</p>
+        <p className="text-xs text-gray-500">{subtitle}</p>
+      </div>
+      <Download size={18} className="text-gray-400 shrink-0" />
+    </a>
   );
 }
 

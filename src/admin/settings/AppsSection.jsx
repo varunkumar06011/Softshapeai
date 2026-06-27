@@ -2,12 +2,15 @@ import React, { useState, useMemo } from 'react';
 import { Download, Smartphone, Monitor, Tablet, Printer, QrCode, AlertTriangle, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
+const DEFAULT_PRINT_AGENT_URL = 'https://github.com/varunkumar06011/softshape-print-agent/releases/latest';
+
 const DOWNLOAD_URLS = {
   cashierDesktop: import.meta.env.VITE_CASHIER_DESKTOP_DOWNLOAD_URL,
   cashierAndroid: import.meta.env.VITE_CASHIER_ANDROID_DOWNLOAD_URL,
   adminDesktop: import.meta.env.VITE_ADMIN_DESKTOP_DOWNLOAD_URL,
   adminAndroid: import.meta.env.VITE_ADMIN_ANDROID_DOWNLOAD_URL,
-  printAgent: import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL,
+  captainAndroid: import.meta.env.VITE_CAPTAIN_ANDROID_DOWNLOAD_URL,
+  printAgent: import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL || DEFAULT_PRINT_AGENT_URL,
 };
 
 function DownloadCard({ icon: Icon, title, subtitle, url, fileName, badge }) {
@@ -158,6 +161,20 @@ export default function AppsSection() {
             title="Admin iPad (PWA)"
             subtitle="No download — install via Safari"
             url={pwaUrls.adminPwa}
+          />
+        </div>
+      </div>
+
+      {/* Captain Apps */}
+      <div>
+        <h3 className="text-sm font-black uppercase tracking-wider text-gray-700 mb-3">Captain</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <DownloadCard
+            icon={Smartphone}
+            title="Captain Android"
+            subtitle="Android .apk — for waiters/captains"
+            url={DOWNLOAD_URLS.captainAndroid}
+            fileName="SoftShape-Captain.apk"
           />
         </div>
       </div>

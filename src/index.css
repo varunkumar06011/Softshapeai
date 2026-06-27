@@ -14,6 +14,7 @@
 
 body {
   margin: 0;
+  padding-top: env(safe-area-inset-top);
   font-family: 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
   font-size: 16px;
   background: #fff5f5;
