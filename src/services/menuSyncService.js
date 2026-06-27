@@ -9,6 +9,28 @@ function getStorageKey(restaurantId = getCurrentRestaurantId()) {
   return getScopedCacheKey(BASE_STORAGE_KEY, restaurantId);
 }
 
+function getTimestampKey(restaurantId = getCurrentRestaurantId()) {
+  return `${getStorageKey(restaurantId)}:ts`;
+}
+
+function recordMenuCacheTimestamp(restaurantId = getCurrentRestaurantId()) {
+  try {
+    localStorage.setItem(getTimestampKey(restaurantId), String(Date.now()));
+  } catch (e) {
+    console.warn('[MenuSync] Failed to write cache timestamp', e);
+  }
+}
+
+export function getMenuCacheAgeMs(restaurantId = getCurrentRestaurantId()) {
+  try {
+    const ts = localStorage.getItem(getTimestampKey(restaurantId));
+    if (!ts) return Infinity;
+    return Date.now() - Number(ts);
+  } catch {
+    return Infinity;
+  }
+}
+
 // Initialize global menu from localStorage to allow instant rendering
 let globalMenu = null;
 try {
@@ -83,6 +105,7 @@ async function loadInitialMenu() {
     _isLoading = false;
     if (globalMenu?.length) {
       localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+      recordMenuCacheTimestamp();
     }
     notifySubscribers();
     dispatchMenuEvent(globalMenu ?? []);
@@ -147,6 +170,7 @@ export function useGlobalMenuSync() {
     _isLoading = false;
     _loadError = null;
     localStorage.setItem(getStorageKey(), JSON.stringify(nextMenu));
+    recordMenuCacheTimestamp();
 
     setMenu(nextMenu);
     notifySubscribers();
@@ -177,6 +201,7 @@ export function useGlobalMenuSync() {
       _loadError = null;
 
       localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+      recordMenuCacheTimestamp();
       setMenu(globalMenu);
       notifySubscribers();
       dispatchMenuEvent(globalMenu);
@@ -234,6 +259,7 @@ export function useGlobalMenuSync() {
         );
         globalMenu = patched;
         localStorage.setItem(getStorageKey(), JSON.stringify(patched));
+        recordMenuCacheTimestamp();
         notifySubscribers();
         dispatchMenuEvent(patched);
       }

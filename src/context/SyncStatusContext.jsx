@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus } from '../utils/syncEngine';
+import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus, clearAuthExpired } from '../utils/syncEngine';
 import { subscribeConflicts, clearConflict, clearAllConflicts } from '../utils/conflictResolver';
 import { isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 
@@ -11,6 +11,7 @@ export function SyncStatusProvider({ children }) {
     pendingCount: 0,
     lastSyncAt: null,
     lastError: null,
+    authExpired: false,
     isOnline: isBackendReachable(),
   });
 
@@ -72,6 +73,10 @@ export function SyncStatusProvider({ children }) {
     clearAllConflicts();
   }, []);
 
+  const dismissAuthExpired = useCallback(() => {
+    clearAuthExpired();
+  }, []);
+
   const value = {
     ...status,
     isOffline: !status.isOnline,
@@ -81,6 +86,7 @@ export function SyncStatusProvider({ children }) {
     triggerSync,
     dismissConflict,
     dismissAllConflicts,
+    dismissAuthExpired,
   };
 
   return (
@@ -99,6 +105,7 @@ export function useSyncStatus() {
       pendingCount: 0,
       lastSyncAt: null,
       lastError: null,
+      authExpired: false,
       isOnline: isBackendReachable(),
       isOffline: !isBackendReachable(),
       hasPending: false,
@@ -107,6 +114,7 @@ export function useSyncStatus() {
       triggerSync: () => {},
       dismissConflict: () => {},
       dismissAllConflicts: () => {},
+      dismissAuthExpired: () => {},
     };
   }
   return ctx;

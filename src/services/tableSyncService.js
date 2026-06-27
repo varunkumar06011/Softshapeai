@@ -56,8 +56,19 @@ function readCache() {
 function writeCache(tables) {
   try {
     localStorage.setItem(getTablesCacheKey(), JSON.stringify(tables));
+    localStorage.setItem(`${getTablesCacheKey()}:ts`, String(Date.now()));
   } catch {
     /* ignore storage failures */
+  }
+}
+
+export function getTableCacheAgeMs() {
+  try {
+    const ts = localStorage.getItem(`${getTablesCacheKey()}:ts`);
+    if (!ts) return Infinity;
+    return Date.now() - Number(ts);
+  } catch {
+    return Infinity;
   }
 }
 

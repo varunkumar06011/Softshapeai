@@ -19,17 +19,24 @@ let syncStatus = 'idle'; // idle | syncing | error | paused
 let pendingCount = 0;
 let lastSyncAt = null;
 let lastError = null;
+let authExpired = false;
 
 const statusListeners = new Set();
 
 export function getSyncStatus() {
-  return { syncStatus, pendingCount, lastSyncAt, lastError };
+  return { syncStatus, pendingCount, lastSyncAt, lastError, authExpired };
 }
 
 export function subscribeSyncStatus(callback) {
   statusListeners.add(callback);
   callback(getSyncStatus());
   return () => statusListeners.delete(callback);
+}
+
+export function clearAuthExpired() {
+  authExpired = false;
+  lastError = null;
+  notifyStatusListeners();
 }
 
 function notifyStatusListeners() {
@@ -228,15 +235,19 @@ export async function syncPendingActions() {
     await setSyncMeta('lastSyncAt', lastSyncAt);
 
     if (hadAuthError) {
+      authExpired = true;
       setSyncStatus('paused');
       lastError = 'Authentication expired — please log in again';
     } else if (failed > 0 && succeeded === 0) {
+      authExpired = false;
       setSyncStatus('error');
       lastError = `${failed} action(s) failed to sync`;
     } else if (hadConflict) {
+      authExpired = false;
       setSyncStatus('error');
       lastError = `${failed} action(s) need conflict resolution`;
     } else {
+      authExpired = false;
       setSyncStatus('idle');
       lastError = null;
     }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, Clock, ChevronDown } from 'lucide-react';
 import { useSyncStatus } from '../../context/SyncStatusContext';
+import { getMenuCacheAgeMs } from '../../services/menuSyncService';
+import { getTableCacheAgeMs } from '../../services/tableSyncService';
 
 export default function OfflineStatusBar() {
   const {
@@ -10,11 +12,13 @@ export default function OfflineStatusBar() {
     pendingCount,
     lastSyncAt,
     lastError,
+    authExpired,
     hasConflicts,
     conflicts,
     triggerSync,
     dismissConflict,
     dismissAllConflicts,
+    dismissAuthExpired,
   } = useSyncStatus();
 
   const [showConflicts, setShowConflicts] = useState(false);
@@ -34,6 +38,12 @@ export default function OfflineStatusBar() {
   const hasError = syncStatus === 'error' || syncStatus === 'paused';
   const staleMinutes = lastSyncAt ? Math.floor((Date.now() - lastSyncAt) / 60000) : null;
   const isStale = staleMinutes !== null && staleMinutes > 5;
+  const STALE_CACHE_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const menuCacheAgeMs = getMenuCacheAgeMs();
+  const tableCacheAgeMs = getTableCacheAgeMs();
+  const isMenuCacheStale = menuCacheAgeMs > STALE_CACHE_MS;
+  const isTableCacheStale = tableCacheAgeMs > STALE_CACHE_MS;
+  const isAnyCacheStale = isMenuCacheStale || isTableCacheStale;
 
   return (
     <>
@@ -97,6 +107,20 @@ export default function OfflineStatusBar() {
             <span className="ml-2 flex items-center gap-1 text-white/80">
               <Clock size={10} />
               Last sync {staleMinutes}m ago
+            </span>
+          )}
+
+          {authExpired && (
+            <span className="ml-2 flex items-center gap-1 rounded-full bg-red-700 px-2 py-0.5 animate-pulse">
+              <AlertTriangle size={10} />
+              Session expired
+            </span>
+          )}
+
+          {isOffline && isAnyCacheStale && (
+            <span className="ml-2 flex items-center gap-1 rounded-full bg-amber-700 px-2 py-0.5">
+              <AlertTriangle size={10} />
+              Stale cache ({isMenuCacheStale ? 'menu' : ''}{isMenuCacheStale && isTableCacheStale ? '+' : ''}{isTableCacheStale ? 'tables' : ''})
             </span>
           )}
         </div>
