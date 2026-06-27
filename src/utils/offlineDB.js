@@ -74,7 +74,26 @@ function openDB() {
 
 // ── pendingActions ──────────────────────────────────────────────────────────
 
+const MAX_PENDING_ACTIONS = 200;
+
+export async function getPendingCount() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pendingActions', 'readonly');
+    const req = tx.objectStore('pendingActions').count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function addPendingAction(action) {
+  const count = await getPendingCount();
+  if (count >= MAX_PENDING_ACTIONS) {
+    const err = new Error(`Offline queue is full (${MAX_PENDING_ACTIONS} actions). Please connect to the internet to sync before taking more orders.`);
+    err.code = 'QUEUE_FULL';
+    throw err;
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('pendingActions', 'readwrite');
@@ -148,16 +167,6 @@ export async function getPendingActionByRequestId(requestId) {
     const idx = tx.objectStore('pendingActions').index('requestId');
     const req = idx.get(requestId);
     req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function getPendingCount() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('pendingActions', 'readonly');
-    const req = tx.objectStore('pendingActions').count();
-    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }

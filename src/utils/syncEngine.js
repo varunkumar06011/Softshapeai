@@ -13,6 +13,47 @@ import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability 
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 import { finalizeSettlementAudit } from './settlementAuditLog';
 
+const LOW_QUOTA_RATIO = 0.8;
+
+/**
+ * Warn if IndexedDB is using more than 80% of the estimated storage quota.
+ * Returns true if the quota looks healthy, false if the app is close to full.
+ */
+export async function checkStorageQuota() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.estimate) return { ok: true };
+    const estimate = await navigator.storage.estimate();
+    const usage = estimate.usage || 0;
+    const quota = estimate.quota || 1;
+    const ratio = usage / quota;
+    if (ratio > LOW_QUOTA_RATIO) {
+      return {
+        ok: false,
+        usage,
+        quota,
+        message: `Storage is ${Math.round(ratio * 100)}% full. Sync now to free space.`,
+      };
+    }
+    return { ok: true, usage, quota };
+  } catch (err) {
+    return { ok: true, error: err.message };
+  }
+}
+
+/**
+ * Returns true if the device is on battery power and below a low threshold.
+ * On desktop/unknown, returns false so sync keeps running normally.
+ */
+export function shouldDeferSyncOnBattery() {
+  try {
+    const battery = navigator.getBattery ? navigator.getBattery() : null;
+    if (!battery) return false;
+    return battery.then ? battery.then(b => !b.charging && b.level < 0.15) : false;
+  } catch {
+    return false;
+  }
+}
+
 // ── Status tracking ──────────────────────────────────────────────────────────
 
 let syncing = false;
@@ -136,6 +177,20 @@ async function syncSingleAction(action) {
 export async function syncPendingActions() {
   if (syncing) return;
   if (!isBackendReachable()) return;
+
+  const quota = await checkStorageQuota();
+  if (!quota.ok) {
+    lastError = quota.message;
+    setSyncStatus('error');
+    console.warn('[SyncEngine] Sync paused:', quota.message);
+    return;
+  }
+
+  const deferForBattery = await shouldDeferSyncOnBattery();
+  if (deferForBattery) {
+    console.log('[SyncEngine] Sync deferred due to low battery.');
+    return;
+  }
 
   syncing = true;
   setSyncStatus('syncing');
