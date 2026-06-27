@@ -3226,48 +3226,16 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleSmartKOT = async () => {
-    if (isKotSending || isSubmittingKotRef.current) return;
-    if (cart.length === 0) return;
+    if (isKotSending || isSubmittingKotRef.current || cart.length === 0) return;
     isSubmittingKotRef.current = true;
     setIsKotSending(true);
     setIsKotSuccess(false);
 
-    // Generate requestId BEFORE optimistic UI update for deduplication
+    // Generate requestId for idempotency; do not update UI until the API confirms.
     const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36));
     kotRequestIdRef.current = requestId;
-
-    const foodItems = cart.filter(i => i.menuType === 'FOOD' || !i.menuType);
-    const barItems = cart.filter(i => i.menuType === 'LIQUOR');
-
-    const kotsToCreate = [];
-    const timestamp = Date.now();
-    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-
-    if (foodItems.length > 0) {
-      kotsToCreate.push({
-        id: Math.floor(1000 + Math.random() * 9000).toString(),
-        type: 'FOOD',
-        time: timeStr,
-        items: foodItems.map(i => ({ ...i, s: 'KOT Sent' })),
-        status: 'Incoming',
-        createdAt: timestamp,
-        itemsReady: 0,
-      });
-    }
-
-    if (barItems.length > 0) {
-      kotsToCreate.push({
-        id: Math.floor(1000 + Math.random() * 9000).toString(),
-        type: 'LIQUOR',
-        time: timeStr,
-        items: barItems.map(i => ({ ...i, s: 'KOT Sent' })),
-        status: 'Incoming',
-        createdAt: timestamp + 1,
-        itemsReady: 0,
-      });
-    }
 
     const apiItems = cart
       .map(i => ({
@@ -3281,186 +3249,169 @@ const CashierDashboard = ({ onLogout }) => {
       }))
       .filter(i => !!i.menuItemId);
 
-    // Hoist optimistic items so both update blocks can reference them
     const newTotalBill = selectedTable ? calculateSessionBill(selectedTable, cart).total : 0;
-    const newOptimisticItems = cart.map(i => ({
-      id: null,
-      n: i.n || i.name,
-      name: i.n || i.name,
-      p: Number(i.p ?? i.price ?? 0),
-      price: Number(i.p ?? i.price ?? 0),
-      q: Number(i.q ?? i.quantity ?? 1),
-      quantity: Number(i.q ?? i.quantity ?? 1),
-      menuType: (i.menuType || 'FOOD').toUpperCase(),
-      removedFromBill: false,
-      notes: i.notes || null,
-    }));
 
-    if (selectedTable) {
-      const existingItems = selectedTable.activeOrder?.items || [];
-      // Prevent duplicate optimistic appends — check ALL existing items (both id:null optimistic
-      // and real-id server-confirmed), not just id:null ones. This stops the same item showing
-      // twice when the server has already confirmed the first KOT's items with real IDs.
-      const existingItemNames = new Set(
-        existingItems.map(i => (i.n || i.name || '').toLowerCase().trim())
-      );
-      const deduplicatedOptimistic = newOptimisticItems.filter(
-        i => !existingItemNames.has((i.n || i.name || '').toLowerCase().trim())
-      );
-      const mergedItems = [...existingItems, ...deduplicatedOptimistic];
+    try {
+      let orderResponse = null;
 
-      if (selectedTable.isExtra) {
-        // Update extra table in extraTables state
-        setExtraTables(prev => prev.map(et => {
-          if (et.id === selectedTable.id) {
-            const updated = {
-              ...et,
-              status: et.status === 'Free' ? 'Occupied' : et.status,
-              kotHistory: [...(et.kotHistory || []), ...kotsToCreate],
-              currentBill: newTotalBill,
-              activeOrder: et.activeOrder
-                ? { ...et.activeOrder, items: mergedItems }
-                : { id: null, items: mergedItems, totalAmount: newTotalBill },
-            };
-            console.log('[ExtraTable] KOT optimistic update:', et.id, { itemCount: updated.activeOrder.items.length, currentBill: updated.currentBill });
-            return updated;
-          }
-          return et;
-        }));
-      } else {
-        // Update regular table in tables state
-        const updater = prev => prev.map(t => {
-          if (t.id === selectedTable.id || t.backendId === selectedTable.backendId) {
-            return {
-              ...t,
-              status: t.status === 'Free' ? 'Occupied' : t.status,
-              kotHistory: [...(t.kotHistory || []), ...kotsToCreate],
-              currentBill: newTotalBill,
-              activeOrder: t.activeOrder
-                ? { ...t.activeOrder, items: mergedItems }
-                : { id: null, items: mergedItems, totalAmount: newTotalBill },
-            };
-          }
-          return t;
-        });
-
-        setActiveTables(updater);
-      }
-
-      // Snapshot items and patch selectedTable so modal shows items immediately
-      const committedSoFar = getBillableItems(selectedTable);
-      lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
-      setSelectedTable(prev => {
-        if (!prev) return prev;
-        const prevItems = prev.activeOrder?.items || [];
-        const merged = [...prevItems, ...newOptimisticItems];
-        return {
-          ...prev,
-          status: prev.status === 'Free' ? 'Occupied' : prev.status,
-          currentBill: newTotalBill,
-          activeOrder: prev.activeOrder
-            ? { ...prev.activeOrder, items: merged }
-            : { id: null, items: merged, totalAmount: newTotalBill },
-        };
-      });
-    }
-
-    setCart([]);
-    lastAnyItemAddedRef.current = 0;
-    setExpandedNoteItemId(null);
-    setIsKotSuccess(true);
-    addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
-    setTimeout(() => setIsKotSuccess(false), 2000);
-
-    // Run API call in background without blocking UI
-    (async () => {
-      try {
-        if (selectedTable?.backendId || selectedTable?.isExtra) {
-          if (selectedTable.isExtra) {
-            // Extra table: only use the real DB order id (set after createOrder resolves).
-            // localOrderId is a fake client-side key — never use it as a DB order id.
-            const orderId = selectedTable.activeOrder?.id;
-            if (orderId) {
-              // Subsequent KOT for extra table — append to existing order
-              // isExtraTable=true tells backend to skip parent table mutation
-              console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-              const extraLastUpdated = selectedTable.activeOrder?.updatedAt;
-              const updatedOrderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, extraLastUpdated);
-              if (updatedOrderResponse?.order?.kotHistory) {
-                setExtraTables(prev => prev.map(et =>
-                  et.id === selectedTable.id
-                    ? { ...et, kotHistory: updatedOrderResponse.order.kotHistory }
-                    : et
-                ));
-                setSelectedTable(prev =>
-                  prev?.isExtra && prev.id === selectedTable.id
-                    ? { ...prev, kotHistory: updatedOrderResponse.order.kotHistory }
-                    : prev
-                );
-              }
-            } else {
-              // First KOT for extra table — create order tied to the parent DB table
-              // tableId must be a real DB table id (schema constraint); tableNumber carries
-              // the extra table display name (e.g. "1-X") for KOT/bill printing
-              // isExtraTable=true tells backend to skip parent table mutation
-              const orderResponse = await createOrder({
-                tableId: selectedTable.backendId, // Parent DB table id — required by schema
-                tableNumber: selectedTable.number, // Extra table label shown on bill/KOT
-                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-                items: apiItems,
-                requestId,
-                captainName: 'Cashier',
-                isExtraTable: true,
-                sectionTag: selectedTable.sectionTag || undefined,
-                platform: selectedOrderPlatform,
-              });
-              // Store the returned real orderId in both extraTables and selectedTable
-              if (orderResponse?.id) {
-                console.log('[ExtraTable] createOrder success:', orderResponse.id, 'setting items:', newOptimisticItems.length);
-                setExtraTables(prev => prev.map(et => 
-                  et.id === selectedTable.id 
-                    ? { ...et, activeOrder: { id: orderResponse.id, items: newOptimisticItems, totalAmount: newTotalBill }, kotHistory: orderResponse.kotHistory || et.kotHistory }
-                    : et
-                ));
-                // Immediately patch selectedTable so handleFinalBill can find the orderId
-                setSelectedTable(prev =>
-                  prev?.isExtra && prev.id === selectedTable.id
-                    ? { ...prev, activeOrder: { ...(prev.activeOrder || {}), id: orderResponse.id }, kotHistory: orderResponse.kotHistory || prev.kotHistory }
-                    : prev
-                );
-              }
-            }
-          } else if (selectedTable.activeOrder?.id) {
-            // Regular table: Subsequent KOT — append new items to existing order
-            const lastUpdatedAt = selectedTable.activeOrder?.updatedAt;
-            await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, lastUpdatedAt);
+      if (selectedTable?.backendId || selectedTable?.isExtra) {
+        if (selectedTable.isExtra) {
+          const orderId = selectedTable.activeOrder?.id;
+          if (orderId) {
+            // Subsequent KOT for extra table — append to existing order
+            console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
+            orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 10000);
           } else {
-            // Regular table: First KOT — create a brand-new order row
-            await createOrder({
+            // First KOT for extra table — create order tied to the parent DB table
+            orderResponse = await createOrder({
               tableId: selectedTable.backendId,
-              tableNumber: selectedTable.number || selectedTable.id,
+              tableNumber: selectedTable.number,
               restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
               items: apiItems,
               requestId,
               captainName: 'Cashier',
+              isExtraTable: true,
               sectionTag: selectedTable.sectionTag || undefined,
               platform: selectedOrderPlatform,
+              timeoutMs: 10000,
             });
           }
+        } else if (selectedTable.activeOrder?.id) {
+          // Regular table: Subsequent KOT — append new items to existing order
+          orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 10000);
+        } else {
+          // Regular table: First KOT — create a brand-new order row
+          orderResponse = await createOrder({
+            tableId: selectedTable.backendId,
+            tableNumber: selectedTable.number || selectedTable.id,
+            restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+            items: apiItems,
+            requestId,
+            captainName: 'Cashier',
+            sectionTag: selectedTable.sectionTag || undefined,
+            platform: selectedOrderPlatform,
+            timeoutMs: 10000,
+          });
         }
-      } catch (err) {
-        console.error('[KOT] API failed after retries:', err.message);
-        // Notify cashier so they can resend — kitchen never received this KOT
-        addNotification(
-          'KOT Not Sent to Kitchen',
-          `Please re-add items and send again. (${err.message || 'Network error'})`,
-          'error'
-        );
-      } finally {
-        isSubmittingKotRef.current = false;
-        setIsKotSending(false);
       }
-    })();
+
+      // API confirmed: build KOT display from cart and update the table with server data.
+      const foodItems = cart.filter(i => i.menuType === 'FOOD' || !i.menuType);
+      const barItems = cart.filter(i => i.menuType === 'LIQUOR');
+      const timestamp = Date.now();
+      const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      const kotsToCreate = [];
+      if (foodItems.length > 0) {
+        kotsToCreate.push({
+          id: Math.floor(1000 + Math.random() * 9000).toString(),
+          type: 'FOOD',
+          time: timeStr,
+          items: foodItems.map(i => ({ ...i, s: 'KOT Sent' })),
+          status: 'Incoming',
+          createdAt: timestamp,
+          itemsReady: 0,
+        });
+      }
+      if (barItems.length > 0) {
+        kotsToCreate.push({
+          id: Math.floor(1000 + Math.random() * 9000).toString(),
+          type: 'LIQUOR',
+          time: timeStr,
+          items: barItems.map(i => ({ ...i, s: 'KOT Sent' })),
+          status: 'Incoming',
+          createdAt: timestamp + 1,
+          itemsReady: 0,
+        });
+      }
+
+      const serverItems = orderResponse?.order?.items || orderResponse?.items || [];
+      const serverKotHistory = orderResponse?.order?.kotHistory || orderResponse?.kotHistory || kotsToCreate;
+      const resolvedOrderId = orderResponse?.id || orderResponse?.order?.id || selectedTable?.activeOrder?.id;
+
+      if (selectedTable) {
+        const committedSoFar = getBillableItems(selectedTable);
+        lastConfirmedItemsRef.current = [...committedSoFar, ...cart];
+
+        if (selectedTable.isExtra) {
+          setExtraTables(prev => prev.map(et => {
+            if (et.id !== selectedTable.id) return et;
+            return {
+              ...et,
+              status: et.status === 'Free' ? 'Occupied' : et.status,
+              kotHistory: serverKotHistory,
+              currentBill: newTotalBill,
+              activeOrder: {
+                id: resolvedOrderId,
+                items: serverItems.length ? serverItems : (et.activeOrder?.items || []),
+                totalAmount: newTotalBill,
+              },
+            };
+          }));
+          setSelectedTable(prev => {
+            if (!prev || prev.id !== selectedTable.id) return prev;
+            return {
+              ...prev,
+              status: prev.status === 'Free' ? 'Occupied' : prev.status,
+              kotHistory: serverKotHistory,
+              currentBill: newTotalBill,
+              activeOrder: {
+                id: resolvedOrderId,
+                items: serverItems.length ? serverItems : (prev.activeOrder?.items || []),
+                totalAmount: newTotalBill,
+              },
+            };
+          });
+        } else {
+          const updater = prev => prev.map(t => {
+            if (t.id !== selectedTable.id && t.backendId !== selectedTable.backendId) return t;
+            return {
+              ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              kotHistory: serverKotHistory,
+              currentBill: newTotalBill,
+              activeOrder: {
+                id: resolvedOrderId,
+                items: serverItems.length ? serverItems : (t.activeOrder?.items || []),
+                totalAmount: newTotalBill,
+              },
+            };
+          });
+          setActiveTables(updater);
+          setSelectedTable(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              status: prev.status === 'Free' ? 'Occupied' : prev.status,
+              kotHistory: serverKotHistory,
+              currentBill: newTotalBill,
+              activeOrder: {
+                id: resolvedOrderId,
+                items: serverItems.length ? serverItems : (prev.activeOrder?.items || []),
+                totalAmount: newTotalBill,
+              },
+            };
+          });
+        }
+      }
+
+      setCart([]);
+      lastAnyItemAddedRef.current = 0;
+      setExpandedNoteItemId(null);
+      setIsKotSuccess(true);
+      addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
+      setTimeout(() => setIsKotSuccess(false), 2000);
+    } catch (err) {
+      console.error('[KOT] API failed:', err.message);
+      // Cart is retained so the cashier can retry immediately or add more items.
+      addNotification(
+        'KOT Not Sent to Kitchen',
+        `${err.message || 'Network error'}. Cart kept — tap KOT again to retry.`,
+        'error'
+      );
+    } finally {
+      isSubmittingKotRef.current = false;
+      setIsKotSending(false);
+    }
   };
 
   const stats = [
