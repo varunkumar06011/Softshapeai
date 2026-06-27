@@ -393,3 +393,45 @@ export async function setSyncMeta(key, value) {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+// ── settlement guards ───────────────────────────────────────────────────────
+// Persisted across app restarts so a queued offline settlement cannot be
+// double-submitted and settled tables cannot be resurrected by stale sync events.
+
+const SETTLED_ORDERS_KEY = 'settledOrderIds';
+const SETTLED_TABLES_KEY = 'settledTableIds';
+
+export async function getSettledOrderIds() {
+  const value = await getSyncMeta(SETTLED_ORDERS_KEY);
+  return Array.isArray(value) ? new Set(value) : new Set();
+}
+
+export async function setSettledOrderIds(ids) {
+  return setSyncMeta(SETTLED_ORDERS_KEY, Array.from(ids));
+}
+
+export async function clearSettledOrderId(id) {
+  const ids = await getSettledOrderIds();
+  ids.delete(id);
+  return setSettledOrderIds(ids);
+}
+
+export async function getSettledTableIds() {
+  const value = await getSyncMeta(SETTLED_TABLES_KEY);
+  return Array.isArray(value) ? new Set(value) : new Set();
+}
+
+export async function setSettledTableIds(ids) {
+  return setSyncMeta(SETTLED_TABLES_KEY, Array.from(ids));
+}
+
+export async function clearSettledTableId(id) {
+  const ids = await getSettledTableIds();
+  ids.delete(id);
+  return setSettledTableIds(ids);
+}
+
+export async function clearAllSettlementGuards() {
+  await setSyncMeta(SETTLED_ORDERS_KEY, []);
+  await setSyncMeta(SETTLED_TABLES_KEY, []);
+}

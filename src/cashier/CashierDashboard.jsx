@@ -37,6 +37,13 @@ import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
+import {
+  getSettledOrderIds,
+  setSettledOrderIds,
+  getSettledTableIds,
+  setSettledTableIds,
+  clearAllSettlementGuards,
+} from '../utils/offlineDB';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 function getVenueTableLabel(sectionTag, tableNumber) {
@@ -213,7 +220,7 @@ const HighlightedText = ({ text, highlight }) => {
 const CashierDashboard = ({ onLogout }) => {
   console.log('[BUILD] CashierDashboard loaded — version 2025-06-13-v2');
   const { user, restaurant } = useAuth();
-  const { isOffline, hasPending, pendingCount, triggerSync } = useSyncStatus();
+  const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
@@ -385,11 +392,57 @@ const CashierDashboard = ({ onLogout }) => {
   const [isReprintingBill, setIsReprintingBill] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   // Set of orderIds that have already been settled this session — prevents double-settlement
-  const [settledOrderIds, setSettledOrderIds] = useState(() => new Set());
+  const [settledOrderIds, setSettledOrderIdsState] = useState(() => new Set());
   // Set of table backendIds settled this session — prevents socket/sync from reverting UI
-  const [settledTableIds, setSettledTableIds] = useState(() => new Set());
+  const [settledTableIds, setSettledTableIdsState] = useState(() => new Set());
   const settledTableIdsRef = useRef(settledTableIds);
   useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
+
+  // Load persisted settlement guards on mount (survives app restart while offline)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [orderIds, tableIds] = await Promise.all([
+        getSettledOrderIds(),
+        getSettledTableIds(),
+      ]);
+      if (cancelled) return;
+      setSettledOrderIdsState(orderIds);
+      setSettledTableIdsState(tableIds);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persisted setters: update state and write to IndexedDB
+  const setSettledOrderIds = useCallback((updater) => {
+    setSettledOrderIdsState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setSettledOrderIds(next).catch(err => console.error('[SettlementGuard] Failed to persist orderIds:', err));
+      return next;
+    });
+  }, []);
+
+  const setSettledTableIds = useCallback((updater) => {
+    setSettledTableIdsState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setSettledTableIds(next).catch(err => console.error('[SettlementGuard] Failed to persist tableIds:', err));
+      return next;
+    });
+  }, []);
+
+  // Once all pending actions have synced, settlement guards are no longer needed.
+  // Clear them so future sessions can settle the same table/order again if needed.
+  useEffect(() => {
+    if (!hasPending && lastSyncAt && (settledOrderIds.size > 0 || settledTableIds.size > 0)) {
+      clearAllSettlementGuards()
+        .then(() => {
+          setSettledOrderIdsState(new Set());
+          setSettledTableIdsState(new Set());
+        })
+        .catch(err => console.error('[SettlementGuard] Failed to clear guards:', err));
+    }
+  }, [hasPending, lastSyncAt, settledOrderIds.size, settledTableIds.size]);
+
   const recentlyTerminatedRef = useRef((() => {
     try {
       const raw = localStorage.getItem(getTenantScopedKey('cashier_recently_terminated'));
