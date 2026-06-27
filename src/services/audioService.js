@@ -1,3 +1,5 @@
+import { hapticLight, hapticSuccess } from '../shared/hooks/useHaptics';
+
 let globalAudioCtx = null;
 let listeners = new Set();
 let isUnlocked = false;
@@ -64,12 +66,8 @@ export function unlockAudioContext() {
 if (typeof window !== 'undefined') {
   const handleInteraction = () => {
     unlockAudioContext();
-    // Vibrate briefly to warm up/unlock Vibration API if needed
-    try {
-      if (navigator.vibrate) {
-        navigator.vibrate(10);
-      }
-    } catch (e) {}
+    // Haptic feedback to warm up vibration API
+    hapticLight();
 
     window.removeEventListener('click', handleInteraction);
     window.removeEventListener('touchstart', handleInteraction);
@@ -122,11 +120,5 @@ export function playChimeTone() {
   }
 
   // Sync physical vibration with the sound
-  try {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate([150, 100, 200]);
-    }
-  } catch (e) {
-    console.warn("[AudioService] Vibration failed or blocked:", e);
-  }
+  hapticSuccess();
 }

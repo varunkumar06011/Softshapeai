@@ -63,6 +63,8 @@ import { fetchCaptainTarget } from '../services/captainTargetService';
 
 import { playChimeTone, unlockAudioContext } from '../services/audioService';
 
+import { hapticSuccess } from '../shared/hooks/useHaptics';
+
 
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
@@ -173,7 +175,7 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
   const handleAccept = () => {
 
-    if (navigator.vibrate) navigator.vibrate(200);
+    hapticSuccess();
 
     onAccept(call);
 

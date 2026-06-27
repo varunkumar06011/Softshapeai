@@ -1,6 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
+import { motion, AnimatePresence } from 'framer-motion';
+
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater } from 'lucide-react';
+
+import { modalBackdropVariants, modalContentVariants, bottomSheetVariants, springs, useMotionConfig, staggerContainer, staggerItem } from '../shared/animations';
 
 import { generateCallId } from '../services/customerSessionService';
 
@@ -19,8 +23,6 @@ import { fetchPublicMenu } from '../services/unifiedMenuService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
 import VariantPicker from '../shared/components/VariantPicker';
-
-import { motion, AnimatePresence } from 'framer-motion';
 
 import {
 
@@ -120,6 +122,8 @@ const flattenSections = (payload) => {
 
 
 export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
+
+  const { shouldReduce } = useMotionConfig();
 
   const getEngagement = useCallback((id, name) => {
 
@@ -1263,7 +1267,12 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
       >
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
+        >
 
           {itemsToDisplay.map(item => {
 
@@ -1271,9 +1280,12 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
             return (
 
-              <div
+              <motion.div
 
                 key={item.id}
+
+                variants={staggerItem}
+                transition={shouldReduce ? { duration: 0 } : springs.gentle}
 
                 onClick={() => setPreviewItem(item)}
 
@@ -1409,13 +1421,13 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
                 </div>
 
-              </div>
+              </motion.div>
 
             );
 
           })}
 
-        </div>
+        </motion.div>
 
       </div>
 
@@ -1568,11 +1580,29 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
       {/* Quick Preview Modal */}
 
+      <AnimatePresence>
+
       {previewItem && (
 
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setPreviewItem(null)}>
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+          onClick={() => setPreviewItem(null)}
+        >
 
-          <div className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalContentVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.standard}
+            className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)]"
+            onClick={e => e.stopPropagation()}
+          >
 
             <div className="h-64 w-full relative">
 
@@ -1728,11 +1758,13 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
             </div>
 
-          </div>
+          </motion.div>
 
-        </div>
+        </motion.div>
 
       )}
+
+      </AnimatePresence>
 
 
 
@@ -1756,11 +1788,29 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
       {/* View Order Modal (Cart Drawer) */}
 
+      <AnimatePresence>
+
       {isOrderModalOpen && (
 
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsOrderModalOpen(false)}>
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/40 backdrop-blur-sm"
+          onClick={() => setIsOrderModalOpen(false)}
+        >
 
-          <div className="bg-white rounded-t-[40px] w-full max-h-[85vh] flex flex-col overflow-hidden shadow-[0_-40px_80px_rgba(0,0,0,0.2)] animate-in slide-in-from-bottom-full duration-300" onClick={e => e.stopPropagation()}>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={bottomSheetVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.gentle}
+            className="bg-white rounded-t-[40px] w-full max-h-[85vh] flex flex-col overflow-hidden shadow-[0_-40px_80px_rgba(0,0,0,0.2)]"
+            onClick={e => e.stopPropagation()}
+          >
 
             <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
 
@@ -1864,11 +1914,13 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
             </div>
 
-          </div>
+          </motion.div>
 
-        </div>
+        </motion.div>
 
       )}
+
+      </AnimatePresence>
 
 
 
@@ -1878,15 +1930,26 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
         {showSuccessModal && (
 
-          <div className="fixed inset-0 z-[101] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalBackdropVariants}
+            transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+            className="fixed inset-0 z-[101] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm"
+          >
 
             <motion.div
 
-              initial={{ scale: 0.8, opacity: 0 }}
+              initial="initial"
 
-              animate={{ scale: 1, opacity: 1 }}
+              animate="animate"
 
-              exit={{ scale: 0.8, opacity: 0 }}
+              exit="exit"
+
+              variants={modalContentVariants}
+
+              transition={shouldReduce ? { duration: 0 } : springs.gentle}
 
               className="bg-white rounded-[40px] p-8 max-w-sm w-full text-center shadow-2xl relative overflow-hidden"
 
@@ -1920,7 +1983,7 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
             </motion.div>
 
-          </div>
+          </motion.div>
 
         )}
 

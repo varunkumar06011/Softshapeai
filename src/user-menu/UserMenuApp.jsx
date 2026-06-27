@@ -5,6 +5,7 @@ import SliceChallenge from './SliceChallenge';
 import BarMenu from './BarMenu';
 import { motion } from 'framer-motion';
 import { UtensilsCrossed, GlassWater, Sparkles, ArrowRight, AlertTriangle } from 'lucide-react';
+import { springs } from '../shared/animations';
 
 export default function UserMenuApp() {
   const { slug, tableId, sig } = useParams();
@@ -52,7 +53,7 @@ export default function UserMenuApp() {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ ...springs.gentle }}
           className="mb-4 sm:mb-8 text-center z-10"
         >
           <img
@@ -72,7 +73,7 @@ export default function UserMenuApp() {
           <motion.button
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
+            transition={{ ...springs.gentle, delay: 0.1 }}
             onClick={() => setView('engagement')}
             className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-5 sm:p-8 shadow-[0_20px_40px_rgba(255,77,79,0.04)] transition-all duration-500 hover:border-[#FF4D4F] hover:bg-white hover:translate-y-[-8px] text-left cursor-pointer"
           >
@@ -98,7 +99,7 @@ export default function UserMenuApp() {
           <motion.button
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
+            transition={{ ...springs.gentle, delay: 0.2 }}
             onClick={() => setView('bar-menu')}
             className="group relative flex flex-col items-start rounded-[32px] border-2 border-white bg-white/80 backdrop-blur-xl p-5 sm:p-8 shadow-[0_20px_40px_rgba(183,28,28,0.04)] transition-all duration-500 hover:border-[#B71C1C] hover:bg-white hover:translate-y-[-8px] text-left cursor-pointer"
           >

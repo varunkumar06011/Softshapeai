@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ArrowRight } from 'lucide-react';
+import { hapticMedium } from '../shared/hooks/useHaptics';
 
 const FOOD_ITEMS = ['🍔', '🍕', '🥟', '🍣', '🍟'];
 
@@ -32,8 +33,8 @@ export default function SliceChallenge({ onComplete, onSkip }) {
   const handleSlice = (e) => {
     if (isSliced || round >= 3) return;
 
-    // Vibrate feedback if supported
-    if (navigator.vibrate) navigator.vibrate(50);
+    // Haptic feedback
+    hapticMedium();
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX || (e.touches && e.touches[0].clientX) || rect.left + rect.width / 2;

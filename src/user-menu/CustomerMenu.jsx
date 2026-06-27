@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, AlertTriangle } from 'lucide-react';
+import { modalBackdropVariants, modalContentVariants, bottomSheetVariants, springs, useMotionConfig, staggerContainer, staggerItem } from '../shared/animations';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { fetchPublicMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
@@ -10,6 +12,7 @@ import { apiUrl } from '../services/apiConfig';
 
 
 export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, discountPercentage = 0 }) {
+  const { shouldReduce } = useMotionConfig();
   const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
   const [unifiedMenu, setUnifiedMenu] = useState(null);
   const [unifiedLoading, setUnifiedLoading] = useState(true);
@@ -503,12 +506,19 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
 
         {/* Regular Menu List */}
         {activeCategory !== 'Today Specials' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
+          >
             {filteredMenu.map(item => {
               const qty = cart.find(i => i.n === item.n)?.q || 0;
               return (
-                <div
+                <motion.div
                   key={item.n}
+                  variants={staggerItem}
+                  transition={shouldReduce ? { duration: 0 } : springs.gentle}
                   onClick={() => setPreviewItem(item)}
                   className="relative hover:z-10 cursor-pointer bg-white border border-red-50 rounded-2xl xs:rounded-[28px] p-3 xs:p-4 flex gap-3 xs:gap-5 items-center group hover:shadow-[0_15px_30px_rgba(255,77,79,0.08)] transition-all duration-300 shadow-[0_5px_15px_rgba(0,0,0,0.02)] hover:border-red-100"
                 >
@@ -572,10 +582,10 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         )}
       </div>
 
@@ -655,9 +665,26 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
       )}
 
       {/* Quick Preview Modal */}
+      <AnimatePresence>
       {previewItem && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setPreviewItem(null)}>
-          <div className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+          onClick={() => setPreviewItem(null)}
+        >
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalContentVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.standard}
+            className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.2)]"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="h-64 w-full relative">
               {previewItem.img ? (
                 <img src={previewItem.img} alt={previewItem.n} loading="lazy" decoding="async" className="w-full h-full object-cover" />
@@ -726,14 +753,32 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
                 )}
               </div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* View Order Modal */}
+      <AnimatePresence>
       {isOrderModalOpen && (
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsOrderModalOpen(false)}>
-          <div className="bg-white rounded-t-[40px] w-full max-h-[85vh] flex flex-col overflow-hidden shadow-[0_-40px_80px_rgba(0,0,0,0.2)] animate-in slide-in-from-bottom-full duration-300" onClick={e => e.stopPropagation()}>
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/40 backdrop-blur-sm"
+          onClick={() => setIsOrderModalOpen(false)}
+        >
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={bottomSheetVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.gentle}
+            className="bg-white rounded-t-[40px] w-full max-h-[85vh] flex flex-col overflow-hidden shadow-[0_-40px_80px_rgba(0,0,0,0.2)]"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-2xl font-black text-gray-900">Your Order</h2>
@@ -820,9 +865,10 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
                 Confirm Order
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Table2,
@@ -37,6 +38,7 @@ import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getTenantScopedKey } from '../utils/cacheKeys';
+import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
 
@@ -44,7 +46,6 @@ import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard'
 import PrinterSettingsPage from './printers/PrinterSettingsPage';
 import TableQRCodes from './TableQRCodes';
 import PriceProfilesPage from './PriceProfilesPage';
-import { motion } from 'framer-motion';
 import OutletsOverview from './OutletsOverview';
 
 const navItems = [
@@ -77,6 +78,7 @@ function getInventoryLabel(enabledModules) {
 }
 
 const AdminDashboard = ({ role = 'admin', onLogout }) => {
+  const { shouldReduce } = useMotionConfig();
   const [page, setPage] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('admin_active_tab'));
     if (role === 'manager' && saved !== 'tables' && saved !== 'captains') return 'tables';
@@ -424,7 +426,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {kitchenLowStockAlerts.map((alert) => (
             <div
               key={alert.ingredientId}
-              className="bg-amber-50 border border-amber-300 rounded-xl p-3 shadow-lg flex items-start gap-3 animate-in slide-in-from-top duration-300"
+              className="bg-amber-50 border border-amber-300 rounded-xl p-3 shadow-lg flex items-start gap-3"
             >
               <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
               <div className="flex-1">
@@ -444,10 +446,25 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
         </div>
       )}
 
+      <AnimatePresence>
       {spireOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-md animate-in fade-in duration-500" onClick={() => setSpireOpen(false)} />
-          <div className="relative w-full max-w-[450px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalBackdropVariants}
+            transition={shouldReduce ? { duration: 0 } : { duration: 0.3 }}
+            className="absolute inset-0 bg-black/40 backdrop-blur-md"
+            onClick={() => setSpireOpen(false)}
+          />
+          <motion.div
+            initial={{ x: '100%', opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '100%', opacity: 0 }}
+            transition={shouldReduce ? { duration: 0 } : springs.gentle}
+            className="relative w-full max-w-[450px] bg-white h-full shadow-2xl flex flex-col"
+          >
             <div className="bg-[#B71C1C] text-white p-8 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -468,7 +485,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                 </div>
               </div>
 
-              <div className="bg-white p-8 rounded-[40px] border border-red-100 shadow-sm space-y-6 animate-in zoom-in-95 duration-500">
+              <div className="bg-white p-8 rounded-[40px] border border-red-100 shadow-sm space-y-6">
                 <div className="flex items-center gap-2 text-[#B71C1C]">
                   <Sparkles size={18} />
                   <p className="text-[11px] font-black uppercase tracking-[0.2em]">Spire Intelligence</p>
@@ -506,9 +523,10 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                 <button className="h-14 w-14 bg-[#B71C1C] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-100 hover:scale-105 active:scale-95 transition-all"><Send size={24} /></button>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

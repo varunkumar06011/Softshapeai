@@ -32,9 +32,14 @@ import {
   Settings,
   Clock,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Filter,
   Star,
   ArrowRightLeft,
+  Plus,
+  ArrowUp,
+  ArrowDown,
   GlassWater,
   Utensils,
   Trash2,
@@ -797,23 +802,122 @@ export function MenuPage({ onAddDish }) {
   // ── Dynamic categories ────────────────────────────────────────────────
   const [dbCategories, setDbCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [editingCatId, setEditingCatId] = useState(null);
+  const [editingCatName, setEditingCatName] = useState('');
+  const [newCatName, setNewCatName] = useState('');
+  const [catSaving, setCatSaving] = useState(false);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      setCategoriesLoading(true);
+      const res = await fetch(`${API_BASE}/api/menu/categories`);
+      if (!res.ok) throw new Error('Failed to fetch categories');
+      const data = await res.json();
+      setDbCategories(Array.isArray(data) ? data.filter(c => c.isActive !== false) : []);
+    } catch (err) {
+      console.error('[MenuPage] Failed to load categories:', err);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        setCategoriesLoading(true);
-        const res = await fetch(`${API_BASE}/api/menu/categories`);
-        if (!res.ok) throw new Error('Failed to fetch categories');
-        const data = await res.json();
-        setDbCategories(Array.isArray(data) ? data.filter(c => c.isActive !== false) : []);
-      } catch (err) {
-        console.error('[MenuPage] Failed to load categories:', err);
-      } finally {
-        setCategoriesLoading(false);
-      }
-    };
     fetchCategories();
-  }, []);
+  }, [fetchCategories]);
+
+  // Category item counts from adminItems
+  const categoryItemCounts = useMemo(() => {
+    const counts = {};
+    adminItems.forEach(item => {
+      const cat = item.c || 'Uncategorized';
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [adminItems]);
+
+  const handleCategoryRename = async (id, name) => {
+    if (!name.trim()) { setEditingCatId(null); return; }
+    setCatSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to rename category');
+      }
+      await fetchCategories();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCatSaving(false);
+      setEditingCatId(null);
+    }
+  };
+
+  const handleCategoryReorder = async (id, newSortOrder) => {
+    setCatSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ sortOrder: newSortOrder }),
+      });
+      if (!res.ok) throw new Error('Failed to reorder category');
+      await fetchCategories();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCatSaving(false);
+    }
+  };
+
+  const handleCategoryDelete = async (id) => {
+    if (!confirm('Delete this category? Items using it will become Uncategorized.')) return;
+    setCatSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (res.status === 400) {
+        const err = await res.json();
+        alert(err.error);
+        return;
+      }
+      if (!res.ok) throw new Error('Failed to delete category');
+      await fetchCategories();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCatSaving(false);
+    }
+  };
+
+  const handleCategoryAdd = async () => {
+    if (!newCatName.trim()) return;
+    setCatSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ name: newCatName.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create category');
+      }
+      setNewCatName('');
+      await fetchCategories();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCatSaving(false);
+    }
+  };
 
   const handleEdit = async (item) => {
     setEditingItem({
@@ -1165,6 +1269,100 @@ export function MenuPage({ onAddDish }) {
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
       {filter ? ` matching "${filter}"` : ""} · synced from backend
     </p>
+
+    {/* ── Category Manager ── */}
+    <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setShowCategoryManager(!showCategoryManager)}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
+        <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
+          <Layers size={16} /> Manage Categories
+          <span className="text-xs font-normal text-gray-400">({dbCategories.length})</span>
+        </span>
+        {showCategoryManager ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+      </button>
+      {showCategoryManager && (
+        <div className="p-3 space-y-1.5">
+          {categoriesLoading ? (
+            <p className="text-xs text-gray-400 py-2">Loading categories...</p>
+          ) : dbCategories.length === 0 ? (
+            <p className="text-xs text-gray-400 py-2">No categories yet. Add one below.</p>
+          ) : (
+            dbCategories.map((cat, idx) => (
+              <div key={cat.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 group">
+                <div className="flex flex-col">
+                  <button
+                    onClick={() => handleCategoryReorder(cat.id, cat.sortOrder - 1)}
+                    disabled={catSaving || idx === 0}
+                    className="text-gray-300 hover:text-gray-600 disabled:opacity-30"
+                  >
+                    <ArrowUp size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleCategoryReorder(cat.id, cat.sortOrder + 1)}
+                    disabled={catSaving || idx === dbCategories.length - 1}
+                    className="text-gray-300 hover:text-gray-600 disabled:opacity-30"
+                  >
+                    <ArrowDown size={14} />
+                  </button>
+                </div>
+                {editingCatId === cat.id ? (
+                  <input
+                    autoFocus
+                    value={editingCatName}
+                    onChange={(e) => setEditingCatName(e.target.value)}
+                    onBlur={() => handleCategoryRename(cat.id, editingCatName)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCategoryRename(cat.id, editingCatName);
+                      if (e.key === 'Escape') setEditingCatId(null);
+                    }}
+                    className="flex-1 px-2 py-1 border border-[#E53935] rounded text-sm focus:outline-none"
+                    disabled={catSaving}
+                  />
+                ) : (
+                  <span
+                    className="flex-1 text-sm font-medium text-gray-700 cursor-pointer hover:text-[#E53935]"
+                    onClick={() => { setEditingCatId(cat.id); setEditingCatName(cat.name); }}
+                  >
+                    {cat.name}
+                  </span>
+                )}
+                <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {categoryItemCounts[cat.name] || 0}
+                </span>
+                <button
+                  onClick={() => handleCategoryDelete(cat.id)}
+                  disabled={catSaving}
+                  className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))
+          )}
+          {/* Add new category */}
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            <Plus size={16} className="text-gray-400" />
+            <input
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCategoryAdd(); }}
+              placeholder="New category name..."
+              className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-[#E53935]"
+              disabled={catSaving}
+            />
+            <button
+              onClick={handleCategoryAdd}
+              disabled={catSaving || !newCatName.trim()}
+              className="px-3 py-1.5 bg-[#E53935] text-white rounded text-xs font-bold hover:bg-[#B71C1C] disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
 
     {/* Outlet Selector — only when tenant has more than one outlet type */}
     {outlets.length > 1 && (
@@ -6199,6 +6397,52 @@ export function BarMenuPage() {
   const [activeVenueId, setActiveVenueId] = useState(null);
   const [filter, setFilter] = useState('');
 
+  // ── Dynamic categories for bar menu ────────────────────────────────────
+  const [dbCategories, setDbCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [showAddNewCatInline, setShowAddNewCatInline] = useState(false);
+  const [newCatInline, setNewCatInline] = useState('');
+
+  const fetchBarCategories = useCallback(async () => {
+    try {
+      setCategoriesLoading(true);
+      const res = await fetch(`${API_BASE}/api/menu/categories`);
+      if (!res.ok) throw new Error('Failed to fetch categories');
+      const data = await res.json();
+      setDbCategories(Array.isArray(data) ? data.filter(c => c.isActive !== false) : []);
+    } catch (err) {
+      console.error('[BarMenuPage] Failed to load categories:', err);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBarCategories();
+  }, [fetchBarCategories]);
+
+  const handleAddNewCatInline = async () => {
+    if (!newCatInline.trim()) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ name: newCatInline.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create category');
+      }
+      const created = await res.json();
+      await fetchBarCategories();
+      setAddCategory(created.name);
+      setShowAddNewCatInline(false);
+      setNewCatInline('');
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   // ── Venue/section resolution from actual tenant venues (bar-only) ──
   const { venueColumns } = useVenueSections('bar');
 
@@ -6768,9 +7012,44 @@ export function BarMenuPage() {
 
             <div>
               <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Category</label>
-              <input value={addCategory} onChange={(e) => setAddCategory(e.target.value)}
-                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-                placeholder="e.g. Starters" />
+              <select
+                value={addCategory}
+                onChange={(e) => {
+                  if (e.target.value === '__new__') {
+                    setShowAddNewCatInline(true);
+                  } else {
+                    setAddCategory(e.target.value);
+                    setShowAddNewCatInline(false);
+                  }
+                }}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935] bg-white"
+                disabled={categoriesLoading}
+              >
+                <option value="">{categoriesLoading ? 'Loading...' : 'Select a category'}</option>
+                {dbCategories.map(cat => (
+                  <option key={cat.id} value={cat.name}>{cat.name}</option>
+                ))}
+                <option value="__new__">+ Add new category…</option>
+              </select>
+              {showAddNewCatInline && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={newCatInline}
+                    onChange={(e) => setNewCatInline(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddNewCatInline(); }}
+                    placeholder="New category name..."
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                  />
+                  <button
+                    onClick={handleAddNewCatInline}
+                    disabled={!newCatInline.trim()}
+                    className="px-3 py-2 bg-[#E53935] text-white rounded-xl text-xs font-bold hover:bg-[#B71C1C] disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
             </div>
 
             {addMenuType === 'FOOD' && (

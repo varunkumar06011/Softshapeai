@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
+import AnimatedPage from "./shared/components/AnimatedPage";
 import PortalSelection from "./shared/components/PortalSelection";
 import LoginScreen from "./shared/components/LoginScreen";
 import AdminDashboard from "./admin/AdminDashboard";
@@ -242,29 +244,38 @@ function App() {
         <BrowserRouter>
           <AppUpdateBanner />
           <ThemeInjector />
-          <Routes>
-            <Route path="/" element={<PortalSelectionWrapper />} />
-            <Route path="/onboarding" element={<OnboardingWizard />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/admin" element={<AdminLoginWrapper />} />
-            <Route path="/admin/dashboard/*" element={<ErrorBoundary><AdminDashboardWrapper /></ErrorBoundary>} />
-            <Route path="/admin/qr-codes" element={<TableQRCodesWrapper />} />
-            <Route path="/cashier" element={<CashierLoginWrapper />} />
-            <Route path="/cashier/dashboard" element={<ErrorBoundary><CashierDashboardWrapper /></ErrorBoundary>} />
-            <Route path="/captain" element={<CaptainLoginWrapper />} />
-            <Route path="/captain/dashboard/*" element={<ErrorBoundary><CaptainAppWrapper /></ErrorBoundary>} />
-            <Route path="/kitchen" element={<ErrorBoundary><KitchenView /></ErrorBoundary>} />
-            <Route path="/print-station" element={<ErrorBoundary><PrintStation /></ErrorBoundary>} />
-            <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
-            <Route path="/user-menu/:slug" element={<UserMenuApp />} />
-            <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <AnimatedRoutes />
         </BrowserRouter>
         </SyncStatusProvider>
       </AuthProvider>
     </ErrorBoundary>
+  );
+}
+
+function AnimatedRoutes() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<AnimatedPage><PortalSelectionWrapper /></AnimatedPage>} />
+        <Route path="/onboarding" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
+        <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
+        <Route path="/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
+        <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
+        <Route path="/admin/dashboard/*" element={<ErrorBoundary><AnimatedPage><AdminDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/admin/qr-codes" element={<AnimatedPage><TableQRCodesWrapper /></AnimatedPage>} />
+        <Route path="/cashier" element={<AnimatedPage><CashierLoginWrapper /></AnimatedPage>} />
+        <Route path="/cashier/dashboard" element={<ErrorBoundary><AnimatedPage><CashierDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/captain" element={<AnimatedPage><CaptainLoginWrapper /></AnimatedPage>} />
+        <Route path="/captain/dashboard/*" element={<ErrorBoundary><AnimatedPage><CaptainAppWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/kitchen" element={<ErrorBoundary><AnimatedPage><KitchenView /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/print-station" element={<ErrorBoundary><AnimatedPage><PrintStation /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
+        <Route path="/user-menu/:slug" element={<UserMenuApp />} />
+        <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AnimatePresence>
   );
 }
 

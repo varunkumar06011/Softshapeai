@@ -1,12 +1,16 @@
 import { useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { isBeerItem } from '../../utils/itemHelpers';
+import { modalBackdropVariants, bottomSheetVariants, springs, useMotionConfig } from '../animations';
 
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 const BEER_BOTTLE_ML = 650;
 
 export default function VariantPicker({ item, onSelect, onClose }) {
+  const { shouldReduce } = useMotionConfig();
+
   useEffect(() => {
     if (!item) return;
     const handleEsc = (e) => {
@@ -29,15 +33,26 @@ export default function VariantPicker({ item, onSelect, onClose }) {
   // Beer items should only show 650ml bottle option
   if (isBeer) {
     return (
-      <div
+      <AnimatePresence>
+      <motion.div
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        variants={modalBackdropVariants}
+        transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
         className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
         onClick={onClose}
         role="dialog"
         aria-modal="true"
         aria-label={`Select variant for ${item.n || item.name}`}
       >
-        <div
-          className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4"
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={bottomSheetVariants}
+          transition={shouldReduce ? { duration: 0 } : springs.gentle}
+          className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl"
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-start justify-between mb-5">
@@ -73,21 +88,33 @@ export default function VariantPicker({ item, onSelect, onClose }) {
               </span>
             </button>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
+      </AnimatePresence>
     );
   }
 
   return (
-    <div
+    <AnimatePresence>
+    <motion.div
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      variants={modalBackdropVariants}
+      transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Select variant for ${item.n}`}
     >
-      <div
-        className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4"
+      <motion.div
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        variants={bottomSheetVariants}
+        transition={shouldReduce ? { duration: 0 } : springs.gentle}
+        className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-5">
@@ -160,7 +187,8 @@ export default function VariantPicker({ item, onSelect, onClose }) {
             ))
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    </AnimatePresence>
   );
 }

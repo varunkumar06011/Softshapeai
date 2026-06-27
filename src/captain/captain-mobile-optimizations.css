@@ -61,10 +61,10 @@
   }
 }
 
-/* Faster transitions for mobile */
+/* Faster transitions for mobile — scoped to avoid fighting framer-motion */
 @media (max-width: 768px) {
-  * {
-    transition-duration: 150ms !important; /* Reduce from 300ms */
+  *:not([style*="transform"]) {
+    transition-duration: 150ms !important;
   }
 }
 

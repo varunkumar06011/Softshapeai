@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
+import AnimatedPage from './shared/components/AnimatedPage'
 import './index.css'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { MenuProvider } from './context/MenuContext'
@@ -35,15 +37,24 @@ function CaptainAppWrapper() {
   )
 }
 
+function AnimatedCaptainRoutes() {
+  const location = useLocation()
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/captain" element={<AnimatedPage><CaptainLoginWrapper /></AnimatedPage>} />
+        <Route path="/captain/dashboard/*" element={<ErrorBoundary><AnimatedPage><CaptainAppWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="*" element={<Navigate to="/captain" replace />} />
+      </Routes>
+    </AnimatePresence>
+  )
+}
+
 function CaptainRoutes() {
   return (
     <BrowserRouter>
       <AppUpdateBanner />
-      <Routes>
-        <Route path="/captain" element={<CaptainLoginWrapper />} />
-        <Route path="/captain/dashboard/*" element={<CaptainAppWrapper />} />
-        <Route path="*" element={<Navigate to="/captain" replace />} />
-      </Routes>
+      <AnimatedCaptainRoutes />
     </BrowserRouter>
   )
 }

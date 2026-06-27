@@ -342,18 +342,19 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
       ) : (
         <MenuUpload
           onboardingMode={true}
+          restaurantType={restaurantType}
           onImported={(rows) => {
             const grouped = rows.reduce((acc, row) => {
               const cat = acc.find(c => c.name === row.category);
               if (activeTab === 'bar') {
-                const item = { name: row.name, price: row.price, availableSizes: [] };
+                const item = { name: row.name, price: row.price, availableSizes: [], ...(row.variants ? { variants: row.variants } : {}) };
                 if (cat) {
                   cat.items.push(item);
                 } else {
                   acc.push({ name: row.category, items: [item] });
                 }
               } else {
-                const item = { name: row.name, price: row.price, isVeg: row.isVeg, platforms: [] };
+                const item = { name: row.name, price: row.price, isVeg: row.isVeg, platforms: [], ...(row.variants ? { variants: row.variants } : {}) };
                 if (cat) {
                   cat.items.push(item);
                 } else {

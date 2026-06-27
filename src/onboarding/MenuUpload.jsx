@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf, Download } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
-export default function MenuUpload({ onImported, onboardingMode = false }) {
+export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [] }) {
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -13,6 +13,23 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
   const [isDragging, setIsDragging] = useState(false);
   const [editedRows, setEditedRows] = useState(null);
   const fileInputRef = useRef(null);
+  const [categorySuggestions, setCategorySuggestions] = useState(existingCategories);
+
+  // Fetch existing categories in non-onboarding mode if not provided via props
+  useEffect(() => {
+    if (!onboardingMode && existingCategories.length === 0) {
+      fetch(`${API_BASE}/api/menu/categories`)
+        .then(res => res.ok ? res.json() : [])
+        .then(data => {
+          if (Array.isArray(data)) {
+            setCategorySuggestions(data.filter(c => c.isActive !== false).map(c => c.name));
+          }
+        })
+        .catch(() => {});
+    } else {
+      setCategorySuggestions(existingCategories);
+    }
+  }, [onboardingMode, existingCategories]);
 
   const handleFileSelect = (selected) => {
     if (!selected) return;
@@ -65,6 +82,9 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (restaurantType) {
+        formData.append('restaurantType', restaurantType);
+      }
 
       const res = await fetch(`${API_BASE}/api/menu/upload`, {
         method: 'POST',
@@ -231,6 +251,7 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
                     <th className="py-2 pr-2">Category</th>
                     <th className="py-2 pr-2">Name</th>
                     <th className="py-2 pr-2">Price</th>
+                    <th className="py-2 pr-2">Variants</th>
                     <th className="py-2 pr-2">Veg</th>
                   </tr>
                 </thead>
@@ -238,26 +259,49 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
                   {(editedRows || parsed.rows).map((row, i) => (
                     <tr key={i} className="border-t border-gray-100">
                       <td className="py-1.5 pr-2">
-                        <input
-                          type="text"
-                          value={row.category}
-                          onChange={(e) => updateRow(i, 'category', e.target.value)}
-                          className="w-full px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
-                        />
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            list="category-suggestions"
+                            value={row.category}
+                            onChange={(e) => updateRow(i, 'category', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
+                          />
+                          {row.categoryInferred && (
+                            <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 text-blue-700 rounded-full whitespace-nowrap">AI</span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-1.5 pr-2 text-gray-900">{row.name}</td>
                       <td className="py-1.5 pr-2">
-                        <div className="flex items-center gap-1">
-                          <span className="text-gray-400 text-xs">₹</span>
-                          <input
-                            type="number"
-                            value={row.price}
-                            onChange={(e) => updateRow(i, 'price', parseFloat(e.target.value) || 0)}
-                            className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
-                            min="0"
-                            step="0.01"
-                          />
-                        </div>
+                        {row.variants ? (
+                          <span className="text-gray-500 text-xs">₹{row.price}</span>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-400 text-xs">₹</span>
+                            <input
+                              type="number"
+                              value={row.price}
+                              onChange={(e) => updateRow(i, 'price', parseFloat(e.target.value) || 0)}
+                              className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
+                              min="0"
+                              step="0.01"
+                            />
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {row.variants ? (
+                          <span className="text-gray-500 text-xs">
+                            {row.variants.map((v, vi) => (
+                              <span key={vi}>
+                                {vi > 0 && ' / '}{v.name} ₹{v.price}
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
                       </td>
                       <td className="py-1.5 pr-2">
                         {row.isVeg ? <Leaf size={14} className="text-green-600" /> : <span className="text-red-600 text-xs">Non-Veg</span>}
@@ -267,6 +311,9 @@ export default function MenuUpload({ onImported, onboardingMode = false }) {
                 </tbody>
               </table>
             </div>
+            <datalist id="category-suggestions">
+              {categorySuggestions.map(c => <option key={c} value={c} />)}
+            </datalist>
           </div>
 
           <div className="flex gap-3">

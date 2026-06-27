@@ -16,7 +16,7 @@
 }
 
 .animate-bounce-slow {
-  animation: bounce-slow 3s infinite ease-in-out;
+  animation: bounce-slow 3s infinite var(--ease-ios);
 }
 
 /* Restore scrollbars for better accessibility */
@@ -32,7 +32,7 @@
 
 
 .page-enter {
-  animation: fadeIn 0.4s ease-out;
+  animation: fadeIn 0.4s var(--ease-ios-decel) forwards;
 }
 
 @keyframes fadeIn {
@@ -41,7 +41,7 @@
 }
 
 .slide-in {
-  animation: slideIn 0.3s ease-out;
+  animation: slideIn 0.3s var(--ease-ios-decel) forwards;
 }
 
 @keyframes slideIn {
@@ -51,7 +51,7 @@
 
 /* Premium Card Hover */
 .premium-card {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s var(--ease-ios-decel);
 }
 
 .premium-card:hover {
@@ -114,11 +114,11 @@ input, select, button {
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.5s ease-out forwards;
+  animation: fadeIn 0.5s var(--ease-ios-decel) forwards;
 }
 
 .animate-slide-in {
-  animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideIn 0.4s var(--ease-ios-decel) forwards;
 }
 
 @keyframes bounceSubtle {
@@ -127,14 +127,14 @@ input, select, button {
 }
 
 .animate-bounce-subtle {
-  animation: bounceSubtle 2s infinite ease-in-out;
+  animation: bounceSubtle 2s infinite var(--ease-ios);
 }
 
 .animate-shimmer {
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.5s infinite var(--ease-ios);
 }
 
 .animate-shake {
-  animation: shake 0.4s ease-in-out;
+  animation: shake 0.4s var(--ease-ios);
 }
 

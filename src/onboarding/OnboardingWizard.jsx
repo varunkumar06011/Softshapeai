@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { stepVariants, springs, useMotionConfig } from '../shared/animations';
 import { purgeLegacyCaches } from '../utils/cacheKeys';
 import { apiFetch } from '../services/apiConfig';
 import StepRestaurant from './StepRestaurant';
@@ -91,12 +93,15 @@ const OnboardingWizard = () => {
   const navigate = useNavigate();
   const { setAuth } = useAuth();
 
+  const { shouldReduce } = useMotionConfig();
   const saved = loadSavedState();
   const [currentStepId, setCurrentStepId] = useState(saved?.currentStepId || 'restaurant');
+  const [stepDirection, setStepDirection] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [onboardResult, setOnboardResult] = useState(null);
   const [wizardData, setWizardData] = useState(saved?.wizardData || defaultWizardData);
+  const submittingRef = useRef(false);
 
   const steps = useMemo(
     () => computeSteps(wizardData.restaurant.restaurantType, wizardData.restaurant.outletCount, (wizardData.venues || []).length > 0),
@@ -163,12 +168,14 @@ const OnboardingWizard = () => {
 
   const handleNext = useCallback(() => {
     if (currentStepIndex >= 0 && currentStepIndex < maxStep - 1) {
+      setStepDirection(1);
       setCurrentStepId(steps[currentStepIndex + 1].id);
     }
   }, [currentStepIndex, maxStep, steps]);
 
   const handleBack = useCallback(() => {
     if (currentStepIndex > 0) {
+      setStepDirection(-1);
       setCurrentStepId(steps[currentStepIndex - 1].id);
     } else {
       navigate('/');
@@ -176,6 +183,8 @@ const OnboardingWizard = () => {
   }, [currentStepIndex, steps, navigate]);
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -297,6 +306,7 @@ const OnboardingWizard = () => {
       setError(err.message || 'Failed to create restaurant');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -384,10 +394,11 @@ const OnboardingWizard = () => {
         };
         return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} wizardSummary={summary} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
       case 'payment':
-        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} ownerEmail={wizardData.owner.email} ownerPhone={wizardData.owner.phone} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} onGoToPlan={() => setCurrentStepId('plan')} />;
+        return <StepPayment plan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} sessionId={wizardData.sessionId} ownerEmail={wizardData.owner.email} ownerPhone={wizardData.owner.phone} onPaymentComplete={(ref, proceed) => { updateWizardData('paymentReference', ref); if (proceed) handleNext(); }} onBack={handleBack} onGoToPlan={() => { setStepDirection(-1); setCurrentStepId('plan'); }} />;
       case 'confirm':
-        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToStep={(stepId) => setCurrentStepId(stepId)} onGoToOwnerStep={() => {
+        return <StepConfirmation wizardData={wizardData} onConfirm={handleSubmit} onBack={handleBack} loading={loading} error={error} onGoToStep={(stepId) => { setStepDirection(-1); setCurrentStepId(stepId); }} onGoToOwnerStep={() => {
           setWizardData(prev => ({ ...prev, owner: { ...prev.owner, emailVerificationProof: undefined, phoneVerificationProof: undefined } }));
+          setStepDirection(-1);
           setCurrentStepId('owner');
         }} />;
       default:
@@ -421,11 +432,38 @@ const OnboardingWizard = () => {
               <React.Fragment key={step.id}>
                 {/* Step: circle + label stacked */}
                 <div className="flex flex-col items-center shrink-0 overflow-visible" style={{ minWidth: 0 }}>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                    currentStepIndex >= idx ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'
-                  }`}>
-                    {currentStepIndex > idx ? '✓' : idx + 1}
-                  </div>
+                  <motion.div
+                    animate={{
+                      scale: currentStepIndex === idx ? 1.1 : 1,
+                      backgroundColor: currentStepIndex >= idx ? '#E53935' : '#E5E7EB',
+                    }}
+                    transition={shouldReduce ? { duration: 0 } : springs.snappy}
+                    className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white"
+                  >
+                    <AnimatePresence mode="wait">
+                      {currentStepIndex > idx ? (
+                        <motion.span
+                          key="check"
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0, opacity: 0 }}
+                          transition={shouldReduce ? { duration: 0 } : springs.snappy}
+                        >
+                          ✓
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="num"
+                          initial={{ scale: 0.5, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.5, opacity: 0 }}
+                          transition={shouldReduce ? { duration: 0 } : springs.snappy}
+                        >
+                          {idx + 1}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
                   <span className={`mt-1 text-[9px] text-center leading-tight w-14 break-words ${
                     currentStepIndex === idx ? 'text-[#E53935] font-semibold' : 'text-gray-500'
                   }`}>
@@ -434,9 +472,14 @@ const OnboardingWizard = () => {
                 </div>
                 {/* Connector line between steps */}
                 {idx < maxStep - 1 && (
-                  <div className={`flex-1 h-1 mt-5 mx-1 ${
-                    currentStepIndex > idx ? 'bg-[#E53935]' : 'bg-gray-200'
-                  }`} />
+                  <div className="flex-1 h-1 mt-5 mx-1 bg-gray-200 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={false}
+                      animate={{ width: currentStepIndex > idx ? '100%' : '0%' }}
+                      transition={shouldReduce ? { duration: 0 } : springs.standard}
+                      className="h-full bg-[#E53935] rounded-full"
+                    />
+                  </div>
                 )}
               </React.Fragment>
             ))}
@@ -444,8 +487,20 @@ const OnboardingWizard = () => {
         </div>
 
         {/* Step Content */}
-        <div className="bg-white rounded-2xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.04)] border border-gray-100">
-          {renderStep()}
+        <div className="bg-white rounded-2xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden">
+          <AnimatePresence mode="wait" custom={stepDirection}>
+            <motion.div
+              key={currentStepId}
+              custom={stepDirection}
+              variants={stepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={shouldReduce ? { duration: 0 } : springs.step}
+            >
+              {renderStep()}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* Global Back — most steps have their own, but this covers StepRestaurant */}

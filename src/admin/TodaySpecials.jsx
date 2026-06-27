@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Edit2, Trash2, Save, X, Star, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
 } from 'lucide-react';
@@ -6,8 +7,10 @@ import { useMenu } from '../context/MenuContext';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
+import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
 export default function TodaySpecials() {
+  const { shouldReduce } = useMotionConfig();
   const { allMenuItems, setGlobalMenu } = useMenu();
   const specials = allMenuItems ? allMenuItems.filter(i => i.isSpecial) : [];
 
@@ -158,7 +161,7 @@ export default function TodaySpecials() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-300">
+    <div className="max-w-6xl mx-auto space-y-6">
 
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -278,8 +281,15 @@ export default function TodaySpecials() {
 
         <div className="flex items-center gap-3">
           {pushStatus === 'success' && (
-            <span className="text-[10px] font-black uppercase tracking-widest text-green-600 flex items-center gap-1 animate-in fade-in zoom-in">
-              <CheckCircle2 size={14} /> Synced Successfully
+            <span className="text-[10px] font-black uppercase tracking-widest text-green-600 flex items-center gap-1">
+              <motion.span
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={shouldReduce ? { duration: 0 } : springs.snappy}
+                className="flex items-center gap-1"
+              >
+                <CheckCircle2 size={14} /> Synced Successfully
+              </motion.span>
             </span>
           )}
           <button
@@ -293,9 +303,24 @@ export default function TodaySpecials() {
       </div>
 
       {/* CREATE SPECIAL MODAL */}
+      <AnimatePresence>
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+        >
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalContentVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.standard}
+            className="bg-white w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+          >
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="text-sm font-black uppercase tracking-widest text-gray-900">
                 {formData.id ? 'Edit Special' : 'New Special'}
@@ -417,14 +442,30 @@ export default function TodaySpecials() {
                 <Save size={14} /> Save Special
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ASSIGN TARGETS MODAL */}
+      <AnimatePresence>
       {isTargetModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-[440px] rounded-[28px] overflow-hidden shadow-2xl shadow-black/15 animate-in zoom-in-95 duration-300 flex flex-col">
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+        >
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalContentVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.standard}
+            className="bg-white w-full max-w-[440px] rounded-[28px] overflow-hidden shadow-2xl shadow-black/15 flex flex-col"
+          >
             {!selectedCaptain ? (
               // Step 1: Select Captain
               <>
@@ -617,9 +658,10 @@ export default function TodaySpecials() {
                 </div>
               </>
             )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
