@@ -67,6 +67,19 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
   return parseResponse(res);
 }
 
+export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
+  const res = await fetchWithRetry(apiUrl(`/api/venues?restaurantId=${encodeURIComponent(restaurantId)}`), {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...getAuthHeaders(),
+    },
+  });
+  return parseResponse(res);
+}
+
 export async function updateTableStatus(tableId, status) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}/status`), {
     method: "PATCH",

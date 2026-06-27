@@ -62,7 +62,7 @@ import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { authService } from '../services/authService';
-import { fetchSections } from '../services/tableApi';
+import { useVenueSections } from '../hooks/useVenueSections';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
 
@@ -671,21 +671,15 @@ export function MenuPage({ onAddDish }) {
   const [adminLoading, setAdminLoading] = useState(true);
   const [activeOutlet, setActiveOutlet] = useState('restaurant'); // 'restaurant' | 'bar'
 
-  // ── Sections (tenant-scoped) drive the venue price columns dynamically ──
-  const [sections, setSections] = useState([]);
-  useEffect(() => {
-    fetchSections()
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data?.sections ?? []);
-        setSections(list);
-      })
-      .catch((err) => console.warn('[MenuPage] fetchSections failed:', err.message));
-  }, []);
+  // ── Venue/section resolution from actual tenant venues ──
+  const { outlets, venueColumns: currentVenueColumns } = useVenueSections(activeOutlet);
 
-  const currentVenueColumns = useMemo(() => {
-    const cols = sections.map(s => ({ id: s.id || s.name, label: s.name || 'Price' }));
-    return cols.length > 0 ? cols : [{ id: 'default', label: 'Price' }];
-  }, [sections]);
+  // Keep activeOutlet valid when outlets list changes
+  useEffect(() => {
+    if (outlets.length > 0 && !outlets.includes(activeOutlet)) {
+      setActiveOutlet(outlets[0]);
+    }
+  }, [outlets, activeOutlet]);
 
   const fetchAdminItems = useCallback(async () => {
     try {
@@ -744,11 +738,12 @@ export function MenuPage({ onAddDish }) {
   const items = useMemo(() => {
     return adminItems
       .filter((x) => {
-        // Apply venue filtering for both bar and restaurant outlets
+        // If only one venue column, show all items unfiltered
+        if (currentVenueColumns.length <= 1) return true;
         return showHiddenVenueItems || Number(x.venuePrices?.[activeVenueId] || 0) > 0;
       })
       .filter((x) => menuItemMatchesSearch(x, filter));
-  }, [filter, adminItems, activeVenueId, showHiddenVenueItems]);
+  }, [filter, adminItems, activeVenueId, showHiddenVenueItems, currentVenueColumns]);
 
   const activeVenue = currentVenueColumns.find((venue) => venue.id === activeVenueId) || currentVenueColumns[0];
 
@@ -1169,58 +1164,57 @@ export function MenuPage({ onAddDish }) {
       {filter ? ` matching "${filter}"` : ""} · synced from backend
     </p>
 
-    {/* Outlet Selector */}
-    <div className="mb-4 flex gap-2">
-      <button
-        onClick={() => setActiveOutlet('restaurant')}
-        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-          activeOutlet === 'restaurant'
-            ? 'bg-blue-500 text-white'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-        }`}
-      >
-        🍽️ Restaurant
-      </button>
-      <button
-        onClick={() => setActiveOutlet('bar')}
-        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-          activeOutlet === 'bar'
-            ? 'bg-purple-500 text-white'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-        }`}
-      >
-        🍺 Bar
-      </button>
-    </div>
-
-    {/* Venue-specific tabs - shown for both bar and restaurant outlets */}
-    <div className="mb-3 flex flex-col gap-2">
-      <div className="flex flex-wrap gap-2">
-        {currentVenueColumns.map((venue) => (
+    {/* Outlet Selector — only when tenant has more than one outlet type */}
+    {outlets.length > 1 && (
+      <div className="mb-4 flex gap-2">
+        {outlets.map((outlet) => (
           <button
-            key={venue.id}
-            type="button"
-            onClick={() => setActiveVenueId(venue.id)}
-            className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
-              activeVenueId === venue.id
-                ? 'border-[#E53935] bg-[#E53935] text-white'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+            key={outlet}
+            onClick={() => setActiveOutlet(outlet)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeOutlet === outlet
+                ? outlet === 'bar'
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-blue-500 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
-            {venue.label}
+            {outlet === 'bar' ? '🍺 Bar' : '🍽️ Restaurant'}
           </button>
         ))}
       </div>
-      <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
-        <input
-          type="checkbox"
-          checked={showHiddenVenueItems}
-          onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
-          className="accent-[#E53935]"
-        />
-        Show items hidden from {activeVenue.label}
-      </label>
-    </div>
+    )}
+
+    {/* Venue-specific tabs — only when more than one section exists */}
+    {currentVenueColumns.length > 1 && (
+      <div className="mb-3 flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
+          {currentVenueColumns.map((venue) => (
+            <button
+              key={venue.id}
+              type="button"
+              onClick={() => setActiveVenueId(venue.id)}
+              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
+                activeVenueId === venue.id
+                  ? 'border-[#E53935] bg-[#E53935] text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              {venue.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
+          <input
+            type="checkbox"
+            checked={showHiddenVenueItems}
+            onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
+            className="accent-[#E53935]"
+          />
+          Show items hidden from {activeVenue.label}
+        </label>
+      </div>
+    )}
 
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
       <table className="w-full text-left text-sm whitespace-nowrap">
@@ -6519,17 +6513,9 @@ export function BarMenuPage() {
   const [activeVenueId, setActiveVenueId] = useState(null);
   const [filter, setFilter] = useState('');
 
-  // ── Sections (tenant-scoped) drive the venue price columns dynamically ──
-  const [sections, setSections] = useState([]);
-  useEffect(() => {
-    fetchSections()
-      .then((data) => setSections(Array.isArray(data) ? data : (data?.sections ?? [])))
-      .catch((err) => console.warn('[BarMenuPage] fetchSections failed:', err.message));
-  }, []);
-  const venueColumns = useMemo(() => {
-    const cols = sections.map(s => ({ id: s.id || s.name, label: s.name || 'Price' }));
-    return cols.length > 0 ? cols : [{ id: 'default', label: 'Price' }];
-  }, [sections]);
+  // ── Venue/section resolution from actual tenant venues (bar-only) ──
+  const { venueColumns } = useVenueSections('bar');
+
   useEffect(() => {
     if (venueColumns.length === 0) return;
     const exists = venueColumns.some((c) => c.id === activeVenueId);
@@ -6855,24 +6841,26 @@ export function BarMenuPage() {
       </div>
 
 
-      <div className="mb-3 flex flex-col gap-2">
-        <div className="flex flex-wrap gap-2">
-          {venueColumns.map((venue) => (
-            <button
-              key={venue.id}
-              type="button"
-              onClick={() => setActiveVenueId(venue.id)}
-              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
-                activeVenueId === venue.id
-                  ? 'border-[#E53935] bg-[#E53935] text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              {venue.label}
-            </button>
-          ))}
+      {venueColumns.length > 1 && (
+        <div className="mb-3 flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            {venueColumns.map((venue) => (
+              <button
+                key={venue.id}
+                type="button"
+                onClick={() => setActiveVenueId(venue.id)}
+                className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
+                  activeVenueId === venue.id
+                    ? 'border-[#E53935] bg-[#E53935] text-white'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {venue.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[12px] text-red-600 font-bold">
