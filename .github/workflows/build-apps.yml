@@ -9,6 +9,9 @@ env:
   NODE_VERSION: 22
   RUST_VERSION: 1.75
 
+permissions:
+  contents: write
+
 jobs:
   # ── Build Windows desktop apps (Tauri) ──────────────────────────────────────
   build-windows:
