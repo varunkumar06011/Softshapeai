@@ -323,12 +323,30 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
 }
 
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null) {
+  const cancelRequestId = requestId || generateRequestId();
+
+  if (!navigator.onLine) {
+    await addPendingAction({
+      requestId: cancelRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'cancel-item',
+      url: `/api/orders/${orderId}/cancel-item`,
+      method: 'PATCH',
+      body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Cancel item queued for sync:', orderId, orderItemId);
+    }
+    return { offline: true };
+  }
+
   return withRetry(
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId }),
+        body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId }),
       });
       return parseResponse(res);
     },
