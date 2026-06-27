@@ -63,7 +63,7 @@ import { filterMenuItems, menuItemMatchesSearch } from '../shared/utils/menuSear
 import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
-import { API_BASE, apiUrl, getAuthHeaders } from '../services/apiConfig';
+import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -2074,6 +2074,9 @@ export function Payroll() {
   });
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmp, setNewEmp] = useState({ name: '', age: '', role: '', baseSalary: '' });
+  const [addError, setAddError] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState('');
   const [payModal, setPayModal] = useState(null);
   const [payAmount, setPayAmount] = useState('');
   const [editValues, setEditValues] = useState({});
@@ -2083,16 +2086,12 @@ export function Payroll() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [empRes, recRes] = await Promise.all([
-        fetch(`${API_BASE}/api/payroll/employees?restaurantId=${restaurantId}`, {
-          headers: { ...getAuthHeaders() },
-        }),
-        fetch(`${API_BASE}/api/payroll/records?restaurantId=${restaurantId}&monthYear=${monthYear}`, {
-          headers: { ...getAuthHeaders() },
-        }),
+      const [employees, records] = await Promise.all([
+        apiFetch(`/api/payroll/employees?restaurantId=${restaurantId}`),
+        apiFetch(`/api/payroll/records?restaurantId=${restaurantId}&monthYear=${monthYear}`),
       ]);
-      if (empRes.ok) setEmployees(await empRes.json());
-      if (recRes.ok) setRecords(await recRes.json());
+      setEmployees(employees || []);
+      setRecords(records || []);
     } catch (err) {
       console.error('[Payroll] Failed to load:', err);
     } finally {
@@ -2103,27 +2102,37 @@ export function Payroll() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleAddEmployee = async () => {
-    if (!newEmp.name || !newEmp.baseSalary) return;
+    if (!newEmp.name || !newEmp.baseSalary || adding) return;
+    setAdding(true);
+    setAddError('');
     try {
-      await fetch(`${API_BASE}/api/payroll/employees`, {
+      await apiFetch('/api/payroll/employees', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ restaurantId, ...newEmp, baseSalary: parseFloat(newEmp.baseSalary), age: newEmp.age ? parseInt(newEmp.age) : null }),
+        body: JSON.stringify({
+          restaurantId,
+          ...newEmp,
+          baseSalary: parseFloat(newEmp.baseSalary),
+          age: newEmp.age ? parseInt(newEmp.age) : null,
+          idempotencyKey,
+        }),
       });
       setNewEmp({ name: '', age: '', role: '', baseSalary: '' });
       setShowAddModal(false);
+      setIdempotencyKey('');
       loadData();
     } catch (err) {
       console.error('[Payroll] Add employee failed:', err);
+      setAddError(err.message || 'Failed to add employee');
+    } finally {
+      setAdding(false);
     }
   };
 
   const handleSaveRecord = async (employeeId) => {
     const vals = editValues[employeeId] || {};
     try {
-      await fetch(`${API_BASE}/api/payroll/records`, {
+      await apiFetch('/api/payroll/records', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           restaurantId,
           employeeId,
@@ -2142,9 +2151,8 @@ export function Payroll() {
   const handlePayment = async () => {
     if (!payModal || !payAmount) return;
     try {
-      await fetch(`${API_BASE}/api/payroll/records/${payModal.id}/payment`, {
+      await apiFetch(`/api/payroll/records/${payModal.id}/payment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ amount: parseFloat(payAmount) }),
       });
       setPayModal(null);
@@ -2219,7 +2227,11 @@ export function Payroll() {
             )}
           </div>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setIdempotencyKey(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+              setAddError('');
+              setShowAddModal(true);
+            }}
             className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
           >
             Add Employee
@@ -2347,6 +2359,11 @@ export function Payroll() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-black text-gray-900">Add Employee</h3>
+            {addError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-bold">
+                {addError}
+              </div>
+            )}
             <input type="text" placeholder="Name" value={newEmp.name} onChange={(e) => setNewEmp({ ...newEmp, name: e.target.value })}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
             <input type="number" placeholder="Age" value={newEmp.age} onChange={(e) => setNewEmp({ ...newEmp, age: e.target.value })}
@@ -2363,8 +2380,10 @@ export function Payroll() {
             <input type="number" placeholder="Base Salary (₹)" value={newEmp.baseSalary} onChange={(e) => setNewEmp({ ...newEmp, baseSalary: e.target.value })}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
-              <button onClick={handleAddEmployee} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Add</button>
+              <button onClick={() => setShowAddModal(false)} disabled={adding} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm disabled:opacity-50">Cancel</button>
+              <button onClick={handleAddEmployee} disabled={adding} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50 disabled:cursor-not-allowed">
+                {adding ? 'Saving...' : 'Add'}
+              </button>
             </div>
           </div>
         </div>

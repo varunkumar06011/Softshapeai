@@ -1,3 +1,5 @@
+import { getDeviceId } from './deviceId';
+
 const DB_NAME = 'softshape-offline';
 const DB_VERSION = 3;
 
@@ -99,6 +101,7 @@ export async function addPendingAction(action) {
     const tx = db.transaction('pendingActions', 'readwrite');
     tx.objectStore('pendingActions').add({
       ...action,
+      deviceId: action.deviceId || getDeviceId(),
       status: action.status || 'pending',
       createdAt: action.createdAt || Date.now(),
       attempts: 0,

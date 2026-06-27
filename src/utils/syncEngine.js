@@ -117,6 +117,7 @@ async function bulkSync(actions) {
       url: a.url,
       method: a.method,
       body: a.body,
+      deviceId: a.deviceId || null,
     })),
   };
 

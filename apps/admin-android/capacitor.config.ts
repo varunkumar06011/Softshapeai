@@ -1,12 +1,18 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
+declare const process: { env: Record<string, string | undefined> };
+
+const liveReload = process.env.CAPACITOR_LIVE_RELOAD;
+
+const android: CapacitorConfig['android'] = liveReload
+  ? { allowMixedContent: true }
+  : {};
+
 const config: CapacitorConfig = {
   appId: 'ai.softshape.admin',
   appName: 'SoftShape Admin',
   webDir: '../../dist',
-  android: {
-    allowMixedContent: true,
-  },
+  android,
   server: {
     androidScheme: 'https',
   },

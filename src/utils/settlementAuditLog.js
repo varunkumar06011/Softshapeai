@@ -1,4 +1,5 @@
 import { addSettlementAuditLog, updateSettlementAuditLog } from './offlineDB';
+import { getDeviceId } from './deviceId';
 
 /**
  * Record an offline settlement attempt in the IndexedDB audit log.
@@ -14,6 +15,7 @@ export async function recordSettlementAudit({
   offline,
   status = 'pending',
   error = null,
+  deviceId = null,
 }) {
   try {
     const localId = await addSettlementAuditLog({
@@ -25,6 +27,7 @@ export async function recordSettlementAudit({
       offline,
       status,
       error,
+      deviceId: deviceId || getDeviceId(),
     });
     return localId;
   } catch (err) {
