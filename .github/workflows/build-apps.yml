@@ -123,6 +123,15 @@ jobs:
         working-directory: apps/${{ matrix.app }}/android
         run: ./gradlew assembleRelease
 
+      - name: Rename APK
+        working-directory: apps/${{ matrix.app }}/android
+        shell: bash
+        run: |
+          apk="app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [ -f "$apk" ]; then
+            mv "$apk" "app/build/outputs/apk/release/${{ matrix.app }}.apk"
+          fi
+
       - name: Check for keystore
         id: keystore
         run: echo "has_keystore=${{ secrets.ANDROID_KEYSTORE != '' }}" >> $GITHUB_OUTPUT
