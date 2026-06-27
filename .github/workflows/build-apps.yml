@@ -8,6 +8,7 @@ on:
 env:
   NODE_VERSION: 22
   RUST_VERSION: 1.88
+  VITE_API_URL: https://softshape-backend.onrender.com
 
 permissions:
   contents: write
