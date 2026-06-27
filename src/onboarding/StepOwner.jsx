@@ -206,7 +206,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     <div className="space-y-6">
       <div className="text-center mb-8">
         <User size={48} className="mx-auto text-[#E53935] mb-4" />
-        <h2 className="text-2xl font-bold mb-2">Owner Account</h2>
+        <h2 className="text-2xl font-bold mb-2">Your Login Details</h2>
         <p className="text-gray-500">Create your admin account and verify your contact details</p>
       </div>
 

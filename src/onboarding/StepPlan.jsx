@@ -37,17 +37,17 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
     {
       id: 'starter',
       name: 'Starter',
-      features: ['1 Outlet Included', '20 Tables', '3 Captains', 'Email Support']
+      features: ['1 location included', 'Up to 20 tables', 'Up to 3 staff captains', 'Email support', 'Basic KOT & bill printing']
     },
     {
       id: 'pro',
       name: 'Pro',
-      features: ['Unlimited Tables', 'Unlimited Captains', 'Priority Support']
+      features: ['Unlimited tables', 'Unlimited staff', 'Priority support', 'Advanced reporting', 'Multi-venue management']
     },
     {
       id: 'enterprise',
       name: 'Enterprise',
-      features: ['Unlimited Outlets', 'Unlimited Tables', 'Unlimited Captains', 'Dedicated Support', 'Custom Pricing']
+      features: ['Unlimited locations', 'Unlimited tables & staff', 'Dedicated account manager', 'Custom integrations', 'Custom pricing']
     }
   ];
 
@@ -186,10 +186,11 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
             </thead>
             <tbody className="text-gray-600">
               {[
-                ['Outlets', '1', '1 + extras', 'Unlimited'],
-                ['Tables', '20', 'Unlimited', 'Unlimited'],
-                ['Staff', '3 captains', 'Unlimited', 'Unlimited'],
-                ['Support', 'Email', 'Priority', 'Dedicated'],
+                ['Locations', '1', '1 + extras', 'Unlimited'],
+                ['Tables', 'Up to 20', 'Unlimited', 'Unlimited'],
+                ['Staff', 'Up to 3 captains', 'Unlimited', 'Unlimited'],
+                ['Support', 'Email', 'Priority', 'Dedicated manager'],
+                ['Reporting', 'Basic', 'Advanced', 'Custom'],
                 ['Custom Pricing', '—', '—', 'Yes'],
               ].map(([feat, s, p, e], i) => (
                 <tr key={i} className="border-b border-gray-50">

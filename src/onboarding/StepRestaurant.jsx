@@ -327,7 +327,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-2">
-            Number of Outlets *
+            How many locations does your restaurant have? *
           </label>
           <div className="relative">
             <Layers size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
@@ -341,9 +341,12 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               ))}
             </select>
           </div>
+          <p className="text-xs text-gray-400 mt-1">
+            If you have one restaurant, enter 1. If you have multiple branches, enter the total count.
+          </p>
           {data.outletCount > 1 && (
             <p className="text-xs text-gray-400 mt-1">
-              You'll configure each outlet's floor plan and menu in a later step.
+              You'll configure each outlet's space and menu in a later step.
             </p>
           )}
         </div>
@@ -402,7 +405,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               <h3 className="text-lg font-bold">Change restaurant type?</h3>
             </div>
             <p className="text-sm text-gray-500">
-              This will reset floor plan, staff, and menu data you&apos;ve entered so far for this restaurant type.
+              This will reset space setup, staff, and menu data you&apos;ve entered so far for this restaurant type.
             </p>
             <div className="flex gap-3">
               <button

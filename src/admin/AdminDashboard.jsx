@@ -20,7 +20,8 @@ import {
   Printer,
   Users,
   QrCode,
-  Tag
+  Tag,
+  Store
 } from 'lucide-react';
 import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
@@ -43,6 +44,7 @@ import PrinterSettingsPage from './printers/PrinterSettingsPage';
 import TableQRCodes from './TableQRCodes';
 import PriceProfilesPage from './PriceProfilesPage';
 import { motion } from 'framer-motion';
+import OutletsOverview from './OutletsOverview';
 
 const navItems = [
   ["dashboard", "Dashboard", LayoutDashboard],
@@ -63,6 +65,7 @@ const navItems = [
   ["settings", "Settings", Settings],
   ["printers", "Printers", Printer],
   ["qr-codes", "QR Codes", QrCode],
+  ["outlets-overview", "My Outlets", Store],
 ];
 
 function getInventoryLabel(enabledModules) {
@@ -253,6 +256,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       if (key === 'kitchen-inventory') return enabledModules.food !== false || enabledModules.bar_inventory === true || enabledModules.bar !== false;
       if (key === 'settings') return true;
       if (key === 'printers') return true;
+      if (key === 'outlets-overview') return restaurant?.outletCount > 1;
       return enabledModules[key] !== false;
     });
 
@@ -393,6 +397,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "printers" && <PrinterSettingsPage />}
           {page === "qr-codes" && <TableQRCodes />}
           {page === "staff" && <StaffManagement />}
+          {page === "outlets-overview" && <OutletsOverview />}
         </main>
       </div>
 

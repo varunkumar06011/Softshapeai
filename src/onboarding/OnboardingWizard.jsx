@@ -7,8 +7,7 @@ import StepRestaurant from './StepRestaurant';
 import StepBranding from './StepBranding';
 import StepOwner from './StepOwner';
 import StepStaff from './StepStaff';
-import StepFloorPlan from './StepFloorPlan';
-import StepBusinessAreas from './StepBusinessAreas';
+import StepYourSpace from './StepYourSpace';
 import StepMenu from './StepMenu';
 import StepTax from './StepTax';
 import StepPrinters from './StepPrinters';
@@ -25,13 +24,12 @@ function computeSteps(restaurantType, outletCount, hasVenues) {
   const base = [
     { id: 'restaurant', title: 'Restaurant Info' },
     { id: 'branding', title: 'Branding' },
-    { id: 'owner', title: 'Owner Account' },
+    { id: 'owner', title: 'Your Login Details' },
   ];
 
   if (restaurantType !== 'CLOUD_KITCHEN') {
-    base.push({ id: 'businessareas', title: 'Business Areas' });
+    base.push({ id: 'yourspace', title: 'Your Space' });
     base.push({ id: 'staff', title: 'Staff Setup' });
-    base.push({ id: 'floorplan', title: 'Floor Plan' });
   } else {
     base.push({ id: 'staff', title: 'Staff Setup' });
   }
@@ -314,11 +312,14 @@ const OnboardingWizard = () => {
         return <StepBranding data={wizardData.branding} restaurantName={wizardData.restaurant.name} restaurantGstin={wizardData.restaurant.gstin} logoPreview={wizardData.restaurant.logoPreview} menu={wizardData.menu} taxConfig={wizardData.taxConfig} onChange={(data) => updateWizardData('branding', data)} onNext={handleNext} onBack={handleBack} />;
       case 'owner':
         return <StepOwner data={wizardData.owner} onChange={(data) => updateWizardData('owner', data)} onNext={handleNext} onBack={handleBack} sessionId={wizardData.sessionId} />;
-      case 'businessareas':
+      case 'yourspace':
         return (
-          <StepBusinessAreas
-            data={{ venues: wizardData.venues }}
-            onChange={(data) => updateWizardData('venues', data.venues)}
+          <StepYourSpace
+            restaurantType={wizardData.restaurant.restaurantType}
+            venues={wizardData.venues}
+            sections={wizardData.sections}
+            tables={wizardData.tables}
+            onChange={(updates) => setWizardData(prev => ({ ...prev, ...updates }))}
             onNext={handleNext}
             onBack={handleBack}
           />
@@ -331,18 +332,6 @@ const OnboardingWizard = () => {
             cashiers={wizardData.cashiers}
             venues={wizardData.venues || []}
             onChange={(captains, cashiers) => { updateWizardData('captains', captains); updateWizardData('cashiers', cashiers); }}
-            onNext={handleNext}
-            onBack={handleBack}
-          />
-        );
-      case 'floorplan':
-        return (
-          <StepFloorPlan
-            restaurantType={wizardData.restaurant.restaurantType}
-            printers={wizardData.printers}
-            sections={wizardData.sections}
-            tables={wizardData.tables}
-            onChange={(sections, tables) => { updateWizardData('sections', sections); updateWizardData('tables', tables); }}
             onNext={handleNext}
             onBack={handleBack}
           />

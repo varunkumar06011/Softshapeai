@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle, Pencil, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle, Pencil, ChevronDown, ChevronUp, Eye, EyeOff, MapPin, Building2 } from 'lucide-react';
 
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
@@ -151,21 +151,86 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
         )}
       </div>
 
-      {/* Floor Plan Summary */}
-      <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-        <SectionHeader icon={<Layout size={18} className="text-[#E53935]" />} title="Floor Plan" stepId="floorplan" />
-        <div className="text-sm">
-          <span className="text-gray-400">Sections:</span> <span className="font-medium text-gray-900">{sections.map(s => s.name).join(', ') || <NotProvided />}</span>
-        </div>
-        <div className="text-sm">
-          <span className="text-gray-400">Total Tables:</span> <span className="font-medium text-gray-900">{totalTables}</span>
-        </div>
-        {outlets && outlets.length > 0 && (
-          <div className="text-sm">
-            <span className="text-gray-400">Additional Outlets:</span> <span className="font-medium text-gray-900">{outlets.map(o => o.name).join(', ')}</span>
+      {/* Your Space Summary — Visual Tree */}
+      {wizardData.restaurant?.restaurantType !== 'CLOUD_KITCHEN' && (() => {
+        const venues = wizardData.venues || [];
+        const hasVenues = venues.length > 0;
+        const flatSections = wizardData.sections || [];
+        const flatTables = wizardData.tables || [];
+
+        if (!hasVenues && flatSections.length === 0) return null;
+
+        return (
+          <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+            <SectionHeader icon={<Layout size={18} className="text-[#E53935]" />} title="Your Space" stepId="yourspace" />
+            <div className="text-sm space-y-1">
+              <div className="flex items-center gap-2 text-gray-900 font-semibold">
+                <Building2 size={16} className="text-gray-500" />
+                Your Account — {restaurant.name}
+              </div>
+              <div className="flex items-center gap-2 text-gray-700 ml-4">
+                <Store size={14} className="text-gray-400" />
+                {restaurant.name} (Main Outlet)
+              </div>
+              {hasVenues ? (
+                venues.map((venue, vi) => {
+                  const allSections = [
+                    ...(venue.floors || []).flatMap(f => f.sections || []),
+                    ...(venue.sections || [])
+                  ];
+                  const sectionCount = allSections.length;
+                  const tableCount = allSections.reduce((sum, s) => sum + (s.tables?.length || 0), 0);
+                  const seatCount = allSections.reduce((sum, s) => sum + (s.tables || []).reduce((ss, t) => ss + (t.capacity || 0), 0), 0);
+                  return (
+                    <div key={vi} className="ml-8">
+                      <div className="flex items-center gap-2 text-gray-700">
+                        <MapPin size={14} className="text-[#E53935]" />
+                        <span className="font-medium">{venue.name}</span>
+                        <span className="text-gray-400 text-xs">{sectionCount} section{sectionCount !== 1 ? 's' : ''} · {tableCount} table{tableCount !== 1 ? 's' : ''} · {seatCount} seat{seatCount !== 1 ? 's' : ''}</span>
+                      </div>
+                      {allSections.map((section, si) => {
+                        const secTables = section.tables || [];
+                        const secSeats = secTables.reduce((sum, t) => sum + (t.capacity || 0), 0);
+                        return (
+                          <div key={si} className="ml-6 text-gray-500 text-xs flex items-center gap-1">
+                            <span className="text-gray-300">└</span>
+                            <span>{section.name}</span>
+                            <span className="text-gray-400">— {secTables.length} table{secTables.length !== 1 ? 's' : ''} · {secSeats} seat{secSeats !== 1 ? 's' : ''}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="ml-8">
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <MapPin size={14} className="text-[#E53935]" />
+                    <span className="font-medium">Main Area</span>
+                    <span className="text-gray-400 text-xs">{flatSections.length} section{flatSections.length !== 1 ? 's' : ''} · {flatTables.length} table{flatTables.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {flatSections.map((section, si) => {
+                    const secTables = flatTables.filter(t => t.sectionIndex === si);
+                    const secSeats = secTables.reduce((sum, t) => sum + (t.capacity || 0), 0);
+                    return (
+                      <div key={si} className="ml-6 text-gray-500 text-xs flex items-center gap-1">
+                        <span className="text-gray-300">└</span>
+                        <span>{section.name}</span>
+                        <span className="text-gray-400">— {secTables.length} table{secTables.length !== 1 ? 's' : ''} · {secSeats} seat{secSeats !== 1 ? 's' : ''}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {outlets && outlets.length > 0 && (
+                <div className="text-xs text-gray-400 mt-2 ml-4">
+                  Additional Outlets: {outlets.map(o => o.name).join(', ')}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Menu Summary */}
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
