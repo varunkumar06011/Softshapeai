@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder } from '../services/orderApi';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
@@ -21,6 +21,9 @@ import { updateTableSession } from '../services/tableApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getTenantScopedKey, getTablesCacheKey, getBarTablesCacheKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext';
+import { useSyncStatus } from '../context/SyncStatusContext';
+import OfflineStatusBar from '../shared/components/OfflineStatusBar';
+import PendingActionsModal from '../shared/components/PendingActionsModal';
 import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
@@ -210,6 +213,7 @@ const HighlightedText = ({ text, highlight }) => {
 const CashierDashboard = ({ onLogout }) => {
   console.log('[BUILD] CashierDashboard loaded — version 2025-06-13-v2');
   const { user, restaurant } = useAuth();
+  const { isOffline, hasPending, pendingCount, triggerSync } = useSyncStatus();
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
@@ -372,6 +376,7 @@ const CashierDashboard = ({ onLogout }) => {
   const loadTxnsGenerationRef = useRef(0);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
@@ -1971,22 +1976,43 @@ const CashierDashboard = ({ onLogout }) => {
           .map(k => k.id)
           .filter(Boolean)
           .join(',');
-        const printBillUrl = selectedTable.isExtra
-          ? `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${encodeURIComponent(selectedTable.number)}${extraDiscountPercent > 0 ? `&discountPercent=${extraDiscountPercent}` : ''}${extraKotIds ? `&kotNumbers=${encodeURIComponent(extraKotIds)}` : ''}`
-          : `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}`;
-        const response = await fetch(printBillUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(errBody.error || `Server returned ${response.status}`);
-        }
-        const responseData = await response.json().catch(() => ({}));
-        const returnedItems = responseData?.order?.items || responseData?.items || [];
-        const snapshotCount = billItemsSnapshotRef.current.length;
-        if (returnedItems.length > 0 && returnedItems.length < snapshotCount) {
-          console.warn(`[handleFinalBill] Backend returned ${returnedItems.length} items but snapshot had ${snapshotCount}. NOT updating local state with reduced set.`);
+        const response = selectedTable.isExtra
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId });
+        if (response?.offline) {
+          addNotification('Offline', `Bill queued — will sync when online. Ref: ${response.billNumber}`, 'warning');
+          // Attempt local printing immediately via printOffline
+          try {
+            const { printLocal } = await import('../utils/printOffline');
+            const billItems = getBillableItems(selectedTable);
+            const billCalc = calculateOrderTotal(billItems, discountPercent);
+            const result = await printLocal({
+              jobType: 'FINAL_BILL',
+              data: {
+                tableNumber: selectedTable.number,
+                items: billItems,
+                subtotal: billCalc.subtotal,
+                discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+                cgst: billCalc.cgst,
+                sgst: billCalc.sgst,
+                grandTotal: billCalc.grandTotal,
+                billNumber: response.billNumber,
+              },
+            });
+            if (result.printed) {
+              addNotification('Local Print', 'Bill printed to local printer.', 'success');
+            } else if (result.queued) {
+              addNotification('Print Queued', `No printer available — will print on reconnect.`, 'warning');
+            }
+          } catch (printErr) {
+            console.warn('[handleFinalBill] Local print failed:', printErr.message);
+          }
+        } else {
+          const returnedItems = response?.order?.items || response?.items || [];
+          const snapshotCount = billItemsSnapshotRef.current.length;
+          if (returnedItems.length > 0 && returnedItems.length < snapshotCount) {
+            console.warn(`[handleFinalBill] Backend returned ${returnedItems.length} items but snapshot had ${snapshotCount}. NOT updating local state with reduced set.`);
+          }
         }
       }
 
@@ -2038,6 +2064,44 @@ const CashierDashboard = ({ onLogout }) => {
     }
     try {
       const restaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
+
+      if (!navigator.onLine) {
+        // Offline: print from local kotHistory if available
+        const kotHistory = selectedTable.kotHistory || [];
+        if (kotHistory.length === 0) {
+          addNotification('Offline', 'No KOT history available offline.', 'warning');
+          return;
+        }
+        const lastKot = kotHistory[kotHistory.length - 1];
+        // Attempt local KOT printing
+        try {
+          const { printLocal } = await import('../utils/printOffline');
+          const kotItems = (lastKot.items || []).map(i => ({
+            name: i.n || i.name,
+            quantity: i.q || i.quantity || 1,
+            notes: i.notes || null,
+          }));
+          const result = await printLocal({
+            jobType: 'KOT',
+            data: {
+              tableNumber: selectedTable.number,
+              items: kotItems,
+              kotNumber: lastKot.id || lastKot.kotNumber || 'N/A',
+              captainName: lastKot.captainName || 'Cashier',
+            },
+          });
+          if (result.printed) {
+            addNotification('Offline KOT', 'KOT printed to local printer.', 'success');
+          } else if (result.queued) {
+            addNotification('KOT Queued', 'No printer available — will print on reconnect.', 'warning');
+          }
+        } catch (printErr) {
+          console.warn('[handleReprintKOT] Local print failed:', printErr.message);
+          addNotification('Offline KOT', 'Reprinted last KOT from local history.', 'warning');
+        }
+        return;
+      }
+
       const response = await fetch(
         `${API_BASE}/api/orders/${selectedTable.activeOrder.id}/reprint-kot?restaurantId=${restaurantId}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } }
@@ -2139,6 +2203,81 @@ const CashierDashboard = ({ onLogout }) => {
 
     try {
       setIsPrintingBill(true);
+
+      if (!navigator.onLine) {
+        // Offline: queue the walk-in bill action for sync
+        const { addPendingAction, addOfflineTransaction } = await import('../utils/offlineDB');
+        await addPendingAction({
+          requestId,
+          entityId: `walkin-${tableLabel}`,
+          entityType: 'walkin',
+          actionType: 'walkin-final-bill',
+          url: '/api/print/final-bill-emit',
+          method: 'POST',
+          body: {
+            restaurantId: activeRestaurantId,
+            billData: {
+              tableNumber: tableLabel,
+              items: cart.map(i => ({
+                name: i.n || i.name,
+                quantity: i.q,
+                price: Number(i.p),
+                menuType: i.menuType || 'FOOD'
+              })),
+              subtotal: subtotalAmt,
+              grandTotal: grandTotalAmt,
+              cgst: cgstAmt,
+              sgst: sgstAmt,
+              discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+              captain: 'Walk-in',
+              sectionTag: 'venue-restaurant-parcel',
+              requestId
+            }
+          },
+        });
+        // Store local transaction record
+        await addOfflineTransaction({
+          localId: `offline-walkin-${Date.now()}`,
+          requestId,
+          tableLabel,
+          grandTotal: grandTotalAmt,
+          method: null,
+          synced: false,
+          createdAt: Date.now(),
+        });
+        addNotification('Offline', `Walk-in bill queued — will sync when online. Ref: OFFLINE-${requestId.slice(0, 8).toUpperCase()}`, 'warning');
+        // Attempt local printing immediately
+        try {
+          const { printLocal } = await import('../utils/printOffline');
+          const result = await printLocal({
+            jobType: 'FINAL_BILL',
+            data: {
+              tableNumber: tableLabel,
+              items: cart.map(i => ({
+                name: i.n || i.name,
+                quantity: i.q,
+                price: Number(i.p),
+                menuType: i.menuType || 'FOOD'
+              })),
+              subtotal: subtotalAmt,
+              discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+              cgst: cgstAmt,
+              sgst: sgstAmt,
+              grandTotal: grandTotalAmt,
+              billNumber: `OFFLINE-${requestId.slice(0, 8).toUpperCase()}`,
+            },
+          });
+          if (result.printed) {
+            addNotification('Local Print', 'Walk-in bill printed to local printer.', 'success');
+          } else if (result.queued) {
+            addNotification('Print Queued', 'No printer available — will print on reconnect.', 'warning');
+          }
+        } catch (printErr) {
+          console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
+        }
+        setShowMethodPicker(true);
+        return;
+      }
 
       const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
         method: 'POST',
@@ -2394,37 +2533,42 @@ const CashierDashboard = ({ onLogout }) => {
         // Call backend settle endpoint (creates transaction, marks paid, resets table)
         // NO PRINTING - that already happened in handleFinalBill
         if (orderId) {
-          const response = await fetch(
-            `${API_BASE}/api/orders/${orderId}/settle?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
+          const settleData = await settleOrder(
+            orderId,
+            [],
+            'Cashier',
+            null,
             {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                paymentMethod: method, 
-                discountPercent: selectedTable.isExtra
-                  ? (discountPercent || selectedTable.discountPercent || 0)
-                  : discountPercent,
-                tableNumber: selectedTable.isExtra ? selectedTable.number : undefined,
-                isExtraTable: selectedTable.isExtra ? true : undefined,
-                sectionTag: selectedTable.sectionTag || undefined,
-                // Send pre-calculated totals so backend uses exactly what was shown on the printed bill
-                grandTotal: Number(activeGrandTotal),
-                subtotal: Number(activeSubtotal),
-                discountAmount: Number(activeDiscountAmount),
-                cgst: Number(activeCgst),
-                sgst: Number(activeSgst),
-              })
+              paymentMethod: method,
+              discountPercent: selectedTable.isExtra
+                ? (discountPercent || selectedTable.discountPercent || 0)
+                : discountPercent,
+              tableNumber: selectedTable.isExtra ? selectedTable.number : undefined,
+              isExtraTable: selectedTable.isExtra ? true : undefined,
+              sectionTag: selectedTable.sectionTag || undefined,
+              grandTotal: Number(activeGrandTotal),
+              subtotal: Number(activeSubtotal),
+              discountAmount: Number(activeDiscountAmount),
+              cgst: Number(activeCgst),
+              sgst: Number(activeSgst),
+              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
             }
           );
 
-          console.log(`[Settlement] orderId=${orderId} status=${response.status}`);
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Settlement failed on server');
+          if (settleData?.offline) {
+            console.log(`[Settlement] orderId=${orderId} queued offline`);
+            // Mark as settled locally to prevent retries
+            setSettledOrderIds(prev => new Set([...prev, orderId]));
+            if (selectedTable?.backendId) {
+              setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
+              syncPauseUntilRef.current = Date.now() + 2000;
+            }
+            return;
           }
 
+          console.log(`[Settlement] orderId=${orderId} settled on server`);
+
           // Merge returned transaction into pastTransactions immediately (fixes fast-settlement disappearing bills)
-          const settleData = await response.json().catch(() => ({}));
           if (settleData?.transaction) {
             const txn = settleData.transaction;
             const mappedTxn = {
@@ -3275,6 +3419,8 @@ const CashierDashboard = ({ onLogout }) => {
 
   return (
     <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#FFF5F5] font-sans overflow-hidden text-[#1A1A1A]">
+      <OfflineStatusBar />
+      <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
       {/* SIDEBAR / BOTTOM BAR */}
       <aside className="w-full sm:w-20 lg:w-72 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
         <div className="hidden sm:flex p-3 lg:p-8 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
@@ -4870,6 +5016,7 @@ const CashierDashboard = ({ onLogout }) => {
                           >
                             {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
                             <span className="text-xs sm:text-sm font-black uppercase tracking-wider">{isKotSuccess ? 'Pushed' : isKotSending ? 'Pushing' : 'KOT (Auto-Split)'}</span>
+                            {isOffline && <span className="ml-1 rounded bg-amber-400 px-1.5 py-0.5 text-[9px] text-amber-900 font-bold">OFFLINE</span>}
                           </button>
                         )}
                       </div>
@@ -5136,6 +5283,7 @@ const CashierDashboard = ({ onLogout }) => {
                             >
                               {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
                               {isPrintingBill ? 'Fetching…' : (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now()) ? 'Printed ✓' : 'Direct Bill'}
+                              {isOffline && <span className="ml-1 rounded bg-amber-400 px-1 py-0.5 text-[8px] text-amber-900 font-bold">OFFLINE</span>}
                             </button>
                           </div>
                         ) : (
@@ -5149,6 +5297,7 @@ const CashierDashboard = ({ onLogout }) => {
                           >
                             {isPrintingBill ? <Loader2 size={12} className="animate-spin" /> : null}
                             {isPrintingBill ? 'Fetching…' : (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now()) ? 'Printed ✓' : 'Final Bill'}
+                            {isOffline && <span className="ml-1 rounded bg-amber-400 px-1 py-0.5 text-[8px] text-amber-900 font-bold">OFFLINE</span>}
                           </button>
                         );
                       })()

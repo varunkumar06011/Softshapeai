@@ -12,6 +12,7 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import TableQRCodes from "./admin/TableQRCodes";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { SyncStatusProvider } from "./context/SyncStatusContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { getSocket } from "./hooks/useSocket";
@@ -225,6 +226,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
+        <SyncStatusProvider>
         <BrowserRouter>
           <ThemeInjector />
           <Routes>
@@ -247,6 +249,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </SyncStatusProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

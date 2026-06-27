@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
+import { registerSW } from './utils/registerSW'
 import * as Sentry from '@sentry/react'
 
 Sentry.init({
@@ -36,3 +37,6 @@ createRoot(document.getElementById('root')).render(
     </MenuProvider>
   </StrictMode>,
 )
+
+// Register service worker for offline support
+registerSW();

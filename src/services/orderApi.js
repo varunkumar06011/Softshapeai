@@ -2,7 +2,17 @@ import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
 import { authService } from "./authService";
-import { addPendingAction } from "../utils/offlineDB";
+import {
+  addPendingAction,
+  addOfflineTransaction,
+  addOfflinePrintJob,
+} from "../utils/offlineDB";
+
+function generateRequestId() {
+  return (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36));
+}
 
 async function parseResponse(res) {
   if (!res.ok) {
@@ -44,7 +54,13 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
   if (!navigator.onLine) {
+    const offlineRequestId = requestId || generateRequestId();
+    orderData.requestId = offlineRequestId;
     await addPendingAction({
+      requestId: offlineRequestId,
+      entityId: tableId,
+      entityType: 'order',
+      actionType: 'create-order',
       url: '/api/orders',
       method: 'POST',
       body: orderData,
@@ -108,7 +124,13 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
   if (!navigator.onLine) {
+    const offlineRequestId = requestId || generateRequestId();
+    body.requestId = offlineRequestId;
     await addPendingAction({
+      requestId: offlineRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'update-items',
       url: `/api/orders/${orderId}/items`,
       method: 'PATCH',
       body,
@@ -167,6 +189,19 @@ export async function updateOrderStatus(orderId, status) {
 }
 
 export async function requestBilling(orderId) {
+  if (!navigator.onLine) {
+    const requestId = generateRequestId();
+    await addPendingAction({
+      requestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'request-billing',
+      url: `/api/orders/${orderId}/request-billing`,
+      method: 'POST',
+      body: {},
+    });
+    return { offline: true };
+  }
   const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
     method: "POST",
     headers: getAuthHeaders(),
@@ -183,13 +218,42 @@ export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
   return parseResponse(res);
 }
 
-export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier') {
+export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier', requestId = null, extraSettleData = {}) {
+  const body = { removedItemIds, removedBy, ...extraSettleData };
+  const settleRequestId = requestId || generateRequestId();
+  body.requestId = settleRequestId;
+
+  if (!navigator.onLine) {
+    await addPendingAction({
+      requestId: settleRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'settle',
+      url: `/api/orders/${orderId}/settle`,
+      method: 'POST',
+      body,
+    });
+    // Store local transaction record for offline history
+    await addOfflineTransaction({
+      localId: `offline-txn-${Date.now()}`,
+      orderId,
+      requestId: settleRequestId,
+      ...extraSettleData,
+      synced: false,
+      createdAt: Date.now(),
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Settlement queued for sync:', orderId);
+    }
+    return { offline: true, transaction: { id: `offline-txn-${Date.now()}`, ...body } };
+  }
+
   return withRetry(
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ removedItemIds, removedBy }),
+        body: JSON.stringify(body),
       });
       return parseResponse(res);
     },
@@ -287,6 +351,23 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
 }
 
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
+  if (!navigator.onLine) {
+    const requestId = generateRequestId();
+    await addPendingAction({
+      requestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'bill-edit',
+      url: `/api/orders/${orderId}/bill-edit`,
+      method: 'PATCH',
+      body: { removedItemIds, editQuantities, addedItems, editedBy, requestId },
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Bill edit queued for sync:', orderId);
+    }
+    return { offline: true };
+  }
+
   const res = await fetch(apiUrl(`/api/orders/${orderId}/bill-edit`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -325,14 +406,78 @@ export async function deleteTransaction(transactionId, restaurantId) {
   return res.json();
 }
 
+export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null } = {}) {
+  const printRequestId = requestId || generateRequestId();
+  const qs = new URLSearchParams({ restaurantId: restaurantId || '', requestId: printRequestId });
+  if (tableNumber) qs.set('tableNumber', tableNumber);
+  if (discountPercent) qs.set('discountPercent', String(discountPercent));
+  if (kotNumbers) qs.set('kotNumbers', kotNumbers);
+
+  if (!navigator.onLine) {
+    await addPendingAction({
+      requestId: printRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'print-bill',
+      url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
+      method: 'POST',
+      body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId },
+    });
+    // Queue a local print job so the receipt prints immediately via local print agent
+    await addOfflinePrintJob({
+      id: `offline-print-${Date.now()}`,
+      orderId,
+      requestId: printRequestId,
+      jobType: 'final-bill',
+      status: 'pending',
+      createdAt: Date.now(),
+      data: { restaurantId, tableNumber, discountPercent, kotNumbers },
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Print bill queued for sync:', orderId);
+    }
+    return {
+      offline: true,
+      billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`,
+      order: { id: orderId },
+    };
+  }
+
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
+export { generateRequestId };
+
 export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null) {
   // items: Array<{ orderItemId: string, cancelQuantity: number }>
+  const cancelRequestId = requestId || generateRequestId();
+
+  if (!navigator.onLine) {
+    await addPendingAction({
+      requestId: cancelRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'cancel-items',
+      url: `/api/orders/${orderId}/cancel-items`,
+      method: 'PATCH',
+      body: { items, cancelledBy, tableNumber, requestId: cancelRequestId },
+    });
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Cancel items queued for sync:', orderId);
+    }
+    return { offline: true };
+  }
+
   return withRetry(
     async () => {
       const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-items`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ items, cancelledBy, tableNumber, requestId }),
+        body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId }),
       });
       return parseResponse(res);
     },

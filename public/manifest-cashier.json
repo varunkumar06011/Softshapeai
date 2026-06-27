@@ -1,0 +1,19 @@
+{
+  "name": "Softshape Cashier",
+  "short_name": "Cashier",
+  "description": "Softshape POS — Cashier Dashboard (Offline-ready)",
+  "start_url": "/cashier/dashboard",
+  "scope": "/cashier",
+  "display": "standalone",
+  "background_color": "#FFF5F5",
+  "theme_color": "#E53935",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "192x192 512x512",
+      "type": "image/x-icon",
+      "purpose": "any maskable"
+    }
+  ]
+}

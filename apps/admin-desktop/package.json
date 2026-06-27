@@ -1,0 +1,17 @@
+{
+  "name": "softshape-admin-desktop",
+  "version": "0.1.0",
+  "description": "SoftShape Admin Desktop App (Tauri)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cd ../.. && npx vite",
+    "build": "cd ../.. && npx vite build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.0"
+  }
+}

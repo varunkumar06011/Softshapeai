@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 
 const PRINT_AGENT_DOWNLOAD_URL = process.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
 if (!PRINT_AGENT_DOWNLOAD_URL) {
@@ -11,7 +12,43 @@ if (!PRINT_AGENT_DOWNLOAD_URL) {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      injectRegister: false, // We handle registration manually in registerSW.js
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+      },
+      manifest: {
+        name: 'Softshape AI — POS',
+        short_name: 'Softshape',
+        description: 'Restaurant POS, Captain, and Admin dashboard (Offline-ready)',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#FFF5F5',
+        theme_color: '#E53935',
+        orientation: 'any',
+        icons: [
+          {
+            src: '/favicon.ico',
+            sizes: '192x192 512x512',
+            type: 'image/x-icon',
+            purpose: 'any maskable',
+          },
+        ],
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
+    }),
+  ],
   server: {
     proxy: {
       '/api': {

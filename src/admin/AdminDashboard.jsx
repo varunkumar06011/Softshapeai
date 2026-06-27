@@ -26,6 +26,7 @@ import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
 } from './AdminComponents';
 import { useAuth } from '../context/AuthContext';
+import OfflineStatusBar from '../shared/components/OfflineStatusBar';
 import { apiFetch } from '../services/apiConfig';
 import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
@@ -267,6 +268,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A] font-sans">
+      <OfflineStatusBar />
       {/* Trial banner */}
       {restaurant?.billingStatus === 'trialing' && trialDaysLeft !== null && (
         <div className={`sticky top-0 z-[70] px-4 py-2 text-center text-xs font-black uppercase tracking-widest ${trialDaysLeft <= 7 ? 'bg-red-600 text-white' : 'bg-yellow-400 text-yellow-900'}`}>
