@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, Mail, Lock, ShieldCheck, Eye, EyeOff, Smartphone, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { firebaseAuth, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
+import {
+  sendPhoneOtp as sendOtp,
+  verifyPhoneOtp as verifyOtp,
+  clearRecaptcha as clearRecaptchaUtil,
+  isNativePlatform,
+  FirebaseAuthentication,
+} from '../lib/phoneAuth';
 import { apiFetch } from '../services/apiConfig';
 
 function normalizePhone(raw) {
@@ -39,7 +45,10 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const recaptchaRef = useRef(null);
   const recaptchaWrapperRef = useRef(null);
   const confirmationResultRef = useRef(null);
+  const verificationIdRef = useRef(null);
+  const phoneCodeSentListenerRef = useRef(null);
   const lastPhoneOtpAttemptRef = useRef(0);
+  const isNative = isNativePlatform;
 
   // Timer state
   const [phoneTimeLeft, setPhoneTimeLeft] = useState(300);
@@ -49,15 +58,26 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
 
   // Clear phone verification state and timers on unmount
   useEffect(() => {
+    // On native, listen for phoneCodeSent to capture verificationId
+    if (isNative) {
+      FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
+        verificationIdRef.current = event.verificationId;
+      }).then(handle => { phoneCodeSentListenerRef.current = handle; });
+    }
     return () => {
       if (recaptchaRef.current) {
-        try { recaptchaRef.current.clear(); } catch {}
+        clearRecaptchaUtil(recaptchaRef.current);
         recaptchaRef.current = null;
       }
       confirmationResultRef.current = null;
+      verificationIdRef.current = null;
       clearInterval(phoneTimerRef.current);
+      if (phoneCodeSentListenerRef.current) {
+        phoneCodeSentListenerRef.current.remove();
+        phoneCodeSentListenerRef.current = null;
+      }
     };
-  }, []);
+  }, [isNative]);
 
   const formatTimer = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -118,46 +138,45 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
     setPhoneOtpStatus('sending');
     setPhoneError('');
     try {
-      // Fully destroy existing reCAPTCHA instance
+      // Clean up existing reCAPTCHA (web only)
       if (recaptchaRef.current) {
-        try { recaptchaRef.current.clear(); } catch {}
+        await clearRecaptchaUtil(recaptchaRef.current);
         recaptchaRef.current = null;
       }
-      if (window.recaptchaVerifier) {
-        try { window.recaptchaVerifier.clear(); } catch {}
-        window.recaptchaVerifier = null;
+
+      let liveContainer = null;
+      if (!isNative) {
+        // Create a brand-new DOM element so reCAPTCHA never sees a reused container
+        const wrapper = recaptchaWrapperRef.current;
+        if (!wrapper) throw new Error('reCAPTCHA wrapper missing');
+        const freshDiv = document.createElement('div');
+        wrapper.appendChild(freshDiv);
+        liveContainer = freshDiv;
       }
 
-      // Create a brand-new DOM element so reCAPTCHA never sees a reused container
-      const wrapper = recaptchaWrapperRef.current;
-      if (!wrapper) throw new Error('reCAPTCHA wrapper missing');
-      const freshDiv = document.createElement('div');
-      wrapper.appendChild(freshDiv);
-
-      recaptchaRef.current = new RecaptchaVerifier(firebaseAuth, freshDiv, {
-        size: 'invisible',
-        callback: () => {},
-        'expired-callback': () => {
-          setPhoneError('reCAPTCHA expired. Please try again.');
-          setPhoneOtpStatus('error');
-        }
-      });
-
       const phone = normalizePhone(data.phone);
-      const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaRef.current);
-      confirmationResultRef.current = result;
+      const result = await sendOtp(phone, liveContainer);
+      if (result.verificationId) {
+        verificationIdRef.current = result.verificationId;
+      }
+      if (result.confirmationResult) {
+        confirmationResultRef.current = result.confirmationResult;
+      }
+      if (result.recaptchaVerifier) {
+        recaptchaRef.current = result.recaptchaVerifier;
+      }
       lastPhoneOtpAttemptRef.current = Date.now();
       setPhoneOtpStatus('sent');
       startPhoneTimer();
       setPhoneAttempts(prev => prev + 1);
     } catch (err) {
       console.error('[sendPhoneOtp] error:', err.code, err.message);
-      // Let Firebase's clear() handle widget teardown properly
       if (recaptchaRef.current) {
-        try { recaptchaRef.current.clear(); } catch {}
+        await clearRecaptchaUtil(recaptchaRef.current);
         recaptchaRef.current = null;
       }
       confirmationResultRef.current = null;
+      verificationIdRef.current = null;
       setPhoneError(err.message || 'Failed to send SMS');
       setPhoneOtpStatus('error');
     }
@@ -168,11 +187,18 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       setPhoneError('Enter the verification code');
       return;
     }
+    const ctx = isNative
+      ? { verificationId: verificationIdRef.current }
+      : { confirmationResult: confirmationResultRef.current };
+    if (isNative ? !ctx.verificationId : !ctx.confirmationResult) {
+      setPhoneError('Session expired. Please resend the code.');
+      setPhoneOtpStatus('error');
+      return;
+    }
     setPhoneOtpStatus('verifying');
     setPhoneError('');
     try {
-      const credential = await confirmationResultRef.current.confirm(phoneOtp);
-      const idToken = await credential.user.getIdToken();
+      const { idToken } = await verifyOtp(ctx, phoneOtp);
 
       // Retry backend call up to 3 times on network error
       let res, lastErr;

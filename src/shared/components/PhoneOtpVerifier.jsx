@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { Loader2, CheckCircle, Phone } from 'lucide-react';
-import { firebaseAuth, RecaptchaVerifier, signInWithPhoneNumber } from '../../lib/firebase';
+import {
+  sendPhoneOtp,
+  verifyPhoneOtp,
+  clearRecaptcha as clearRecaptchaUtil,
+  isNativePlatform,
+  FirebaseAuthentication,
+} from '../../lib/phoneAuth';
 
 function getApiBase() {
   return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
@@ -27,7 +33,10 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
   const timerRef = useRef(null);
   const recaptchaVerifierRef = useRef(null);
   const confirmationResultRef = useRef(null);
+  const verificationIdRef = useRef(null);
+  const phoneCodeSentListenerRef = useRef(null);
   const recaptchaContainerId = `recaptcha-${useId()}`;
+  const isNative = isNativePlatform;
 
   const startTimer = useCallback(() => {
     setTimeLeft(COUNTDOWN_SECONDS);
@@ -44,24 +53,29 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
   }, []);
 
   const clearRecaptcha = useCallback(async () => {
-    if (recaptchaVerifierRef.current) {
-      try {
-        await recaptchaVerifierRef.current.clear();
-      } catch {
-        // ignore
-      }
-      recaptchaVerifierRef.current = null;
-    }
+    if (isNative) return;
+    await clearRecaptchaUtil(recaptchaVerifierRef.current);
+    recaptchaVerifierRef.current = null;
     const container = document.getElementById(recaptchaContainerId);
     if (container) container.innerHTML = '';
-  }, [recaptchaContainerId]);
+  }, [recaptchaContainerId, isNative]);
 
   useEffect(() => {
+    // On native, listen for phoneCodeSent to capture verificationId
+    if (isNative) {
+      FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
+        verificationIdRef.current = event.verificationId;
+      }).then(handle => { phoneCodeSentListenerRef.current = handle; });
+    }
     return () => {
       clearInterval(timerRef.current);
       clearRecaptcha();
+      if (phoneCodeSentListenerRef.current) {
+        phoneCodeSentListenerRef.current.remove();
+        phoneCodeSentListenerRef.current = null;
+      }
     };
-  }, [clearRecaptcha]);
+  }, [clearRecaptcha, isNative]);
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -71,19 +85,20 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
     await clearRecaptcha();
 
     try {
-      const liveContainer = document.getElementById(recaptchaContainerId);
-      if (!liveContainer) {
-        throw new Error('reCAPTCHA container missing from DOM');
+      const liveContainer = isNative ? null : document.getElementById(recaptchaContainerId);
+      const result = await sendPhoneOtp(phone, liveContainer);
+      if (result.verificationId) {
+        verificationIdRef.current = result.verificationId;
       }
-      recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
-        size: 'invisible',
-        callback: () => {},
-      });
-      const result = await signInWithPhoneNumber(firebaseAuth, phone, recaptchaVerifierRef.current);
-      confirmationResultRef.current = result;
+      if (result.confirmationResult) {
+        confirmationResultRef.current = result.confirmationResult;
+      }
+      if (result.recaptchaVerifier) {
+        recaptchaVerifierRef.current = result.recaptchaVerifier;
+      }
       setDigits(['', '', '', '', '', '']);
       setStatus('sent');
-      startTimer(); 
+      startTimer();
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err) {
       await clearRecaptcha();
@@ -136,15 +151,17 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       setErrorMsg('Please enter all 6 digits.');
       return;
     }
-    if (!confirmationResultRef.current) {
+    const ctx = isNative
+      ? { verificationId: verificationIdRef.current }
+      : { confirmationResult: confirmationResultRef.current };
+    if (isNative ? !ctx.verificationId : !ctx.confirmationResult) {
       setErrorMsg('Session expired. Please resend the code.');
       return;
     }
     setErrorMsg('');
     setStatus('verifying');
     try {
-      const userCredential = await confirmationResultRef.current.confirm(code);
-      const idToken = await userCredential.user.getIdToken();
+      const { idToken } = await verifyPhoneOtp(ctx, code);
       const data = await apiFetch('/api/verify/phone/verify', {
         method: 'POST',
         body: JSON.stringify({ idToken, sessionId }),
@@ -152,6 +169,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
       clearInterval(timerRef.current);
       await clearRecaptcha();
       confirmationResultRef.current = null;
+      verificationIdRef.current = null;
       setStatus('verified');
       onVerified?.(data.proof, data.phoneNumber);
     } catch (err) {

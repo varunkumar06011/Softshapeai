@@ -16,6 +16,10 @@ const config: CapacitorConfig = {
       backgroundColor: '#FFF5F5',
       showSpinner: false,
     },
+    FirebaseAuthentication: {
+      skipNativeAuth: false,
+      providers: ['phone'],
+    },
   },
 };
 
