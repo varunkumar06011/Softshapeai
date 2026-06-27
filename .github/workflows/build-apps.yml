@@ -7,7 +7,7 @@ on:
 
 env:
   NODE_VERSION: 22
-  RUST_VERSION: 1.75
+  RUST_VERSION: 1.85
 
 permissions:
   contents: write
