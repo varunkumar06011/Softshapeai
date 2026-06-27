@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
-  Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat, Monitor,
+  Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
   Maximize2, Minimize2
@@ -300,14 +300,6 @@ const CashierDashboard = ({ onLogout }) => {
       })
       .catch(() => {});
   }, []);
-
-  // If online permission is removed, switch away from the online tab
-  useEffect(() => {
-    if (activeTab === 'online' && userPermissions?.onlineOrders !== true) {
-      setActiveTab('dashboard');
-      localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'dashboard');
-    }
-  }, [activeTab, userPermissions]);
 
   // Fetch sections dynamically for tab labels
   const [fetchedSections, setFetchedSections] = useState([]);
@@ -3036,14 +3028,6 @@ const CashierDashboard = ({ onLogout }) => {
     );
   };
 
-  const onlineOrders = [
-    { id: 'SW-9812', platform: 'Swiggy', items: ['Chicken Biryani x2', 'Coke x2'], amount: 960, status: 'Preparing', time: '4m ago' },
-    { id: 'ZM-4521', platform: 'Zomato', items: ['Paneer Tikka x1', 'Butter Naan x3'], amount: 540, status: 'Ready', time: '12m ago' },
-    { id: 'SW-9815', platform: 'Swiggy', items: ['Veg Noodles x2'], amount: 480, status: 'Incoming', time: 'Just now' },
-  ];
-
-
-
   const handleSmartKOT = async () => {
     if (isKotSending || isSubmittingKotRef.current) return;
     if (cart.length === 0) return;
@@ -3311,9 +3295,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
-            { id: 'online', label: 'Online Orders', icon: Monitor },
-          ].filter(item => item.id !== 'online' || userPermissions?.onlineOrders === true)
-           .map((item) => (
+          ].map((item) => (
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
@@ -4437,30 +4419,6 @@ const CashierDashboard = ({ onLogout }) => {
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
-
-                    {activeTab === 'online' && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {onlineOrders.map(order => (
-                          <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:border-[#E53935] transition-all">
-                            <div className="flex justify-between items-start mb-3">
-                              <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${order.platform === 'Swiggy' ? 'bg-orange-100 text-orange-600' : 'bg-red-100 text-red-600'
-                                }`}>{order.platform}</span>
-                              <span className="text-[9px] font-black text-gray-400">{order.time}</span>
-                            </div>
-                            <h3 className="text-[11px] font-black text-gray-900 mb-1">{order.id}</h3>
-                            <div className="space-y-0.5 mb-4">
-                              {order.items.map(item => <p key={item} className="text-[9px] text-gray-500 font-bold">{item}</p>)}
-                            </div>
-                            <div className="flex justify-between items-center pt-3 border-t border-gray-50">
-                              <span className="text-[10px] font-black text-gray-900">₹{order.amount}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${order.status === 'Ready' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                }`}>{order.status}</span>
-
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     )}
 
