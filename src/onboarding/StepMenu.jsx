@@ -187,7 +187,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
                   type="text"
                   value={category.name}
                   onChange={(e) => handleCategoryChange(categoryIndex, 'name', e.target.value)}
-                  className="flex-1 px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 font-semibold"
+                  className="flex-1 px-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 font-semibold transition-all"
                   placeholder={activeTab === 'bar' ? 'Bar category (e.g., Whisky)' : 'Category name (e.g., Starters)'}
                 />
                 {cats.length > 1 && (
@@ -199,7 +199,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium text-gray-500">Items</h4>
+                  <h4 className="text-sm font-medium text-gray-700">Items</h4>
                   <button
                     onClick={() => addItem(categoryIndex)}
                     className="flex items-center gap-2 text-sm text-[#E53935] hover:text-[#B71C1C]"
@@ -209,14 +209,14 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
                 </div>
 
                 {category.items.map((item, itemIndex) => (
-                  <div key={itemIndex} className="bg-gray-50 rounded-lg p-3 space-y-2 border border-gray-100">
+                  <div key={itemIndex} className="bg-white rounded-lg p-3 space-y-2 border border-gray-300">
                     <div className="flex gap-3">
                       <div className="flex-1">
                         <input
                           type="text"
                           value={item.name}
                           onChange={(e) => handleItemChange(categoryIndex, itemIndex, 'name', e.target.value)}
-                          className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                          className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                           placeholder="Item name"
                         />
                       </div>
@@ -226,7 +226,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
                           type="number"
                           value={item.price === 0 ? '' : item.price}
                           onChange={(e) => handleItemChange(categoryIndex, itemIndex, 'price', parseFloat(e.target.value) || 0)}
-                          className="w-full pl-7 pr-2 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                          className="w-full pl-7 pr-2 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                           placeholder="Price"
                           min="0"
                           step="0.01"

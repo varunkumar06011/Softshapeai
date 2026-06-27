@@ -87,7 +87,7 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
                     className={`p-4 rounded-xl border-2 text-left transition-all ${
                       selected
                         ? 'border-[#E53935] bg-[#FFF5F5]'
-                        : 'border-gray-100 bg-gray-50 hover:border-gray-300'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -174,7 +174,7 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   !data.pricesIncludeGst
                     ? 'border-[#E53935] bg-[#FFF5F5]'
-                    : 'border-gray-100 bg-gray-50 hover:border-gray-300'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
                 <p className={`text-sm font-semibold ${!data.pricesIncludeGst ? 'text-[#E53935]' : 'text-gray-900'}`}>
@@ -188,7 +188,7 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   data.pricesIncludeGst
                     ? 'border-[#E53935] bg-[#FFF5F5]'
-                    : 'border-gray-100 bg-gray-50 hover:border-gray-300'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
                 <p className={`text-sm font-semibold ${data.pricesIncludeGst ? 'text-[#E53935]' : 'text-gray-900'}`}>
@@ -271,7 +271,7 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
         </div>
         {data.serviceChargePercent > 0 && (
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Service charge %</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Service charge %</label>
             <input
               type="number"
               value={data.serviceChargePercent === 0 ? '' : data.serviceChargePercent}
@@ -285,7 +285,7 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
                   handleChange('serviceChargePercent', 0);
                 }
               }}
-              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
               min="0"
               max="20"
               step="0.5"
@@ -328,7 +328,7 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
                 const num = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
                 handleChange('packagingCharge', num);
               }}
-              className="w-full pl-8 pr-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+              className="w-full pl-8 pr-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
               min="0"
               step="1"
               placeholder="0"

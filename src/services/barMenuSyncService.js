@@ -19,7 +19,8 @@ function notifySubscribers() {
 
 async function loadBarMenu() {
   if (loadPromise) return loadPromise;
-  loadPromise = (async () => {
+
+  const currentPromise = (async () => {
     _isLoading = true;
     _loadError = null;
     notifySubscribers();
@@ -29,19 +30,18 @@ async function loadBarMenu() {
       console.log(`[BarMenuSync] Loaded ${barGlobalMenu.length} items`);
 
       // Restore Cloudinary URLs on bar DB records (lost imageUrl on backend)
-      repairBarMenuCloudinaryUrls(API_BASE, { force: false })
-        .then(({ repaired, skipped, source, stillMissing }) => {
-          if (!skipped && repaired > 0) {
-            loadPromise = null;
-            return fetchBarMenuFromBackend().then((fresh) => {
-              barGlobalMenu = fresh;
-              writeBarMenuCache(barGlobalMenu);
-              notifySubscribers();
-              console.log(`[BarMenuSync] Reloaded after ${source} restore (${repaired} updated, ${stillMissing ?? 0} still missing)`);
-            });
-          }
-        })
-        .catch((err) => console.warn("[BarMenuSync] Image repair skipped:", err));
+      try {
+        const { repaired, skipped, source, stillMissing } = await repairBarMenuCloudinaryUrls(API_BASE, { force: false });
+        if (!skipped && repaired > 0) {
+          const fresh = await fetchBarMenuFromBackend();
+          barGlobalMenu = fresh;
+          writeBarMenuCache(barGlobalMenu);
+          notifySubscribers();
+          console.log(`[BarMenuSync] Reloaded after ${source} restore (${repaired} updated, ${stillMissing ?? 0} still missing)`);
+        }
+      } catch (err) {
+        console.warn("[BarMenuSync] Image repair failed:", err);
+      }
     } catch (err) {
       console.error("[BarMenuSync] Failed:", err);
       _loadError = err?.message || "Could not reach backend.";
@@ -50,7 +50,21 @@ async function loadBarMenu() {
     _isLoading = false;
     notifySubscribers();
   })();
-  return loadPromise;
+
+  loadPromise = currentPromise;
+
+  try {
+    await currentPromise;
+  } catch {
+    // Error already handled inside the promise
+  } finally {
+    // Only clear if this promise is still the current one (prevents race)
+    if (loadPromise === currentPromise) {
+      loadPromise = null;
+    }
+  }
+
+  return currentPromise;
 }
 
 loadBarMenu();

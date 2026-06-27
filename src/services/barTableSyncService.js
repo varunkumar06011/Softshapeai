@@ -46,9 +46,7 @@ function readCache() {
     const parsed = raw ? JSON.parse(raw) : [];
     // Drop any local-N entries that slipped through, then deduplicate by backendId
     const clean = parsed.filter(t => t.backendId && !String(t.backendId).startsWith('local-'));
-    return clean.filter((table, index, self) =>
-      index === self.findIndex(t => t.backendId === table.backendId)
-    );
+    return Array.from(new Map(clean.map(t => [t.backendId, t])).values());
   } catch {
     return [];
   }
@@ -355,9 +353,7 @@ export function useBarTableSync() {
             if (retryFlat.length > 0) {
               setTablesState((current) => {
                 const merged = mergeTablesFromApi(retryFlat, current);
-                const deduped = merged.filter((table, index, self) =>
-                  index === self.findIndex(t => t.backendId === table.backendId)
-                );
+                const deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
                 writeCache(deduped);
                 return deduped;
               });
@@ -380,9 +376,7 @@ export function useBarTableSync() {
         return row;
       });
       // Deduplicate by backendId to prevent duplicate cards
-      const deduped = merged.filter((table, index, self) =>
-        index === self.findIndex(t => t.backendId === table.backendId)
-      );
+      const deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
       writeCache(deduped);
       return deduped;
     });
@@ -450,9 +444,7 @@ export function useBarTableSync() {
           after.lastUpdatedAt = Date.now();
           const next = [...prev, after];
           // Deduplicate by backendId to prevent duplicate cards
-          const deduped = next.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
+          const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
           writeCache(deduped);
           return deduped;
         });
@@ -536,9 +528,7 @@ export function useBarTableSync() {
     const next = typeof updater === "function" ? updater(current) : updater;
 
     // Deduplicate by backendId to prevent duplicate cards
-    const deduped = next.filter((table, index, self) =>
-      index === self.findIndex(t => t.backendId === table.backendId)
-    );
+    const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
 
     writeCache(deduped);
     tablesRef.current = deduped;
@@ -564,9 +554,7 @@ export function useBarTableSync() {
             updated = copy;
           }
           // Deduplicate after persisting changes
-          const finalDeduped = updated.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
+          const finalDeduped = Array.from(new Map(updated.map(t => [t.backendId, t])).values());
           writeCache(finalDeduped);
           tablesRef.current = finalDeduped;
           return finalDeduped;

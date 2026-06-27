@@ -420,13 +420,13 @@ const OnboardingWizard = () => {
             {steps.map((step, idx) => (
               <React.Fragment key={step.id}>
                 {/* Step: circle + label stacked */}
-                <div className="flex flex-col items-center shrink-0" style={{ minWidth: 0 }}>
+                <div className="flex flex-col items-center shrink-0 overflow-visible" style={{ minWidth: 0 }}>
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
                     currentStepIndex >= idx ? 'bg-[#E53935] text-white' : 'bg-gray-200 text-gray-500'
                   }`}>
                     {currentStepIndex > idx ? '✓' : idx + 1}
                   </div>
-                  <span className={`mt-1 text-[10px] text-center leading-tight w-12 ${
+                  <span className={`mt-1 text-[9px] text-center leading-tight w-14 break-words ${
                     currentStepIndex === idx ? 'text-[#E53935] font-semibold' : 'text-gray-500'
                   }`}>
                     {step.title}

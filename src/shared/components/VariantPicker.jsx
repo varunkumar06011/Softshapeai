@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { isBeerItem } from '../../utils/itemHelpers';
 
@@ -6,6 +7,15 @@ const FULL_BOTTLE_ML = 750;
 const BEER_BOTTLE_ML = 650;
 
 export default function VariantPicker({ item, onSelect, onClose }) {
+  useEffect(() => {
+    if (!item) return;
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [item, onClose]);
+
   if (!item) return null;
 
   // TYPE B bottle items should not use this picker - added directly to cart
@@ -19,8 +29,17 @@ export default function VariantPicker({ item, onSelect, onClose }) {
   // Beer items should only show 650ml bottle option
   if (isBeer) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-        <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4">
+      <div
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+        onClick={onClose}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Select variant for ${item.n || item.name}`}
+      >
+        <div
+          className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4"
+          onClick={e => e.stopPropagation()}
+        >
           <div className="flex items-start justify-between mb-5">
             <div>
               <h3 className="text-lg sm:text-xl font-black text-gray-900">{item.n || item.name}</h3>
@@ -30,6 +49,7 @@ export default function VariantPicker({ item, onSelect, onClose }) {
             </div>
             <button
               onClick={onClose}
+              aria-label="Close variant picker"
               className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors"
             >
               <X size={20} />
@@ -59,8 +79,17 @@ export default function VariantPicker({ item, onSelect, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Select variant for ${item.n}`}
+    >
+      <div
+        className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg shadow-2xl animate-in slide-in-from-bottom-4"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between mb-5">
           <div>
             <h3 className="text-lg sm:text-xl font-black text-gray-900">{item.n}</h3>
@@ -70,6 +99,7 @@ export default function VariantPicker({ item, onSelect, onClose }) {
           </div>
           <button
             onClick={onClose}
+            aria-label="Close variant picker"
             className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors"
           >
             <X size={20} />

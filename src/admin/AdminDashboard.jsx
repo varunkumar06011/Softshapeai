@@ -24,8 +24,9 @@ import {
   Store
 } from 'lucide-react';
 import {
-  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, SettingsPage, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
+  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
 } from './AdminComponents';
+import SettingsPage from './components/SettingsPage';
 import { useAuth } from '../context/AuthContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
 import { apiFetch } from '../services/apiConfig';
@@ -393,7 +394,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           {page === "inventory" && <Inventory />}
           {page === "pricing" && <Pricing />}
           {page === "price-profiles" && <PriceProfilesPage />}
-          {page === "settings" && <SettingsPage />}
+          {page === "settings" && <SettingsPage onNavigate={setPage} />}
           {page === "printers" && <PrinterSettingsPage />}
           {page === "qr-codes" && <TableQRCodes />}
           {page === "staff" && <StaffManagement />}

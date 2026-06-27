@@ -113,41 +113,41 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, logoPreview, menu
             </p>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 Receipt Header Line 1 *
               </label>
               <input
                 type="text"
                 value={data.receiptHeader || ''}
                 onChange={(e) => handleChange('receiptHeader', e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                 placeholder={restaurantName || 'Your Restaurant Name'}
               />
               <p className="text-xs text-gray-400 mt-1">What prints at the top of every bill</p>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 Receipt Header Line 2
               </label>
               <input
                 type="text"
                 value={data.receiptSubHeader || ''}
                 onChange={(e) => handleChange('receiptSubHeader', e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                 placeholder="e.g., Fine Dining Experience | Hyderabad"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 Receipt Footer
               </label>
               <textarea
                 rows={2}
                 value={data.receiptFooter || ''}
                 onChange={(e) => handleChange('receiptFooter', e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 resize-none"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 resize-none transition-all"
                 placeholder="Thank you! Visit again."
                 maxLength={120}
               />
@@ -156,30 +156,30 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, logoPreview, menu
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Bill Prefix</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Bill Prefix</label>
                 <input
                   type="text"
                   value={data.billPrefix || ''}
                   onChange={(e) => handleChange('billPrefix', e.target.value.slice(0, 10).toUpperCase())}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   placeholder="BILL-"
                   maxLength={10}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Starting Number</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Starting Number</label>
                 <input
                   type="number"
                   value={data.startingBillNumber || 1}
                   onChange={(e) => handleChange('startingBillNumber', Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   min={1}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 FSSAI Number <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <input
@@ -189,7 +189,7 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, logoPreview, menu
                   const val = e.target.value.replace(/\D/g, '').slice(0, 14);
                   handleChange('fssai', val);
                 }}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                 placeholder="14-digit FSSAI license number"
                 maxLength={14}
               />
@@ -199,14 +199,14 @@ const StepBranding = ({ data, restaurantName, restaurantGstin, logoPreview, menu
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 GST Number
               </label>
               <input
                 type="text"
                 value={restaurantGstin || ''}
                 readOnly
-                className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600 cursor-not-allowed"
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
                 placeholder="GST number from previous step"
               />
               <p className="text-xs text-gray-400 mt-1">GST number is pulled from restaurant details</p>

@@ -33,7 +33,6 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     const savedToken = localStorage.getItem('ss_token');
     if (!isTokenValid(savedToken)) {
-      localStorage.removeItem('ss_user');
       return null;
     }
     const saved = localStorage.getItem('ss_user');
@@ -42,7 +41,6 @@ export const AuthProvider = ({ children }) => {
   const [restaurant, setRestaurantState] = useState(() => {
     const savedToken = localStorage.getItem('ss_token');
     if (!isTokenValid(savedToken)) {
-      localStorage.removeItem('ss_restaurant');
       return null;
     }
     const saved = localStorage.getItem('ss_restaurant');

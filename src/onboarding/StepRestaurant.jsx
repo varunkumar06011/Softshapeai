@@ -99,14 +99,14 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Restaurant Name *
           </label>
           <input
             type="text"
             value={data.name}
             onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+            className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
             placeholder="e.g., Grand Hotel"
           />
         </div>
@@ -134,20 +134,20 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Address
           </label>
           <textarea
             rows={3}
             value={data.address}
             onChange={(e) => handleChange('address', e.target.value)}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 resize-none"
+            className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 resize-none transition-all"
             placeholder="e.g., 123 Main Street, City, State, PIN"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Phone Number *
           </label>
           <div className="relative">
@@ -159,7 +159,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               maxLength={10}
               value={data.phone}
               onChange={(e) => handleChange('phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
-              className="w-full pl-[5rem] pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className="w-full pl-[5rem] pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
               placeholder="9876543210"
             />
           </div>
@@ -167,7 +167,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Email
           </label>
           <div className="relative">
@@ -176,14 +176,14 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               type="email"
               value={data.email}
               onChange={(e) => handleChange('email', e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
               placeholder="e.g., restaurant@example.com"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             GSTIN <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <div className="relative">
@@ -192,7 +192,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
               type="text"
               value={data.gstin}
               onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 uppercase"
+              className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 uppercase transition-all"
               placeholder="e.g., 29ABCDE1234F1Z5"
               maxLength={15}
             />
@@ -204,7 +204,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Restaurant Type *
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -219,7 +219,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                   className={`relative flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all ${
                     selected
                       ? 'border-[#E53935] bg-[#FFF5F5]'
-                      : 'border-gray-100 bg-gray-50 hover:border-gray-300'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
                   {selected && (
@@ -243,7 +243,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             <p className="text-sm font-semibold text-gray-700">Bar Configuration</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Default pour size (ML)</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Default pour size (ML)</label>
                 <input
                   type="number"
                   value={data.barUnitMl === 0 ? '' : (data.barUnitMl ?? 30)}
@@ -256,12 +256,12 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                       handleChange('barUnitMl', 30);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   placeholder="30"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Full bottle size (ML)</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Full bottle size (ML)</label>
                 <input
                   type="number"
                   value={data.fullBottleMl === 0 ? '' : (data.fullBottleMl ?? 750)}
@@ -274,12 +274,12 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                       handleChange('fullBottleMl', 750);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   placeholder="750"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Half bottle size (ML)</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Half bottle size (ML)</label>
                 <input
                   type="number"
                   value={data.halfBottleMl === 0 ? '' : (data.halfBottleMl ?? 375)}
@@ -292,7 +292,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
                       handleChange('halfBottleMl', 375);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   placeholder="375"
                 />
               </div>
@@ -326,7 +326,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             How many locations does your restaurant have? *
           </label>
           <div className="relative">
@@ -334,7 +334,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             <select
               value={data.outletCount || 1}
               onChange={(e) => handleChange('outletCount', parseInt(e.target.value))}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900"
+              className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
             >
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                 <option key={n} value={n}>{n} Outlet{n > 1 ? 's' : ''}</option>
@@ -350,11 +350,10 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             </p>
           )}
         </div>
-      </div>
 
         {/* Logo Upload */}
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Restaurant Logo <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <div
@@ -393,6 +392,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             )}
           </div>
         </div>
+      </div>
 
       {/* Type Change Confirmation Modal */}
       {showTypeModal && (

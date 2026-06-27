@@ -73,7 +73,7 @@ function notifySubscribers() {
 async function loadInitialMenu() {
   if (loadPromise) return loadPromise;
 
-  loadPromise = (async () => {
+  const currentPromise = (async () => {
     // Only show loading if we have no cached menu
     _isLoading = !globalMenu || globalMenu.length === 0;
     _loadError = null;
@@ -100,7 +100,17 @@ async function loadInitialMenu() {
           err?.message ||
           "Could not reach backend. Check VITE_API_URL and backend deployment.";
       }
+      // Propagate error to callers instead of swallowing
+      throw err;
+    } finally {
+      _isLoading = false;
+      if (globalMenu?.length) {
+        localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+      }
+      notifySubscribers();
+      dispatchMenuEvent(globalMenu ?? []);
     }
+<<<<<<< HEAD
 
     _isLoading = false;
     if (globalMenu?.length) {
@@ -109,12 +119,21 @@ async function loadInitialMenu() {
     }
     notifySubscribers();
     dispatchMenuEvent(globalMenu ?? []);
+=======
+>>>>>>> 3a54638 (backend and databse queries upgrade)
   })();
 
+  loadPromise = currentPromise;
+
   try {
-    await loadPromise;
+    await currentPromise;
+  } catch {
+    // Error already handled inside the promise; clear loadPromise below
   } finally {
-    loadPromise = null;
+    // Only clear if this promise is still the current one (prevents race)
+    if (loadPromise === currentPromise) {
+      loadPromise = null;
+    }
   }
 }
 

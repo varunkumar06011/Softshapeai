@@ -5,6 +5,7 @@ import { fetchPublicMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { generateCallId } from '../services/customerSessionService';
 import { initPublicSocket, useWaiterCalls, API_BASE } from '../services/waiterCallService';
+import { getPublicSocket } from '../hooks/useSocket';
 import { apiUrl } from '../services/apiConfig';
 
 
@@ -143,7 +144,19 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
     };
 
-    const socket = window.__softshape_public_socket;
+    // Use getPublicSocket directly instead of window.__softshape_public_socket
+    // to avoid race condition where the global isn't set yet
+    let socket = null;
+    if (!isMenuOnly && slug && tableId && sig) {
+      try {
+        socket = getPublicSocket(slug, tableId, sig);
+      } catch (e) {
+        console.warn('[CustomerMenu] Failed to get public socket:', e.message);
+      }
+    } else {
+      socket = window.__softshape_public_socket;
+    }
+
     if (socket) {
       socket.on('menu-item-updated', onMenuItemUpdated);
     }

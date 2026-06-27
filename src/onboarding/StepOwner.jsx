@@ -242,12 +242,12 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
       <div className="space-y-4">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">Your Name *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Your Name *</label>
           <input
             type="text"
             value={data.name}
             onChange={(e) => handleChange('name', e.target.value)}
-            className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.name ? 'border-red-500' : 'border-gray-100'}`}
+            className={`w-full px-4 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${errors.name ? 'border-red-500' : 'border-gray-300'}`}
             placeholder="e.g., John Doe"
           />
           {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
@@ -255,14 +255,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
 
         {/* Email */}
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">Email Address *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Email Address *</label>
           <div className="relative">
             <Mail size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
             <input
               type="email"
               value={data.email}
               onChange={(e) => handleChange('email', e.target.value)}
-              className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.email ? 'border-red-500' : 'border-gray-100'}`}
+              className={`w-full pl-10 pr-4 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${errors.email ? 'border-red-500' : 'border-gray-300'}`}
               placeholder="e.g., owner@example.com"
             />
           </div>
@@ -272,7 +272,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
 
         {/* Phone + OTP */}
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">Phone Number *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
           <div className="relative">
             <Smartphone size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             <span className="absolute left-[2.25rem] top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 select-none pointer-events-none">+91</span>
@@ -284,7 +284,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
                 handleChange('phone', digits);
               }}
               disabled={data.phoneVerificationProof}
-              className={`w-full pl-[5rem] pr-24 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 disabled:opacity-60 ${errors.phone ? 'border-red-500' : 'border-gray-100'}`}
+              className={`w-full pl-[5rem] pr-24 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 disabled:opacity-60 transition-all ${errors.phone ? 'border-red-500' : 'border-gray-300'}`}
               placeholder="9876543210"
             />
             <button
@@ -313,7 +313,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
                   value={phoneOtp}
                   onChange={(e) => setPhoneOtp(e.target.value)}
                   placeholder="Enter OTP"
-                  className="w-32 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 text-center text-sm font-mono"
+                  className="w-32 px-3 py-2 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 text-center text-sm font-mono transition-all"
                 />
                 <button
                   type="button"
@@ -346,14 +346,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
 
         {/* Password */}
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">Password *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
           <div className="relative">
             <Lock size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
             <input
               type={showPassword ? 'text' : 'password'}
               value={data.password}
               onChange={(e) => handleChange('password', e.target.value)}
-              className={`w-full pl-10 pr-12 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.password ? 'border-red-500' : 'border-gray-100'}`}
+              className={`w-full pl-10 pr-12 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${errors.password ? 'border-red-500' : 'border-gray-300'}`}
               placeholder="Min 8 characters"
             />
             <button
@@ -377,14 +377,14 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
 
         {/* Confirm Password */}
         <div>
-          <label className="block text-sm font-medium text-gray-500 mb-2">Confirm Password *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
           <div className="relative">
             <ShieldCheck size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
             <input
               type={showConfirmPassword ? 'text' : 'password'}
               value={data.confirmPassword}
               onChange={(e) => handleChange('confirmPassword', e.target.value)}
-              className={`w-full pl-10 pr-12 py-3 bg-gray-50 border rounded-xl focus:outline-none focus:border-[#E53935] text-gray-900 ${errors.confirmPassword ? 'border-red-500' : 'border-gray-100'}`}
+              className={`w-full pl-10 pr-12 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${errors.confirmPassword ? 'border-red-500' : 'border-gray-300'}`}
               placeholder="Re-enter password"
             />
             <button

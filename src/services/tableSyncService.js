@@ -45,9 +45,7 @@ function readCache() {
     const raw = localStorage.getItem(getTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
     // Deduplicate cached tables to prevent duplicate cards on load
-    return parsed.filter((table, index, self) =>
-      index === self.findIndex(t => t.backendId === table.backendId)
-    );
+    return Array.from(new Map(parsed.map(t => [t.backendId, t])).values());
   } catch {
     return [];
   }
@@ -377,9 +375,7 @@ export function useTableSync() {
       }
       const merged = apiEmpty ? [] : mergeTablesFromApi(apiTables, current);
       // Deduplicate by backendId to prevent duplicate cards
-      const deduped = merged.filter((table, index, self) =>
-        index === self.findIndex(t => t.backendId === table.backendId)
-      );
+      const deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
       writeCache(deduped);
       return deduped;
     });
@@ -442,9 +438,7 @@ export function useTableSync() {
           if (findTableIndex(prev, newTable.id) !== -1) return prev;
           const next = [...prev, mapBackendTable(newTable)];
           // Deduplicate by backendId to prevent duplicate cards
-          const deduped = next.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
+          const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
           writeCache(deduped);
           return deduped;
         });
@@ -472,9 +466,7 @@ export function useTableSync() {
     const next = typeof updater === "function" ? updater(current) : updater;
 
     // Deduplicate by backendId to prevent duplicate cards
-    const deduped = next.filter((table, index, self) =>
-      index === self.findIndex(t => t.backendId === table.backendId)
-    );
+    const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
 
     writeCache(deduped);
     tablesRef.current = deduped;
@@ -499,9 +491,7 @@ export function useTableSync() {
             updated = copy;
           }
           // Deduplicate after persisting changes
-          const finalDeduped = updated.filter((table, index, self) =>
-            index === self.findIndex(t => t.backendId === table.backendId)
-          );
+          const finalDeduped = Array.from(new Map(updated.map(t => [t.backendId, t])).values());
           writeCache(finalDeduped);
           return finalDeduped;
         });

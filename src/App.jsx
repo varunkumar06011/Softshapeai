@@ -20,6 +20,17 @@ import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 import { purgeLegacyCaches } from "./utils/cacheKeys";
 
+function isTokenValid(token) {
+  if (!token) return false;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (!payload.exp) return true;
+    return Date.now() < payload.exp * 1000;
+  } catch {
+    return false;
+  }
+}
+
 
 // ─── Live Kitchen Display System ──────────────────────────────────────────────
 const KitchenView = () => {
@@ -243,8 +254,8 @@ function App() {
             <Route path="/cashier/dashboard" element={<ErrorBoundary><CashierDashboardWrapper /></ErrorBoundary>} />
             <Route path="/captain" element={<CaptainLoginWrapper />} />
             <Route path="/captain/dashboard/*" element={<ErrorBoundary><CaptainAppWrapper /></ErrorBoundary>} />
-            <Route path="/kitchen" element={<KitchenView />} />
-            <Route path="/print-station" element={<PrintStation />} />
+            <Route path="/kitchen" element={<ErrorBoundary><KitchenView /></ErrorBoundary>} />
+            <Route path="/print-station" element={<ErrorBoundary><PrintStation /></ErrorBoundary>} />
             <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
             <Route path="/user-menu/:slug" element={<UserMenuApp />} />
             <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
@@ -264,8 +275,8 @@ function PortalSelectionWrapper() {
 
 function AdminLoginWrapper() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isLoggedIn = user && ['ADMIN','OWNER'].includes(user.role);
+  const { user, token } = useAuth();
+  const isLoggedIn = user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/admin/dashboard" replace />;
   return (
     <LoginScreen role="admin" onLogin={() => {}} onBack={() => navigate('/')} />
@@ -274,22 +285,25 @@ function AdminLoginWrapper() {
 
 function AdminDashboardWrapper() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  if (!(user && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
+  const { user, token, logout } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) {
+    logout();
+    return <Navigate to="/admin" replace />;
+  }
   const role = user?.role || 'admin';
   return <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />;
 }
 
 function TableQRCodesWrapper() {
-  const { user } = useAuth();
-  if (!(user && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
+  const { user, token } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
   return <TableQRCodes />;
 }
 
 function CashierLoginWrapper() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isLoggedIn = user && ['CASHIER','OWNER','ADMIN'].includes(user.role);
+  const { user, token } = useAuth();
+  const isLoggedIn = user && token && isTokenValid(token) && ['CASHIER','OWNER','ADMIN'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
   return (
     <LoginScreen role="cashier" onLogin={() => {}} onBack={() => navigate('/')} />
@@ -298,15 +312,18 @@ function CashierLoginWrapper() {
 
 function CashierDashboardWrapper() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  if (!(user && ['CASHIER','OWNER','ADMIN'].includes(user.role))) return <Navigate to="/cashier" replace />;
+  const { user, token, logout } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['CASHIER','OWNER','ADMIN'].includes(user.role))) {
+    logout();
+    return <Navigate to="/cashier" replace />;
+  }
   return <CashierDashboard onLogout={() => { logout(); navigate('/cashier'); }} />;
 }
 
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isLoggedIn = user && ['CAPTAIN', 'CASHIER'].includes(user.role);
+  const { user, token } = useAuth();
+  const isLoggedIn = user && token && isTokenValid(token) && ['CAPTAIN', 'CASHIER'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
   return (
     <LoginScreen role="captain" onLogin={() => {}} onBack={() => navigate('/')} />
@@ -315,8 +332,11 @@ function CaptainLoginWrapper() {
 
 function CaptainAppWrapper() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  if (!(user && ['CAPTAIN', 'CASHIER'].includes(user.role))) return <Navigate to="/captain" replace />;
+  const { user, token, logout } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['CAPTAIN', 'CASHIER'].includes(user.role))) {
+    logout();
+    return <Navigate to="/captain" replace />;
+  }
   return (
     <CaptainApp
       onLogout={() => { logout(); navigate('/captain'); }}

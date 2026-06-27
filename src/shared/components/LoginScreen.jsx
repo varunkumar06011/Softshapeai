@@ -36,6 +36,11 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   const [accessibleOutlets, setAccessibleOutlets] = useState([]);
   const [showOutletPicker, setShowOutletPicker] = useState(false);
 
+  // Trust this terminal — persists session across browser restarts
+  const [trustTerminal, setTrustTerminal] = useState(() => {
+    return localStorage.getItem('ss_trust_terminal') === 'true';
+  });
+
   // Pre-fill restaurant code from ?code= query param for cashier/captain logins
   useEffect(() => {
     if (!isCashier && role !== 'captain') return;
@@ -58,6 +63,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setError('');
     try {
       const data = await authService.login(email.trim(), password, restaurantCode.trim());
+      localStorage.setItem('ss_trust_terminal', String(trustTerminal));
       if (data.accessibleOutlets && data.accessibleOutlets.length > 1) {
         setAccessibleOutlets(data.accessibleOutlets);
         setShowOutletPicker(true);
@@ -131,6 +137,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setError('');
     try {
       const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
+      localStorage.setItem('ss_trust_terminal', String(trustTerminal));
       setAuth({ token, user, restaurant });
       reconnectSocket(token);
       onLogin(user.role);
@@ -344,7 +351,12 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-2 pt-2 gap-4 sm:gap-0">
             <label className="flex items-center gap-2 cursor-pointer group">
-              <input type="checkbox" className="w-5 h-5 sm:w-4 sm:h-4 rounded border-2 border-gray-200 text-[#E53935] focus:ring-[#E53935]" />
+              <input
+                type="checkbox"
+                checked={trustTerminal}
+                onChange={(e) => setTrustTerminal(e.target.checked)}
+                className="w-5 h-5 sm:w-4 sm:h-4 rounded border-2 border-gray-200 text-[#E53935] focus:ring-[#E53935]"
+              />
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">
                 Trust this terminal
               </span>
@@ -361,7 +373,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
           </p>
           <div className="hidden sm:block h-4 w-[1px] bg-gray-400" />
           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-900">
-            v2.45.12-OPERATIONAL
+            v{__APP_VERSION__ || '0.0.0'}
           </p>
         </div>
       </div>

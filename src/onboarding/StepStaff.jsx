@@ -155,7 +155,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNex
                     type="text"
                     value={captain.name}
                     onChange={(e) => handleCaptainChange(index, 'name', e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                    className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                     placeholder={`${captainLabel.slice(0, -1)} name`}
                   />
                 </div>
@@ -175,7 +175,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNex
                       const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                       handleCaptainChange(index, 'pin', value);
                     }}
-                    className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                    className="w-full pl-10 pr-10 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                     placeholder="4-digit PIN"
                     maxLength={4}
                   />
@@ -251,7 +251,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNex
                   type="text"
                   value={cashier.name}
                   onChange={(e) => handleCashierChange(index, 'name', e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   placeholder={`${cashierLabel.slice(0, -1)} name`}
                 />
               </div>
@@ -271,7 +271,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNex
                     const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                     handleCashierChange(index, 'pin', value);
                   }}
-                  className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900"
+                  className="w-full pl-10 pr-10 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all"
                   placeholder="4-digit PIN"
                   maxLength={4}
                 />

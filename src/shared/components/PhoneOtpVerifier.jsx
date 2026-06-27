@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
-import { Loader2, CheckCircle, Phone } from 'lucide-react';
+import { Loader2, CheckCircle, Phone, ArrowLeft } from 'lucide-react';
 import {
   sendPhoneOtp,
   verifyPhoneOtp,
@@ -24,7 +24,7 @@ async function apiFetch(path, options = {}) {
 
 const COUNTDOWN_SECONDS = 120; // 2 min for Firebase OTP
 
-const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
+const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError, onCancel }) => {
   const [status, setStatus] = useState('idle'); // idle | sending | sent | verifying | verified | error
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [errorMsg, setErrorMsg] = useState('');
@@ -208,6 +208,14 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
           >
             <Phone size={18} /> Send Code
           </button>
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="flex items-center gap-1 text-[11px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors justify-center w-full pt-2"
+            >
+              <ArrowLeft size={14} /> Cancel
+            </button>
+          )}
         </>
       )}
 
@@ -220,6 +228,21 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError }) => {
 
       {(status === 'sent' || status === 'verifying') && (
         <>
+          <button
+            onClick={() => {
+              clearInterval(timerRef.current);
+              clearRecaptcha();
+              confirmationResultRef.current = null;
+              verificationIdRef.current = null;
+              setStatus('idle');
+              setDigits(['', '', '', '', '', '']);
+              setErrorMsg('');
+            }}
+            className="flex items-center gap-1 text-[11px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors mb-2"
+          >
+            <ArrowLeft size={14} /> Back
+          </button>
+
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 text-center">
             Enter the 6-digit code sent to <span className="text-gray-700">{phone}</span>
           </p>

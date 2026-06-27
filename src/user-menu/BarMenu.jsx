@@ -16,6 +16,8 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 import { fetchPublicMenu } from '../services/unifiedMenuService';
 
+import { useBarMenuSync } from '../services/barMenuSyncService';
+
 import VariantPicker from '../shared/components/VariantPicker';
 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -167,6 +169,9 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
   const [tableBackendId, setTableBackendId] = useState(null);
 
+  // Bar menu sync service — handles caching, socket updates, and subscriber pattern
+  const { menuItems: barMenuSyncItems, loading: barMenuSyncLoading, error: barMenuSyncError, refreshMenu: refreshBarMenu } = useBarMenuSync();
+
 
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -282,58 +287,11 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
       console.log('[BarMenu] Received menu-item-updated:', payload);
 
       // Dispatch window event for menuSyncService to pick up
-
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
 
-      // Also refresh bar menu directly
-
-      setLoading(true);
-
-      Promise.all([
-
-        fetch(apiUrl("/api/bar/menu/pos-view"), { cache: "no-store", headers: getAuthHeaders() }),
-
-        fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store", headers: getAuthHeaders() }),
-
-      ])
-
-        .then(([posViewRes, itemsRes]) => {
-
-          if (!posViewRes.ok) throw new Error(`POS-view failed: ${posViewRes.status}`);
-
-          if (!itemsRes.ok) throw new Error(`Items failed: ${itemsRes.status}`);
-
-          return Promise.all([posViewRes.json(), itemsRes.json()]);
-
-        })
-
-        .then(([posViewData, itemsData]) => {
-
-          const filteredPosView = (posViewData || []).map(cat => ({
-
-            ...cat,
-
-            items: (cat.items || []).filter(item => item.isAvailable !== false)
-
-          })).filter(cat => cat.items.length > 0);
-
-          const filteredItems = (itemsData || []).filter(item => item.isAvailable !== false);
-
-          setCategoriesData(filteredPosView);
-
-          setFlatItems(filteredItems);
-
-          setLoading(false);
-
-        })
-
-        .catch(err => {
-
-          console.error("Bar menu refresh error:", err);
-
-          setLoading(false);
-
-        });
+      // Use barMenuSyncService to refresh instead of manual fetch
+      // The sync service handles caching, subscriber notifications, and dedup
+      refreshBarMenu();
 
     };
 

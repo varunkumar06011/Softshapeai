@@ -11,6 +11,16 @@ let isListenerAttached = false;
 let isPublicListenerAttached = false;
 
 /**
+ * Reset listener flags so that socket listeners are re-attached
+ * after a disconnect/reconnect cycle. Called by disconnectSocket()
+ * in useSocket.js to prevent stale closures.
+ */
+export function resetWaiterCallListeners() {
+  isListenerAttached = false;
+  isPublicListenerAttached = false;
+}
+
+/**
  * Ensures the socket is connected to the restaurant room and
  * the global `waiter:event` listener is registered exactly once.
  *

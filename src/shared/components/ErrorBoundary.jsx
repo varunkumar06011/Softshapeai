@@ -1,11 +1,11 @@
 import React, { Component } from 'react';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { authService } from '../../services/authService';
 
 export class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null, errorInfo: null, retryCount: 0 };
   }
 
   static getDerivedStateFromError(error) {
@@ -27,6 +27,17 @@ export class ErrorBoundary extends Component {
   }
 
   handleRetry = () => {
+    // First two retries: just re-render children (no logout)
+    // Third+ retry: reload the page (still no logout)
+    const { retryCount } = this.state;
+    if (retryCount < 2) {
+      this.setState({ hasError: false, retryCount: retryCount + 1 });
+    } else {
+      window.location.reload();
+    }
+  };
+
+  handleLogout = () => {
     authService.logout();
     window.location.href = '/';
   };
@@ -47,10 +58,17 @@ export class ErrorBoundary extends Component {
             </p>
             <button
               onClick={this.handleRetry}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase hover:bg-[#B71C1C] transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase hover:bg-[#B71C1C] transition-colors mb-3"
             >
               <RefreshCw size={18} />
-              Retry
+              {this.state.retryCount < 2 ? 'Retry' : 'Reload Page'}
+            </button>
+            <button
+              onClick={this.handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold uppercase hover:bg-gray-200 transition-colors"
+            >
+              <LogOut size={18} />
+              Logout & Restart
             </button>
             {this.props.showDetails && this.state.error && (
               <details className="mt-4 p-4 bg-gray-100 rounded-lg">

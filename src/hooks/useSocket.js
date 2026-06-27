@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
 import { authService } from "../services/authService";
+import { resetWaiterCallListeners } from "../services/waiterCallService";
 
 let socketInstance = null;
 let eventQueue = [];
@@ -23,6 +24,7 @@ export function disconnectSocket() {
   socketInstance = null;
   eventQueue = [];
   isProcessingQueue = false;
+  resetWaiterCallListeners();
 }
 
 export function getSocket() {
@@ -158,10 +160,21 @@ export function getPublicSocket(slug, tableId, sig) {
       // No auth token — public connection
     });
 
-    // Re-emit join:public on every connect/reconnect
+    // Store params on the socket instance so the reconnect handler
+    // always uses current values, avoiding stale closure bugs
+    publicSocketInstance.__publicParams = { slug, tableId, sig };
+
+    // Re-emit join:public on every connect/reconnect using stored params
     publicSocketInstance.on("connect", () => {
-      console.log("[PublicSocket] Connected — joining public room");
-      publicSocketInstance.emit("join:public", { slug, tableId, sig });
+      const params = publicSocketInstance.__publicParams;
+      if (params) {
+        console.log("[PublicSocket] Connected — joining public room");
+        publicSocketInstance.emit("join:public", {
+          slug: params.slug,
+          tableId: params.tableId,
+          sig: params.sig,
+        });
+      }
     });
 
     publicSocketInstance.on("connect_error", (err) => {
@@ -174,6 +187,9 @@ export function getPublicSocket(slug, tableId, sig) {
 
     // Store globally for menu-item-updated listeners
     window.__softshape_public_socket = publicSocketInstance;
+  } else {
+    // Update stored params in case they changed (e.g. different table)
+    publicSocketInstance.__publicParams = { slug, tableId, sig };
   }
 
   return publicSocketInstance;
