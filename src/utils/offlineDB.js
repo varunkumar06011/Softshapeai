@@ -435,3 +435,38 @@ export async function clearAllSettlementGuards() {
   await setSyncMeta(SETTLED_ORDERS_KEY, []);
   await setSyncMeta(SETTLED_TABLES_KEY, []);
 }
+
+// ── local printer config ────────────────────────────────────────────────────
+// Stores printer mapping locally for offline-first printing. The backend printer
+// config remains authoritative, but a local copy is kept for offline resilience.
+
+const PRINTER_CONFIG_KEY = 'localPrinterConfig';
+
+export async function getLocalPrinterConfig() {
+  const value = await getSyncMeta(PRINTER_CONFIG_KEY);
+  return value || {};
+}
+
+export async function setLocalPrinterConfig(config) {
+  return setSyncMeta(PRINTER_CONFIG_KEY, config);
+}
+
+export async function getLocalPrinterMapping() {
+  const config = await getLocalPrinterConfig();
+  return config.mapping || {};
+}
+
+export async function setLocalPrinterMapping(mapping) {
+  const config = await getLocalPrinterConfig();
+  return setLocalPrinterConfig({ ...config, mapping, updatedAt: Date.now() });
+}
+
+export async function getPrintAgentUrl() {
+  const config = await getLocalPrinterConfig();
+  return config.printAgentUrl || 'http://localhost:3100';
+}
+
+export async function setPrintAgentUrl(url) {
+  const config = await getLocalPrinterConfig();
+  return setLocalPrinterConfig({ ...config, printAgentUrl: url, updatedAt: Date.now() });
+}

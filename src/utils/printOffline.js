@@ -7,7 +7,7 @@
 //   4. iOS PWA: generate shareable PDF receipt
 //   5. No printer: queue in offlinePrintJobs IndexedDB store for auto-print on reconnect
 
-import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob } from './offlineDB';
+import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, getPrintAgentUrl } from './offlineDB';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
@@ -24,21 +24,21 @@ function detectPlatform() {
 
 // ── Printer config ───────────────────────────────────────────────────────────
 
-function getPrinterMapping() {
+async function getPrinterMapping() {
   try {
-    const stored = localStorage.getItem('agent_printer_mapping');
-    return stored ? JSON.parse(stored) : {};
+    return await getLocalPrinterMapping();
   } catch {
-    return {};
+    // Fallback to legacy localStorage mapping if IndexedDB is unavailable
+    try {
+      const stored = localStorage.getItem('agent_printer_mapping');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
   }
 }
 
 function resolvePrinter(jobType, mapping) {
-  // Check for explicit printer override in localStorage
-  const overrideKey = `offline_printer_${jobType.toLowerCase()}`;
-  const override = localStorage.getItem(overrideKey);
-  if (override) return override;
-
   // Fall back to mapping
   if (jobType === 'KOT' || jobType === 'CANCEL_KOT') return mapping.kitchen;
   if (jobType === 'BAR_KOT') return mapping.bar;
@@ -140,8 +140,9 @@ function buildKotText({ tableNumber, items, kotNumber, restaurantName, captainNa
  */
 export async function printLocal(job) {
   const platform = detectPlatform();
-  const mapping = getPrinterMapping();
+  const mapping = await getPrinterMapping();
   const printerName = job.printerName || resolvePrinter(job.jobType, mapping);
+  const printAgentUrl = await getPrintAgentUrl();
 
   // Generate text content if not provided
   const text = job.text || (job.jobType === 'FINAL_BILL' || job.jobType === 'BILL'
@@ -149,6 +150,37 @@ export async function printLocal(job) {
     : job.jobType === 'KOT' || job.jobType === 'BAR_KOT'
     ? buildKotText(job.data || {})
     : JSON.stringify(job.data || {}));
+  const bytes = Array.from(textToEscpos(text));
+
+  // ── Primary: local Print Agent HTTP endpoint ──
+  // Try the Print Agent first regardless of platform. This lets a single local
+  // Print Agent handle all printer dispatch, even if the backend is offline.
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${printAgentUrl}/print`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobType: job.jobType,
+        printerName: printerName || undefined,
+        text,
+        bytes,
+        data: job.data || {},
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      console.log(`[printOffline] Printed [${job.jobType}] via Print Agent at ${printAgentUrl}`);
+      return { printed: true, queued: false };
+    }
+  } catch (err) {
+    // Print Agent not reachable — fall through to platform-specific paths
+    if (err.name !== 'AbortError') {
+      console.log(`[printOffline] Print Agent not reachable at ${printAgentUrl}, falling back:`, err.message);
+    }
+  }
 
   // ── Tauri desktop: raw print via Rust command ──
   if (platform === 'tauri') {
