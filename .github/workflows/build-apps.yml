@@ -45,6 +45,11 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: npm install
 
+      - name: Generate Tauri icons
+        working-directory: apps/${{ matrix.app }}
+        shell: bash
+        run: npx tauri icon "../../public/logo softshape.ai.png"
+
       - name: Build ${{ matrix.app }}
         run: npm run build:${{ matrix.app }}
         env:
