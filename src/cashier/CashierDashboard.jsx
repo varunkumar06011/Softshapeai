@@ -2118,7 +2118,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       const restaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
 
-      if (!navigator.onLine) {
+      if (isOffline) {
         // Offline: print from local kotHistory if available
         const kotHistory = selectedTable.kotHistory || [];
         if (kotHistory.length === 0) {
@@ -2257,7 +2257,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       setIsPrintingBill(true);
 
-      if (!navigator.onLine) {
+      if (isOffline) {
         // Offline: queue the walk-in bill action for sync
         const { addPendingAction, addOfflineTransaction } = await import('../utils/offlineDB');
         await addPendingAction({

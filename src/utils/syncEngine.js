@@ -9,7 +9,7 @@ import {
   setSyncMeta,
   getSyncMeta,
 } from './offlineDB';
-import { API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 
 // ── Status tracking ──────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ async function syncSingleAction(action) {
 
 export async function syncPendingActions() {
   if (syncing) return;
-  if (!navigator.onLine) return;
+  if (!isBackendReachable()) return;
 
   syncing = true;
   setSyncStatus('syncing');
@@ -312,10 +312,16 @@ export function initSyncEngine() {
   initialized = true;
 
   // Listen for online/offline events
-  window.addEventListener('online', () => {
-    console.log('[SyncEngine] Back online — flushing pending actions');
-    // Small delay to let network stabilize
-    setTimeout(() => syncPendingActions(), 500);
+  window.addEventListener('online', async () => {
+    const reachable = await checkBackendReachability();
+    if (reachable) {
+      console.log('[SyncEngine] Backend reachable — flushing pending actions');
+      // Small delay to let network stabilize
+      setTimeout(() => syncPendingActions(), 500);
+    } else {
+      console.log('[SyncEngine] Browser reports online but backend not reachable — pausing sync');
+      setSyncStatus('idle');
+    }
   });
 
   window.addEventListener('offline', () => {
@@ -323,15 +329,15 @@ export function initSyncEngine() {
     setSyncStatus('idle');
   });
 
-  // Periodic sync when online
+  // Periodic sync when backend is reachable
   syncIntervalId = setInterval(() => {
-    if (navigator.onLine && !syncing) {
+    if (isBackendReachable() && !syncing) {
       syncPendingActions();
     }
   }, SYNC_INTERVAL_MS);
 
-  // Initial sync if already online
-  if (navigator.onLine) {
+  // Initial sync if backend is reachable
+  if (isBackendReachable()) {
     setTimeout(() => syncPendingActions(), 1000);
   }
 

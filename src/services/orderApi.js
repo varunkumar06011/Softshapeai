@@ -1,4 +1,4 @@
-import { apiUrl, getAuthHeaders } from "./apiConfig";
+import { apiUrl, getAuthHeaders, isBackendReachable } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
 import { authService } from "./authService";
@@ -53,7 +53,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (platform) { orderData.platform = platform; }
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     const offlineRequestId = requestId || generateRequestId();
     orderData.requestId = offlineRequestId;
     await addPendingAction({
@@ -123,7 +123,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     const offlineRequestId = requestId || generateRequestId();
     body.requestId = offlineRequestId;
     await addPendingAction({
@@ -189,7 +189,7 @@ export async function updateOrderStatus(orderId, status) {
 }
 
 export async function requestBilling(orderId) {
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     const requestId = generateRequestId();
     await addPendingAction({
       requestId,
@@ -223,7 +223,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
   const settleRequestId = requestId || generateRequestId();
   body.requestId = settleRequestId;
 
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     await addPendingAction({
       requestId: settleRequestId,
       entityId: orderId,
@@ -325,7 +325,7 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null) {
   const cancelRequestId = requestId || generateRequestId();
 
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     await addPendingAction({
       requestId: cancelRequestId,
       entityId: orderId,
@@ -369,7 +369,7 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
 }
 
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     const requestId = generateRequestId();
     await addPendingAction({
       requestId,
@@ -431,7 +431,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (discountPercent) qs.set('discountPercent', String(discountPercent));
   if (kotNumbers) qs.set('kotNumbers', kotNumbers);
 
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     await addPendingAction({
       requestId: printRequestId,
       entityId: orderId,
@@ -474,7 +474,7 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
   // items: Array<{ orderItemId: string, cancelQuantity: number }>
   const cancelRequestId = requestId || generateRequestId();
 
-  if (!navigator.onLine) {
+  if (!isBackendReachable()) {
     await addPendingAction({
       requestId: cancelRequestId,
       entityId: orderId,

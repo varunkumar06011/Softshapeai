@@ -85,6 +85,37 @@ export async function pingBackend() {
   }
 }
 
+// ── Cached backend reachability (more reliable than navigator.onLine in Tauri) ─
+// null = unknown (fall back to navigator.onLine), true/false = last ping result.
+let backendReachable = null;
+
+export async function checkBackendReachability() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(apiUrl('/api/health'), {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    backendReachable = res.ok;
+  } catch {
+    backendReachable = false;
+  } finally {
+    clearTimeout(timeout);
+  }
+  return backendReachable;
+}
+
+/** Synchronous cached check. Falls back to navigator.onLine until the first ping completes. */
+export function isBackendReachable() {
+  return backendReachable ?? navigator.onLine;
+}
+
+export function setBackendReachable(value) {
+  backendReachable = value;
+}
+
 console.log("[API] Backend base:", API_BASE);
 
 // Keep Render backend warm — ping every 10 minutes
@@ -93,3 +124,13 @@ console.log("[API] Backend base:", API_BASE);
   ping(); // immediate ping on load
   setInterval(ping, 10 * 60 * 1000);
 })();
+
+// In browser/Tauri, refresh reachability on network events and periodically.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => checkBackendReachability());
+  window.addEventListener('offline', () => { backendReachable = false; });
+  // First ping after a short delay so tests that import the module early don't get
+  // an immediate fetch racing against their mocks.
+  setTimeout(checkBackendReachability, 1000);
+  setInterval(checkBackendReachability, 30000);
+}

@@ -15,6 +15,9 @@ import 'fake-indexeddb/auto';
 vi.mock('../../services/apiConfig', () => ({
   API_BASE: 'http://localhost:3000',
   getAuthHeaders: () => ({ Authorization: 'Bearer test-token' }),
+  isBackendReachable: () => navigator.onLine,
+  checkBackendReachability: async () => navigator.onLine,
+  setBackendReachable: () => {},
 }));
 
 vi.mock('../printOffline', () => ({

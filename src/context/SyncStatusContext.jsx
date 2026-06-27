@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus } from '../utils/syncEngine';
 import { subscribeConflicts, clearConflict, clearAllConflicts } from '../utils/conflictResolver';
+import { isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 
 const SyncStatusContext = createContext(null);
 
@@ -10,7 +11,7 @@ export function SyncStatusProvider({ children }) {
     pendingCount: 0,
     lastSyncAt: null,
     lastError: null,
-    isOnline: navigator.onLine,
+    isOnline: isBackendReachable(),
   });
 
   const [conflicts, setConflicts] = useState([]);
@@ -29,9 +30,10 @@ export function SyncStatusProvider({ children }) {
       setConflicts(newConflicts);
     });
 
-    // Track online/offline status
-    const handleOnline = () => {
-      setStatus((prev) => ({ ...prev, isOnline: true }));
+    // Track online/offline status based on actual backend reachability
+    const handleOnline = async () => {
+      const reachable = await checkBackendReachability();
+      setStatus((prev) => ({ ...prev, isOnline: reachable }));
     };
     const handleOffline = () => {
       setStatus((prev) => ({ ...prev, isOnline: false }));
@@ -41,13 +43,20 @@ export function SyncStatusProvider({ children }) {
     window.addEventListener('offline', handleOffline);
 
     // Set initial online status
-    setStatus((prev) => ({ ...prev, isOnline: navigator.onLine }));
+    setStatus((prev) => ({ ...prev, isOnline: isBackendReachable() }));
+
+    // Refresh reachability periodically so the UI badge reflects reality
+    const reachabilityInterval = setInterval(async () => {
+      const reachable = await checkBackendReachability();
+      setStatus((prev) => (prev.isOnline !== reachable ? { ...prev, isOnline: reachable } : prev));
+    }, 30000);
 
     return () => {
       unsubscribe();
       unsubscribeConflicts();
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      clearInterval(reachabilityInterval);
     };
   }, []);
 
@@ -90,8 +99,8 @@ export function useSyncStatus() {
       pendingCount: 0,
       lastSyncAt: null,
       lastError: null,
-      isOnline: navigator.onLine,
-      isOffline: !navigator.onLine,
+      isOnline: isBackendReachable(),
+      isOffline: !isBackendReachable(),
       hasPending: false,
       hasConflicts: false,
       conflicts: [],
