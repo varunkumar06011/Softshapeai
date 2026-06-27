@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 # Capacitor generated platforms
 android/
+
+# Android signing keystore
+softshape-release.keystore
