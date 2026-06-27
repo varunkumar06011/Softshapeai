@@ -6,7 +6,7 @@ export function getCurrentRestaurantId() {
   if (userRaw) {
     try {
       const user = JSON.parse(userRaw);
-      if (user?.restaurantId) return user.restaurantId;
+      return user.activeRestaurantId ?? user.restaurantId;
     } catch {
       /* ignore parse error */
     }

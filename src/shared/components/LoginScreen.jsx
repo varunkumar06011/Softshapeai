@@ -32,6 +32,10 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Multi-outlet picker state
+  const [accessibleOutlets, setAccessibleOutlets] = useState([]);
+  const [showOutletPicker, setShowOutletPicker] = useState(false);
+
   // Pre-fill restaurant code from ?code= query param for cashier/captain logins
   useEffect(() => {
     if (!isCashier && role !== 'captain') return;
@@ -53,12 +57,35 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const { token, user, restaurant } = await authService.login(email.trim(), password, restaurantCode.trim());
+      const data = await authService.login(email.trim(), password, restaurantCode.trim());
+      if (data.accessibleOutlets && data.accessibleOutlets.length > 1) {
+        setAccessibleOutlets(data.accessibleOutlets);
+        setShowOutletPicker(true);
+        return;
+      }
+      const { token, user, restaurant } = data;
       setAuth({ token, user, restaurant });
       reconnectSocket(token);
       onLogin(user.role);
     } catch (err) {
       setError(err.message || 'Invalid credentials');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOutletSelect = async (outlet) => {
+    setLoading(true);
+    setError('');
+    try {
+      const { token, user, restaurant } = await authService.switchOutlet(outlet.id);
+      setShowOutletPicker(false);
+      setAccessibleOutlets([]);
+      setAuth({ token, user, restaurant });
+      reconnectSocket(token);
+      onLogin(user.role);
+    } catch (err) {
+      setError(err.message || 'Failed to switch outlet');
     } finally {
       setLoading(false);
     }
@@ -239,10 +266,30 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
           ) : (
             /* ── Admin / Owner Email+Password Login ── */
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
-                  Restaurant Code
-                </label>
+              {showOutletPicker ? (
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Select Outlet</p>
+                  <div className="grid gap-3">
+                    {accessibleOutlets.map(outlet => (
+                      <button
+                        key={outlet.id}
+                        onClick={() => handleOutletSelect(outlet)}
+                        disabled={loading}
+                        className="w-full text-left p-4 rounded-2xl border-2 border-gray-50 bg-gray-50 hover:border-[#E53935] hover:bg-white transition-all disabled:opacity-50"
+                      >
+                        <p className="text-sm font-black text-gray-900">{outlet.name}</p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{outlet.restaurantCode}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {error && <p className="text-[12px] font-bold text-red-600 px-1">{error}</p>}
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
+                      Restaurant Code
+                    </label>
                 <input
                   type="text"
                   value={restaurantCode}
@@ -290,6 +337,8 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
                 <ShieldCheck size={20} />
                 {loading ? 'Authenticating…' : 'Authenticate Session'}
               </button>
+            </>
+          )}
             </div>
           )}
 

@@ -18,13 +18,15 @@ export const authService = {
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials');
     }
-    localStorage.setItem('ss_token', data.token);
-    localStorage.setItem('ss_user', JSON.stringify(data.user));
-    if (data.restaurant) {
-      localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
+    if (data.token) {
+      localStorage.setItem('ss_token', data.token);
+      localStorage.setItem('ss_user', JSON.stringify(data.user));
+      if (data.restaurant) {
+        localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
+      }
+      console.log('[AuthService] login stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
+      purgeLegacyCaches();
     }
-    console.log('[AuthService] login stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
-    purgeLegacyCaches();
     return data;
   },
 
@@ -44,6 +46,26 @@ export const authService = {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
     console.log('[AuthService] captainLogin stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
+    purgeLegacyCaches();
+    return data;
+  },
+
+  async switchOutlet(outletId) {
+    const res = await fetch(`${getApiBase()}/api/auth/switch-outlet`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.getAuthHeader() },
+      body: JSON.stringify({ outletId }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to switch outlet');
+    }
+    localStorage.setItem('ss_token', data.token);
+    localStorage.setItem('ss_user', JSON.stringify(data.user));
+    if (data.restaurant) {
+      localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
+    }
+    console.log('[AuthService] switchOutlet stored token, outlet:', data.restaurant?.id);
     purgeLegacyCaches();
     return data;
   },
