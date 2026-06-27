@@ -4,8 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 const PRINT_AGENT_DOWNLOAD_URL = process.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
 if (!PRINT_AGENT_DOWNLOAD_URL) {
-  throw new Error(
-    'VITE_PRINT_AGENT_DOWNLOAD_URL is required. Set it to the URL of the SoftShape Print Agent installer (e.g., a GitHub release asset URL).'
+  console.warn(
+    'VITE_PRINT_AGENT_DOWNLOAD_URL is not set. The print agent download link will be hidden until it is configured.'
   );
 }
 
