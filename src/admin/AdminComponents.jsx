@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import AppsSection from './settings/AppsSection';
 import {
   ChartNoAxesCombined,
   ClipboardList,
@@ -28,6 +29,7 @@ import {
   AlertCircle,
   Package,
   History,
+  Settings,
   Clock,
   ChevronRight,
   Filter,
@@ -6209,12 +6211,34 @@ export function SettingsPage() {
   const fieldClass = "w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-[#E53935] focus:bg-white transition-all";
   const labelClass = "text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-1 block";
 
+  const [tab, setTab] = useState('general');
+
   return (
-    <div className="p-6 bg-white border rounded-2xl font-sans max-w-3xl mx-auto space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold mb-1">Restaurant Settings</h2>
-        <p className="text-sm text-gray-500">Update your restaurant profile, branding, and receipt config.</p>
+    <div className="p-4 md:p-6 font-sans max-w-5xl mx-auto space-y-6">
+      {/* Tab bar */}
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-3">
+        <button
+          onClick={() => setTab('general')}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${tab === 'general' ? 'bg-red-50 text-[#E53935]' : 'text-gray-500 hover:bg-gray-50'}`}
+        >
+          <Settings size={16} />
+          General
+        </button>
+        <button
+          onClick={() => setTab('apps')}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${tab === 'apps' ? 'bg-red-50 text-[#E53935]' : 'text-gray-500 hover:bg-gray-50'}`}
+        >
+          <Download size={16} />
+          Download Apps
+        </button>
       </div>
+
+      {tab === 'general' && (
+        <div className="p-4 md:p-6 bg-white border rounded-2xl space-y-8">
+          <div>
+            <h2 className="text-2xl font-bold mb-1">Restaurant Settings</h2>
+            <p className="text-sm text-gray-500">Update your restaurant profile, branding, and receipt config.</p>
+          </div>
 
       {/* Basic Info */}
       <div className="space-y-4">
@@ -6373,8 +6397,12 @@ export function SettingsPage() {
         </button>
         {saved && <span className="text-sm font-bold text-green-600">Saved successfully!</span>}
       </div>
-
     </div>
+  )}
+
+  {tab === 'apps' && <AppsSection />}
+
+</div>
   );
 }
 
