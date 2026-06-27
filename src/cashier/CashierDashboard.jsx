@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId } from '../services/orderApi';
+import { recordSettlementAudit } from '../utils/settlementAuditLog';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
@@ -2546,11 +2547,12 @@ const CashierDashboard = ({ onLogout }) => {
         // Call backend settle endpoint (creates transaction, marks paid, resets table)
         // NO PRINTING - that already happened in handleFinalBill
         if (orderId) {
+          const settleRequestId = generateRequestId();
           const settleData = await settleOrder(
             orderId,
             [],
             'Cashier',
-            null,
+            settleRequestId,
             {
               paymentMethod: method,
               discountPercent: selectedTable.isExtra
@@ -2570,6 +2572,15 @@ const CashierDashboard = ({ onLogout }) => {
 
           if (settleData?.offline) {
             console.log(`[Settlement] orderId=${orderId} queued offline`);
+            recordSettlementAudit({
+              requestId: settleRequestId,
+              orderId,
+              tableId: selectedTable?.backendId || null,
+              method,
+              amount: txnAmount,
+              offline: true,
+              status: 'pending',
+            });
             // Mark as settled locally to prevent retries
             setSettledOrderIds(prev => new Set([...prev, orderId]));
             if (selectedTable?.backendId) {
@@ -2580,6 +2591,17 @@ const CashierDashboard = ({ onLogout }) => {
           }
 
           console.log(`[Settlement] orderId=${orderId} settled on server`);
+
+          recordSettlementAudit({
+            requestId: settleRequestId,
+            orderId,
+            tableId: selectedTable?.backendId || null,
+            method,
+            amount: txnAmount,
+            offline: false,
+            status: 'success',
+            syncedAt: Date.now(),
+          });
 
           // Merge returned transaction into pastTransactions immediately (fixes fast-settlement disappearing bills)
           if (settleData?.transaction) {

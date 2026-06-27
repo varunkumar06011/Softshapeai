@@ -11,6 +11,7 @@ import {
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
+import { finalizeSettlementAudit } from './settlementAuditLog';
 
 // ── Status tracking ──────────────────────────────────────────────────────────
 
@@ -187,6 +188,9 @@ export async function syncPendingActions() {
         await removePendingAction(action.id);
         // Clear any previous conflict for this action
         clearConflict(action.id);
+        if (action.actionType === 'settle') {
+          finalizeSettlementAudit(action.requestId, { status: result.status });
+        }
         succeeded++;
       } else if (result.status === 'conflict') {
         // Conflict — use conflictResolver to determine policy
@@ -199,6 +203,9 @@ export async function syncPendingActions() {
         if (resolution.resolution === 'skip') {
           await removePendingAction(action.id);
           clearConflict(action.id);
+          if (action.actionType === 'settle') {
+            finalizeSettlementAudit(action.requestId, { status: 'skipped' });
+          }
           succeeded++;
         } else {
           // Store conflict for UI surfacing
@@ -208,6 +215,9 @@ export async function syncPendingActions() {
             actionType: action.actionType,
             ...resolution,
           });
+          if (action.actionType === 'settle') {
+            finalizeSettlementAudit(action.requestId, { status: 'conflict', error: resolution.message });
+          }
           hadConflict = true;
           failed++;
         }
@@ -227,6 +237,9 @@ export async function syncPendingActions() {
           lastError: result.error,
           attempts: (action.attempts || 0) + 1,
         });
+        if (action.actionType === 'settle') {
+          finalizeSettlementAudit(action.requestId, { status: 'error', error: result.error });
+        }
         failed++;
       }
     }

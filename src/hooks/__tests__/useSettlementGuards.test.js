@@ -2,26 +2,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useSettlementGuards } from '../useSettlementGuards';
 
-const mockGetSettledOrderIds = vi.fn();
-const mockSetSettledOrderIds = vi.fn();
-const mockGetSettledTableIds = vi.fn();
-const mockSetSettledTableIds = vi.fn();
-const mockClearAll = vi.fn();
+const mockLoadSettlementGuards = vi.fn();
+const mockMarkSettledOrder = vi.fn();
+const mockMarkSettledTable = vi.fn();
+const mockClearSettlementGuards = vi.fn();
+const mockFlushSettlementGuards = vi.fn();
 
-vi.mock('../../utils/offlineDB', () => ({
-  getSettledOrderIds: () => mockGetSettledOrderIds(),
-  setSettledOrderIds: (ids) => mockSetSettledOrderIds(ids),
-  getSettledTableIds: () => mockGetSettledTableIds(),
-  setSettledTableIds: (ids) => mockSetSettledTableIds(ids),
-  clearAllSettlementGuards: () => mockClearAll(),
+vi.mock('../../utils/settlementGuardWriter', () => ({
+  loadSettlementGuards: () => mockLoadSettlementGuards(),
+  markSettledOrder: (id) => mockMarkSettledOrder(id),
+  markSettledTable: (id) => mockMarkSettledTable(id),
+  clearSettlementGuards: () => mockClearSettlementGuards(),
+  flushSettlementGuards: () => mockFlushSettlementGuards(),
 }));
 
 beforeEach(() => {
-  mockGetSettledOrderIds.mockResolvedValue(new Set());
-  mockGetSettledTableIds.mockResolvedValue(new Set());
-  mockSetSettledOrderIds.mockResolvedValue(undefined);
-  mockSetSettledTableIds.mockResolvedValue(undefined);
-  mockClearAll.mockResolvedValue(undefined);
+  mockLoadSettlementGuards.mockResolvedValue({ orderIds: new Set(), tableIds: new Set() });
+  mockMarkSettledOrder.mockReturnValue(undefined);
+  mockMarkSettledTable.mockReturnValue(undefined);
+  mockClearSettlementGuards.mockResolvedValue(undefined);
+  mockFlushSettlementGuards.mockResolvedValue(undefined);
 });
 
 function renderHookWithProps(initialProps) {
@@ -32,17 +32,15 @@ function renderHookWithProps(initialProps) {
 
 describe('useSettlementGuards', () => {
   it('loads persisted guards on mount', async () => {
-    let resolveOrder, resolveTable;
-    mockGetSettledOrderIds.mockImplementation(() => new Promise(resolve => { resolveOrder = resolve; }));
-    mockGetSettledTableIds.mockImplementation(() => new Promise(resolve => { resolveTable = resolve; }));
+    let resolveLoad;
+    mockLoadSettlementGuards.mockImplementation(() => new Promise(resolve => { resolveLoad = resolve; }));
 
     const { result, unmount } = renderHookWithProps({ hasPending: false, lastSyncAt: null });
 
     expect(result.current.settledOrderIds.size).toBe(0);
 
     await act(async () => {
-      resolveOrder(new Set(['order-1']));
-      resolveTable(new Set(['table-1']));
+      resolveLoad({ orderIds: new Set(['order-1']), tableIds: new Set(['table-1']) });
     });
 
     expect(result.current.settledOrderIds.has('order-1')).toBe(true);
@@ -50,37 +48,37 @@ describe('useSettlementGuards', () => {
     unmount();
   });
 
-  it('persists order IDs when setSettledOrderIds is called', async () => {
+  it('queues order IDs via the batched writer when setSettledOrderIds is called', async () => {
     const { result, unmount } = renderHookWithProps({ hasPending: false, lastSyncAt: null });
 
     act(() => {
       result.current.setSettledOrderIds(new Set(['order-a']));
     });
 
-    await waitFor(() => expect(mockSetSettledOrderIds).toHaveBeenCalledWith(new Set(['order-a'])));
-    expect(mockSetSettledOrderIds).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockMarkSettledOrder).toHaveBeenCalledWith('order-a'));
+    expect(mockMarkSettledOrder).toHaveBeenCalledTimes(1);
     unmount();
   });
 
-  it('persists table IDs when setSettledTableIds is called', async () => {
+  it('queues table IDs via the batched writer when setSettledTableIds is called', async () => {
     const { result, unmount } = renderHookWithProps({ hasPending: false, lastSyncAt: null });
 
     act(() => {
       result.current.setSettledTableIds(new Set(['table-a']));
     });
 
-    await waitFor(() => expect(mockSetSettledTableIds).toHaveBeenCalledWith(new Set(['table-a'])));
-    expect(mockSetSettledTableIds).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockMarkSettledTable).toHaveBeenCalledWith('table-a'));
+    expect(mockMarkSettledTable).toHaveBeenCalledTimes(1);
     unmount();
   });
 
-  it('uses functional updater for setSettledOrderIds and persists the result', async () => {
-    let resolveOrder;
-    mockGetSettledOrderIds.mockImplementation(() => new Promise(resolve => { resolveOrder = resolve; }));
+  it('uses functional updater and marks each order id in the writer', async () => {
+    let resolveLoad;
+    mockLoadSettlementGuards.mockImplementation(() => new Promise(resolve => { resolveLoad = resolve; }));
     const { result, unmount } = renderHookWithProps({ hasPending: false, lastSyncAt: null });
 
     await act(async () => {
-      resolveOrder(new Set(['order-1']));
+      resolveLoad({ orderIds: new Set(['order-1']), tableIds: new Set() });
     });
     expect(result.current.settledOrderIds.has('order-1')).toBe(true);
 
@@ -88,22 +86,21 @@ describe('useSettlementGuards', () => {
       result.current.setSettledOrderIds(prev => new Set([...prev, 'order-2']));
     });
 
-    await waitFor(() =>
-      expect(mockSetSettledOrderIds).toHaveBeenCalledWith(new Set(['order-1', 'order-2']))
-    );
+    await waitFor(() => {
+      expect(mockMarkSettledOrder).toHaveBeenCalledWith('order-1');
+      expect(mockMarkSettledOrder).toHaveBeenCalledWith('order-2');
+    });
     unmount();
   });
 
-  it('clears guards when all pending actions are synced', async () => {
-    let resolveOrder, resolveTable;
-    mockGetSettledOrderIds.mockImplementation(() => new Promise(resolve => { resolveOrder = resolve; }));
-    mockGetSettledTableIds.mockImplementation(() => new Promise(resolve => { resolveTable = resolve; }));
+  it('clears guards via the writer when all pending actions are synced', async () => {
+    let resolveLoad;
+    mockLoadSettlementGuards.mockImplementation(() => new Promise(resolve => { resolveLoad = resolve; }));
 
     const { result, rerender, unmount } = renderHookWithProps({ hasPending: true, lastSyncAt: null });
 
     await act(async () => {
-      resolveOrder(new Set(['order-1']));
-      resolveTable(new Set(['table-1']));
+      resolveLoad({ orderIds: new Set(['order-1']), tableIds: new Set(['table-1']) });
     });
     expect(result.current.settledOrderIds.has('order-1')).toBe(true);
 
@@ -111,7 +108,7 @@ describe('useSettlementGuards', () => {
       rerender({ hasPending: false, lastSyncAt: Date.now() });
     });
 
-    await waitFor(() => expect(mockClearAll).toHaveBeenCalled());
+    await waitFor(() => expect(mockClearSettlementGuards).toHaveBeenCalled());
     expect(result.current.settledOrderIds.size).toBe(0);
     expect(result.current.settledTableIds.size).toBe(0);
     unmount();

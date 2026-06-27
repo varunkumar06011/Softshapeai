@@ -1,5 +1,5 @@
 const DB_NAME = 'softshape-offline';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -56,6 +56,14 @@ function openDB() {
 
       if (!db.objectStoreNames.contains('syncMeta')) {
         db.createObjectStore('syncMeta', { keyPath: 'key' });
+      }
+
+      // v3 stores
+      if (!db.objectStoreNames.contains('settlementAuditLog')) {
+        const store = db.createObjectStore('settlementAuditLog', { keyPath: 'localId', autoIncrement: true });
+        store.createIndex('orderId', 'orderId', { unique: false });
+        store.createIndex('requestId', 'requestId', { unique: false });
+        store.createIndex('synced', 'synced', { unique: false });
       }
     };
 
@@ -434,6 +442,70 @@ export async function clearSettledTableId(id) {
 export async function clearAllSettlementGuards() {
   await setSyncMeta(SETTLED_ORDERS_KEY, []);
   await setSyncMeta(SETTLED_TABLES_KEY, []);
+}
+
+// ── settlement audit log ────────────────────────────────────────────────────
+
+export async function addSettlementAuditLog(entry) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settlementAuditLog', 'readwrite');
+    const store = tx.objectStore('settlementAuditLog');
+    const request = store.add({
+      ...entry,
+      createdAt: entry.createdAt || Date.now(),
+      synced: entry.synced || false,
+    });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function updateSettlementAuditLog(localId, updates) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settlementAuditLog', 'readwrite');
+    const store = tx.objectStore('settlementAuditLog');
+    const getReq = store.get(localId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result;
+      if (!existing) {
+        resolve(null);
+        return;
+      }
+      const request = store.put({ ...existing, ...updates, localId });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function getSettlementAuditLogs(filter = {}) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settlementAuditLog', 'readonly');
+    const store = tx.objectStore('settlementAuditLog');
+    const results = [];
+    const request = store.openCursor();
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const entry = cursor.value;
+        if (
+          (!filter.orderId || entry.orderId === filter.orderId) &&
+          (!filter.requestId || entry.requestId === filter.requestId) &&
+          (filter.synced === undefined || entry.synced === filter.synced)
+        ) {
+          results.push(entry);
+        }
+        cursor.continue();
+      } else {
+        resolve(results.sort((a, b) => b.createdAt - a.createdAt));
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
 }
 
 // ── local printer config ────────────────────────────────────────────────────
