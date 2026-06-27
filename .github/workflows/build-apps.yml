@@ -95,7 +95,8 @@ jobs:
 
       - name: Add Android platform
         working-directory: apps/${{ matrix.app }}
-        run: [ -d android ] || npx cap add android
+        run: |
+          [ -d android ] || npx cap add android
 
       - name: Sync Capacitor
         working-directory: apps/${{ matrix.app }}
