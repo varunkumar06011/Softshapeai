@@ -107,8 +107,16 @@ jobs:
       - name: Build web app
         run: npm run build
 
+      - name: Verify signing secrets
+        run: |
+          if [ -z "${{ secrets.ANDROID_KEYSTORE }}" ]; then
+            echo "::error::ANDROID_KEYSTORE secret missing — refusing to build unsigned APK"
+            exit 1
+          fi
+
       - name: Add Android platform
         working-directory: apps/${{ matrix.app }}
+        shell: bash
         run: |
           if [ ! -f "android/gradlew" ]; then
             rm -rf android
@@ -119,42 +127,59 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: npx cap sync android
 
-      - name: Build APK
-        working-directory: apps/${{ matrix.app }}/android
-        run: ./gradlew assembleRelease
-
-      - name: Rename APK
+      - name: Decode keystore
         working-directory: apps/${{ matrix.app }}/android
         shell: bash
         run: |
-          apk="app/build/outputs/apk/release/app-release-unsigned.apk"
-          if [ -f "$apk" ]; then
-            mv "$apk" "app/build/outputs/apk/release/${{ matrix.app }}.apk"
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > app/release.keystore
+
+      - name: Set Android version code and name
+        working-directory: apps/${{ matrix.app }}/android
+        shell: bash
+        run: |
+          VERSION_CODE=${{ github.run_number }}
+          VERSION_NAME=${{ github.ref_name }}
+          sed -i -E "s/versionCode [0-9]+/versionCode $VERSION_CODE/" app/build.gradle
+          sed -i -E "s/versionName \"[^\"]+\"/versionName \"$VERSION_NAME\"/" app/build.gradle
+
+      - name: Build & sign APK
+        working-directory: apps/${{ matrix.app }}/android
+        shell: bash
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/app/release.keystore \
+            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEY_PASSWORD }}"
+
+      - name: Rename signed APK
+        working-directory: apps/${{ matrix.app }}/android
+        shell: bash
+        run: |
+          src="app/build/outputs/apk/release/app-release.apk"
+          if [ -f "$src" ]; then
+            mv "$src" "app/build/outputs/apk/release/${{ matrix.app }}.apk"
+          else
+            echo "::error::Signed APK not found at $src"
+            exit 1
           fi
 
-      - name: Check for keystore
-        id: keystore
-        run: echo "has_keystore=${{ secrets.ANDROID_KEYSTORE != '' }}" >> $GITHUB_OUTPUT
-
-      - name: Sign APK
-        if: steps.keystore.outputs.has_keystore == 'true'
+      - name: Verify APK signature
         working-directory: apps/${{ matrix.app }}/android
+        shell: bash
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > app/release.keystore
-          ./gradlew signReleaseApp -Pandroid.injected.signing.store.file=app/release.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }}
+          BUILD_TOOLS=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify app/build/outputs/apk/release/${{ matrix.app }}.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.app }}-android
-          path: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: warn
+          path: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/${{ matrix.app }}.apk
+          if-no-files-found: error
 
       - name: Attach to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
-          files: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/*.apk
+          files: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/${{ matrix.app }}.apk
