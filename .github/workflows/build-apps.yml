@@ -14,6 +14,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         app: [cashier-desktop, admin-desktop]
     steps:
@@ -36,6 +37,10 @@ jobs:
 
       - name: Build web app
         run: npm run build
+
+      - name: Install desktop app dependencies
+        working-directory: apps/${{ matrix.app }}
+        run: npm install
 
       - name: Build ${{ matrix.app }}
         run: npm run build:${{ matrix.app }}
@@ -64,6 +69,7 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         app: [cashier-android, admin-android]
     steps:
@@ -96,7 +102,10 @@ jobs:
       - name: Add Android platform
         working-directory: apps/${{ matrix.app }}
         run: |
-          [ -d android ] || npx cap add android
+          if [ ! -f "android/gradlew" ]; then
+            rm -rf android
+            npx cap add android
+          fi
 
       - name: Sync Capacitor
         working-directory: apps/${{ matrix.app }}
