@@ -7137,14 +7137,10 @@ export function StaffManagement() {
   const fetchStaff = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/staff`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load staff');
-      setStaff(data);
+      const data = await apiFetch('/api/auth/staff');
+      setStaff(data || []);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to load staff');
     } finally {
       setLoading(false);
     }
@@ -7164,22 +7160,16 @@ export function StaffManagement() {
     if (!form.name.trim() || !form.pin || form.pin.length !== 4) return;
     setSaving(true);
     try {
-      const url = `${API_BASE}/api/auth/staff${editing ? `/${editing.id}` : ''}`;
+      const path = `/api/auth/staff${editing ? `/${editing.id}` : ''}`;
       const method = editing ? 'PATCH' : 'POST';
       const body = editing
         ? { name: form.name, pin: form.pin, permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
         : { name: form.name, role: form.role, pin: form.pin };
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      await apiFetch(path, { method, body: JSON.stringify(body) });
       fetchStaff();
       resetForm();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to save');
     } finally {
       setSaving(false);
     }
@@ -7188,14 +7178,10 @@ export function StaffManagement() {
   const handleDeactivate = async (id) => {
     if (!confirm('Deactivate this staff member?')) return;
     try {
-      const res = await fetch(`${API_BASE}/api/auth/staff/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Failed to deactivate');
+      await apiFetch(`/api/auth/staff/${id}`, { method: 'DELETE' });
       fetchStaff();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to deactivate');
     }
   };
 
