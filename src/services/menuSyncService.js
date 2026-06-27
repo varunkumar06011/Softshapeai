@@ -110,17 +110,6 @@ async function loadInitialMenu() {
       notifySubscribers();
       dispatchMenuEvent(globalMenu ?? []);
     }
-<<<<<<< HEAD
-
-    _isLoading = false;
-    if (globalMenu?.length) {
-      localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
-      recordMenuCacheTimestamp();
-    }
-    notifySubscribers();
-    dispatchMenuEvent(globalMenu ?? []);
-=======
->>>>>>> 3a54638 (backend and databse queries upgrade)
   })();
 
   loadPromise = currentPromise;
