@@ -15,11 +15,11 @@ env:
   VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
   VITE_SENTRY_DSN: https://0265523fc50be65aad6018cb11266b19@o4511625453699072.ingest.us.sentry.io/4511625461497856
   VITE_PRINT_AGENT_DOWNLOAD_URL: https://github.com/varunkumar06011/softshape-print-agent/releases/latest/download/SoftShape.Print.Agent_0.1.0_x64-setup.exe
-  VITE_CASHIER_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.1/SoftShape.Cashier_0.1.0_x64-setup.exe
-  VITE_CASHIER_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.1/cashier-android.apk
-  VITE_ADMIN_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.1/SoftShape.Admin_0.1.0_x64-setup.exe
-  VITE_ADMIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.1/admin-android.apk
-  VITE_CAPTAIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.1/captain-android.apk
+  VITE_CASHIER_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.3/SoftShape.Cashier_0.1.0_x64-setup.exe
+  VITE_CASHIER_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.3/cashier-android.apk
+  VITE_ADMIN_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.3/SoftShape.Admin_0.1.0_x64-setup.exe
+  VITE_ADMIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.3/admin-android.apk
+  VITE_CAPTAIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.3/captain-android.apk
 
 permissions:
   contents: write
