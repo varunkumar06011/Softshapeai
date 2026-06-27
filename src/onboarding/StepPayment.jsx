@@ -8,10 +8,11 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
   const [paymentReference, setPaymentReference] = useState(null);
   const [quote, setQuote] = useState(null);
   const [progressStep, setProgressStep] = useState(0);
+  const [paymentConfig, setPaymentConfig] = useState({ gateway: 'MOCK', keyId: null });
 
-  const isMockMode = !import.meta.env.VITE_RAZORPAY_KEY_ID;
+  const isMockMode = paymentConfig.gateway === 'MOCK';
 
-  // Wake up the Render backend before the user clicks Pay + fetch quote
+  // Wake up the Render backend before the user clicks Pay + fetch quote + payment config
   useEffect(() => {
     pingBackend();
     fetch(apiUrl('/api/onboard/pricing/quote'), {
@@ -19,6 +20,11 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan, numberOfOutlets: outletCount }),
     }).then(r => r.json()).then(setQuote).catch(() => {});
+
+    fetch(apiUrl('/api/onboard/payment/config'))
+      .then(r => r.json())
+      .then(setPaymentConfig)
+      .catch(() => {});
   }, [plan, outletCount]);
 
   const callMockPayment = async () => {
@@ -127,7 +133,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
   };
 
   const buildRazorpayOptions = (gatewayOrderId, amount) => ({
-    key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+    key: paymentConfig.keyId,
     amount: amount * 100,
     currency: 'INR',
     name: 'Softshape.ai',
