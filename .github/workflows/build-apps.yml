@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [cashier-android, admin-android]
+        app: [cashier-android, admin-android, captain-android]
     steps:
       - uses: actions/checkout@v4
 
