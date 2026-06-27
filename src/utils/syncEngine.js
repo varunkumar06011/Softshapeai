@@ -105,22 +105,22 @@ async function syncSingleAction(action) {
   });
 
   if (res.ok) {
-    return { status: 'success', statusCode: res.status, data: await res.json().catch(() => ({})) };
+    return { requestId: action.requestId, status: 'success', statusCode: res.status, data: await res.json().catch(() => ({})) };
   }
 
   const errBody = await res.json().catch(() => ({}));
 
   // 409 Conflict — order already paid, already printed, etc.
   if (res.status === 409) {
-    return { status: 'conflict', statusCode: 409, error: errBody.error || 'Conflict' };
+    return { requestId: action.requestId, status: 'conflict', statusCode: 409, error: errBody.error || 'Conflict' };
   }
 
   // 401 — auth expired, pause sync
   if (res.status === 401) {
-    return { status: 'auth_error', statusCode: 401, error: 'Authentication expired' };
+    return { requestId: action.requestId, status: 'auth_error', statusCode: 401, error: 'Authentication expired' };
   }
 
-  return { status: 'error', statusCode: res.status, error: errBody.error || `Server returned ${res.status}` };
+  return { requestId: action.requestId, status: 'error', statusCode: res.status, error: errBody.error || `Server returned ${res.status}` };
 }
 
 // ── Main sync function ───────────────────────────────────────────────────────
@@ -154,6 +154,10 @@ export async function syncPendingActions() {
       results = await syncIndividually(actions);
     }
 
+    // Build a result map by requestId so out-of-order bulk-sync results cannot be
+    // misapplied to the wrong action (backend processes entity groups concurrently).
+    const resultMap = new Map((results || []).map(r => [r.requestId, r]));
+
     // Process results
     let succeeded = 0;
     let skipped = 0;
@@ -163,7 +167,7 @@ export async function syncPendingActions() {
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
-      let result = results[i] || { status: 'error', error: 'No result returned' };
+      let result = resultMap.get(action.requestId) || { status: 'error', error: 'No result returned' };
 
       // Normalize bulk sync results: map statusCode to status for conflict detection
       if (result.statusCode === 409 && result.status !== 'conflict') {

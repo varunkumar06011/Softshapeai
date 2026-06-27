@@ -202,6 +202,49 @@ describe('syncEngine — syncPendingActions', () => {
     const count = await getPendingCount();
     expect(count).toBe(0);
   });
+
+  it('should match out-of-order bulk-sync results by requestId (regression)', async () => {
+    // Backend processes entity groups concurrently and can return results in any order.
+    // This test simulates a reversed result order and asserts that the frontend still
+    // applies each result to the correct pending action.
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          // Results returned in reverse order relative to the actions queued below
+          { requestId: 'settle-B', actionType: 'settle', status: 'error', statusCode: 500, error: 'Settle failed' },
+          { requestId: 'create-A', actionType: 'create-order', status: 'success', statusCode: 200, data: { id: 'order-A' } },
+        ],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    await addPendingAction({
+      requestId: 'create-A',
+      actionType: 'create-order',
+      entityId: 'table-A',
+      url: '/api/orders',
+      method: 'POST',
+      body: { tableId: 'table-A', items: [] },
+    });
+
+    await addPendingAction({
+      requestId: 'settle-B',
+      actionType: 'settle',
+      entityId: 'table-B',
+      url: '/api/orders/table-B/settle',
+      method: 'POST',
+      body: { paymentMethod: 'CASH' },
+    });
+
+    await syncPendingActions();
+
+    // create-A succeeded (matched by requestId), settle-B errored (matched by requestId)
+    const remaining = await getPendingActions();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].requestId).toBe('settle-B');
+    expect(remaining[0].actionType).toBe('settle');
+  });
 });
 
 describe('syncEngine — init/stop', () => {
