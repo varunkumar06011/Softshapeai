@@ -94,6 +94,11 @@ const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNex
         <p className="text-gray-500">
           {isCloud || isCafe ? 'Add your order managers with 4-digit PINs' : 'Add your captains and cashiers with 4-digit PINs'}
         </p>
+        {!isCloud && !isCafe && (
+          <p className="text-gray-400 text-sm mt-1">
+            Captains take orders at tables. Cashiers handle billing at the counter.
+          </p>
+        )}
       </div>
 
       {/* Auto-generate & shift collapse controls */}

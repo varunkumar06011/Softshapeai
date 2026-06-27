@@ -13,7 +13,7 @@ import StepTax from './StepTax';
 import StepPrinters from './StepPrinters';
 import StepPlan from './StepPlan';
 import StepPayment from './StepPayment';
-import StepOutlets from './StepOutlets';
+import StepOutlets, { areasToFlat } from './StepOutlets';
 import StepConfirmation from './StepConfirmation';
 import OnboardingSuccess from './OnboardingSuccess';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -23,7 +23,6 @@ const STORAGE_KEY = 'onboarding_wizard_v2';
 function computeSteps(restaurantType, outletCount, hasVenues) {
   const base = [
     { id: 'restaurant', title: 'Restaurant Info' },
-    { id: 'branding', title: 'Branding' },
     { id: 'owner', title: 'Your Login Details' },
   ];
 
@@ -44,6 +43,7 @@ function computeSteps(restaurantType, outletCount, hasVenues) {
 
   base.push({ id: 'plan', title: 'Choose Plan' });
   base.push({ id: 'payment', title: 'Payment' });
+  base.push({ id: 'branding', title: 'Branding' });
   base.push({ id: 'confirm', title: 'Confirm' });
 
   return base;
@@ -229,21 +229,24 @@ const OnboardingWizard = () => {
       // Sanitize outlets if multi-outlet
       let cleanOutlets = [];
       if (wizardData.restaurant.outletCount > 1 && wizardData.outlets && wizardData.outlets.length > 0) {
-        cleanOutlets = wizardData.outlets.map(o => ({
-          name: o.name.trim(),
-          restaurantType: o.restaurantType,
-          sections: o.sections.filter(s => s.name.trim().length >= 1),
-          tables: o.tables,
-          menu: {
-            categories: o.menu.categories
-              .filter(cat => cat.name.trim().length >= 1)
-              .map(cat => ({
-                ...cat,
-                items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
-              }))
-              .filter(cat => cat.items.length > 0)
-          }
-        })).filter(o => o.sections.length > 0 && o.menu.categories.length > 0);
+        cleanOutlets = wizardData.outlets.map(o => {
+          const { sections, tables } = areasToFlat(o.areas || []);
+          return {
+            name: o.name.trim(),
+            restaurantType: o.restaurantType,
+            sections: sections.filter(s => s.name.trim().length >= 1),
+            tables: tables.filter(t => t.number > 0 && t.capacity > 0),
+            menu: {
+              categories: o.menu.categories
+                .filter(cat => cat.name.trim().length >= 1)
+                .map(cat => ({
+                  ...cat,
+                  items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
+                }))
+                .filter(cat => cat.items.length > 0)
+            }
+          };
+        }).filter(o => o.sections.length > 0 && o.menu.categories.length > 0);
       }
 
       const { confirmPassword, ...ownerData } = wizardData.owner;
@@ -369,10 +372,13 @@ const OnboardingWizard = () => {
           />
         );
       case 'outlets':
-        return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} mainSections={wizardData.sections} mainTables={wizardData.tables} mainMenu={wizardData.menu} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
+        return <StepOutlets outlets={wizardData.outlets} outletCount={wizardData.restaurant.outletCount} parentType={wizardData.restaurant.restaurantType} mainVenues={wizardData.venues} mainMenu={wizardData.menu} onChange={(outlets) => updateWizardData('outlets', outlets)} onNext={handleNext} onBack={handleBack} />;
       case 'plan':
         const summary = {
-          tables: (wizardData.tables?.length || 0) + (wizardData.outlets || []).reduce((s, o) => s + (o.tables?.length || 0), 0),
+          tables: (wizardData.tables?.length || 0) + (wizardData.outlets || []).reduce((s, o) => {
+            const { tables: oTables } = areasToFlat(o.areas || []);
+            return s + oTables.length;
+          }, 0),
           staff: (wizardData.captains?.length || 0) + (wizardData.cashiers?.length || 0),
           menuItems: wizardData.menu?.categories?.reduce((s, cat) => s + (cat.items?.length || 0), 0) || 0,
         };

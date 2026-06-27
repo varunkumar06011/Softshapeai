@@ -227,6 +227,9 @@ const StepYourSpace = ({ restaurantType, venues, sections, tables, onChange, onN
         <p className="text-gray-500">
           Tell us how your restaurant is laid out. Add each area (like a dining room or bar), then add sections and tables within each area.
         </p>
+        <p className="text-gray-400 text-sm mt-1">
+          A section is a zone within your area — for example, 'Window Side' or 'Main Hall'.
+        </p>
       </div>
 
       {areas.map((area, areaIdx) => {

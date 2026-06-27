@@ -3,10 +3,10 @@ import { Printer, Plus, Trash2, Monitor, X, ArrowRight, AlertTriangle, CheckCirc
 
 const PAPER_WIDTHS = ['58mm', '80mm'];
 const PRINTER_TYPES = [
-  { value: 'KITCHEN', label: 'Kitchen KOT' },
-  { value: 'BAR', label: 'Bar KOT' },
-  { value: 'BILL', label: 'Bill' },
-  { value: 'ALL', label: 'All' },
+  { value: 'KITCHEN', label: 'Kitchen Printer (prints order tickets)' },
+  { value: 'BAR', label: 'Bar Printer (prints bar order tickets)' },
+  { value: 'BILL', label: 'Bill Printer (prints customer bills)' },
+  { value: 'ALL', label: 'All-in-One Printer' },
 ];
 
 const getDefaultPrinters = (restaurantType) => {
@@ -82,49 +82,52 @@ const StepPrinters = ({ restaurantType, printers, sectionRouting, sectionsData, 
       <div className="text-center mb-8">
         <Printer size={48} className="mx-auto text-[#E53935] mb-4" />
         <h2 className="text-2xl font-bold mb-2">Printer Setup</h2>
-        <p className="text-gray-500">Configure KOT and bill printers for your restaurant</p>
+        <p className="text-gray-500">Set up printers for order tickets and bills</p>
       </div>
 
-      {/* Mode selector */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => handleModeChange('qz')}
-          className={`p-4 rounded-xl border-2 text-left transition-all ${
-            printingMode === 'qz'
-              ? 'border-[#E53935] bg-[#FFF5F5]'
-              : 'border-gray-100 bg-gray-50 hover:border-gray-300'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Printer size={24} className={printingMode === 'qz' ? 'text-[#E53935]' : 'text-gray-400'} />
-            <div>
-              <p className={`text-sm font-semibold ${printingMode === 'qz' ? 'text-[#E53935]' : 'text-gray-900'}`}>
-                QZ Tray
-              </p>
-              <p className="text-xs text-gray-500">USB or network printer</p>
+      {/* Printer connected? */}
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-gray-700">Do you have a printer connected?</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => handleModeChange('qz')}
+            className={`p-4 rounded-xl border-2 text-left transition-all ${
+              printingMode === 'qz'
+                ? 'border-[#E53935] bg-[#FFF5F5]'
+                : 'border-gray-100 bg-gray-50 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Printer size={24} className={printingMode === 'qz' ? 'text-[#E53935]' : 'text-gray-400'} />
+              <div>
+                <p className={`text-sm font-semibold ${printingMode === 'qz' ? 'text-[#E53935]' : 'text-gray-900'}`}>
+                  Yes, I have a printer
+                </p>
+                <p className="text-xs text-gray-500">Configure printers for order tickets and bills</p>
+              </div>
             </div>
-          </div>
-        </button>
-        <button
-          type="button"
-          onClick={() => handleModeChange('none')}
-          className={`p-4 rounded-xl border-2 text-left transition-all ${
-            printingMode === 'none'
-              ? 'border-[#E53935] bg-[#FFF5F5]'
-              : 'border-gray-100 bg-gray-50 hover:border-gray-300'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Monitor size={24} className={printingMode === 'none' ? 'text-[#E53935]' : 'text-gray-400'} />
-            <div>
-              <p className={`text-sm font-semibold ${printingMode === 'none' ? 'text-[#E53935]' : 'text-gray-900'}`}>
-                No printing
-              </p>
-              <p className="text-xs text-gray-500">Skip for now, set up later</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('none')}
+            className={`p-4 rounded-xl border-2 text-left transition-all ${
+              printingMode === 'none'
+                ? 'border-[#E53935] bg-[#FFF5F5]'
+                : 'border-gray-100 bg-gray-50 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Monitor size={24} className={printingMode === 'none' ? 'text-[#E53935]' : 'text-gray-400'} />
+              <div>
+                <p className={`text-sm font-semibold ${printingMode === 'none' ? 'text-[#E53935]' : 'text-gray-900'}`}>
+                  No, skip for now
+                </p>
+                <p className="text-xs text-gray-500">Orders will be sent digitally to the Captain app</p>
+              </div>
             </div>
-          </div>
-        </button>
+          </button>
+        </div>
       </div>
 
       {printingMode === 'qz' && (
@@ -322,7 +325,7 @@ const StepPrinters = ({ restaurantType, printers, sectionRouting, sectionsData, 
               <p>1 x Butter Naan</p>
               <p className="border-t border-gray-200 pt-1 text-center">--- KOT END ---</p>
             </div>
-            <p className="text-xs text-gray-500">In a real setup, this would print to {testPrinter.name} via QZ Tray.</p>
+            <p className="text-xs text-gray-500">In a real setup, this would print to {testPrinter.name}.</p>
             <button
               onClick={() => setShowTestModal(false)}
               className="w-full py-2.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all"

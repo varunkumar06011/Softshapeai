@@ -115,7 +115,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
       <div className="text-center mb-8">
         <Utensils size={48} className="mx-auto text-[#E53935] mb-4" />
         <h2 className="text-2xl font-bold mb-2">Menu Setup</h2>
-        <p className="text-gray-500">Add your menu items</p>
+        <p className="text-gray-500">Group your dishes into categories like 'Starters', 'Main Course', 'Beverages'.</p>
       </div>
 
       {isCloud && onDeliveryPlatformsChange && (

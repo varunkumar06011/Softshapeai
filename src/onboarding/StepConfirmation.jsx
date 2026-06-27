@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle, Pencil, ChevronDown, ChevronUp, Eye, EyeOff, MapPin, Building2 } from 'lucide-react';
+import { areasToFlat } from './StepOutlets';
 
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
@@ -17,7 +18,10 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
 
   const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
 
-  const totalTables = tables.length + (outlets || []).reduce((sum, o) => sum + o.tables.length, 0);
+  const totalTables = tables.length + (outlets || []).reduce((sum, o) => {
+    const { tables: oTables } = areasToFlat(o.areas || []);
+    return sum + oTables.length;
+  }, 0);
   const totalCaptains = captains.length;
   const totalCashiers = cashiers.length;
   const totalMenuItems = menu.categories.reduce((sum, cat) => sum + cat.items.length, 0);
