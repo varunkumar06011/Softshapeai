@@ -12,6 +12,7 @@ import {
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 import { finalizeSettlementAudit } from './settlementAuditLog';
+import { markKitchenItemsSynced } from './kitchenQueue';
 
 const LOW_QUOTA_RATIO = 0.8;
 
@@ -246,6 +247,9 @@ export async function syncPendingActions() {
         clearConflict(action.id);
         if (action.actionType === 'settle') {
           finalizeSettlementAudit(action.requestId, { status: result.status });
+        }
+        if (action.actionType === 'create-order' || action.actionType === 'update-items') {
+          markKitchenItemsSynced(action.body?.tableId || action.entityId, action.requestId).catch(() => {});
         }
         succeeded++;
       } else if (result.status === 'conflict') {

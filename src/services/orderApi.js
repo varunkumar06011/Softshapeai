@@ -7,6 +7,7 @@ import {
   addOfflineTransaction,
   addOfflinePrintJob,
 } from "../utils/offlineDB";
+import { queueKitchenItems } from "../utils/kitchenQueue";
 
 function generateRequestId() {
   return (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -65,6 +66,15 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
       method: 'POST',
       body: orderData,
     });
+    // Queue KOT items locally so the kitchen display still works during KDS outage
+    const kitchenItems = orderData.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+    await queueKitchenItems({
+      orderId: `offline-${Date.now()}`,
+      tableId,
+      tableNumber: orderData.tableNumber || tableId,
+      items: kitchenItems,
+      requestId: offlineRequestId,
+    }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
     if (import.meta.env.DEV) {
       console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
     }
@@ -135,6 +145,15 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       method: 'PATCH',
       body,
     });
+    // Queue KOT items locally so the kitchen display still works during KDS outage
+    const kitchenItems = body.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+    await queueKitchenItems({
+      orderId,
+      tableId: orderId,
+      tableNumber: tableNumber || orderId,
+      items: kitchenItems,
+      requestId: offlineRequestId,
+    }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
     if (import.meta.env.DEV) {
       console.log('[Offline] Update order items queued for sync:', orderId);
     }

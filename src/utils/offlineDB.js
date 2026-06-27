@@ -1,7 +1,7 @@
 import { getDeviceId } from './deviceId';
 
 const DB_NAME = 'softshape-offline';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -66,6 +66,14 @@ function openDB() {
         store.createIndex('orderId', 'orderId', { unique: false });
         store.createIndex('requestId', 'requestId', { unique: false });
         store.createIndex('synced', 'synced', { unique: false });
+      }
+
+      // v4 stores — offline kitchen queue for KDS outage fallback
+      if (!db.objectStoreNames.contains('kitchenQueue')) {
+        const store = db.createObjectStore('kitchenQueue', { keyPath: 'localId', autoIncrement: true });
+        store.createIndex('orderId', 'orderId', { unique: false });
+        store.createIndex('status', 'status', { unique: false });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
 
@@ -514,6 +522,109 @@ export async function getSettlementAuditLogs(filter = {}) {
         cursor.continue();
       } else {
         resolve(results.sort((a, b) => b.createdAt - a.createdAt));
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// ── kitchen queue (KDS outage fallback) ────────────────────────────────────
+
+export async function addKitchenQueueItem(item) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kitchenQueue', 'readwrite');
+    const store = tx.objectStore('kitchenQueue');
+    const request = store.add({
+      ...item,
+      status: item.status || 'pending',
+      createdAt: item.createdAt || Date.now(),
+      updatedAt: item.updatedAt || Date.now(),
+    });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getKitchenQueueItems(filter = {}) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kitchenQueue', 'readonly');
+    const store = tx.objectStore('kitchenQueue');
+    const results = [];
+    const request = store.openCursor();
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const entry = cursor.value;
+        if (
+          (!filter.orderId || entry.orderId === filter.orderId) &&
+          (!filter.status || entry.status === filter.status) &&
+          (filter.synced === undefined || entry.synced === filter.synced)
+        ) {
+          results.push(entry);
+        }
+        cursor.continue();
+      } else {
+        resolve(results.sort((a, b) => b.createdAt - a.createdAt));
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function updateKitchenQueueItem(localId, updates) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kitchenQueue', 'readwrite');
+    const store = tx.objectStore('kitchenQueue');
+    const getReq = store.get(localId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result;
+      if (!existing) {
+        resolve(null);
+        return;
+      }
+      const request = store.put({
+        ...existing,
+        ...updates,
+        updatedAt: Date.now(),
+        localId,
+      });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function removeKitchenQueueItem(localId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kitchenQueue', 'readwrite');
+    const request = tx.objectStore('kitchenQueue').delete(localId);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function pruneKitchenQueue(maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  const db = await openDB();
+  const cutoff = Date.now() - maxAgeMs;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kitchenQueue', 'readwrite');
+    const store = tx.objectStore('kitchenQueue');
+    const request = store.openCursor();
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const entry = cursor.value;
+        if (entry.createdAt < cutoff && (entry.status === 'synced' || entry.status === 'cancelled')) {
+          cursor.delete();
+        }
+        cursor.continue();
+      } else {
+        resolve();
       }
     };
     request.onerror = () => reject(request.error);
