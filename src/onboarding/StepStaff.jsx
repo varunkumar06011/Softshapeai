@@ -176,7 +176,7 @@ const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNex
                   />
                   <span className="absolute -bottom-5 left-0 text-[10px] text-gray-400 whitespace-nowrap">Staff will use this 4-digit PIN to log in on the tablet.</span>
                   <button
-                    onClick={() => togglePin(`c-${index}`)
+                    onClick={() => togglePin(`c-${index}`)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     type="button"
                   >
