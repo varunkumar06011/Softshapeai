@@ -37,13 +37,7 @@ import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
-import {
-  getSettledOrderIds,
-  setSettledOrderIds,
-  getSettledTableIds,
-  setSettledTableIds,
-  clearAllSettlementGuards,
-} from '../utils/offlineDB';
+import { useSettlementGuards } from '../hooks/useSettlementGuards';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 function getVenueTableLabel(sectionTag, tableNumber) {
@@ -357,12 +351,18 @@ const CashierDashboard = ({ onLogout }) => {
       const saved = localStorage.getItem(getTenantScopedKey('cashier_selected_table'));
       if (!saved) return null;
       const parsed = JSON.parse(saved);
-      // NEVER restore activeOrder/items from localStorage — prevents stale/wrong items on refresh
+      // Do not restore activeOrder/items from the selected-table snapshot alone;
+      // instead, find the matching table in the persisted table cache so the
+      // latest kotHistory, activeOrder.items, and currentBill are restored.
+      const restaurantId = getCurrentRestaurantId();
+      const restaurantTables = JSON.parse(localStorage.getItem(getTablesCacheKey(restaurantId)) || '[]');
+      const barTables = JSON.parse(localStorage.getItem(getBarTablesCacheKey(restaurantId)) || '[]');
+      const cachedTable = [...restaurantTables, ...barTables].find(t => t.backendId === parsed.backendId || t.id === parsed.id);
       return {
         ...parsed,
-        activeOrder: parsed.activeOrder ? { id: parsed.activeOrder.id, totalAmount: parsed.activeOrder.totalAmount } : null,
-        kotHistory: [],
-        currentBill: 0,
+        activeOrder: cachedTable?.activeOrder || (parsed.activeOrder ? { id: parsed.activeOrder.id, totalAmount: parsed.activeOrder.totalAmount } : null),
+        kotHistory: cachedTable?.kotHistory || [],
+        currentBill: cachedTable?.currentBill || 0,
       };
     } catch {
       return null;
@@ -391,57 +391,15 @@ const CashierDashboard = ({ onLogout }) => {
   const isPrintingBillRef = useRef(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
-  // Set of orderIds that have already been settled this session — prevents double-settlement
-  const [settledOrderIds, setSettledOrderIdsState] = useState(() => new Set());
-  // Set of table backendIds settled this session — prevents socket/sync from reverting UI
-  const [settledTableIds, setSettledTableIdsState] = useState(() => new Set());
-  const settledTableIdsRef = useRef(settledTableIds);
-  useEffect(() => { settledTableIdsRef.current = settledTableIds; }, [settledTableIds]);
 
-  // Load persisted settlement guards on mount (survives app restart while offline)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [orderIds, tableIds] = await Promise.all([
-        getSettledOrderIds(),
-        getSettledTableIds(),
-      ]);
-      if (cancelled) return;
-      setSettledOrderIdsState(orderIds);
-      setSettledTableIdsState(tableIds);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Persisted setters: update state and write to IndexedDB
-  const setSettledOrderIds = useCallback((updater) => {
-    setSettledOrderIdsState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      setSettledOrderIds(next).catch(err => console.error('[SettlementGuard] Failed to persist orderIds:', err));
-      return next;
-    });
-  }, []);
-
-  const setSettledTableIds = useCallback((updater) => {
-    setSettledTableIdsState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      setSettledTableIds(next).catch(err => console.error('[SettlementGuard] Failed to persist tableIds:', err));
-      return next;
-    });
-  }, []);
-
-  // Once all pending actions have synced, settlement guards are no longer needed.
-  // Clear them so future sessions can settle the same table/order again if needed.
-  useEffect(() => {
-    if (!hasPending && lastSyncAt && (settledOrderIds.size > 0 || settledTableIds.size > 0)) {
-      clearAllSettlementGuards()
-        .then(() => {
-          setSettledOrderIdsState(new Set());
-          setSettledTableIdsState(new Set());
-        })
-        .catch(err => console.error('[SettlementGuard] Failed to clear guards:', err));
-    }
-  }, [hasPending, lastSyncAt, settledOrderIds.size, settledTableIds.size]);
+  // Settlement guards: persisted order/table IDs that have already been settled.
+  const {
+    settledOrderIds,
+    settledTableIds,
+    settledTableIdsRef,
+    setSettledOrderIds,
+    setSettledTableIds,
+  } = useSettlementGuards(hasPending, lastSyncAt);
 
   const recentlyTerminatedRef = useRef((() => {
     try {
@@ -1541,8 +1499,10 @@ const CashierDashboard = ({ onLogout }) => {
 
     const isSelectedFree = !selectedTable.status || selectedTable.status === 'Free' || selectedTable.status === 'AVAILABLE' || selectedTable.workflowStatus === 'Free';
     const hasStaleGhostData = isSelectedFree && ((selectedTable.kotHistory?.length > 0) || (selectedTable.currentBill > 0));
-    
-    if (hasStaleGhostData) {
+
+    // Only clear stale ghost data when we can verify against the backend. During an outage,
+    // a locally Free-looking table with cached items is more likely to be a sync gap than a bug.
+    if (hasStaleGhostData && !isOffline) {
       setSelectedTable(null);
       setCart([]);
       lastConfirmedItemsRef.current = [];
