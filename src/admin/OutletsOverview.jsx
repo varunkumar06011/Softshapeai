@@ -150,12 +150,12 @@ const OutletsOverview = () => {
               </div>
 
               {/* Venue Tree */}
-              {outlet.venueNames && outlet.venueNames.length > 0 && (
+              {outlet.venues && outlet.venues.length > 0 && (
                 <div className="bg-gray-50 rounded-lg p-3 mb-3 text-xs space-y-1">
-                  {outlet.venueNames.map((vname, vi) => (
+                  {outlet.venues.map((venue, vi) => (
                     <div key={vi} className="flex items-center gap-1.5 text-gray-600">
-                      <span>{VENUE_ICONS[outlet.restaurantType] || '📍'}</span>
-                      <span className="font-medium">{vname}</span>
+                      <span>{VENUE_ICONS[venue.venueType] || '📍'}</span>
+                      <span className="font-medium">{venue.name}</span>
                     </div>
                   ))}
                 </div>
