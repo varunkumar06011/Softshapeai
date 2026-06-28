@@ -25,11 +25,23 @@ function getApiBase() {
 
 export const authService = {
   async login(email, password, restaurantCode) {
-    const res = await fetch(`${getApiBase()}/api/auth/login`, {
+    const baseUrl = getApiBase();
+    if (!baseUrl) {
+      throw new Error('Backend API URL is not configured (VITE_API_URL missing). Check app settings or rebuild the desktop app.');
+    }
+    const res = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, restaurantCode }),
     });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(
+        `Backend returned non-JSON response (HTTP ${res.status} ${res.statusText}). ` +
+        `URL: ${baseUrl}/api/auth/login. Response starts with: ${text.slice(0, 60).replace(/\n/g, ' ')}...`
+      );
+    }
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials');
