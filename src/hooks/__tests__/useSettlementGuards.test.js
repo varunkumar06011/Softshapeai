@@ -109,8 +109,8 @@ describe('useSettlementGuards', () => {
     });
 
     await waitFor(() => expect(mockClearSettlementGuards).toHaveBeenCalled());
-    expect(result.current.settledOrderIds.size).toBe(0);
-    expect(result.current.settledTableIds.size).toBe(0);
+    await waitFor(() => expect(result.current.settledOrderIds.size).toBe(0));
+    await waitFor(() => expect(result.current.settledTableIds.size).toBe(0));
     unmount();
   });
 });
