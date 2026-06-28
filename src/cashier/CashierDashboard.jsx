@@ -55,7 +55,7 @@ import { authService } from '../services/authService';
 import { updateBarTableSession, deleteBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
 import VenueSectionView from '../shared/components/VenueSectionView';
-import { API_BASE } from '../services/apiConfig';
+import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
@@ -306,13 +306,25 @@ const CashierDashboard = ({ onLogout }) => {
   // Fetch sections dynamically for tab labels
   const [fetchedSections, setFetchedSections] = useState([]);
   useEffect(() => {
-    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
+    fetch(`${API_BASE}/api/venue/sections`, {
+      credentials: 'include',
+      headers: getAuthHeaders(),
+    })
+      .then(r => {
+        if (!r.ok) {
+          console.error('[fetchedSections] API error:', r.status, r.statusText);
+          return [];
+        }
+        return r.json();
+      })
       .then(data => {
         const sections = Array.isArray(data) ? data : data.sections || [];
         setFetchedSections(sections);
       })
-      .catch(() => setFetchedSections([]));
+      .catch(err => {
+        console.error('[fetchedSections] fetch failed:', err);
+        setFetchedSections([]);
+      });
   }, []);
 
   // Build dynamic source maps from fetchedSections (replaces hardcoded constants)

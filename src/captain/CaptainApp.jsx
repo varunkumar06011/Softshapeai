@@ -77,7 +77,7 @@ import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelper
 
 
 import { authService } from '../services/authService';
-import { API_BASE } from '../services/apiConfig';
+import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -447,10 +447,22 @@ export default function CaptainApp({ onLogout }) {
   // Fetch sections dynamically
   const [fetchedSections, setFetchedSections] = useState([]);
   useEffect(() => {
-    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
+    fetch(`${API_BASE}/api/venue/sections`, {
+      credentials: 'include',
+      headers: getAuthHeaders(),
+    })
+      .then(r => {
+        if (!r.ok) {
+          console.error('[fetchedSections] API error:', r.status, r.statusText);
+          return [];
+        }
+        return r.json();
+      })
       .then(data => setFetchedSections(Array.isArray(data) ? data : data.sections || []))
-      .catch(() => setFetchedSections([]));
+      .catch(err => {
+        console.error('[fetchedSections] fetch failed:', err);
+        setFetchedSections([]);
+      });
   }, []);
 
   const { tables: barTables, setTables: setBarTables } = useBarTableSync();
