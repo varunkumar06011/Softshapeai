@@ -124,23 +124,8 @@ const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
   activeOrder: null,
 }));
 
-// Source sets for outlet-level data isolation
-const BAR_SOURCES = new Set(['bar', 'bar-ac-hall', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']);
-const RESTAURANT_SOURCES = new Set(['restaurant', 'family-restaurant', 'restaurant-parcel']);
-
-// Map raw DB sectionTag values to the source keys used by BAR_SOURCES / RESTAURANT_SOURCES
-const SECTION_TAG_TO_SOURCE = {
-  'venue-bar-ac-hall':       'bar-ac-hall',
-  'venue-bar-conference':    'bar-conference',
-  'venue-bar-pdr':           'bar-pdr',
-  'venue-bar-rooms':         'bar-rooms',
-  'venue-bar-parcel':        'bar-parcel',
-  'venue-bar-gobox':         'bar-gobox',
-  'venue-family-restaurant': 'family-restaurant',
-  'venue-restaurant-parcel': 'restaurant-parcel',
-  'bar':                     'bar',
-  'restaurant':              'restaurant',
-};
+// Source sets and sectionTag→source mapping are now built dynamically from fetchedSections
+// (see sectionTagToSource, barSources, restaurantSources memos inside the component)
 
 const isSubsequence = (q, text) => {
   let i = 0;
@@ -247,8 +232,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [tableSubCategory, setTableSubCategory] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
     if (saved) return saved;
-    return 'family-restaurant';
-  }); // bar: 'bar-ac-hall' | 'bar-conference' | 'bar-pdr' | 'bar-rooms' | 'bar-parcel' | 'bar-gobox', restaurant: 'family-restaurant' | 'parcel'
+    return '';
+  });
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('cashier_selected_pdr_room'));
     return saved ? Number(saved) : null;
@@ -266,20 +251,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [passwordError, setPasswordError] = useState('');
 
   const handleTabSwitch = (tabId) => {
-    // Check if switching between family-restaurant and GoBox in restaurant outlet
-    const isSwitchingProtected = activeOutlet === 'restaurant' &&
-      ((tableSubCategory === 'family-restaurant' && tabId === 'parcel') ||
-       (tableSubCategory === 'parcel' && tabId === 'family-restaurant'));
-
-    if (isSwitchingProtected) {
-      setPendingTabSwitch(tabId);
-      setPasswordInput('');
-      setPasswordError('');
-      setPasswordModalOpen(true);
-    } else {
-      setTableSubCategory(tabId);
-      setSelectedPDRRoom(null);
-    }
+    setTableSubCategory(tabId);
+    setSelectedPDRRoom(null);
   };
 
   const handlePasswordSubmit = () => {
@@ -341,6 +314,52 @@ const CashierDashboard = ({ onLogout }) => {
       })
       .catch(() => setFetchedSections([]));
   }, []);
+
+  // Build dynamic source maps from fetchedSections (replaces hardcoded constants)
+  const sectionTagToSource = useMemo(() => {
+    const map = {};
+    for (const section of fetchedSections) {
+      if (section.sectionTag) {
+        const sourceKey = section.sectionTag.startsWith('venue-')
+          ? section.sectionTag.slice(6)
+          : section.sectionTag;
+        map[section.sectionTag] = sourceKey;
+      }
+    }
+    return map;
+  }, [fetchedSections]);
+
+  const barSources = useMemo(() => {
+    const set = new Set();
+    for (const section of fetchedSections) {
+      if (section.venue?.venueType === 'BAR') {
+        set.add(sectionTagToSource[section.sectionTag] || section.name);
+      }
+    }
+    return set;
+  }, [fetchedSections, sectionTagToSource]);
+
+  const restaurantSources = useMemo(() => {
+    const set = new Set();
+    for (const section of fetchedSections) {
+      if (section.venue?.venueType !== 'BAR') {
+        set.add(sectionTagToSource[section.sectionTag] || section.name);
+      }
+    }
+    return set;
+  }, [fetchedSections, sectionTagToSource]);
+
+  // Set initial tableSubCategory from first fetched section once loaded
+  useEffect(() => {
+    if (!tableSubCategory && fetchedSections.length > 0) {
+      const firstSection = fetchedSections.find(s => {
+        const sectionOutlet = s.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+        if (activeOutlet === 'both') return true;
+        return sectionOutlet === activeOutlet;
+      }) || fetchedSections[0];
+      setTableSubCategory(sectionTagToSource[firstSection.sectionTag] || firstSection.name);
+    }
+  }, [fetchedSections, tableSubCategory, activeOutlet, sectionTagToSource]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
@@ -822,25 +841,7 @@ const CashierDashboard = ({ onLogout }) => {
             ? Math.round((discountAmount / subtotal) * 10000) / 100
             : 0;
         const source = txn._sourceRestaurantId === getCurrentRestaurantId()
-          ? (
-            txn.sectionTag === 'venue-family-restaurant' || String(txn.sectionName || '').toLowerCase().includes('family restaurant')
-              ? 'family-restaurant'
-              : txn.sectionTag === 'venue-restaurant-parcel'
-                ? 'restaurant-parcel'
-                : txn.sectionTag === 'venue-bar-parcel'
-                  ? 'bar-parcel'
-                  : txn.sectionTag === 'venue-bar-conference'
-                    ? 'bar-conference'
-                    : txn.sectionTag === 'venue-bar-pdr'
-                      ? 'bar-pdr'
-                      : txn.sectionTag === 'venue-bar-rooms'
-                        ? 'bar-rooms'
-                        : txn.sectionTag === 'venue-bar-ac-hall'
-                          ? 'bar-ac-hall'
-                          : txn.sectionTag === 'venue-bar-gobox'
-                            ? 'bar-gobox'
-                            : 'venue'
-          )
+          ? (sectionTagToSource[txn.sectionTag] || txn.sectionTag || 'venue')
           : txn._sourceRestaurantId === getCurrentRestaurantId()
             ? 'restaurant'
             : 'bar';
@@ -876,25 +877,13 @@ const CashierDashboard = ({ onLogout }) => {
           tableNumber: txn.tableNumber || null,
           // Derive display label: B=bar, C=conference, R=rooms, PDR=pdr, P=GoBox, BP=bar-parcel, F=family, T=restaurant
           tableDisplayName: (() => {
-            if (txn.tableLabel) return txn.tableLabel; // Extra table: "B5-X", "T3-X2"
+            if (txn.tableLabel) return txn.tableLabel;
             const num = txn.tableNumber;
             if (!num) return '—';
-            const tag = (txn.sectionTag || '').toLowerCase();
-            const rid = txn._sourceRestaurantId;
-            // GoBox (parcel) — check before generic bar to avoid wrong prefix
-            if (tag.includes('bar-parcel') || tag.includes('gobox')) return `BP${num}`;
-            if (tag.includes('restaurant-parcel') || source === 'restaurant-parcel') return `P${num}`;
-            // Conference hall
-            if (tag.includes('conference') || source === 'bar-conference') return `C${num}`;
-            // PDR
-            if (tag.includes('pdr') || source === 'bar-pdr') return `PDR${num}`;
-            // Rooms
-            if (tag.includes('rooms') || source === 'bar-rooms') return `R${num}`;
-            // Bar (venue or bar-001)
-            if (tag.includes('bar') || source === 'bar-ac-hall' || source === 'bar') return `B${num}`;
-            // Family restaurant / venue dine-in
-            if (tag.includes('family') || source === 'family-restaurant') return `F${num}`;
-            // Default: restaurant table → T prefix
+            // Look up section from fetchedSections to determine venue type
+            const section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
+            const venueType = section?.venue?.venueType;
+            if (venueType === 'BAR') return `B${num}`;
             return `T${num}`;
           })(),
           source,
@@ -904,8 +893,8 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Filter by active outlet: bar sees bar sources, restaurant sees restaurant sources, both sees all
       const isolated = mapped.filter(txn => {
-        if (activeOutlet === 'bar') return BAR_SOURCES.has(txn.source);
-        if (activeOutlet === 'restaurant') return RESTAURANT_SOURCES.has(txn.source);
+        if (activeOutlet === 'bar') return barSources.has(txn.source);
+        if (activeOutlet === 'restaurant') return restaurantSources.has(txn.source);
         return true; // 'both' sees everything
       });
 
@@ -954,13 +943,7 @@ const CashierDashboard = ({ onLogout }) => {
     let list = pastTransactions;
 
     if (txnSourceFilter !== 'all') {
-      if (txnSourceFilter === 'bar-parcel') {
-        // GoBox tab — match both the legacy 'bar-parcel' tag and the
-        // current 'bar-gobox' tag so historical + live data both show.
-        list = list.filter(txn => txn.source === 'bar-parcel' || txn.source === 'bar-gobox');
-      } else {
-        list = list.filter(txn => txn.source === txnSourceFilter);
-      }
+      list = list.filter(txn => txn.source === txnSourceFilter);
     }
 
     // Method filter
@@ -1817,9 +1800,9 @@ const CashierDashboard = ({ onLogout }) => {
           const rid = txn._sourceRestaurantId || '';
           return rid === getCurrentRestaurantId();
         }
-        const mappedSource = SECTION_TAG_TO_SOURCE[txn.sectionTag] || txn.sectionTag;
-        if (activeOutlet === 'bar') return BAR_SOURCES.has(mappedSource);
-        if (activeOutlet === 'restaurant') return RESTAURANT_SOURCES.has(mappedSource);
+        const mappedSource = sectionTagToSource[txn.sectionTag] || txn.sectionTag;
+        if (activeOutlet === 'bar') return barSources.has(mappedSource);
+        if (activeOutlet === 'restaurant') return restaurantSources.has(mappedSource);
         return true;
       });
 
@@ -2271,7 +2254,10 @@ const CashierDashboard = ({ onLogout }) => {
               sgst: sgstAmt,
               discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
               captain: 'Walk-in',
-              sectionTag: 'venue-restaurant-parcel',
+              sectionTag: (fetchedSections.find(s => {
+                const n = (s.name || '').toLowerCase();
+                return n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY';
+              })?.sectionTag) || 'venue-restaurant-parcel',
               requestId
             }
           },
@@ -2339,7 +2325,10 @@ const CashierDashboard = ({ onLogout }) => {
             sgst: sgstAmt,
             discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
             captain: 'Walk-in',
-            sectionTag: 'venue-restaurant-parcel',
+            sectionTag: (fetchedSections.find(s => {
+              const n = (s.name || '').toLowerCase();
+              return n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY';
+            })?.sectionTag) || 'venue-restaurant-parcel',
             requestId
           }
         })
@@ -2893,7 +2882,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
-    const isVenueContext = ['parcel', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox'].includes(tableSubCategory);
+    const isVenueContext = fetchedSections.some(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory);
 
     if (activeOutlet === 'restaurant') {
       itemsToFilter = menuItems.filter(item => item.isAvailable !== false);
@@ -2904,23 +2893,15 @@ const CashierDashboard = ({ onLogout }) => {
     // Determine current venue ID from selected table or sub-category
     // Prioritize tableSubCategory over selectedTable section
     let currentVenueId = null;
-    if (activeOutlet === 'bar' || activeOutlet === 'both') {
-      if (tableSubCategory === 'bar-ac-hall') currentVenueId = 'venue-bar-ac-hall';
-      else if (tableSubCategory === 'bar-conference') currentVenueId = 'venue-bar-conference';
-      else if (tableSubCategory === 'bar-pdr') currentVenueId = 'venue-bar-pdr';
-      else if (tableSubCategory === 'bar-rooms') currentVenueId = 'venue-bar-rooms';
-      else if (tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox') currentVenueId = 'venue-bar-gobox';
-      else if (selectedTable) {
-        const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
-        if (sectionName.includes('parcel') || sectionName.includes('gobox')) {
-          currentVenueId = 'venue-bar-gobox';
-        } else {
-          currentVenueId = 'venue-bar-ac-hall';
-        }
+    const matchingSection = fetchedSections.find(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory);
+    if (matchingSection) {
+      currentVenueId = matchingSection.sectionTag || matchingSection.venueId || null;
+    } else if (selectedTable) {
+      const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
+      const tableSection = fetchedSections.find(s => s.name.toLowerCase() === sectionName);
+      if (tableSection) {
+        currentVenueId = tableSection.sectionTag || tableSection.venueId || null;
       }
-    } else {
-      if (tableSubCategory === 'family-restaurant') currentVenueId = 'venue-family-restaurant';
-      else if (tableSubCategory === 'parcel') currentVenueId = 'venue-restaurant-parcel';
     }
 
     const venueSpecificPrices = {};
@@ -3007,7 +2988,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return filtered;
-  }, [activeOutlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, tableSubCategory]);
+  }, [activeOutlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, tableSubCategory, fetchedSections, sectionTagToSource]);
 
   const handleTableSelect = (table) => {
     setIsModalDataLoading(false);
@@ -3704,7 +3685,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
                           ? (fetchedSections.find(s => s.name === tableSubCategory)?.name
-                            || fetchedSections.find(s => SECTION_TAG_TO_SOURCE[s.sectionTag || ''] === tableSubCategory)?.name
+                            || fetchedSections.find(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory)?.name
                             || tableSubCategory)
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
@@ -3722,7 +3703,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   return sectionOutlet === activeOutlet;
                                 })
                                 .map(section => {
-                                const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
+                                const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
                                 return (
                                   <button
                                     key={sourceKey}
@@ -3745,12 +3726,13 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
 
                         {/* ── MAIN TABLES ── */}
-                        {/* Bar AC Hall - uses activeTables from current restaurant */}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall' && (
+                        {/* Main bar section — uses activeTables from current restaurant */}
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag] || '') && tableSubCategory !== '' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {[...activeTables.filter((table) => {
+                                const matchingSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                return sectionName.includes('bar');
+                                return matchingSection ? sectionName.includes(matchingSection.name.toLowerCase()) : false;
                               }).sort((a, b) => Number(a.number || a.id) - Number(b.number || b.id)),
                               ...extraTables
                                 .filter(et => {
@@ -3908,14 +3890,16 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* ── GENERIC VENUE SECTION VIEWS (data-driven from fetchedSections) ── */}
                         {fetchedSections
                           .filter(section => {
-                            const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
-                            if (sourceKey === 'bar-ac-hall') return false;
+                            const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
+                            // Skip the first bar section (main bar hall) — it has its own dedicated view above
+                            const isMainBar = section.venue?.venueType === 'BAR' && sourceKey === sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag];
+                            if (isMainBar && section === fetchedSections.find(s => s.venue?.venueType === 'BAR')) return false;
                             const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
                             if (activeOutlet === 'both') return true;
                             return sectionOutlet === activeOutlet;
                           })
                           .map(section => {
-                            const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
+                            const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
                             if (tableSubCategory !== sourceKey) return null;
                             return (
                               <VenueSectionView
@@ -3936,7 +3920,11 @@ const CashierDashboard = ({ onLogout }) => {
                             );
                           })
                         }
-                        {activeOutlet === 'restaurant' && tableSubCategory === 'parcel' && (
+                        {activeOutlet === 'restaurant' && fetchedSections.some(s => {
+                          const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                          const n = (s.name || '').toLowerCase();
+                          return sourceKey === tableSubCategory && (n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY');
+                        }) && (
                           <div className="mt-4">
                             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
                             <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
@@ -3999,22 +3987,17 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Source filter */}
                         <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
                           {[
-                            ...((activeOutlet === 'bar' || activeOutlet === 'both')
-                              ? [
-                                  { key: 'all', label: 'All' },
-                                  { key: 'bar', label: 'Bar AC Hall' },
-                                  { key: 'bar-conference', label: 'Conference' },
-                                  { key: 'bar-pdr', label: 'PDR' },
-                                  { key: 'bar-rooms', label: 'Rooms' },
-                                  { key: 'bar-parcel', label: 'GoBox' },
-                                ]
-                              : [
-                                  { key: 'all', label: 'All' },
-                                  { key: 'restaurant', label: 'Restaurant' },
-                                  { key: 'family-restaurant', label: 'Family Restaurant' },
-                                  { key: 'restaurant-parcel', label: 'GoBox' },
-                                ]
-                            ),
+                            { key: 'all', label: 'All' },
+                            ...fetchedSections
+                              .filter(section => {
+                                const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                                if (activeOutlet === 'both') return true;
+                                return sectionOutlet === activeOutlet;
+                              })
+                              .map(section => ({
+                                key: sectionTagToSource[section.sectionTag] || section.name,
+                                label: section.name,
+                              })),
                           ].map(f => (
                             <button
                               key={f.key}
@@ -4282,7 +4265,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'analytics' && (
-                      <ItemAnalytics outlet={activeOutlet} />
+                      <ItemAnalytics outlet={activeOutlet} sections={fetchedSections} />
                     )}
 
                     {activeTab === 'billfinder' && (
@@ -4376,10 +4359,10 @@ const CashierDashboard = ({ onLogout }) => {
                                       <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.tableDisplayName || '—'}</td>
                                       <td className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">
                                         {(() => {
-                                          const mapped = SECTION_TAG_TO_SOURCE[txn.sectionTag];
+                                          const mapped = sectionTagToSource[txn.sectionTag];
                                           if (mapped) return mapped.replace(/-/g, ' ');
-                                          if (txn._sourceRestaurantId === getCurrentRestaurantId()) return 'bar ac hall';
-                                          if (txn._sourceRestaurantId === getCurrentRestaurantId()) return 'restaurant';
+                                          const section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
+                                          if (section) return section.name;
                                           return '—';
                                         })()}
                                       </td>
@@ -4941,7 +4924,11 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
 
                       <div className="pt-0.5">
-                        {(isWalkinMode || (activeOutlet === 'restaurant' && tableSubCategory === 'parcel')) ? (
+                        {(isWalkinMode || (activeOutlet === 'restaurant' && fetchedSections.some(s => {
+                          const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                          const n = (s.name || '').toLowerCase();
+                          return sourceKey === tableSubCategory && (n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY');
+                        }))) ? (
                           <button
                             onClick={handleWalkinFinalBill}
                             disabled={cart.length === 0 || isPrintingBill}
@@ -5205,9 +5192,13 @@ const CashierDashboard = ({ onLogout }) => {
                       (() => {
                         // Determine section context for restaurant outlet
                         const sectionTag = (selectedTable?.sectionTag || '').toLowerCase();
-                        const isFamilyRestaurant = sectionTag === 'venue-family-restaurant' || (selectedTable?.section?.name || '').toLowerCase().includes('family');
-                        const isParcel = sectionTag === 'venue-restaurant-parcel' || (selectedTable?.section?.name || '').toLowerCase().includes('parcel');
-                        const isRestaurantSection = isFamilyRestaurant || isParcel;
+                        const tableSection = fetchedSections.find(s => s.sectionTag?.toLowerCase() === sectionTag);
+                        const sectionName = (selectedTable?.section?.name || '').toLowerCase();
+                        const isParcelSection = tableSection
+                          ? ['parcel', 'takeaway', 'go box', 'gobox'].some(t => (tableSection.name || '').toLowerCase().includes(t)) || tableSection.venue?.venueType === 'TAKEAWAY'
+                          : ['parcel', 'takeaway', 'go box', 'gobox'].some(t => sectionName.includes(t));
+                        const isRestaurantSection = activeOutlet === 'restaurant' || (tableSection && tableSection.venue?.venueType !== 'BAR');
+                        const isFamilyRestaurant = isRestaurantSection && !isParcelSection;
 
                         return isRestaurantSection ? (
                           <div className="flex gap-2">

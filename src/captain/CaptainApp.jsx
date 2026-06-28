@@ -636,9 +636,9 @@ export default function CaptainApp({ onLogout }) {
 
     if (saved) return saved;
 
-    return activeOutlet === 'bar' || activeOutlet === 'both' ? 'bar-ac-hall' : 'family-restaurant';
+    return '';
 
-  }); // bar: 'bar-ac-hall'|'bar-conference'|'bar-pdr'|'bar-rooms'|'bar-gobox', restaurant: 'family-restaurant'|'parcel'
+  });
 
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
 
@@ -1030,27 +1030,27 @@ export default function CaptainApp({ onLogout }) {
   const outletFilteredMenuItems = useMemo(() => {
     const base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
-    // Map section names to subcategory tags (reverse of backend getSectionTag)
-    function getSubCategoryFromSectionName(sectionName) {
-      const n = (sectionName || '').trim().toLowerCase();
-      if (n.includes('bar ac') || n === 'bar hall' || n === 'main hall') return 'bar-ac-hall';
-      if (n.includes('conference')) return 'bar-conference';
-      if (n.includes('pdr')) return 'bar-pdr';
-      if (n.includes('rooms') || n.includes('room')) return 'bar-rooms';
-      if (n.includes('gobox') || n.includes('go box') || (n.includes('bar') && n.includes('parcel'))) return 'bar-gobox';
-      if (n.includes('parcel') && n.includes('restaurant')) return 'parcel';
-      if (n.includes('family restaurant')) return 'family-restaurant';
-      return null;
-    }
-
     // Resolve currentVenueId from actual table section ID (not hardcoded tag)
     let currentVenueId = activeTable?.sectionId || activeTable?.section?.id || null;
     if (!currentVenueId) {
-      for (const t of activeTables) {
-        const tag = getSubCategoryFromSectionName(t.sectionName || t.section?.name);
-        if (tag === tableSubCategory) {
-          currentVenueId = t.sectionId || t.section?.id;
-          break;
+      // Look up section from fetchedSections by subcategory
+      const section = fetchedSections.find(s => {
+        const sourceKey = s.sectionTag?.startsWith('venue-') ? s.sectionTag.slice(6) : s.sectionTag;
+        return sourceKey === tableSubCategory || s.name === tableSubCategory;
+      });
+      if (section) {
+        currentVenueId = section.sectionTag || section.id;
+      } else {
+        // Fallback: find by matching table section name
+        for (const t of activeTables) {
+          const tSection = fetchedSections.find(s => s.name === (t.sectionName || t.section?.name));
+          if (tSection) {
+            const sourceKey = tSection.sectionTag?.startsWith('venue-') ? tSection.sectionTag.slice(6) : tSection.sectionTag;
+            if (sourceKey === tableSubCategory) {
+              currentVenueId = tSection.sectionTag || tSection.id;
+              break;
+            }
+          }
         }
       }
     }
@@ -1089,7 +1089,7 @@ export default function CaptainApp({ onLogout }) {
       }
       return true;
     });
-  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, activeTable, activeTables]);
+  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, activeTable, activeTables, fetchedSections]);
 
 
 
@@ -1192,15 +1192,37 @@ export default function CaptainApp({ onLogout }) {
 
   // Determine which table array is actually being displayed based on subcategory
 
-  const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'family-restaurant', 'parcel'];
+  // Build dynamic set of venue subcategory source keys from fetchedSections
+  const venueSubcategories = useMemo(() => {
+    const set = new Set();
+    for (const section of fetchedSections) {
+      const sourceKey = section.sectionTag?.startsWith('venue-') ? section.sectionTag.slice(6) : section.sectionTag;
+      if (sourceKey) set.add(sourceKey);
+    }
+    return set;
+  }, [fetchedSections]);
+
+  // Build dynamic sectionTagToSource map from fetchedSections
+  const sectionTagToSource = useMemo(() => {
+    const map = {};
+    for (const section of fetchedSections) {
+      if (section.sectionTag) {
+        const sourceKey = section.sectionTag.startsWith('venue-')
+          ? section.sectionTag.slice(6)
+          : section.sectionTag;
+        map[section.sectionTag] = sourceKey;
+      }
+    }
+    return map;
+  }, [fetchedSections]);
 
   const displayTables = useMemo(() => {
 
-    const isVenueSubcategory = VENUE_SUBCATEGORIES.includes(tableSubCategory);
+    const isVenueSubcategory = venueSubcategories.has(tableSubCategory);
 
     return activeTables;
 
-  }, [activeTables, tableSubCategory]);
+  }, [activeTables, tableSubCategory, venueSubcategories]);
 
 
 
@@ -1212,15 +1234,19 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    // When in bar outlet bar-ac-hall, further narrow to bar-section tables
+    // When in bar outlet main bar section, further narrow to bar-section tables
 
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall') {
+    const mainBarSourceKey = sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag] || '';
+
+    if ((activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === mainBarSourceKey && mainBarSourceKey !== '') {
+
+      const mainBarSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
 
       const barTables = displayTables.filter(t => {
 
         const sec = (t.sectionName || t.section?.name || '').toLowerCase();
 
-        return sec.includes('bar');
+        return mainBarSection ? sec.includes(mainBarSection.name.toLowerCase()) : false;
 
       });
 
@@ -1234,7 +1260,7 @@ export default function CaptainApp({ onLogout }) {
 
     return baseTables.filter(t => t.captainId === currentCaptain?.id);
 
-  }, [displayTables, tableFilter, currentCaptain?.id, activeOutlet, tableSubCategory]);
+  }, [displayTables, tableFilter, currentCaptain?.id, activeOutlet, tableSubCategory, fetchedSections, sectionTagToSource]);
 
 
 
@@ -1407,8 +1433,7 @@ export default function CaptainApp({ onLogout }) {
     const socket = getSocket();
 
     // Join the active outlet room; also join venue-001 whenever captain is on a
-    // venue subcategory so real-time updates reach Family Restaurant / Parcel / etc.
-    const VENUE_SUBCATEGORIES = ['bar-conference', 'bar-pdr', 'bar-rooms', 'bar-gobox', 'family-restaurant', 'parcel'];
+    // venue subcategory so real-time updates reach all sections.
     socket.emit('join', activeRestaurantId);
 
     const onConnect = () => {
@@ -1648,12 +1673,14 @@ export default function CaptainApp({ onLogout }) {
 
   // Reset tableSubCategory when switching outlets — use first fetched section
   useEffect(() => {
-    const firstSection = fetchedSections[0];
-    if (firstSection) {
-      const sourceKey = firstSection.sectionTag || firstSection.name;
+    const matchingSection = fetchedSections.find(s => {
+      const sectionOutlet = s.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      if (activeOutlet === 'both') return true;
+      return sectionOutlet === activeOutlet;
+    }) || fetchedSections[0];
+    if (matchingSection) {
+      const sourceKey = sectionTagToSource[matchingSection.sectionTag] || matchingSection.name;
       setTableSubCategory(sourceKey);
-    } else {
-      setTableSubCategory((activeOutlet === 'bar' || activeOutlet === 'both') ? 'bar-ac-hall' : 'family-restaurant');
     }
 
 
@@ -1684,7 +1711,7 @@ export default function CaptainApp({ onLogout }) {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
 
-  }, [activeOutlet]);
+  }, [activeOutlet, fetchedSections, sectionTagToSource]);
 
 
 
@@ -3697,7 +3724,7 @@ export default function CaptainApp({ onLogout }) {
                 <div className="text-center p-10 text-gray-500">
                   <p className="text-lg font-semibold">Table management is not enabled for this restaurant type.</p>
                 </div>
-              ) : (activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-ac-hall' ? (
+              ) : (activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag] || '') && tableSubCategory !== '' ? (
 
                 <>
 
@@ -3869,37 +3896,21 @@ export default function CaptainApp({ onLogout }) {
 
           <VenueSectionView
 
-            venueId={
+            venueId={(() => {
+              const section = fetchedSections.find(s => {
+                const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                return sourceKey === tableSubCategory;
+              });
+              return section?.sectionTag || section?.venueId || tableSubCategory;
+            })()}
 
-              (activeOutlet === 'bar' || activeOutlet === 'both')
-
-                ? (tableSubCategory === 'bar-conference' ? 'venue-bar-conference' :
-
-                   tableSubCategory === 'bar-pdr' ? 'venue-bar-pdr' :
-
-                   tableSubCategory === 'bar-rooms' ? 'venue-bar-rooms' :
-
-                   tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox' ? 'venue-bar-gobox' : 'venue-bar-ac-hall')
-
-                : (tableSubCategory === 'parcel' ? 'venue-restaurant-parcel' : 'venue-family-restaurant')
-
-            }
-
-            sectionName={
-
-              (activeOutlet === 'bar' || activeOutlet === 'both')
-
-                ? (tableSubCategory === 'bar-conference' ? 'Conference Hall' :
-
-                   tableSubCategory === 'bar-pdr' ? 'PDR' :
-
-                   tableSubCategory === 'bar-rooms' ? 'Rooms' :
-
-                   tableSubCategory === 'bar-parcel' || tableSubCategory === 'bar-gobox' ? 'GoBox' : 'Bar AC Hall')
-
-                : (tableSubCategory === 'parcel' ? 'GoBox' : 'Family Restaurant')
-
-            }
+            sectionName={(() => {
+              const section = fetchedSections.find(s => {
+                const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                return sourceKey === tableSubCategory;
+              });
+              return section?.name || tableSubCategory;
+            })()}
 
             restaurantId={getCurrentRestaurantId()}
 

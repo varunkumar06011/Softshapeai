@@ -21,7 +21,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { authService } from '../services/authService';
 
 // Standard bar unit sizes in milliliters
 const BAR_UNIT_ML = 30;
@@ -34,20 +33,6 @@ function getLiquorMlPoured(itemName, quantity) {
   return null;
 }
 
-function getRestaurantIdForSource(source) {
-  return getCurrentRestaurantId();
-}
-
-function getSectionNameForSource(source) {
-  if (source === 'bar-ac-hall') return 'Bar AC Hall';
-  if (source === 'bar-conference') return 'Conference Hall';
-  if (source === 'bar-pdr') return 'PDR';
-  if (source === 'bar-rooms') return 'Rooms';
-  if (source === 'bar-parcel' || source === 'bar-gobox') return 'GoBox';
-  if (source === 'family-restaurant') return 'Family Restaurant';
-  if (source === 'restaurant-parcel') return 'GoBox';
-  return null;
-}
 
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
@@ -83,9 +68,8 @@ function itemNameMatchesSearch(item, query) {
   });
 }
 
-export default function ItemAnalytics({ outlet = 'restaurant' }) {
-  const defaultSource = outlet === 'bar' ? 'all' : 'family-restaurant';
-  const [source, setSource] = useState(defaultSource);
+export default function ItemAnalytics({ outlet = 'restaurant', sections = [] }) {
+  const [source, setSource] = useState('all');
 
   const [timeFilter, setTimeFilter] = useState('today');
   const [customDate, setCustomDate] = useState('');
@@ -98,12 +82,27 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    setSource(outlet === 'bar' ? 'all' : 'family-restaurant');
+    setSource('all');
   }, [outlet]);
+
+  const outletSections = useMemo(() => {
+    return sections.filter(section => {
+      const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      return outlet === 'both' || sectionOutlet === outlet;
+    });
+  }, [sections, outlet]);
+
+  const sectionSourceMap = useMemo(() => {
+    const map = new Map();
+    for (const section of outletSections) {
+      map.set(section.sectionTag || section.name, section.name);
+    }
+    return map;
+  }, [outletSections]);
 
   useEffect(() => {
     fetchAnalytics();
-  }, [timeFilter, customDate, source]);
+  }, [timeFilter, customDate, source, outletSections]);
 
   const getDateRange = () => {
     const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -133,25 +132,25 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     setLoading(true);
     try {
       const { startDate, endDate } = getDateRange();
+      const outletType = outlet === 'bar' ? 'bar' : 'restaurant';
 
       if (source === 'all') {
-        // Query each individual source so section filtering matches History Feed exactly
-        const outletType = outlet === 'bar' ? 'bar' : 'restaurant';
-        const sourcesToQuery = outlet === 'bar'
-          ? ['bar', 'bar-conference', 'bar-pdr', 'bar-rooms', 'bar-parcel', 'bar-gobox']
-          : ['restaurant', 'family-restaurant', 'restaurant-parcel'];
+        if (outletSections.length === 0) {
+          const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`;
+          const response = await fetch(url);
+          const data = await response.json();
+          if (data.items) { setItemsData(data.items); setSummary(data.summary); }
+          return;
+        }
 
         const results = await Promise.all(
-          sourcesToQuery.map(src => {
-            const rid = getRestaurantIdForSource(src);
-            const sname = getSectionNameForSource(src);
-            let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${rid}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`;
-            if (sname) url += `&sectionName=${encodeURIComponent(sname)}`;
+          outletSections.map(section => {
+            let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`;
+            url += `&sectionName=${encodeURIComponent(section.name)}`;
             return fetch(url).then(r => r.json()).catch(() => ({ items: [], summary: null }));
           })
         );
 
-        // Merge items by name+type, summing quantity, orders, revenue
         const mergedMap = new Map();
         for (const result of results) {
           for (const item of (result.items || [])) {
@@ -179,88 +178,12 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
         return;
       }
 
-      // GoBox tab — query GoBox + legacy Owner + Parcel sections and merge
-      if (source === 'bar-parcel') {
-        const sectionNames = ['GoBox', 'Owner', 'Parcel'];
-        const results = await Promise.all(
-          sectionNames.map(sname => {
-            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=bar`;
-            return fetch(url, { headers: authService.getAuthHeader() }).then(r => r.json()).catch(() => ({ items: [], summary: null }));
-          })
-        );
-
-        const mergedMap = new Map();
-        for (const result of results) {
-          for (const item of (result.items || [])) {
-            const key = `${item.name}||${item.type}`;
-            if (mergedMap.has(key)) {
-              const existing = mergedMap.get(key);
-              existing.quantity += item.quantity || 0;
-              existing.orders += item.orders || 0;
-              existing.revenue += item.revenue || 0;
-            } else {
-              mergedMap.set(key, { ...item });
-            }
-          }
-        }
-
-        const mergedItems = Array.from(mergedMap.values());
-        const mergedSummary = {
-          totalItems: mergedItems.length,
-          totalQuantity: mergedItems.reduce((s, i) => s + (i.quantity || 0), 0),
-          totalRevenue: mergedItems.reduce((s, i) => s + (i.revenue || 0), 0),
-        };
-
-        setItemsData(mergedItems);
-        setSummary(mergedSummary);
-        return;
-      }
-
-      // Restaurant GoBox tab — query both Parcel and GoBox section names
-      if (source === 'restaurant-parcel') {
-        const sectionNames = ['Parcel', 'GoBox'];
-        const results = await Promise.all(
-          sectionNames.map(sname => {
-            const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}&sectionName=${encodeURIComponent(sname)}&outletType=restaurant`;
-            return fetch(url, { headers: authService.getAuthHeader() }).then(r => r.json()).catch(() => ({ items: [], summary: null }));
-          })
-        );
-
-        const mergedMap = new Map();
-        for (const result of results) {
-          for (const item of (result.items || [])) {
-            const key = `${item.name}||${item.type}`;
-            if (mergedMap.has(key)) {
-              const existing = mergedMap.get(key);
-              existing.quantity += item.quantity || 0;
-              existing.orders += item.orders || 0;
-              existing.revenue += item.revenue || 0;
-            } else {
-              mergedMap.set(key, { ...item });
-            }
-          }
-        }
-
-        const mergedItems = Array.from(mergedMap.values());
-        const mergedSummary = {
-          totalItems: mergedItems.length,
-          totalQuantity: mergedItems.reduce((s, i) => s + (i.quantity || 0), 0),
-          totalRevenue: mergedItems.reduce((s, i) => s + (i.revenue || 0), 0),
-        };
-
-        setItemsData(mergedItems);
-        setSummary(mergedSummary);
-        return;
-      }
-
-      // Single-source fetch (unchanged path)
-      const restaurantId = getRestaurantIdForSource(source);
-      const sectionName = getSectionNameForSource(source);
-      let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
+      const sectionName = sectionSourceMap.get(source);
+      let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}`;
       if (sectionName) {
         url += `&sectionName=${encodeURIComponent(sectionName)}`;
       }
-      url += `&outletType=${outlet === 'bar' ? 'bar' : 'restaurant'}`;
+      url += `&outletType=${outletType}`;
       const response = await fetch(url);
       const data = await response.json();
       if (data.items) {
@@ -331,19 +254,13 @@ export default function ItemAnalytics({ outlet = 'restaurant' }) {
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
 
-  const sourcePills = outlet === 'bar'
-    ? [
-        { id: 'all', label: 'All' },
-        { id: 'bar', label: 'Bar AC Hall' },
-        { id: 'bar-conference', label: 'Conference' },
-        { id: 'bar-pdr', label: 'PDR' },
-        { id: 'bar-rooms', label: 'Rooms' },
-        { id: 'bar-parcel', label: 'GoBox' },
-      ]
-    : [
-        { id: 'family-restaurant', label: 'Family Restaurant' },
-        { id: 'restaurant-parcel', label: 'GoBox' },
-      ];
+  const sourcePills = useMemo(() => {
+    const pills = [{ id: 'all', label: 'All' }];
+    for (const section of outletSections) {
+      pills.push({ id: section.sectionTag || section.name, label: section.name });
+    }
+    return pills;
+  }, [outletSections]);
 
   return (
     <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50">
