@@ -369,8 +369,9 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
           onImported={(payload) => {
             // payload can be { rows, mode, venueHeaders } (rate-card) or rows array (legacy)
             const rows = Array.isArray(payload) ? payload : (payload.rows || []);
-            if (!Array.isArray(rows) || rows.length === 0) return;
-            const grouped = rows.reduce((acc, row) => {
+            const validRows = rows.filter(row => row.price > 0 && row.isAvailable !== false);
+            if (!Array.isArray(validRows) || validRows.length === 0) return;
+            const grouped = validRows.reduce((acc, row) => {
               const cat = acc.find(c => c.name === row.category);
               if (activeTab === 'bar') {
                 const item = {
