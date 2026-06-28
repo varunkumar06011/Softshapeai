@@ -4,6 +4,12 @@ declare const process: { env: Record<string, string | undefined> };
 
 const liveReload = process.env.CAPACITOR_LIVE_RELOAD;
 
+// In production, load from the hosted web app so updates deploy automatically (OTA via server.url).
+// In dev, use CAPACITOR_LIVE_RELOAD env var to point to a local Vite dev server.
+const server: CapacitorConfig['server'] = liveReload
+  ? { url: liveReload, androidScheme: 'https' }
+  : { url: 'https://www.softshape.in/cashier', androidScheme: 'https' };
+
 const android: CapacitorConfig['android'] = liveReload
   ? { allowMixedContent: true }
   : {};
@@ -13,9 +19,7 @@ const config: CapacitorConfig = {
   appName: 'SoftShape Cashier',
   webDir: '../../dist',
   android,
-  server: {
-    androidScheme: 'https',
-  },
+  server,
   plugins: {
     SplashScreen: {
       launchShowDuration: 1000,
