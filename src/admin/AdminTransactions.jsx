@@ -12,12 +12,13 @@
 // Used in the admin Billing tab to review and manage past transactions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { History, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { fetchTransactions, deleteTransaction } from '../services/orderApi';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { API_BASE } from '../services/apiConfig';
 
 function formatBillNumber(txnDate, txnNumber) {
   return formatTxnDisplayId(txnDate, txnNumber);
@@ -60,6 +61,32 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const [expandedTxnId, setExpandedTxnId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [fetchedSections, setFetchedSections] = useState([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const sections = Array.isArray(data) ? data : data.sections || [];
+        setFetchedSections(sections);
+      })
+      .catch(() => setFetchedSections([]));
+  }, []);
+
+  const sourceFilterPills = useMemo(() => {
+    const pills = [{ key: 'all', label: 'All' }];
+    const seen = new Set(['all']);
+    for (const section of fetchedSections) {
+      const fakeTxn = { sectionTag: section.sectionTag, restaurantId: getCurrentRestaurantId() };
+      const sourceKey = resolveSource(fakeTxn);
+      if (!seen.has(sourceKey)) {
+        seen.add(sourceKey);
+        const label = section.name?.length > 8 ? section.name.slice(0, 6) : section.name || sourceKey;
+        pills.push({ key: sourceKey, label });
+      }
+    }
+    return pills;
+  }, [fetchedSections]);
 
   const loadTransactions = useCallback(async (filter = 'today', customDate = '') => {
     setLoading(true);
@@ -205,15 +232,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
           </div>
 
           <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'bar', label: 'Bar' },
-              { key: 'conference', label: 'Conf' },
-              { key: 'pdr', label: 'PDR' },
-              { key: 'rooms', label: 'Rooms' },
-              { key: 'gobox', label: 'GoBox' },
-              { key: 'r-parcel', label: 'GoBox' },
-            ].map(f => (
+            {sourceFilterPills.map(f => (
               <button
                 key={f.key}
                 onClick={() => setTxnSourceFilter(f.key)}

@@ -45,7 +45,7 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
   useEffect(() => {
     setUnifiedLoading(true);
     setMenuError(false);
-    fetchPublicMenu(slug, 'family-restaurant', tableId, sig)
+    fetchPublicMenu(slug, 'restaurant', tableId, sig)
       .then(data => {
         if (!data.success || data.error) {
           setMenuError(true);

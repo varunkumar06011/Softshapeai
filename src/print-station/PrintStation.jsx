@@ -196,9 +196,11 @@ function separator(ch = "-") { return ch.repeat(LINE_NORMAL) + '\n'; }
 
 // ── ESC/POS builders ─────────────────────────────────────────────────────────
 
-function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, sectionTag, restaurantId, restaurant }) {
+function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sectionName, captainName, orderByRole, sectionTag, restaurantId, restaurant }) {
 
   const now = new Date();
+
+  const roleLabel = orderByRole === 'CASHIER' ? 'Cashier' : orderByRole === 'ADMIN' ? 'Admin' : orderByRole === 'OWNER' ? 'Owner' : 'Captain';
 
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
 
@@ -274,7 +276,7 @@ function buildKOTCommands({ tableNumber, kotId, items, label = 'FOOD ORDER', sec
 
     separator("-"),
 
-    `Waiter : ${captainName && captainName !== 'N/A' && captainName !== 'undefined' ? captainName : 'Captain'}\n`,
+    `${roleLabel} : ${captainName && captainName !== 'N/A' && captainName !== 'undefined' ? captainName : roleLabel}\n`,
 
     `Ordered Date : ${dateStr}  Time : ${timeStr}\n`,
 

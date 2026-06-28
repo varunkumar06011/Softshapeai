@@ -742,6 +742,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
   const [txnCustomDate, setTxnCustomDate] = useState('');
   const txnDateFilterRef = useRef('today'); // Keeps latest filter accessible inside closures without re-subscribing
+  const lastReconnectRefetchRef = useRef(0); // Debounce reconnect-triggered refetches
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
@@ -1014,6 +1015,9 @@ const CashierDashboard = ({ onLogout }) => {
     // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
     const onConnect = () => {
       setSocketConnected(true);
+      const now = Date.now();
+      if (now - lastReconnectRefetchRef.current < 10_000) return; // skip if refetched <10s ago
+      lastReconnectRefetchRef.current = now;
       if (activeOutlet === 'bar' || activeOutlet === 'both') {
         refetchBarTables();
       }
@@ -1448,7 +1452,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
-    const pollInterval = socket?.connected ? 30_000 : 5_000;
+    const pollInterval = socket?.connected ? 30_000 : 20_000;
     const interval = setInterval(() => {
       if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
       refetchRestaurantTables();
@@ -3274,7 +3278,7 @@ const CashierDashboard = ({ onLogout }) => {
               restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
               items: apiItems,
               requestId,
-              captainName: 'Cashier',
+              captainName: undefined,
               isExtraTable: true,
               sectionTag: selectedTable.sectionTag || undefined,
               platform: selectedOrderPlatform,
@@ -3292,7 +3296,7 @@ const CashierDashboard = ({ onLogout }) => {
             restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
             items: apiItems,
             requestId,
-            captainName: 'Cashier',
+            captainName: undefined,
             sectionTag: selectedTable.sectionTag || undefined,
             platform: selectedOrderPlatform,
             timeoutMs: 10000,
@@ -3711,7 +3715,13 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* ── SUBCATEGORY PILLS — dynamically from fetched sections ── */}
                         <div className="flex gap-2 flex-wrap">
                           {fetchedSections.length > 0
-                            ? fetchedSections.map(section => {
+                            ? fetchedSections
+                                .filter(section => {
+                                  const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                                  if (activeOutlet === 'both') return true;
+                                  return sectionOutlet === activeOutlet;
+                                })
+                                .map(section => {
                                 const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
                                 return (
                                   <button
@@ -3726,31 +3736,12 @@ const CashierDashboard = ({ onLogout }) => {
                                   </button>
                                 );
                               })
-                            : [
-                                ...((activeOutlet === 'bar' || activeOutlet === 'both')
-                                  ? [
-                                      { id: 'bar-ac-hall', label: 'Bar AC Hall', emoji: '' },
-                                      { id: 'bar-conference', label: 'Conference Hall', emoji: '' },
-                                      { id: 'bar-pdr', label: 'PDR', emoji: '' },
-                                      { id: 'bar-rooms', label: 'Rooms', emoji: '' },
-                                      { id: 'bar-parcel', label: 'GoBox', emoji: '' },
-                                    ]
-                                  : [
-                                      { id: 'family-restaurant', label: 'Family Restaurant', emoji: '' },
-                                      { id: 'parcel', label: 'GoBox', emoji: '' },
-                                    ]),
-                              ].map(tab => (
-                                <button
-                                  key={tab.id}
-                                  onClick={() => handleTabSwitch(tab.id)}
-                                  className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === tab.id
-                                      ? 'bg-[#E53935] text-white border-[#E53935]'
-                                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                                    }`}
-                                >
-                                  {tab.label}
-                                </button>
-                              ))}
+                            : (
+                              <div className="flex items-center gap-3 py-4">
+                                <div className="inline-block w-6 h-6 border-3 border-gray-200 border-t-[#E53935] rounded-full animate-spin"></div>
+                                <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Loading sections...</p>
+                              </div>
+                            )}
                         </div>
 
                         {/* ── MAIN TABLES ── */}
@@ -3914,90 +3905,37 @@ const CashierDashboard = ({ onLogout }) => {
                         )}
 
 
-                        {/* ── BAR VENUE VIEWS ── */}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-conference' && (
-                          <VenueSectionView
-                            venueId="venue-bar-conference"
-                            sectionName="Conference Hall"
-                            restaurantId={getCurrentRestaurantId()}
-                            roomMode="single"
-                            onTableSelect={handleTableSelect}
-                            onOrderPlaced={() => { }}
-                            venueTables={[]}
-                            isSyncing={false}
-                            refetch={refetchBarTables}
-                          />
-                        )}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-pdr' && (
-                          <VenueSectionView
-                            venueId="venue-bar-pdr"
-                            sectionName="PDR"
-                            restaurantId={getCurrentRestaurantId()}
-                            roomMode="single"
-                            onTableSelect={handleTableSelect}
-                            onOrderPlaced={() => { }}
-                            venueTables={[]}
-                            isSyncing={false}
-                            refetch={refetchBarTables}
-                          />
-                        )}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-rooms' && (
-                          <VenueSectionView
-                            venueId="venue-bar-rooms"
-                            sectionName="Rooms"
-                            restaurantId={getCurrentRestaurantId()}
-                            roomMode="single"
-                            onTableSelect={handleTableSelect}
-                            onOrderPlaced={() => { }}
-                            venueTables={[]}
-                            isSyncing={false}
-                            refetch={refetchBarTables}
-                          />
-                        )}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-parcel' && (
-                          <VenueSectionView
-                            venueId="venue-bar-parcel"
-                            sectionName="GoBox"
-                            restaurantId={getCurrentRestaurantId()}
-                            roomMode="single"
-                            onTableSelect={handleTableSelect}
-                            onOrderPlaced={() => { }}
-                            venueTables={[]}
-                            isSyncing={false}
-                            refetch={refetchBarTables}
-                          />
-                        )}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === 'bar-gobox' && (
-                          <VenueSectionView
-                            key="bar-gobox"
-                            venueId="venue-bar-gobox"
-                            sectionName="GoBox"
-                            restaurantId={getCurrentRestaurantId()}
-                            roomMode="single"
-                            onTableSelect={handleTableSelect}
-                            onOrderPlaced={() => { }}
-                            venueTables={[]}
-                            isSyncing={false}
-                            refetch={refetchBarTables}
-                          />
-                        )}
-
-                        {/* ── RESTAURANT VENUE VIEWS ── */}
-                        {activeOutlet === 'restaurant' && tableSubCategory === 'family-restaurant' && (
-                          <VenueSectionView
-                            venueId="venue-family-restaurant"
-                            sectionName="Family Restaurant"
-                            restaurantId={getCurrentRestaurantId()}
-                            roomMode="single"
-                            onTableSelect={handleTableSelect}
-                            onOrderPlaced={() => { }}
-                            venueTables={[]}
-                            isSyncing={false}
-                            extraTables={extraTables}
-                            onAddExtraTable={handleAddVenueExtraTable}
-                            onRemoveExtraTable={handleRemoveVenueExtraTable}
-                          />
-                        )}
+                        {/* ── GENERIC VENUE SECTION VIEWS (data-driven from fetchedSections) ── */}
+                        {fetchedSections
+                          .filter(section => {
+                            const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
+                            if (sourceKey === 'bar-ac-hall') return false;
+                            const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                            if (activeOutlet === 'both') return true;
+                            return sectionOutlet === activeOutlet;
+                          })
+                          .map(section => {
+                            const sourceKey = SECTION_TAG_TO_SOURCE[section.sectionTag || ''] || section.name;
+                            if (tableSubCategory !== sourceKey) return null;
+                            return (
+                              <VenueSectionView
+                                key={section.id || sourceKey}
+                                venueId={section.sectionTag || section.venueId || sourceKey}
+                                sectionName={section.name}
+                                restaurantId={getCurrentRestaurantId()}
+                                roomMode="single"
+                                onTableSelect={handleTableSelect}
+                                onOrderPlaced={() => { }}
+                                venueTables={activeTables}
+                                isSyncing={false}
+                                refetch={activeOutlet === 'bar' || activeOutlet === 'both' ? refetchBarTables : refetchRestaurantTables}
+                                extraTables={extraTables}
+                                onAddExtraTable={handleAddVenueExtraTable}
+                                onRemoveExtraTable={handleRemoveVenueExtraTable}
+                              />
+                            );
+                          })
+                        }
                         {activeOutlet === 'restaurant' && tableSubCategory === 'parcel' && (
                           <div className="mt-4">
                             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>

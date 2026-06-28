@@ -54,8 +54,6 @@ import {
 
 } from '../services/barMenuService';
 
-const FOOD_ONLY_CATEGORIES = ['Soups', 'Starters', 'Curries', 'Food', 'Beverages', 'Beverages & Soft Drinks', 'Rice & Noodles', 'Biryani & Rice', 'Desserts', 'Charges & Services', 'Specials & Others'];
-const LIQUOR_ONLY_CATEGORIES = ['Liquor', 'Spirits & Liquor', 'Beer', 'Wine', 'Cocktails', 'Whisky', 'Vodka', 'Rum', 'Gin', 'Brandy', 'Draught'];
 
 
 
@@ -604,19 +602,8 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
   // Tab Categories list
 
   const displayCategories = useMemo(() => {
-    return categoriesData
-      .map(c => c.name)
-      .filter(name => {
-        if (activeMenuType === 'liquor') {
-          // Only show categories that are NOT food-only
-          // Keep a category if it's in the liquor list OR not in the food-only list
-          return !FOOD_ONLY_CATEGORIES.includes(name);
-        } else {
-          // Food mode: exclude liquor-only categories
-          return !LIQUOR_ONLY_CATEGORIES.includes(name);
-        }
-      });
-  }, [categoriesData, activeMenuType]);
+    return filteredCategories.map(c => c.name);
+  }, [filteredCategories]);
 
 
 
@@ -1134,9 +1121,12 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
           <button
 
             onClick={() => {
-              const foodCats = categoriesData.map(c => c.name).filter(name => !LIQUOR_ONLY_CATEGORIES.includes(name));
+              const foodCats = categoriesData.map(cat => {
+                const items = (cat.items || []).filter(item => (item.menuType || 'FOOD').toUpperCase() === 'FOOD');
+                return { name: cat.name, hasItems: items.length > 0 };
+              }).filter(c => c.hasItems);
               setActiveMenuType('food');
-              setActiveCategory(foodCats[0] || null);
+              setActiveCategory(foodCats[0]?.name || null);
             }}
 
             className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'
@@ -1158,9 +1148,12 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
           <button
 
             onClick={() => {
-              const liquorCats = categoriesData.map(c => c.name).filter(name => !FOOD_ONLY_CATEGORIES.includes(name));
+              const liquorCats = categoriesData.map(cat => {
+                const items = (cat.items || []).filter(item => (item.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
+                return { name: cat.name, hasItems: items.length > 0 };
+              }).filter(c => c.hasItems);
               setActiveMenuType('liquor');
-              setActiveCategory(liquorCats[0] || null);
+              setActiveCategory(liquorCats[0]?.name || null);
             }}
 
             className={`flex-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${isScrolledDown ? 'py-1.5' : 'py-2.5 sm:py-3'

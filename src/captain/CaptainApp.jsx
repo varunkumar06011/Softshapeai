@@ -3662,7 +3662,13 @@ export default function CaptainApp({ onLogout }) {
               {enabledModules.tables !== false && (
                 <div className="flex gap-2 flex-wrap mb-4">
                   {fetchedSections.length > 0
-                    ? fetchedSections.map(section => {
+                    ? fetchedSections
+                        .filter(section => {
+                          const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                          if (activeOutlet === 'both') return true;
+                          return sectionOutlet === activeOutlet;
+                        })
+                        .map(section => {
                         const sourceKey = section.sectionTag || section.name;
                         return (
                           <button
@@ -3678,32 +3684,12 @@ export default function CaptainApp({ onLogout }) {
                           </button>
                         );
                       })
-                    : [
-                        ...((activeOutlet === 'bar' || activeOutlet === 'both')
-                          ? [
-                              { id: 'bar-ac-hall', label: 'Bar AC Hall' },
-                              { id: 'bar-conference', label: 'Conference Hall' },
-                              { id: 'bar-pdr', label: 'PDR' },
-                              { id: 'bar-rooms', label: 'Rooms' },
-                              { id: 'bar-gobox', label: 'GoBox' },
-                            ]
-                          : [
-                              { id: 'family-restaurant', label: 'Family Restaurant' },
-                              { id: 'parcel', label: 'GoBox' },
-                            ]),
-                      ].map(tab => (
-                        <button
-                          key={tab.id}
-                          onClick={() => { setTableSubCategory(tab.id); setSelectedPDRRoom(null); }}
-                          className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 uppercase tracking-widest transition-all shadow-sm ${
-                            tableSubCategory === tab.id
-                              ? 'bg-[#E53935] text-white border-[#E53935]'
-                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+                    : (
+                      <div className="flex items-center gap-3 py-4">
+                        <div className="inline-block w-6 h-6 border-2 border-gray-200 border-t-[#E53935] rounded-full animate-spin"></div>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Loading sections...</p>
+                      </div>
+                    )}
                 </div>
               )}
 
@@ -3929,7 +3915,7 @@ export default function CaptainApp({ onLogout }) {
 
             onOrderPlaced={() => {}}
 
-            venueTables={[]}
+            venueTables={activeTables}
             isSyncing={false}
             refetch={refetchRestaurantTables}
           />
