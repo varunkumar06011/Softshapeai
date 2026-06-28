@@ -55,7 +55,7 @@ jobs:
 
       - name: Install desktop app dependencies
         working-directory: apps/${{ matrix.app }}
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Generate Tauri icons
         working-directory: apps/${{ matrix.app }}
