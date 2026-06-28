@@ -2509,12 +2509,40 @@ export function KitchenInventory() {
           <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Kitchen Inventory</h2>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Ingredients & Daily Tracking</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
-        >
-          Add Ingredient
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={() => {
+              if (items.length === 0) return;
+              const headers = ['Ingredient', 'Unit', 'Current Stock', 'Reorder Level', 'Status', 'Last Updated'];
+              const rows = items.map((i) => {
+                const isLow = Number(i.currentStock || 0) <= Number(i.reorderLevel || 0) && Number(i.reorderLevel || 0) > 0;
+                const status = isLow ? 'Low' : Number(i.currentStock || 0) === 0 ? 'Out of Stock' : 'OK';
+                return [
+                  i.name, i.unit, Number(i.currentStock || 0), Number(i.reorderLevel || 0), status,
+                  i.updatedAt ? new Date(i.updatedAt).toLocaleDateString('en-IN') : '—',
+                ].join(',');
+              });
+              const csv = [headers.join(','), ...rows].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `kitchen-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            disabled={items.length === 0}
+            className="w-full sm:w-auto text-xs font-bold bg-[#F4F4F5] text-gray-700 px-6 py-4 rounded-2xl hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <Download size={14} /> CSV
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
+          >
+            Add Ingredient
+          </button>
+        </div>
       </div>
 
       {lowStockItems.length > 0 && (

@@ -15,6 +15,7 @@ import {
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE, apiFetch } from '../services/apiConfig';
+import OperationsDashboard from './OperationsDashboard';
 
 const REPORT_CATEGORIES = [
   {
@@ -35,6 +36,7 @@ const REPORT_CATEGORIES = [
   {
     key: 'operations', label: 'Operations',
     reports: [
+      { id: 'operations-dashboard', label: 'Operations Dashboard', icon: BarChart2, urgent: true },
       { id: 'discount-report', label: 'Discount Report', icon: Star, urgent: true },
       { id: 'cancelled-items', label: 'Cancelled / Edited Items', icon: AlertTriangle, urgent: false },
       { id: 'table-utilization', label: 'Table Utilization', icon: BarChart2, urgent: false },
@@ -1244,6 +1246,7 @@ export default function AdminReports() {
             {activeReport === 'itemwise-sales' && <ItemwiseSalesReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'categorywise-sales' && <CategorywiseSalesReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
+            {activeReport === 'operations-dashboard' && <OperationsDashboard dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
             {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
