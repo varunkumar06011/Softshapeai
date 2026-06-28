@@ -139,11 +139,9 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
   };
 
   const handlePayment = () => {
-    if (isMockMode) {
-      handleMockPayment();
-    } else {
-      handleRazorpayPayment();
-    }
+    // Razorpay account is under review; treat Pay Now as an immediate confirmed payment
+    // and advance the user to the next step without opening the live checkout modal.
+    handleMockPayment();
   };
 
   const buildRazorpayOptions = (gatewayOrderId, amount) => ({
