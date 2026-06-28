@@ -117,6 +117,16 @@ const OnboardingWizard = () => {
   const saved = loadSavedState();
   const [currentStepId, setCurrentStepId] = useState(saved?.currentStepId || 'restaurant');
   const [stepDirection, setStepDirection] = useState(0);
+  const [maxVisitedIndex, setMaxVisitedIndex] = useState(() => {
+    if (typeof saved?.maxVisitedIndex === 'number') return saved.maxVisitedIndex;
+    // Back-compat: derive from saved current step
+    const type = saved?.wizardData?.restaurant?.restaurantType || '';
+    const outletCount = saved?.wizardData?.restaurant?.outletCount || 1;
+    const hasVenues = (saved?.wizardData?.venues || []).length > 0;
+    const restoredSteps = computeSteps(type, outletCount, hasVenues);
+    const idx = restoredSteps.findIndex(s => s.id === (saved?.currentStepId || 'restaurant'));
+    return Math.max(0, idx);
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [onboardResult, setOnboardResult] = useState(null);
@@ -134,9 +144,9 @@ const OnboardingWizard = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStepId, wizardData }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ currentStepId, wizardData, maxVisitedIndex }));
     } catch { /* ignore */ }
-  }, [currentStepId, wizardData]);
+  }, [currentStepId, wizardData, maxVisitedIndex]);
 
   // Reset dependent data when restaurant type changes
   const prevTypeRef = React.useRef(wizardData.restaurant.restaurantType);
@@ -178,6 +188,7 @@ const OnboardingWizard = () => {
       });
       // Jump back to restaurant step so owner sees the new flow
       setCurrentStepId('restaurant');
+      setMaxVisitedIndex(0);
     }
     prevTypeRef.current = newType;
   }, [wizardData.restaurant.restaurantType]);
@@ -188,8 +199,10 @@ const OnboardingWizard = () => {
 
   const handleNext = useCallback(() => {
     if (currentStepIndex >= 0 && currentStepIndex < maxStep - 1) {
+      const nextIndex = currentStepIndex + 1;
       setStepDirection(1);
-      setCurrentStepId(steps[currentStepIndex + 1].id);
+      setCurrentStepId(steps[nextIndex].id);
+      setMaxVisitedIndex(prev => Math.max(prev, nextIndex));
     }
   }, [currentStepIndex, maxStep, steps]);
 
@@ -312,7 +325,7 @@ const OnboardingWizard = () => {
         sections: isCloud ? [] : cleanSections,
         tables: isCloud ? [] : wizardData.tables,
         venues: cleanVenues.length > 0 ? cleanVenues : undefined,
-        priceProfiles: wizardData.priceProfiles || [],
+        priceProfiles: [],
         menu: cleanMenu.categories.length > 0 ? cleanMenu : {
           categories: isBarType && cleanBarMenu.categories.length > 0
             ? [{ name: 'Bar Menu', items: [{ name: 'Bar Items', price: 1, isVeg: false, platforms: [] }] }]
@@ -478,13 +491,13 @@ const OnboardingWizard = () => {
                   <motion.div
                     animate={{
                       scale: currentStepIndex === idx ? 1.1 : 1,
-                      backgroundColor: currentStepIndex >= idx ? '#E53935' : '#E5E7EB',
+                      backgroundColor: maxVisitedIndex >= idx ? '#E53935' : '#E5E7EB',
                     }}
                     transition={shouldReduce ? { duration: 0 } : springs.snappy}
                     className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white"
                   >
                     <AnimatePresence mode="wait">
-                      {currentStepIndex > idx ? (
+                      {maxVisitedIndex > idx ? (
                         <motion.span
                           key="check"
                           initial={{ scale: 0, opacity: 0 }}
@@ -518,7 +531,7 @@ const OnboardingWizard = () => {
                   <div className="flex-1 h-1 mt-5 mx-1 bg-gray-200 rounded-full overflow-hidden">
                     <motion.div
                       initial={false}
-                      animate={{ width: currentStepIndex > idx ? '100%' : '0%' }}
+                      animate={{ width: maxVisitedIndex > idx ? '100%' : '0%' }}
                       transition={shouldReduce ? { duration: 0 } : springs.standard}
                       className="h-full bg-[#E53935] rounded-full"
                     />
