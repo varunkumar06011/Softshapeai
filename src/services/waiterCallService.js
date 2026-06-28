@@ -33,12 +33,18 @@ let isPublicListenerAttached = false;
 
 /**
  * Reset listener flags so that socket listeners are re-attached
- * after a disconnect/reconnect cycle. Called by disconnectSocket()
- * in useSocket.js to prevent stale closures.
+ * after a disconnect/reconnect cycle.
  */
 export function resetWaiterCallListeners() {
   isListenerAttached = false;
   isPublicListenerAttached = false;
+}
+
+// Listen for socket disconnect event from useSocket.js (breaks circular dependency)
+if (typeof window !== 'undefined') {
+  window.addEventListener('softshape:socket-disconnected', () => {
+    resetWaiterCallListeners();
+  });
 }
 
 /**

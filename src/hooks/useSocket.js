@@ -21,7 +21,6 @@ import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
 import { authService } from "../services/authService";
-import { resetWaiterCallListeners } from "../services/waiterCallService";
 
 // Singleton socket instance — shared across the entire app
 let socketInstance = null;
@@ -46,7 +45,7 @@ export function disconnectSocket() {
   socketInstance = null;
   eventQueue = [];
   isProcessingQueue = false;
-  resetWaiterCallListeners();
+  window.dispatchEvent(new CustomEvent('softshape:socket-disconnected'));
 }
 
 export function getSocket() {

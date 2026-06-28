@@ -17,16 +17,17 @@ import React, { useState, useMemo } from 'react';
 import { Download, Smartphone, Monitor, Tablet, Printer, QrCode, AlertTriangle, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
-// Fallback URL for print agent downloads
+// Fallback URLs — used when Vite env vars are not set in the deployment environment
+const RELEASE_BASE = 'https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.4';
 const DEFAULT_PRINT_AGENT_URL = 'https://github.com/varunkumar06011/softshape-print-agent/releases/latest';
 
-// Download URLs for each platform (from Vite env vars)
+// Download URLs for each platform (from Vite env vars with hardcoded fallbacks)
 const DOWNLOAD_URLS = {
-  cashierDesktop: import.meta.env.VITE_CASHIER_DESKTOP_DOWNLOAD_URL,
-  cashierAndroid: import.meta.env.VITE_CASHIER_ANDROID_DOWNLOAD_URL,
-  adminDesktop: import.meta.env.VITE_ADMIN_DESKTOP_DOWNLOAD_URL,
-  adminAndroid: import.meta.env.VITE_ADMIN_ANDROID_DOWNLOAD_URL,
-  captainAndroid: import.meta.env.VITE_CAPTAIN_ANDROID_DOWNLOAD_URL,
+  cashierDesktop: import.meta.env.VITE_CASHIER_DESKTOP_DOWNLOAD_URL || `${RELEASE_BASE}/SoftShape.Cashier_0.1.0_x64-setup.exe`,
+  cashierAndroid: import.meta.env.VITE_CASHIER_ANDROID_DOWNLOAD_URL || `${RELEASE_BASE}/cashier-android.apk`,
+  adminDesktop: import.meta.env.VITE_ADMIN_DESKTOP_DOWNLOAD_URL || `${RELEASE_BASE}/SoftShape.Admin_0.1.0_x64-setup.exe`,
+  adminAndroid: import.meta.env.VITE_ADMIN_ANDROID_DOWNLOAD_URL || `${RELEASE_BASE}/admin-android.apk`,
+  captainAndroid: import.meta.env.VITE_CAPTAIN_ANDROID_DOWNLOAD_URL || `${RELEASE_BASE}/captain-android.apk`,
   printAgent: import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL || DEFAULT_PRINT_AGENT_URL,
 };
 
