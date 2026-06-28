@@ -1042,8 +1042,8 @@ export default function CaptainApp({ onLogout }) {
   const outletFilteredMenuItems = useMemo(() => {
     const base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
-    // Resolve currentVenueId from actual table section ID (not hardcoded tag)
-    let currentVenueId = activeTable?.sectionId || activeTable?.section?.id || null;
+    // Resolve currentVenueId from the active table's section → venue relationship
+    let currentVenueId = activeTable?.section?.venueId || activeTable?.section?.venue?.id || null;
     if (!currentVenueId) {
       // Look up section from fetchedSections by subcategory
       const section = fetchedSections.find(s => {
@@ -1051,15 +1051,16 @@ export default function CaptainApp({ onLogout }) {
         return sourceKey === tableSubCategory || s.name === tableSubCategory;
       });
       if (section) {
-        currentVenueId = section.sectionTag || section.id;
-      } else {
+        currentVenueId = section.venueId || section.venue?.id || null;
+      }
+      if (!currentVenueId) {
         // Fallback: find by matching table section name
         for (const t of activeTables) {
           const tSection = fetchedSections.find(s => s.name === (t.sectionName || t.section?.name));
           if (tSection) {
             const sourceKey = tSection.sectionTag?.startsWith('venue-') ? tSection.sectionTag.slice(6) : tSection.sectionTag;
             if (sourceKey === tableSubCategory) {
-              currentVenueId = tSection.sectionTag || tSection.id;
+              currentVenueId = tSection.venueId || tSection.venue?.id || null;
               break;
             }
           }
@@ -1067,11 +1068,13 @@ export default function CaptainApp({ onLogout }) {
       }
     }
 
-    // Build venue price map from item.venuePrices keyed by section ID
+    // Build venue price map from item.venuePrices keyed by venue ID
     const venueSpecificPrices = {};
-    for (const item of base) {
-      const vp = item.venuePrices?.[currentVenueId];
-      if (vp !== undefined) venueSpecificPrices[item.id] = vp;
+    if (currentVenueId) {
+      for (const item of base) {
+        const vp = item.venuePrices?.[currentVenueId];
+        if (vp !== undefined) venueSpecificPrices[item.id] = vp;
+      }
     }
 
     const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && currentVenueId !== null;

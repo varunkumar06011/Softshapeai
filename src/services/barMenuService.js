@@ -300,6 +300,7 @@ export function mapBarMenuItems(items, restaurantItems = []) {
       fullBottlePrice: item.fullBottlePrice,
       isBottleItem: item.isBottleItem,
       printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+      venuePrices: item.venuePrices || {},
     };
   });
 }

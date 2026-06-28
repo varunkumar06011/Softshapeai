@@ -108,6 +108,7 @@ export function mapFlatMenuItems(items) {
       unit: item.unit ?? (isLiquor ? "ml" : null),
       mlPerUnit: isLiquor ? 30 : null,
       printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+      venuePrices: item.venuePrices || {},
     };
   });
 }
