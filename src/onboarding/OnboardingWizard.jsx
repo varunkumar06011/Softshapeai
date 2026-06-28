@@ -416,6 +416,7 @@ const OnboardingWizard = () => {
               halfBottleMl: wizardData.restaurant.halfBottleMl,
               fullBottleMl: wizardData.restaurant.fullBottleMl,
             }}
+            sessionId={wizardData.sessionId}
             onChange={(data) => updateWizardData('menu', data)}
             onDeliveryPlatformsChange={(platforms) => updateWizardData('restaurant', { ...wizardData.restaurant, deliveryPlatforms: platforms })}
             onNext={handleNext}

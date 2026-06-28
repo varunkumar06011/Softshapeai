@@ -236,41 +236,29 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
 
     const loadSalesData = async () => {
       try {
-        // Fetch from both outlets
-        const [restaurantTxns, barTxns] = await Promise.allSettled([
-          fetchTransactions(getCurrentRestaurantId(), 500),
-          fetchTransactions(getCurrentRestaurantId(), 500),
-        ]);
-
-        const allTransactions = [
-          ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
-          ...(barTxns.status === 'fulfilled' ? barTxns.value : []),
-        ];
-
-        // Calculate last 7 days (today going back 6 days)
         const today = new Date();
-        today.setHours(23, 59, 59, 999);
         const sevenDaysAgo = new Date(today);
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-        sevenDaysAgo.setHours(0, 0, 0, 0);
 
-        // Filter transactions for last 7 days
-        const recentTxns = allTransactions.filter(txn => {
-          const txnDate = new Date(txn.paidAt || txn.createdAt);
-          return txnDate >= sevenDaysAgo && txnDate <= today;
+        const startISO = sevenDaysAgo.toISOString().slice(0, 10);
+        const endISO = today.toISOString().slice(0, 10);
+
+        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${startISO}&endDate=${endISO}`, {
+          headers: { ...getAuthHeaders() },
         });
 
-        // Aggregate by day of week
+        if (!res.ok) throw new Error('Failed to fetch sales data');
+        const data = await res.json();
+
         const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const dailyData = days.map(d => ({ day: d, revenue: 0 }));
 
-        recentTxns.forEach(txn => {
-          const txnDate = new Date(txn.paidAt || txn.createdAt);
-          const dayIdx = txnDate.getDay(); // 0 = Sunday, 6 = Saturday
-          dailyData[dayIdx].revenue += Number(txn.grandTotal ?? txn.amount ?? 0);
+        (data.byDay || []).forEach(day => {
+          const dayDate = new Date(day.date);
+          const dayIdx = dayDate.getDay();
+          dailyData[dayIdx].revenue += Number(day.revenue || 0);
         });
 
-        // Reorder to start from Monday (chart format)
         const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
         const chartData = order.map(dayName => {
           const dayIdx = days.indexOf(dayName);

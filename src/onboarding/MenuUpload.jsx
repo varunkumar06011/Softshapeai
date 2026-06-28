@@ -17,7 +17,7 @@ import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Le
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
-export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [] }) {
+export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [], sessionId }) {
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -126,6 +126,9 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
       formData.append('file', file);
       if (restaurantType) {
         formData.append('restaurantType', restaurantType);
+      }
+      if (sessionId) {
+        formData.append('sessionId', sessionId);
       }
 
       const res = await fetch(`${API_BASE}/api/menu/upload`, {

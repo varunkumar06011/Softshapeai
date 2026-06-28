@@ -158,23 +158,11 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   const loadStats = useCallback(async () => {
     try {
-      const [restaurantTxns] = await Promise.allSettled([
-        fetchTransactions(getCurrentRestaurantId(), 500),
-      ]);
-      const transactions = [
-        ...(restaurantTxns.status === 'fulfilled' ? restaurantTxns.value : []),
-      ];
-
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-
-      const todayTxns = transactions.filter(txn => {
-        const txnDate = new Date(txn.paidAt || txn.createdAt);
-        return txnDate >= todayStart;
-      });
-
-      setRevenue(Math.round(todayTxns.reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0)));
-      setOrdersCount(todayTxns.length);
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const res = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}`);
+      const data = await res.json();
+      setRevenue(Math.round(data.summary?.totalRevenue ?? 0));
+      setOrdersCount(data.summary?.totalTransactions ?? 0);
     } catch (err) {
       console.warn('[AdminStats] Failed to load stats:', err.message);
     } finally {

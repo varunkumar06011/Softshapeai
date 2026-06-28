@@ -22,7 +22,7 @@ const DELIVERY_PLATFORMS = ['Swiggy', 'Zomato', 'Direct'];
 // Default bar menu structure with empty category and item
 const defaultBarMenu = { categories: [{ name: '', items: [{ name: '', price: 0, availableSizes: [] }] }] };
 
-const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], barConfig, onChange, onDeliveryPlatformsChange, onNext, onBack }) => {
+const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], barConfig, onChange, onDeliveryPlatformsChange, onNext, onBack, sessionId }) => {
   const [mode, setMode] = useState('manual'); // 'manual' or 'upload-file'
   const [hasInteracted, setHasInteracted] = useState(false);
   const [activeTab, setActiveTab] = useState('food');
@@ -367,6 +367,7 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
         <MenuUpload
           onboardingMode={true}
           restaurantType={restaurantType}
+          sessionId={sessionId}
           onImported={(payload) => {
             // payload can be { rows, mode, venueHeaders } (rate-card) or rows array (legacy)
             const rows = Array.isArray(payload) ? payload : (payload.rows || []);

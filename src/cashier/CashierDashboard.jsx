@@ -1788,20 +1788,21 @@ const CashierDashboard = ({ onLogout }) => {
     setBillFinderLoading(true);
     setBillFinderResults([]);
     try {
-      const restaurantIds = [getCurrentRestaurantId()];
-      const uniqueRestaurantIds = [...new Set(restaurantIds)];
+      const rid = getCurrentRestaurantId();
 
-      const allResults = await Promise.all(
-        uniqueRestaurantIds.map(rid => fetchTransactionsWithRetry(rid, 500, billFinderDate).catch((err) => {
-          console.error(`[Bill Finder] Fetch failed for ${rid}:`, err);
-          return [];
-        }))
-      );
+      // Use backend billNumber filter instead of fetching 500 txns and filtering client-side
+      const params = new URLSearchParams();
+      params.set('date', billFinderDate);
+      if (billFinderBillNo.trim()) {
+        params.set('billNumber', billFinderBillNo.trim());
+      }
+      params.set('limit', '500');
 
-      const allTxns = allResults.flatMap((txns, idx) => {
-        const rid = uniqueRestaurantIds[idx];
-        return txns.map(txn => ({ ...txn, _sourceRestaurantId: rid }));
+      const res = await fetch(`${API_BASE}/api/transactions?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
       });
+      if (!res.ok) throw new Error('Failed to fetch transactions');
+      const allTxns = await res.json();
 
       const filtered = allTxns.filter(txn => {
         let matches = true;

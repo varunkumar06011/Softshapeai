@@ -962,25 +962,22 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  const loadCaptainRevenue = useCallback((captainId) => {
+  const loadCaptainRevenue = useCallback(async (captainId) => {
 
     if (!captainId) return;
 
-    const todayDateISO = new Date().toISOString().slice(0, 10);
-
-    const restaurantFetch = fetchTransactions(getCurrentRestaurantId(), 500, todayDateISO);
-
-    Promise.allSettled([restaurantFetch]).then(results => {
-
-      const allTxns = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
-
-      const filtered = allTxns.filter(t => t.captainId === captainId);
-
-      const sum = filtered.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-
-      setTodayRevenue(sum);
-
-    });
+    try {
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const res = await fetch(`${API_BASE}/api/reports/captain-performance?startDate=${todayISO}&endDate=${todayISO}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const captain = (data.captains || []).find(c => c.id === captainId);
+      setTodayRevenue(captain ? Math.round(captain.sales) : 0);
+    } catch (err) {
+      console.warn('[CaptainApp] Failed to load captain revenue:', err.message);
+    }
 
   }, []);
 
