@@ -332,7 +332,7 @@ const OnboardingWizard = () => {
       const data = await apiFetch('/api/onboard', {
         method: 'POST',
         body: JSON.stringify(payload),
-        timeout: 60000,
+        timeout: 1800000, // 3 minutes
       });
 
       localStorage.removeItem(STORAGE_KEY);
