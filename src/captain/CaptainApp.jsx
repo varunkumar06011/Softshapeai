@@ -1002,6 +1002,15 @@ export default function CaptainApp({ onLogout }) {
 
   const menuLoading = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenuLoading : restaurantMenuLoading;
 
+  // Derived — switch between restaurant and bar floor
+  const activeTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables;
+
+  const setActiveTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? setBarTables : setTables;
+
+  const activeTable = useMemo(() =>
+    activeTables.find(t => t.id === activeTableId),
+  [activeTables, activeTableId]);
+
 
 
   const activeRestaurantId = useMemo(() => {
@@ -1103,18 +1112,6 @@ export default function CaptainApp({ onLogout }) {
     );
 
   }, [outletFilteredMenuItems]);
-
-
-
-  // Derived — switch between restaurant and bar floor
-
-  const activeTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables;
-
-  const setActiveTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? setBarTables : setTables;
-
-  const activeTable = useMemo(() =>
-    activeTables.find(t => t.id === activeTableId),
-  [activeTables, activeTableId]);
 
 
 
