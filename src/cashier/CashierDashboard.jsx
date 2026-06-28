@@ -412,7 +412,8 @@ const CashierDashboard = ({ onLogout }) => {
       const restaurantId = getCurrentRestaurantId();
       const restaurantTables = JSON.parse(localStorage.getItem(getTablesCacheKey(restaurantId)) || '[]');
       const barTables = JSON.parse(localStorage.getItem(getBarTablesCacheKey(restaurantId)) || '[]');
-      const cachedTable = [...restaurantTables, ...barTables].find(t => t.backendId === parsed.backendId || t.id === parsed.id);
+      const mergedCache = Array.from(new Map([...restaurantTables, ...barTables].map(t => [t.backendId ?? t.id, t])).values());
+      const cachedTable = mergedCache.find(t => t.backendId === parsed.backendId || t.id === parsed.id);
       return {
         ...parsed,
         activeOrder: cachedTable?.activeOrder || (parsed.activeOrder ? { id: parsed.activeOrder.id, totalAmount: parsed.activeOrder.totalAmount } : null),
@@ -535,7 +536,12 @@ const CashierDashboard = ({ onLogout }) => {
   });
 
   // Derived — based on enabledModules
-  const activeTables = activeOutlet === 'bar' ? barTables : activeOutlet === 'both' ? [...barTables, ...tables] : tables;
+  // Deduplicate on backendId ?? id: /api/bar/tables and /api/tables return the same
+  // unfiltered dataset, so a naive spread duplicates every table when outlet is 'both'.
+  const activeTables = activeOutlet === 'bar' ? barTables
+    : activeOutlet === 'both'
+      ? Array.from(new Map([...barTables, ...tables].map(t => [t.backendId ?? t.id, t])).values())
+      : tables;
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
 
