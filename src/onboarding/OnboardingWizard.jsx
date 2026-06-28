@@ -270,7 +270,8 @@ const OnboardingWizard = () => {
       if (!isCloud && !isCafe && cleanCaptains.length === 0) { setError('Add at least one captain with a 4-digit PIN'); setLoading(false); return; }
       if (cleanCashiers.length === 0) { setError('Add at least one cashier with a 4-digit PIN'); setLoading(false); return; }
       if (!isCloud && cleanSections.length === 0) { setError('Add at least one floor section'); setLoading(false); return; }
-      if (cleanMenu.categories.length === 0) { setError('Add at least one menu category with items'); setLoading(false); return; }
+      const hasValidMenu = cleanMenu.categories.length > 0 || cleanBarMenu.categories.length > 0;
+      if (!hasValidMenu) { setError('Add at least one menu category with items'); setLoading(false); return; }
 
       // Sanitize outlets if multi-outlet
       let cleanOutlets = [];
