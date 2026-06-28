@@ -3933,9 +3933,11 @@ const CashierDashboard = ({ onLogout }) => {
                         {fetchedSections
                           .filter(section => {
                             const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
-                            // Skip the first bar section (main bar hall) — it has its own dedicated view above
-                            const isMainBar = section.venue?.venueType === 'BAR' && sourceKey === sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag];
-                            if (isMainBar && section === fetchedSections.find(s => s.venue?.venueType === 'BAR')) return false;
+                            // Skip the first bar section (main bar hall) — it has its own dedicated view above.
+                            // Use the same identifier the dedicated view uses: the section's .name
+                            const firstBarSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
+                            const firstBarIdentifier = firstBarSection?.name || '';
+                            if (section.venue?.venueType === 'BAR' && section.name === firstBarIdentifier && firstBarIdentifier) return false;
                             const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
                             if (activeOutlet === 'both') return true;
                             return sectionOutlet === activeOutlet;
