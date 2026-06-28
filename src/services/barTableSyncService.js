@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getSocket } from "hooks/useSocket";
+import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, updateBarTableSession } from "./barTableApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
