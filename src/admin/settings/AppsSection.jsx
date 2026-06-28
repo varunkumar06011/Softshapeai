@@ -18,7 +18,7 @@ import { Download, Smartphone, Monitor, Tablet, Printer, QrCode, AlertTriangle, 
 import { QRCodeSVG } from 'qrcode.react';
 
 // Fallback URLs — used when Vite env vars are not set in the deployment environment
-const RELEASE_BASE = 'https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.6';
+const RELEASE_BASE = 'https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7';
 const DEFAULT_PRINT_AGENT_URL = 'https://github.com/varunkumar06011/softshape-print-agent/releases/latest';
 
 // Download URLs for each platform (from Vite env vars with hardcoded fallbacks)
