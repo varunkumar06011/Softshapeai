@@ -15,8 +15,8 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle, ArrowRight, Sparkles, Store, Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { apiUrl } from '../services/apiConfig';
 
-// Fallback prices if quote API is unavailable
-const FALLBACK_PRICES = { starter: 999, pro: 2499 };
+// Fallback prices if quote API is unavailable (must match backend PLAN_CONFIG)
+const FALLBACK_PRICES = { starter: 1, pro: 99 };
 
 const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, onBack, loading, error }) => {
   const [localPlan, setLocalPlan] = useState(selectedPlan);
@@ -51,12 +51,12 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
     {
       id: 'starter',
       name: 'Starter',
-      features: ['1 location included', 'Up to 20 tables', 'Up to 3 staff captains', 'Email support', 'Basic KOT & bill printing']
+      features: ['1 admin', '1 cashier', '2 captains', 'Email support', 'Basic KOT & bill printing']
     },
     {
       id: 'pro',
       name: 'Pro',
-      features: ['Unlimited tables', 'Unlimited staff', 'Priority support', 'Advanced reporting', 'Multi-venue management']
+      features: ['1 admin', '3 cashiers', '5 captains', 'Priority support', 'Advanced reporting', 'Multi-venue management']
     },
     {
       id: 'enterprise',
@@ -68,17 +68,24 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
   const formatPrice = (planId) => {
     if (planId === 'enterprise') return 'Custom';
     const q = quotes[planId];
-    if (q && !q.isCustomQuote) return `₹${q.totalMonthly.toLocaleString('en-IN')}/mo`;
-    // Fallback to static base price
-    const fallback = FALLBACK_PRICES[planId];
-    if (fallback) return `₹${fallback.toLocaleString('en-IN')}/mo`;
-    return '—';
+    const monthly = q && !q.isCustomQuote ? q.totalMonthly : FALLBACK_PRICES[planId];
+    if (monthly == null) return '—';
+    const perDay = Number((monthly / 30).toFixed(3));
+    return `₹${perDay.toLocaleString('en-IN')}/day`;
+  };
+
+  const formatMonthly = (planId) => {
+    if (planId === 'enterprise') return null;
+    const q = quotes[planId];
+    const monthly = q && !q.isCustomQuote ? q.totalMonthly : FALLBACK_PRICES[planId];
+    if (monthly == null) return null;
+    return `₹${monthly.toLocaleString('en-IN')}/month`;
   };
 
   const formatBreakdown = (planId) => {
     if (planId === 'enterprise') return null;
     const q = quotes[planId];
-    if (!q || q.isCustomQuote) return null;
+    if (!q || q.isCustomQuote || q.extraOutletCost === 0) return null;
     if (q.extraOutlets > 0) {
       const perExtra = q.extraOutletCost / q.extraOutlets;
       return `Base ₹${q.basePrice.toLocaleString('en-IN')} + ${q.extraOutlets} extra × ₹${perExtra.toLocaleString('en-IN')}/mo`;
@@ -105,7 +112,7 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
       <div className="text-center mb-8">
         <Sparkles size={48} className="mx-auto text-[#E53935] mb-4" />
         <h2 className="text-2xl font-bold mb-2">Choose Your Plan</h2>
-        <p className="text-gray-500">Pricing adjusted for {outletCount} outlet{outletCount > 1 ? 's' : ''}</p>
+        <p className="text-gray-500">Simple monthly pricing</p>
       </div>
 
       {wizardSummary && (
@@ -124,6 +131,7 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {basePlans.map((plan) => {
           const price = formatPrice(plan.id);
+          const monthly = formatMonthly(plan.id);
           const breakdown = formatBreakdown(plan.id);
           const isSelected = localPlan === plan.id;
           return (
@@ -150,6 +158,9 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
                 )}
                 <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
                 <p className="text-2xl font-bold text-[#E53935]">{price}</p>
+                {monthly && (
+                  <p className="text-sm text-gray-500 mt-1">{monthly}</p>
+                )}
                 {breakdown && (
                   <p className="text-xs text-gray-400 mt-1">{breakdown}</p>
                 )}
@@ -200,9 +211,9 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
             </thead>
             <tbody className="text-gray-600">
               {[
-                ['Locations', '1', '1 + extras', 'Unlimited'],
+                ['Locations', '1', '1', 'Unlimited'],
                 ['Tables', 'Up to 20', 'Unlimited', 'Unlimited'],
-                ['Staff', 'Up to 3 captains', 'Unlimited', 'Unlimited'],
+                ['Staff', '1 admin, 1 cashier, 2 captains', '1 admin, 3 cashiers, 5 captains', 'Unlimited'],
                 ['Support', 'Email', 'Priority', 'Dedicated manager'],
                 ['Reporting', 'Basic', 'Advanced', 'Custom'],
                 ['Custom Pricing', '—', '—', 'Yes'],
