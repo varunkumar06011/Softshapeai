@@ -11,7 +11,9 @@
 //   - Per-item tax rate preview with sample items
 //   - Service charge configuration (optional)
 //
-// GST category determines the default tax rate applied to all menu items.
+// GST category determines the default tax rate applied to food items.
+// For bar types (BAR_LOUNGE, BAR_WITH_DINING), GST applies only to food —
+// liquor is always GST-exempt. The live preview shows the food/liquor split.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
@@ -29,8 +31,19 @@ const FALLBACK_ITEMS = [
   { name: 'Butter Naan', price: 40 },
 ];
 
+const FALLBACK_FOOD_ITEMS = [
+  { name: 'Paneer Tikka', price: 250 },
+  { name: 'Butter Naan', price: 40 },
+];
+
+const FALLBACK_LIQUOR_ITEMS = [
+  { name: 'Kingfisher Beer', price: 180 },
+  { name: 'Royal Stag (Peg)', price: 150 },
+];
+
 const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }) => {
   const isCloud = restaurantType === 'CLOUD_KITCHEN';
+  const isBar = restaurantType === 'BAR_LOUNGE' || restaurantType === 'BAR_WITH_DINING';
   const [showServiceTooltip, setShowServiceTooltip] = useState(false);
   const handleChange = (field, value) => {
     onChange({ ...data, [field]: value });
@@ -42,9 +55,14 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
     ? sampleItems.slice(0, 2)
     : FALLBACK_ITEMS;
 
+  const foodPreviewItems = isBar ? FALLBACK_FOOD_ITEMS : previewItems;
+  const liquorPreviewItems = isBar ? FALLBACK_LIQUOR_ITEMS : [];
+
   const gstRate = data.gstCategory === 'AC' ? 18 : 5;
-  const subtotal = previewItems.reduce((s, i) => s + (i.price || 0), 0);
-  const gstAmount = data.pricesIncludeGst ? 0 : (subtotal * gstRate) / 100;
+  const foodSubtotal = foodPreviewItems.reduce((s, i) => s + (i.price || 0), 0);
+  const liquorSubtotal = liquorPreviewItems.reduce((s, i) => s + (i.price || 0), 0);
+  const subtotal = foodSubtotal + liquorSubtotal;
+  const gstAmount = data.pricesIncludeGst ? 0 : (foodSubtotal * gstRate) / 100;
   const serviceAmount = data.serviceChargePercent > 0 ? (subtotal * data.serviceChargePercent) / 100 : 0;
   const packagingAmount = isCloud && data.packagingCharge > 0 ? data.packagingCharge : 0;
   const total = subtotal + gstAmount + serviceAmount + packagingAmount;
@@ -57,11 +75,31 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
         <p className="text-gray-500">Configure how tax is applied to your bills</p>
       </div>
 
+      {/* Liquor GST exemption banner for bar types */}
+      {isBar && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+          <Info size={20} className="text-blue-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-blue-900">Liquor is exempt from GST</p>
+            <p className="text-xs text-blue-700 mt-1">
+              GST applies only to food items. Liquor/bar items are charged without GST on the bill.
+              {isBar && restaurantType === 'BAR_LOUNGE' && ' You can skip GST entirely if you only serve liquor.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* GST Registered Toggle */}
       <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-900">Are you GST registered?</p>
-          <p className="text-xs text-gray-500">If not, no GST will be shown on bills</p>
+          <p className="text-sm font-semibold text-gray-900">
+            {isBar ? 'Do you charge GST on food items?' : 'Are you GST registered?'}
+          </p>
+          <p className="text-xs text-gray-500">
+            {isBar
+              ? 'GST will apply only to food items, not liquor'
+              : 'If not, no GST will be shown on bills'}
+          </p>
         </div>
         <button
           type="button"
@@ -83,7 +121,11 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
           </div>
           <div>
             <p className="text-sm font-semibold text-green-800">Tax setup skipped</p>
-            <p className="text-xs text-green-600">No GST will be shown on bills. You can update this later from Admin Settings.</p>
+            <p className="text-xs text-green-600">
+              {isBar
+                ? 'No GST will be charged on food items. Liquor is always GST-free. You can update this later from Admin Settings.'
+                : 'No GST will be shown on bills. You can update this later from Admin Settings.'}
+            </p>
           </div>
         </div>
       )}
@@ -92,7 +134,9 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
         <>
           {/* GST Category */}
           <div className="space-y-3">
-            <p className="text-sm font-semibold text-gray-700">Restaurant category for GST</p>
+            <p className="text-sm font-semibold text-gray-700">
+              {isBar ? 'Food GST rate category' : 'Restaurant category for GST'}
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {GST_CATEGORIES.map(cat => {
                 const selected = data.gstCategory === cat.value;
@@ -222,46 +266,100 @@ const StepTax = ({ restaurantType, data, sampleItems, onChange, onNext, onBack }
               <Receipt size={16} className="text-[#E53935]" /> Live Preview
             </h4>
             <div className="space-y-1 text-sm">
-              {previewItems.map((item, i) => (
-                <div key={i} className="flex justify-between text-gray-700">
-                  <span>{item.name}</span>
-                  <span>₹{item.price.toFixed(2)}</span>
-                </div>
-              ))}
-              <div className="border-t border-dashed border-gray-200 pt-1 mt-1">
-                <div className="flex justify-between text-gray-600">
-                  <span>Subtotal</span>
-                  <span>₹{subtotal.toFixed(2)}</span>
-                </div>
-                {data.gstRegistered && !data.pricesIncludeGst && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>GST ({gstRate}%)</span>
-                    <span>₹{gstAmount.toFixed(2)}</span>
+              {isBar && (
+                <>
+                  {foodPreviewItems.map((item, i) => (
+                    <div key={`f-${i}`} className="flex justify-between text-gray-700">
+                      <span>{item.name}</span>
+                      <span>₹{item.price.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  {liquorPreviewItems.map((item, i) => (
+                    <div key={`l-${i}`} className="flex justify-between text-gray-700">
+                      <span>{item.name}</span>
+                      <span>₹{item.price.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-dashed border-gray-200 pt-1 mt-1">
+                    {data.gstRegistered && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Food Subtotal</span>
+                        <span>₹{foodSubtotal.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-gray-600">
+                      <span>Liquor Subtotal</span>
+                      <span>₹{liquorSubtotal.toFixed(2)}</span>
+                    </div>
+                    {data.gstRegistered && !data.pricesIncludeGst && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>GST on Food ({gstRate}%)</span>
+                        <span>₹{gstAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {data.gstRegistered && data.pricesIncludeGst && (
+                      <div className="flex justify-between text-gray-500 text-xs">
+                        <span>Includes GST on Food ({gstRate}%)</span>
+                        <span>₹{((foodSubtotal * gstRate) / (100 + gstRate)).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {serviceAmount > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Service Charge ({data.serviceChargePercent}%)</span>
+                        <span>₹{serviceAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-100">
+                      <span>Total</span>
+                      <span>₹{total.toFixed(2)}</span>
+                    </div>
                   </div>
-                )}
-                {data.gstRegistered && data.pricesIncludeGst && (
-                  <div className="flex justify-between text-gray-500 text-xs">
-                    <span>Includes GST ({gstRate}%)</span>
-                    <span>₹{((subtotal * gstRate) / (100 + gstRate)).toFixed(2)}</span>
+                </>
+              )}
+              {!isBar && (
+                <>
+                  {previewItems.map((item, i) => (
+                    <div key={i} className="flex justify-between text-gray-700">
+                      <span>{item.name}</span>
+                      <span>₹{item.price.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-dashed border-gray-200 pt-1 mt-1">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal</span>
+                      <span>₹{subtotal.toFixed(2)}</span>
+                    </div>
+                    {data.gstRegistered && !data.pricesIncludeGst && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>GST ({gstRate}%)</span>
+                        <span>₹{gstAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {data.gstRegistered && data.pricesIncludeGst && (
+                      <div className="flex justify-between text-gray-500 text-xs">
+                        <span>Includes GST ({gstRate}%)</span>
+                        <span>₹{((subtotal * gstRate) / (100 + gstRate)).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {serviceAmount > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Service Charge ({data.serviceChargePercent}%)</span>
+                        <span>₹{serviceAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {packagingAmount > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Packaging</span>
+                        <span>₹{packagingAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-100">
+                      <span>Total</span>
+                      <span>₹{total.toFixed(2)}</span>
+                    </div>
                   </div>
-                )}
-                {serviceAmount > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Service Charge ({data.serviceChargePercent}%)</span>
-                    <span>₹{serviceAmount.toFixed(2)}</span>
-                  </div>
-                )}
-                {packagingAmount > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Packaging</span>
-                    <span>₹{packagingAmount.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-100">
-                  <span>Total</span>
-                  <span>₹{total.toFixed(2)}</span>
-                </div>
-              </div>
+                </>
+              )}
             </div>
           </div>
         </>
