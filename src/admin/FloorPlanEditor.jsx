@@ -274,6 +274,7 @@ function VenueCard({
             <SectionRow
               key={section.id}
               section={section}
+              venue={venue}
               expanded={expandedSections.has(section.id)}
               onToggle={() => onToggleSection(section.id)}
               onRename={onRenameSection}
@@ -314,7 +315,7 @@ function VenueCard({
 // ── SectionRow ──────────────────────────────────────────────────────────────
 
 function SectionRow({
-  section, expanded, onToggle,
+  section, venue, expanded, onToggle,
   onRename, onDelete, onAddTable, onUpdateTable, onDeleteTable, allSections,
 }) {
   const [editing, setEditing] = useState(false);
@@ -420,7 +421,11 @@ function SectionRow({
               <button onClick={() => { setAddingTable(false); setNewTableNum(''); setNewTableCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={14} /></button>
             </div>
           ) : (
-            <button onClick={() => setAddingTable(true)} className={btnGhost}><Plus size={12} /> Add Table</button>
+            <button onClick={() => {
+              setAddingTable(true);
+              const maxNum = tables.length > 0 ? Math.max(...tables.map(t => t.number || 0)) : 0;
+              setNewTableNum(String(maxNum + 1));
+            }} className={btnGhost}><Plus size={12} /> Add Table</button>
           )}
         </div>
       )}

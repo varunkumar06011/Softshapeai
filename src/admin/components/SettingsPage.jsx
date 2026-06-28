@@ -15,6 +15,7 @@
 import React, { useState, useEffect } from 'react';
 import AppsSection from '../settings/AppsSection';
 import { apiFetch } from '../../services/apiConfig';
+import ManageSpacePanel from '../ManageSpacePanel';
 import { useAuth } from '../../context/AuthContext';
 import {
   Building2,
@@ -105,6 +106,7 @@ function Toggle({ checked, onChange, label, description }) {
 function SettingsPage({ onNavigate }) {
   const { restaurant, setRestaurant } = useAuth();
   const [tab, setTab] = useState('general');
+  const [showManageSpace, setShowManageSpace] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileData, setProfileData] = useState(null);
   const [tablesCount, setTablesCount] = useState(0);
@@ -237,6 +239,14 @@ function SettingsPage({ onNavigate }) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
         <Loader2 size={32} className="animate-spin text-[#E53935]" />
+      </div>
+    );
+  }
+
+  if (showManageSpace) {
+    return (
+      <div className="p-4 md:p-6 font-sans max-w-5xl mx-auto">
+        <ManageSpacePanel onBack={() => setShowManageSpace(false)} />
       </div>
     );
   }
@@ -557,8 +567,8 @@ function SettingsPage({ onNavigate }) {
                 <p className="text-xs text-gray-500 mt-0.5">Manage your floor plan, sections, and table layout</p>
               </div>
               <button
-                onClick={() => onNavigate?.('tables')}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-bold transition-all"
+                onClick={() => setShowManageSpace(true)}
+                className="px-4 py-2 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl text-sm font-bold transition-all"
               >
                 Manage Space
               </button>

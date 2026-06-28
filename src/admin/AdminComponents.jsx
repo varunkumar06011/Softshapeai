@@ -83,6 +83,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
+import { fetchVenues } from '../services/tableApi';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
 import { getTodayAttendanceSummary, getAttendance, markAttendance, checkIn, checkOut } from '../services/attendanceService';
@@ -539,6 +540,38 @@ export function Tables({ onOpen }) {
   const [activePopupTableId, setActivePopupTableId] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const { tables } = useTableSync();
+  const [venues, setVenues] = useState([]);
+  const [selectedSectionId, setSelectedSectionId] = useState('');
+  const [loadingVenues, setLoadingVenues] = useState(true);
+
+  useEffect(() => {
+    fetchVenues()
+      .then(data => {
+        const v = Array.isArray(data) ? data : [];
+        setVenues(v);
+        const allSections = v.flatMap(venue => [
+          ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
+          ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
+        ]);
+        if (allSections.length > 0) {
+          setSelectedSectionId(allSections[0].id);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingVenues(false));
+  }, []);
+
+  const allSections = useMemo(() => {
+    return venues.flatMap(venue => [
+      ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
+      ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
+    ]);
+  }, [venues]);
+
+  const selectedSection = allSections.find(s => s.id === selectedSectionId);
+  const filteredTables = selectedSectionId
+    ? tables.filter(t => t.sectionId === selectedSectionId || t.section?.id === selectedSectionId)
+    : tables;
 
   if (editMode) {
     return (
@@ -559,9 +592,20 @@ export function Tables({ onOpen }) {
 
   return <div className="space-y-4 font-sans">
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-      <h3 className="font-semibold">Floor Plan — Main Hall</h3>
+      <h3 className="font-semibold">
+        {selectedSection ? `Floor Plan — ${selectedSection.venueName} — ${selectedSection.name}` : 'Floor Plan'}
+      </h3>
       <div className="flex items-center gap-2">
-        <select className={input + " w-full sm:max-w-52"}><option>Main Hall</option><option>Terrace</option></select>
+        <select
+          className={input + " w-full sm:max-w-52"}
+          value={selectedSectionId}
+          onChange={e => setSelectedSectionId(e.target.value)}
+          disabled={loadingVenues}
+        >
+          {allSections.map(s => (
+            <option key={s.id} value={s.id}>{s.venueName} — {s.name}</option>
+          ))}
+        </select>
         <button
           onClick={() => setEditMode(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-[#E53935] text-white text-xs font-bold rounded-lg hover:bg-[#B71C1C] transition flex-shrink-0"
@@ -571,7 +615,7 @@ export function Tables({ onOpen }) {
       </div>
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-      {tables.map((t) => {
+      {filteredTables.map((t) => {
         const isFree = !t.status || t.status === 'Free' || t.status === 'available';
         const isReserved = t.status === 'reserved';
         

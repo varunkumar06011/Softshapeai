@@ -1248,7 +1248,7 @@ export default function CaptainApp({ onLogout }) {
 
     // When in bar outlet main bar section, further narrow to bar-section tables
 
-    const mainBarSourceKey = sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag] || '';
+    const mainBarSourceKey = fetchedSections.find(s => s.venue?.venueType === 'BAR')?.name || '';
 
     if ((activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === mainBarSourceKey && mainBarSourceKey !== '') {
 
@@ -1258,7 +1258,7 @@ export default function CaptainApp({ onLogout }) {
 
         const sec = (t.sectionName || t.section?.name || '').toLowerCase();
 
-        return mainBarSection ? sec.includes(mainBarSection.name.toLowerCase()) : false;
+        return mainBarSection ? sec === mainBarSection.name.toLowerCase() : false;
 
       });
 
@@ -3764,7 +3764,7 @@ export default function CaptainApp({ onLogout }) {
                 <div className="text-center p-10 text-gray-500">
                   <p className="text-lg font-semibold">Table management is not enabled for this restaurant type.</p>
                 </div>
-              ) : (activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag] || '') && tableSubCategory !== '' ? (
+              ) : (activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (fetchedSections.find(s => s.venue?.venueType === 'BAR')?.name || '') && tableSubCategory !== '' ? (
 
                 <>
 

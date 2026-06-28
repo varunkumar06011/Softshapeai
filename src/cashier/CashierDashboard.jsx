@@ -3753,12 +3753,12 @@ const CashierDashboard = ({ onLogout }) => {
 
                         {/* ── MAIN TABLES ── */}
                         {/* Main bar section — uses activeTables from current restaurant */}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (sectionTagToSource[fetchedSections.find(s => s.venue?.venueType === 'BAR')?.sectionTag] || '') && tableSubCategory !== '' && (
+                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (fetchedSections.find(s => s.venue?.venueType === 'BAR')?.name || '') && tableSubCategory !== '' && (
                           <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
                             {[...activeTables.filter((table) => {
                                 const matchingSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
                                 const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                return matchingSection ? sectionName.includes(matchingSection.name.toLowerCase()) : false;
+                                return matchingSection ? sectionName === matchingSection.name.toLowerCase() : false;
                               }).sort((a, b) => Number(a.number || a.id) - Number(b.number || b.id)),
                               ...extraTables
                                 .filter(et => {
