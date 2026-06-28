@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PortalSelection — Landing page for selecting which portal to log into
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays cards for each available portal:
+//   - Admin Dashboard (restaurant management, reports, settings)
+//   - Cashier POS (billing, table management, order settlement)
+//   - Captain POS (order taking, table management)
+//   - User Menu (customer-facing QR menu)
+//
+// Each card navigates to the corresponding login screen with the selected role.
+// Shown when the user visits the root URL without being authenticated.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React from 'react';
 import { LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode } from 'lucide-react';
 

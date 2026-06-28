@@ -1,7 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepConfirmation — Review all onboarding data before submission (Step 12)
+// ─────────────────────────────────────────────────────────────────────────────
+// Final review screen before submitting onboarding:
+//   - Collapsible summary sections for each step (restaurant, owner, staff,
+//     outlets, menu, tax, branding, printers, plan)
+//   - Edit links to jump back to any step
+//   - Print preview modal for receipt/KOT format
+//   - PIN visibility toggle for staff review
+//   - Submit button triggers POST /api/onboard with all wizard data
+//   - Loading and error states during submission
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { CheckCircle, ArrowLeft, ArrowRight, Printer, Store, Users, Layout, Utensils, CreditCard, FileText, Loader2, Receipt, XCircle, Pencil, ChevronDown, ChevronUp, Eye, EyeOff, MapPin, Building2 } from 'lucide-react';
 import { areasToFlat } from './StepOutlets';
 
+// Human-readable restaurant type labels
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in Restaurant',
   BAR_LOUNGE: 'Bar & Lounge',

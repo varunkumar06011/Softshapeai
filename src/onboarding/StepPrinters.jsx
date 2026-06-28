@@ -1,7 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepPrinters — Printer configuration for KOT and bill printing (Step 8)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures thermal printers for the restaurant:
+//   - Add/remove printers with name, paper width (58mm/80mm), type
+//   - Printer types: Kitchen (KOT), Bar (bar KOT), Bill (receipts), All-in-One
+//   - Default printer set based on restaurant type (Cloud Kitchen → kitchen only)
+//   - Print preview with sample KOT format
+//
+// Printer setup is completed later in PrinterSettingsPage (admin) with
+// QZ Tray connection or Windows Print Agent pairing.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useRef } from 'react';
 import { Printer, Plus, Trash2, Monitor, X, ArrowRight, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
 
+// Supported paper widths for thermal printers
 const PAPER_WIDTHS = ['58mm', '80mm'];
+// Printer type options with descriptions
 const PRINTER_TYPES = [
   { value: 'KITCHEN', label: 'Kitchen Printer (prints order tickets)' },
   { value: 'BAR', label: 'Bar Printer (prints bar order tickets)' },

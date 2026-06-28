@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Register SW — Service Worker registration for PWA offline support
+// ─────────────────────────────────────────────────────────────────────────────
+// Registers the service worker (/sw.js) for Progressive Web App features:
+//   - Offline page caching (app shell + static assets)
+//   - Background sync for pending actions
+//   - Push notification support (future)
+//
+// Skips registration in localhost dev mode unless VITE_ENABLE_SW_DEV is set.
+// Handles update notifications and forces reload when a new SW takes control.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function registerSW() {
   if (!('serviceWorker' in navigator)) {
     console.warn('[SW] Service workers not supported — offline features disabled');

@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AnimatedButton — Reusable button with tap animation and haptic feedback
+// ─────────────────────────────────────────────────────────────────────────────
+// Wraps a standard button with Framer Motion tap/hover scale animations:
+//   - Tap: scales down to 0.96 (disabled if reduced-motion is on)
+//   - Hover: scales up to 1.02 (disabled if reduced-motion is on)
+//   - Haptic feedback on click (light vibration, can be disabled via prop)
+//   - Forwards ref to the underlying button element
+//
+// Props: children, onClick, haptic (default true), disabled, className, ...rest
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { forwardRef } from 'react';
 import { motion } from 'framer-motion';
 import { springs, useMotionConfig } from '../animations';

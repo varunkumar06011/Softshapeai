@@ -1,11 +1,33 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useSocket — Socket.IO connection management and event queueing hook
+// ─────────────────────────────────────────────────────────────────────────────
+// Manages a singleton Socket.IO client connection with:
+//   - JWT authentication (sends token in auth handshake)
+//   - Auto-reconnect with exponential backoff
+//   - Event queue: buffers events emitted while disconnected, replays on reconnect
+//   - Event processing queue: ensures events are processed in order (FIFO)
+//   - Waiter call listener reset on reconnect
+//
+// The socket instance is shared across the app (module-level singleton).
+// Events are queued during disconnection and flushed when the socket reconnects.
+//
+// Exports:
+//   useSocket(eventHandlers) — React hook that subscribes to socket events
+//   reconnectSocket(token)   — forces a reconnect with a new JWT token
+//   getSocket()              — returns the raw socket instance (for testing)
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
 import { authService } from "../services/authService";
 import { resetWaiterCallListeners } from "../services/waiterCallService";
 
+// Singleton socket instance — shared across the entire app
 let socketInstance = null;
+// Buffer for events emitted while socket is disconnected
 let eventQueue = [];
+// Ensures events are processed in order (FIFO)
 let isProcessingQueue = false;
 
 export function reconnectSocket(token) {

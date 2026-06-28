@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// API Config — Backend URL resolution, auth headers, and reachability checks
+// ─────────────────────────────────────────────────────────────────────────────
+// Central configuration for all backend API calls:
+//   - API_BASE: normalized backend URL (strips trailing slashes to avoid //)
+//   - apiUrl(path): builds full URL from base + path
+//   - getAuthHeaders(): returns { Authorization: 'Bearer <token>' } from localStorage
+//   - isBackendReachable(): sync check (cached result from last health check)
+//   - checkBackendReachability(): async health check against /api/health
+//
+// The reachability check is used by useOnlineStatus hook and SyncStatusContext
+// to detect when the backend is down (even if the browser has network).
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** Strip trailing slashes — avoids https://host.app//api/... (breaks DNS/fetch) */
 export function normalizeApiBase(url) {
   if (!url || typeof url !== "string") return "";

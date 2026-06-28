@@ -1,16 +1,32 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Bar Menu Service — Bar menu data fetching, caching, and image repair
+// ─────────────────────────────────────────────────────────────────────────────
+// Manages bar menu data on the frontend:
+//   - fetchBarMenuFromBackend() — fetch bar menu from API with timeout
+//   - readBarMenuCache() / writeBarMenuCache() — localStorage cache (per-restaurant)
+//   - repairBarMenuCloudinaryUrls() — migrate old Cloudinary URLs to new CDN
+//   - Default food/liquor images for items without images
+//
+// Cache is scoped per restaurantId to prevent cross-tenant data leakage.
+// Cloudinary repair runs once per restaurant (tracked via localStorage flag).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
 
+// Default placeholder images for items without uploaded images
 export const DEFAULT_FOOD_IMG =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
 
 export const DEFAULT_LIQUOR_IMG =
   "https://images.unsplash.com/photo-1597290282695-edc43d0e7129?w=600&h=450&fit=crop";
 
+// localStorage key for tracking Cloudinary URL repair completion (per version)
 const REPAIR_STORAGE_KEY = "softshape_bar_menu_cloudinary_repair_v3";
 
 /** Bar menu name → restaurant menu name (Cloudinary source) */
+// Maps bar item names to restaurant item names for image lookup from Cloudinary
 const BAR_IMAGE_ALIASES = {
   "v grand spl chicken soup": "V-Grand Spl Cream of Chicken Soup",
   "hot & sour soup": "Veg Hot and Sour Soup",

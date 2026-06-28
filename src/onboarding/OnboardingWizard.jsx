@@ -1,3 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OnboardingWizard — Multi-step restaurant onboarding wizard controller
+// ─────────────────────────────────────────────────────────────────────────────
+// Orchestrates the complete restaurant onboarding flow with these steps:
+//   1. StepOwner      — Owner registration (name, email, phone OTP, password)
+//   2. StepRestaurant — Restaurant details (name, type, address, GST)
+//   3. StepOutlets    — Outlet/venue configuration (floors, sections, tables)
+//   4. StepYourSpace  — Venue layout (sections, table counts)
+//   5. StepMenu       — Menu setup (manual entry or Excel/AI upload)
+//   6. StepTax        — GST configuration (AC/Non-AC/Takeaway, rates)
+//   7. StepBranding   — Logo, receipt header, theme colors
+//   8. StepPrinters   — Printer configuration (kitchen, bar, bill)
+//   9. StepStaff      — Captain/cashier setup (names, PINs, shifts)
+//  10. StepPlan       — Subscription plan selection (Starter/Pro/Enterprise)
+//  11. StepPayment    — Payment via Razorpay (or mock for dev)
+//  12. StepConfirmation — Review and submit
+//  13. OnboardingSuccess — Success screen with app download links
+//
+// Uses Framer Motion for step transitions. State is managed centrally and
+// passed down to each step. On completion, submits to /api/onboard endpoint.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -60,8 +82,6 @@ const defaultWizardData = {
   sections: [{ name: '', kotPrinterName: '' }],
   tables: [{ number: 1, capacity: 4, sectionIndex: 0 }],
   venues: [],
-  menuSharing: 'SHARED',
-  pricingMode: 'UNIFIED',
   priceProfiles: [{ name: 'Default', isDefault: true }],
   menu: { categories: [{ name: '', items: [{ name: '', price: 0, isVeg: true }] }] },
   taxConfig: { gstRegistered: true, gstCategory: 'NON_AC', gstRate: null, pricesIncludeGst: false, serviceChargePercent: 0, packagingCharge: 0 },
@@ -262,6 +282,8 @@ const OnboardingWizard = () => {
             restaurantType: o.restaurantType,
             sections: sections.filter(s => s.name.trim().length >= 1),
             tables: tables.filter(t => t.number > 0 && t.capacity > 0),
+            captains: (o.captains || []).filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin)),
+            cashiers: (o.cashiers || []).filter(c => c.name.trim().length >= 2 && /^\d{4}$/.test(c.pin)),
             menu: {
               categories: o.menu.categories
                 .filter(cat => cat.name.trim().length >= 1)
@@ -289,8 +311,6 @@ const OnboardingWizard = () => {
         sections: isCloud ? [] : cleanSections,
         tables: isCloud ? [] : wizardData.tables,
         venues: cleanVenues.length > 0 ? cleanVenues : undefined,
-        menuSharing: wizardData.menuSharing,
-        pricingMode: wizardData.pricingMode,
         priceProfiles: wizardData.priceProfiles || [],
         menu: cleanMenu,
         printers: wizardData.printers,

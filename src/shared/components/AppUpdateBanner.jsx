@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AppUpdateBanner — Android APK update notification banner
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays a red banner at the top of the screen when a newer APK version
+// is available on GitHub Releases. Shows:
+//   - Current version vs latest version
+//   - App name (Admin, Cashier, Captain)
+//   - Download button (opens GitHub release asset URL)
+//   - Dismiss button (hides banner for current session)
+//
+// Only shown on native Android (Capacitor) platforms. Uses useAppUpdate hook.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';

@@ -1,3 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync Engine — Offline action replay engine with conflict resolution
+// ─────────────────────────────────────────────────────────────────────────────
+// Processes pending offline actions when connectivity is restored:
+//
+// Key functions:
+//   - syncPendingActions(): replays all queued actions from IndexedDB to backend
+//     - Sends actions in bulk via /api/orders/sync-bulk for efficiency
+//     - Falls back to individual sync if bulk fails
+//     - Handles conflicts via conflictResolver.js
+//     - Updates action status (syncing, synced, failed, conflict)
+//     - Prunes old actions past max age
+//   - syncSingleAction(action): replays a single action
+//   - getSyncStatus(): returns current sync state (idle, syncing, error)
+//   - subscribeToSyncStatus(callback): pub/sub for sync status updates
+//
+// Action types: KOT_SEND, ORDER_UPDATE, ORDER_SETTLE, TABLE_STATUS, etc.
+// Each action contains: { type, method, url, body, entityId, requestId, createdAt }
+//
+// Uses resilience.js for retry logic and conflictResolver.js for conflict handling.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import {
   getPendingActions,
   getPendingActionsByEntity,

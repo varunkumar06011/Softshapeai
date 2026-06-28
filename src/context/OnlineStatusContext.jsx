@@ -1,6 +1,18 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OnlineStatusContext — Online/offline status provider with visual indicator
+// ─────────────────────────────────────────────────────────────────────────────
+// Wraps the useOnlineStatus hook and exposes the online/offline state via
+// React Context. Shows a floating "Offline" banner at the bottom of the screen
+// when the browser detects no network connection.
+//
+// The banner informs users that actions will be queued and synced when
+// connectivity is restored (via the SyncStatusContext/syncEngine system).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { createContext, useContext } from 'react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
+// Default: true (assume online until proven otherwise)
 const OnlineStatusContext = createContext(true);
 
 export function OnlineStatusProvider({ children }) {

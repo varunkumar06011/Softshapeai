@@ -1,8 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OutletsOverview — Multi-outlet organization overview for restaurant chains
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays all outlets (restaurants) within the same organization:
+//   - Outlet cards with type, location, staff count, join code
+//   - Restaurant type labels (Dine-in, Bar & Lounge, Cafe, Cloud Kitchen, etc.)
+//   - Venue type icons for visual differentiation
+//   - Billing status and trial period indicators
+//   - Click to switch active outlet (multi-outlet login)
+//
+// Used by owners/admins who manage multiple restaurant outlets under one
+// organization. Fetches data from /api/restaurant/outlets endpoint.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { Store, MapPin, Users, Hash, ArrowRight, Loader2, CheckCircle, XCircle, Building2, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
 
+// Human-readable labels for restaurant types
 const RESTAURANT_TYPE_LABELS = {
   DINE_IN: 'Dine-in',
   BAR_LOUNGE: 'Bar & Lounge',

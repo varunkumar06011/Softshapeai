@@ -1,3 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// usePrinter — React hook for all printing operations (KOTs and receipts)
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions to send print jobs to the backend, which generates
+// ESC/POS data and sends it to QZ Tray (browser) or the Windows Print Agent.
+//
+// Exposes:
+//   printFoodKOT(orderData)   — POST to backend → print to kitchen printer
+//   printLiquorKOT(orderData) — POST to backend → print to bar printer
+//   printReceipt(orderId)     — POST to backend (fetches full order from DB) → print to cashier printer
+//   loading                   — true while any print job is in progress
+//   error                     — last error message (null if none)
+//
+// Also exports:
+//   usePrintOrder(orderData)  — Fires food KOT + liquor KOT simultaneously
+//                               using Promise.all — call this from "Place Order" button
+//
+// IMPORTANT:
+//   - Receipts always fetch from the DB by orderId (never trust frontend item list)
+//   - KOTs send items directly from the frontend (with type field for food/liquor)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * usePrinter — React hook for all printing operations
  *

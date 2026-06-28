@@ -1,8 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SliceChallenge — Gamified discount game for customer engagement
+// ─────────────────────────────────────────────────────────────────────────────
+// Interactive "slice the food" game shown before the menu loads:
+//   - 3 rounds of slicing food items (burger, pizza, dumpling, sushi, fries)
+//   - Each successful slice awards a discount percentage
+//   - Total discount is applied to the customer's order
+//   - Haptic feedback on each slice (mobile)
+//   - Framer Motion animations for slicing effect
+//   - Skip option for customers who don't want to play
+//
+// Used by UserMenuApp as an engagement tool before showing the menu.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ArrowRight } from 'lucide-react';
 import { hapticMedium } from '../shared/hooks/useHaptics';
 
+// Food emoji items for the slicing game
 const FOOD_ITEMS = ['🍔', '🍕', '🥟', '🍣', '🍟'];
 
 export default function SliceChallenge({ onComplete, onSkip }) {

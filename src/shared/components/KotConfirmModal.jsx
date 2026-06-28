@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// KotConfirmModal — Confirmation modal before sending KOT to kitchen/bar printer
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays a summary of items being sent as a KOT (Kitchen Order Ticket):
+//   - Item count and total quantity
+//   - Total amount
+//   - Confirm and Cancel buttons
+//   - Loading state during KOT submission
+//
+// Used by POS (Cashier/Captain) when the user taps "Send KOT" or "Place Order".
+// Props: isOpen, itemCount, totalQty, amount, label, onConfirm, onCancel
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Loader2 } from 'lucide-react';

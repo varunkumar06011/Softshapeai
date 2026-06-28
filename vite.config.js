@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Vite Config — Frontend build configuration for the Softshape POS web app
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures the Vite dev server and production build:
+//   - React plugin with SWC for fast HMR
+//   - TailwindCSS v4 via @tailwindcss/vite plugin
+//   - PWA support via vite-plugin-pwa (service worker, offline caching)
+//   - Multiple entry points: main (web), captain (Android bundle)
+//   - Environment variable validation (VITE_PRINT_AGENT_DOWNLOAD_URL warning)
+//   - Manual chunk splitting for vendor libraries (React, Framer Motion, etc.)
+//   - Sourcemap generation for production debugging
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'

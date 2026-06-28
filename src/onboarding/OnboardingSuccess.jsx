@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OnboardingSuccess — Post-onboarding success screen with setup summary
+// ─────────────────────────────────────────────────────────────────────────────
+// Displayed after successful onboarding submission. Shows:
+//   - Confirmation checkmark and welcome message
+//   - Restaurant join code (copyable) for staff to connect
+//   - Setup summary (restaurant, owner, staff, plan, outlets)
+//   - App download links and QR codes (Admin, Cashier, Captain, Print Agent)
+//   - Quick links to dashboard, settings, and menu management
+//   - Email confirmation status
+//
+// Also handles auto-login with the pre-auth token returned by the onboarding API.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';

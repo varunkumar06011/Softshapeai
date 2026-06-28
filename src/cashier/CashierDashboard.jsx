@@ -1,3 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CashierDashboard — Full cashier POS with billing, settlement, and table management
+// ─────────────────────────────────────────────────────────────────────────────
+// The largest frontend component (~6500 lines) — complete cashier POS:
+//   - Table grid with real-time status sync (Free/Occupied/Billing/Settled)
+//   - Order management (create, add items, modify, cancel, transfer)
+//   - KOT printing (kitchen/bar) via backend socket or offline print
+//   - Bill generation with GST, discounts, service charges
+//   - Settlement (Cash, Card, UPI, Split payment)
+//   - Transaction history with date filtering
+//   - Table swap and item transfer between tables
+//   - Bill edit (modify settled bills with audit trail)
+//   - Live order tracking with preparation timers
+//   - Waiter call notifications
+//   - Offline support with action queueing and sync
+//   - Revenue dashboard with daily/hourly charts
+//   - Item analytics integration
+//   - Fullscreen mode for kiosk deployment
+//
+// Print jobs are emitted via backend socket (not direct QZ Tray) for
+// centralized print management and offline reliability.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {

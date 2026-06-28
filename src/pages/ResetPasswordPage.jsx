@@ -1,7 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ResetPasswordPage — Password reset form with token validation
+// ─────────────────────────────────────────────────────────────────────────────
+// Allows users to set a new password using a reset token:
+//   - Extracts JWT token from URL query parameter
+//   - Validates token with backend (POST /api/auth/verify-reset-token)
+//   - New password and confirm password fields (with show/hide toggle)
+//   - Password strength indicator
+//   - Submits new password to backend (POST /api/auth/reset-password)
+//   - Redirects to login on success
+//
+// Token expires after 15 minutes (enforced by backend).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Eye, EyeOff, CheckCircle } from 'lucide-react';
 
+// Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
 }

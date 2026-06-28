@@ -1,3 +1,18 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useLongPress — Hook for detecting long-press gestures on touch/mouse elements
+// ─────────────────────────────────────────────────────────────────────────────
+// Detects long-press events with configurable duration. Works with both
+// touch (mobile) and mouse (desktop) events. Cancels if the user moves
+// their finger/cursor beyond a small threshold (prevents false triggers
+// during scrolling).
+//
+// Returns event handlers (onTouchStart, onTouchEnd, onTouchMove, onMouseDown,
+// onMouseUp, onMouseLeave) to spread onto any element.
+//
+// @param onLongPress - callback fired when long-press is detected
+// @param ms - duration threshold in milliseconds (default: 400ms)
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useRef, useCallback, useMemo } from 'react';
 
 export function useLongPress(onLongPress, ms = 400) {

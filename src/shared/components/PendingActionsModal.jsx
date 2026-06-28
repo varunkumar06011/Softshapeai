@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PendingActionsModal — View and manage offline queued actions
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays pending actions queued while the app was offline:
+//   - Lists all pending actions from IndexedDB (offlineDB)
+//   - Shows action type, timestamp, and status (pending/failed)
+//   - Retry individual actions or sync all
+//   - Delete individual actions or clear all
+//   - Sync status indicators (syncing, success, error)
+//
+// Actions are processed by syncEngine which replays them to the backend
+// when connectivity is restored.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, RefreshCw, Trash2, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { getPendingActions, removePendingAction, updatePendingAction } from '../../utils/offlineDB';

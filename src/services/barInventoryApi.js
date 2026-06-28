@@ -1,6 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Bar Inventory API — Frontend API client for bar liquor inventory management
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions for managing bar inventory items and daily stock entries:
+//   - fetchBarInventory() — list all inventory items with current stock levels
+//   - createBarInventoryItem(data) — create or update an inventory item
+//   - deleteBarInventoryItem(id) — delete an inventory item
+//   - createBarInventoryEntry(data) — create or update a daily stock entry
+//   - fetchBarInventoryLedger() — get stock ledger with consumption history
+//
+// All requests include auth headers and restaurantId from current session.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { apiUrl, getAuthHeaders } from './apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
+// Helper: parse fetch response, throw on non-OK status with error message
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

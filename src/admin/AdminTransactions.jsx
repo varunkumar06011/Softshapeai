@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AdminTransactions — Transaction history viewer with date filtering and delete
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays settled transactions (bills) with:
+//   - Date and month filtering (IST timezone aware)
+//   - Bill number display (formatTxnDisplayId: DD/MM/YY-NNN)
+//   - Source detection (restaurant vs bar based on sectionTag)
+//   - Payment method, amount, GST, discount breakdown
+//   - Delete transaction (with confirmation)
+//   - Auto-refresh support
+//
+// Used in the admin Billing tab to review and manage past transactions.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useCallback, useMemo } from 'react';
 import { History, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { fetchTransactions, deleteTransaction } from '../services/orderApi';

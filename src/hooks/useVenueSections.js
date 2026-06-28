@@ -1,9 +1,31 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useVenueSections — Shared hook for venue/section/table resolution
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetches venues with their floors, sections, and tables from the backend,
+// then flattens them into a unified structure for the UI. Handles both
+// venue-based restaurants (BAR, Family Restaurant, Parcel) and legacy
+// restaurants without venues.
+//
+// Venue type routing:
+//   - BAR venue types → 'bar' outlet (separate kitchen/menu/printer path)
+//   - All other venue types → 'restaurant' outlet (shared kitchen path)
+//
+// Returns:
+//   venues — array of venue objects with nested floors/sections/tables
+//   sections — flattened array of all sections across venues
+//   tables — flattened array of all tables across sections
+//   loading — true while fetching
+//   error — error message if fetch failed
+//   refresh — function to re-fetch venues
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useMemo } from 'react';
 import { fetchVenues } from '../services/tableApi';
 
 // All non-BAR venueTypes route through the same kitchen/menu/printer path as "restaurant"
 const BAR_TYPES = ['BAR'];
 
+// Maps a venue type to the outlet type for routing purposes
 function getOutletForVenueType(venueType) {
   return venueType === 'BAR' ? 'bar' : 'restaurant';
 }

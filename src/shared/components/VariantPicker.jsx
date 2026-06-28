@@ -1,9 +1,28 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// VariantPicker — Size/variant selection modal for bar items (liquor/beer)
+// ─────────────────────────────────────────────────────────────────────────────
+// Allows users to select a size variant when adding bar items to an order:
+//   - Liquor: peg (30ml), half (60ml), full (90ml), or bottle (750ml)
+//   - Beer: pint (330ml), bottle (650ml)
+//   - Custom sizes from item.availableSizes
+//   - Price calculation per variant (proportional to base peg price)
+//   - Quantity selector
+//
+// Constants:
+//   - BAR_UNIT_ML = 30 (standard peg size)
+//   - FULL_BOTTLE_ML = 750 (standard liquor bottle)
+//   - BEER_BOTTLE_ML = 650 (standard beer bottle)
+//
+// Props: item (menu item with variants), onSelect (callback with selected variant), onClose
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { isBeerItem } from '../../utils/itemHelpers';
 import { modalBackdropVariants, bottomSheetVariants, springs, useMotionConfig } from '../animations';
 
+// Standard bar unit sizes in milliliters
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 const BEER_BOTTLE_ML = 650;

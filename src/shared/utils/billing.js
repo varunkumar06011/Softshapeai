@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing — Order total calculation with GST, discounts, and service charges
+// ─────────────────────────────────────────────────────────────────────────────
+// Core billing calculation utilities used by POS, cashier, and admin:
+//   - calculateOrderTotal(items, discountPercent, options) — computes subtotal,
+//     GST (CGST/SGST split), discount amount, service charge, and final total
+//   - Supports pricesIncludeGst mode (GST included in item price vs added on top)
+//   - GST rate determined by restaurant config (AC=18%, Non-AC=5%, Takeaway=5%)
+//   - Handles unregistered restaurants (0% GST)
+//   - Item shape: { p: price, q: quantity, ... }
+//
+// Returns: { subtotal, cgst, sgst, totalGst, discountAmount, serviceCharge, total }
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
 
 /**

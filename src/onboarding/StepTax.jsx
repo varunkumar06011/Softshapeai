@@ -1,6 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepTax — GST configuration and tax category selection (Step 6)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures GST settings for the restaurant:
+//   - GST registration toggle (registered vs unregistered)
+//   - GST category selection:
+//     - Non-AC / Standalone: 5% GST
+//     - AC Restaurant: 18% GST (if alcohol served or AC available)
+//     - Takeaway / Parcel only: 5% GST (no service charge)
+//   - GST number input (if registered)
+//   - Per-item tax rate preview with sample items
+//   - Service charge configuration (optional)
+//
+// GST category determines the default tax rate applied to all menu items.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { Receipt, Percent, ToggleLeft, ToggleRight, Info, CheckCircle } from 'lucide-react';
 
+// GST category options with rates and descriptions
 const GST_CATEGORIES = [
   { value: 'NON_AC', label: 'Non-AC / Standalone', rate: '5%', desc: 'Most Indian restaurants' },
   { value: 'AC', label: 'AC Restaurant', rate: '18%', desc: 'If alcohol is served or AC is available' },

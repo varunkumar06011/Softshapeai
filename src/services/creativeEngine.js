@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Creative Engine — AI-powered creative content styles for menu presentation
+// ─────────────────────────────────────────────────────────────────────────────
+// Defines visual styles and creative templates for menu item presentation:
+//   - Luxury Fine Dining, Cinematic Dark, Modern Minimalist, etc.
+//   - Each style includes: background, colors, font, layout, lighting
+//   - Used by the admin panel to customize menu appearance
+//   - Also includes AI-generated content suggestions for menu descriptions
+//
+// TODO (WIP): This is a placeholder service for future AI-powered creative features.
+// Currently returns static style definitions.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const STYLES = [
   {

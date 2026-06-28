@@ -1,3 +1,18 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// VenueSectionView — Table grid view for a venue section (POS table selection)
+// ─────────────────────────────────────────────────────────────────────────────
+// Renders a grid of tables for a specific venue section:
+//   - Table cards with status colors (Free=green, Occupied=amber, Billing=blue)
+//   - Current bill amount per table (calculated via calculateTableBill)
+//   - Table number and seating capacity
+//   - Click to select table (opens order/billing view)
+//   - Room mode toggle (for sections with multiple rooms/floors)
+//   - Section badge with color coding
+//   - Sync indicator (shows when table data is being synced)
+//
+// Used by Cashier POS and Captain POS for table selection.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React from 'react';
 import { getTableSectionLabel, getSectionBadgeColor } from '../../utils/tableHelpers';
 import { calculateTableBill } from '../utils/billing';

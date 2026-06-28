@@ -1,5 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// API Client — Core HTTP client with JWT auth and automatic token refresh
+// ─────────────────────────────────────────────────────────────────────────────
+// Wraps the native fetch API with:
+//   - Automatic JWT auth header injection (via authService.getAuthHeader())
+//   - 401 handling: on first 401, attempts to refresh the token and retry once
+//   - Consistent error handling with JSON error parsing
+//
+// Exports:
+//   apiGet(url)     — GET request with auth
+//   apiPost(url, body) — POST request with auth
+//   apiPatch(url, body) — PATCH request with auth
+//   apiDelete(url)  — DELETE request with auth
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { authService } from './authService';
 
+// Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return (
     import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''

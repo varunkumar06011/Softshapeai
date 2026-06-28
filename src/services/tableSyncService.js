@@ -1,3 +1,18 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Table Sync Service — Real-time table state with Socket.IO sync
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a React hook (useTableSync) that maintains real-time table state
+// by combining REST API polling with Socket.IO event updates:
+//   - Initial fetch from backend on mount
+//   - Socket.IO events: table_updated, table_created, table_deleted, order_updated
+//   - Recently terminated table tracking (30s grace period to prevent flicker)
+//   - Table integrity validation (detects data corruption)
+//   - Per-restaurant cache scoping (prevents cross-tenant data leakage)
+//   - Legacy cache key cleanup
+//
+// This is the regular restaurant equivalent of barTableSyncService.js (for bar tables).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSocket } from "../hooks/useSocket";
 import { fetchTables, updateTableSession } from "./tableApi";
@@ -5,8 +20,7 @@ import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { getTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
-
-
+// Check if a table was recently terminated (within 30s) to prevent UI flicker
 function isRecentlyTerminated(tableId) {
   try {
     const raw = localStorage.getItem(getRecentlyTerminatedKey());

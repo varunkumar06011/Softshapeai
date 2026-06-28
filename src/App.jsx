@@ -1,3 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// App.jsx — Main application component with routing for all portals
+// ─────────────────────────────────────────────────────────────────────────────
+// Root component that defines the routing structure for the Softshape POS app.
+// Supports multiple portals via a single React Router setup:
+//   - Admin Dashboard (/admin/*) — full restaurant management
+//   - Cashier Dashboard (/cashier/*) — billing and settlement
+//   - Captain App (/captain/*) — order taking and table management
+//   - User Menu (/menu/*) — customer-facing QR code menu
+//   - Print Station (/print-station/*) — print agent management
+//   - Onboarding Wizard (/onboard/*) — restaurant registration flow
+//
+// Auth flow:
+//   1. User lands on Portal Selection page (chooses Admin/Captain/Cashier)
+//   2. Login screen authenticates with email/password or PIN
+//   3. JWT token stored in localStorage, validated client-side on each load
+//   4. Role-based redirect: ADMIN/OWNER → admin, CASHIER → cashier, CAPTAIN → captain
+//
+// Wrapped in AuthProvider (auth state) and SyncStatusProvider (offline sync).
+// Uses Framer Motion for page transitions and Sentry for error tracking.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";

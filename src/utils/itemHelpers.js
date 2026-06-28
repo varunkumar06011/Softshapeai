@@ -1,3 +1,12 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Item Helpers — Utility functions for menu item operations
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides helper functions for working with POS menu items:
+//   - isBeerItem(item): checks if an item is beer based on category or name
+//     (used by VariantPicker to show beer-specific size options vs liquor)
+//   - Handles both abbreviated ({ c, n }) and full ({ category, name }) formats
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Utility functions for menu item operations
  */

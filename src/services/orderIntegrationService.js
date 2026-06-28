@@ -1,10 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Order Integration Service — Mock third-party order integration (Zomato/Swiggy)
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulates integration with third-party food delivery platforms (Zomato, Swiggy).
+// Generates mock orders from different platforms with random items and statuses.
+// Used for demo/testing purposes in the admin dashboard.
+//
+// TODO (WIP): This is a placeholder service. Real integration with Zomato/Swiggy
+// APIs would replace this mock implementation.
+// ─────────────────────────────────────────────────────────────────────────────
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Supported delivery platforms
 const PLATFORMS = ["Zomato", "Swiggy", "Direct"];
+// Mock branch names
 const BRANCHES = ["Main Hall", "Express Outlet"];
+// Order statuses for the integration pipeline
 const STATUSES = ["Preparing", "Ready", "Dispatched", "Served"];
+// Mock dish names for generated orders
 const DISHES = ["Chicken Biriyani", "Mutton Curry", "Prawn Fry", "Paneer Tikka", "Lassi"];
 
+// Platform metadata for UI badges
 export const PLATFORM_META = {
   Zomato: { badgeClass: "bg-[#FFEBEE] text-[#B71C1C]" },
   Swiggy: { badgeClass: "bg-orange-100 text-orange-700" },

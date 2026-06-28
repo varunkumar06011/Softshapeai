@@ -1,3 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AdminReports — Sales, GST, and performance reports with charts and export
+// ─────────────────────────────────────────────────────────────────────────────
+// Comprehensive reporting dashboard with multiple report types:
+//   - Daily Sales: revenue, orders, average bill, trend charts
+//   - Item-wise: top selling items by quantity and revenue
+//   - Category-wise: revenue breakdown by menu category (pie chart)
+//   - Payment Methods: cash/card/UPI/upi breakdown (bar chart)
+//   - Discounts: discount analysis by captain and type
+//   - GST: CGST/SGST liability report for tax filing
+//   - Captain Performance: revenue per captain, target vs actual
+//
+// Features:
+//   - Date range picker with IST timezone awareness
+//   - Realcharts visualizations (area, bar, pie charts)
+//   - PDF and Excel export via reportDownloads.js
+//   - Auto-refresh with loading states
+//   - Search and filter within report data
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,

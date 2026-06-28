@@ -1,7 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Report Downloads — PDF and Excel export utilities for admin reports
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions to export report data as downloadable files:
+//   - downloadPDF({ title, dateRange, headers, rows, filename }) — jsPDF with autoTable
+//   - downloadExcel({ title, dateRange, headers, rows, filename }) — XLSX spreadsheet
+//
+// Both functions format monetary values in Indian Rupees (₹) with en-IN locale.
+// Used by AdminReports.jsx for exporting sales, GST, and performance reports.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
+// Format amount as Indian Rupees string
 function formatMoney(amount) {
   if (amount == null) return '—';
   return '₹' + Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 });

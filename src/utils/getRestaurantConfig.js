@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// getRestaurantConfig — Reads restaurant configuration from localStorage
+// ─────────────────────────────────────────────────────────────────────────────
+// Returns the restaurant config stored at login time:
+//   - Reads from 'ss_restaurant' in localStorage
+//   - Merges with sensible defaults (safe to call before login)
+//   - Config includes: gstCategory, gstRate, gstRegistered, pricesIncludeGst,
+//     serviceChargePercent, restaurantName, slug, etc.
+//
+// Used by billing.js for GST calculations and UI components for display.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Returns the restaurant config stored at login.
  * Safe to call anywhere — returns sensible defaults if not logged in.

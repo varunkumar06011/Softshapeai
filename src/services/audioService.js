@@ -1,7 +1,28 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio Service — Web Audio API sound effects and haptic feedback
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides sound effects for POS events (order placed, bill printed, error)
+// using the Web Audio API. Includes:
+//   - Global AudioContext singleton (created on first use)
+//   - iOS audio unlock (requires user gesture to enable audio)
+//   - Haptic feedback integration (vibration on supported devices)
+//   - State subscription system (listeners notified on enable/disable)
+//
+// Sounds:
+//   - success: ascending tones (order placed, payment received)
+//   - error: descending tones (failed operation)
+//   - notification: single tone (waiter call, new order)
+//
+// Exports: playSound(name), getAudioState(), subscribe(listener), unlockAudio()
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { hapticLight, hapticSuccess } from '../shared/hooks/useHaptics';
 
+// Singleton AudioContext — created lazily on first use
 let globalAudioCtx = null;
+// Set of listener functions notified on state changes
 let listeners = new Set();
+// Whether audio has been unlocked (iOS requires user gesture)
 let isUnlocked = false;
 
 function emitState() {

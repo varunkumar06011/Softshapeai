@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Captain Mobile Optimizations — CSS for touch targets and scroll performance
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile-specific CSS optimizations for the Captain POS app on Android:
+//   - Minimum 48x48px touch targets (Material Design guideline)
+//   - Large button variants (56px height) for primary actions
+//   - Smooth scroll with momentum (-webkit-overflow-scrolling: touch)
+//   - Prevent text selection on UI elements (user-select: none)
+//   - Overscroll behavior containment (prevents pull-to-refresh interference)
+//   - Safe area insets for notched devices
+// ─────────────────────────────────────────────────────────────────────────────
+
 /* Mobile Touch Target & Scroll Performance Optimizations */
 
 /* Issue #1: Touch Target Size - Minimum 48x48px */

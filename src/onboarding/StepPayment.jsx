@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepPayment — Payment processing via Razorpay (Step 11)
+// ─────────────────────────────────────────────────────────────────────────────
+// Handles subscription payment during onboarding:
+//   - Fetches payment quote and gateway config from backend
+//   - Pings backend to wake up Render (cold start prevention)
+//   - Supports Razorpay checkout (production) and MOCK mode (development)
+//   - Progress indicator during payment processing
+//   - Payment reference tracking after successful payment
+//
+// MOCK mode: Instant success without real payment (for dev/testing).
+// Razorpay mode: Opens Razorpay checkout modal with order details.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Lock, CheckCircle2, ArrowLeft, ArrowRight, Loader2, Smartphone, Wallet, Landmark } from 'lucide-react';
 import { apiFetch, apiUrl, pingBackend } from '../services/apiConfig';

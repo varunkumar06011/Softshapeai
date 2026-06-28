@@ -1,3 +1,14 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useOnlineStatus — Hook for detecting browser online/offline status
+// ─────────────────────────────────────────────────────────────────────────────
+// Listens to browser 'online' and 'offline' events and also performs
+// a backend reachability check (via apiConfig) when the browser reports
+// 'online'. This catches cases where the browser has network but the
+// backend server is down.
+//
+// Returns: boolean (true if both browser and backend are reachable)
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect } from 'react';
 import { isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 

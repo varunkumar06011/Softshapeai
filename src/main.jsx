@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// main.jsx — Application entry point for the Admin/Cashier portal
+// ─────────────────────────────────────────────────────────────────────────────
+// Initializes the React app with:
+//   - Sentry error tracking (with session replay for error debugging)
+//   - MenuProvider (menu data context via useMenuSync hook)
+//   - Service worker registration for offline support
+//   - StrictMode for development warnings
+//
+// Sentry config:
+//   - 10% trace sample rate (production-safe)
+//   - 10% session replay sample rate (normal sessions)
+//   - 100% session replay for error sessions
+//   - Trace headers propagated to backend for cross-platform error correlation
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

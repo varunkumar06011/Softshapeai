@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Bar Menu Sync Service — Global bar menu state with pub/sub and caching
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a singleton bar menu store with React hook integration:
+//   - Fetches bar menu from backend on first access (lazy load)
+//   - Caches to localStorage (per-restaurant scope)
+//   - Pub/sub pattern: components subscribe to menu updates
+//   - useGlobalBarMenuSync() — React hook that re-renders on menu changes
+//   - refreshBarMenu() — force re-fetch from backend
+//
+// This is the bar equivalent of menuSyncService.js (for regular restaurant menu).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect } from "react";
 import { API_BASE } from "./apiConfig";
 import {
@@ -7,10 +20,13 @@ import {
   repairBarMenuCloudinaryUrls,
 } from "./barMenuService";
 
+// Singleton state — shared across all components
 let barGlobalMenu = null;
 let _isLoading = true;
 let _loadError = null;
+// Set of subscriber functions notified on state changes
 const subscribers = new Set();
+// Promise that resolves when the initial load completes (prevents duplicate fetches)
 let loadPromise = null;
 
 function notifySubscribers() {

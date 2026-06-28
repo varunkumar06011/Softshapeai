@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepOwner — Owner registration with phone OTP verification (Step 1)
+// ─────────────────────────────────────────────────────────────────────────────
+// Collects owner account information:
+//   - Full name, email address, password (with show/hide toggle)
+//   - Phone number with Firebase OTP verification (send + verify)
+//   - Supports both web (reCAPTCHA) and Android (Capacitor native) OTP
+//   - Email uniqueness check via /api/onboard/check-email
+//   - Phone normalization (converts 10-digit to +91 format)
+//
+// OTP flow:
+//   1. User enters phone → click "Send OTP" → Firebase sends OTP
+//   2. User enters OTP → click "Verify" → Firebase verifies
+//   3. Only after verification can the user proceed to next step
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useRef, useEffect } from 'react';
 import { User, Mail, Lock, ShieldCheck, Eye, EyeOff, Smartphone, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import {
@@ -9,6 +25,7 @@ import {
 } from '../lib/phoneAuth';
 import { apiFetch } from '../services/apiConfig';
 
+// Normalize phone number to +91XXXXXXXXXX format
 function normalizePhone(raw) {
   const digits = raw.replace(/\D/g, '');
   if (digits.length === 10) return '+91' + digits;

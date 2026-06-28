@@ -1,6 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// UnifiedOrdersDashboard — Third-party order integration dashboard (mock/placeholder)
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays orders from multiple delivery platforms (Zomato, Swiggy, Direct)
+// in a unified view:
+//   - Real-time incoming order notifications with audio beep
+//   - Platform-wise filtering and status tracking
+//   - Order analytics (total orders, revenue, average preparation time)
+//   - Platform badges with brand colors
+//
+// TODO (WIP): Uses mock data from orderIntegrationService. Real integration
+// with Zomato/Swiggy APIs would replace the mock implementation.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect, useMemo, useState } from "react";
 import { fetchUnifiedOrders, getOrderAnalytics, PLATFORM_META, subscribeToIncomingOrders } from "../services/orderIntegrationService";
 
+// Play a notification beep when a new order arrives
 function beep() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();

@@ -1,6 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepOutlets — Multi-outlet configuration for restaurant chains (Step 3)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures outlets/venues for the restaurant organization:
+//   - Add/remove outlets (each outlet is a separate restaurant entity)
+//   - Per-outlet: name, type (Dine-in, Bar, Cafe, Cloud Kitchen), address
+//   - Venue type labels for UI display
+//   - Join code generation for each outlet
+//   - Outlet count affects pricing in StepPlan
+//
+// Also exports areasToFlat() helper used by StepConfirmation to flatten
+// the outlet/venue/section/table hierarchy for review.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { Store, Plus, Trash2, MapPin, ChevronDown, ChevronUp, Copy, AlertTriangle, Utensils, LayoutGrid, Hash, Armchair } from 'lucide-react';
 
+// Restaurant type options for outlet configuration
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant' },
   { value: 'BAR_LOUNGE', label: 'Bar & Lounge' },

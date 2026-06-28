@@ -1,3 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CaptainApp — Captain POS application for order taking and table management
+// ─────────────────────────────────────────────────────────────────────────────
+// Full-featured Captain POS (Point of Sale) application (~5700 lines):
+//   - Table selection grid with real-time status (Free/Occupied/Billing)
+//   - Menu item picker with search, categories, veg/non-veg filter
+//   - Cart management (add, remove, modify quantities)
+//   - KOT (Kitchen Order Ticket) sending with print confirmation
+//   - Order modifications (add items, cancel items, transfer tables)
+//   - Captain performance dashboard (revenue, targets, analytics)
+//   - Waiter call notifications (real-time via Socket.IO)
+//   - Voice search for menu items (Web Speech API)
+//   - Today's specials display
+//   - Offline support with action queueing
+//   - Mobile-optimized touch targets and gestures
+//
+// Used by captains/waiters to take orders at tables. Syncs with backend
+// via Socket.IO for real-time table status and order updates.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
 import {

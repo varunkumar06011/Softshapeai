@@ -1,5 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SurveillanceDashboard — AI-powered camera surveillance dashboard (mock/placeholder)
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays a grid of camera feeds with AI-powered incident detection:
+//   - Camera zones (Kitchen, Packing, Delivery, Storage, Back-of-House, Counter)
+//   - Real-time incident alerts (unauthorized movement, congestion, restricted access)
+//   - Person count per zone with safety status (safe/warning/alert)
+//   - Incident log with severity and confidence scores
+//
+// TODO (WIP): This is a mock/placeholder dashboard. Real implementation would
+// require integration with CCTV cameras and a computer vision service.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect, useRef, useState, useCallback } from "react";
 
+// Mock camera configurations with zones and initial states
 const CAMERAS = [
   { id: "CAM-01", zone: "Kitchen Zone", color: "#1a1a2e", accent: "#16213e", persons: 3, status: "safe" },
   { id: "CAM-02", zone: "Packing Zone", color: "#16213e", accent: "#0f3460", persons: 2, status: "safe" },

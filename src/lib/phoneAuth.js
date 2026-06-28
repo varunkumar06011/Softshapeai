@@ -1,7 +1,24 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Phone Auth — Cross-platform phone OTP authentication (Web + Android)
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a unified phone authentication interface that works on both:
+//   - Web (browser): Uses Firebase Web SDK with reCAPTCHA verifier
+//   - Android (Capacitor): Uses @capacitor-firebase/authentication native plugin
+//
+// Flow:
+//   1. sendOtp(phoneNumber) — sends OTP via SMS (uses native or web SDK)
+//   2. verifyOtp(verificationId, code) — verifies the OTP code
+//   3. Returns a Firebase ID token that the backend verifies (verification.ts)
+//
+// On Android, the native Firebase plugin provides a better UX (instant
+// verification via Play Services, no reCAPTCHA challenge needed).
+// On web, a reCAPTCHA widget is rendered for bot protection.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 
-// ── Web SDK (fallback for browser) ─────────────────────────
+// ── Web SDK (fallback for browser) ───────────────────────────────────────────
 import { initializeApp } from "firebase/app";
 import {
   getAuth,

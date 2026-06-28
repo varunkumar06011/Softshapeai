@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AIDishCreationModal — AI-powered dish creation wizard (mock/placeholder)
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-step modal for creating menu items with AI assistance:
+//   Step 1: Upload dish image
+//   Step 2: AI detects dish name from image (mock detectDish)
+//   Step 3: AI generates creative content (mock generateDishCreative)
+//   Step 4: Select design template from creative engine styles
+//   Step 5: Preview and save to menu
+//
+// Uses CreativeCanvas for rendering styled dish presentations.
+//
+// TODO (WIP): AI detection and creative generation are mock implementations.
+// Real integration would use OpenAI Vision / DALL-E or similar services.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useMemo, useState, useEffect } from "react";
 import { Sparkles, Bot, X, RotateCcw, Check, Zap, Megaphone, UtensilsCrossed, ArrowRight, ShieldCheck, Share2 } from "lucide-react";
 import { generateDishCreative, detectDish } from "../services/menuAiService";

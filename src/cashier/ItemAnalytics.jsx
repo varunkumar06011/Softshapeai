@@ -1,11 +1,33 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ItemAnalytics — Item-wise sales analytics for cashier dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays detailed item-level sales analytics:
+//   - Top selling items by quantity and revenue
+//   - Date range filtering (Today, 7 days, 30 days, Custom)
+//   - Category-wise breakdown
+//   - Liquor volume tracking (ml poured per item)
+//   - Source filtering (restaurant vs bar)
+//   - Search within results
+//   - Export to CSV
+//
+// Calculates liquor volume poured using peg/bottle size heuristics:
+//   - Full Bottle = 750ml
+//   - 30ml peg = 30ml per unit
+//
+// Used as a tab within the CashierDashboard for quick item performance review.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useMemo } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
+
+// Standard bar unit sizes in milliliters
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 
+// Calculate liquor volume poured based on item name and quantity
 function getLiquorMlPoured(itemName, quantity) {
   if (itemName.endsWith('Full Bottle')) return FULL_BOTTLE_ML * quantity;
   if (itemName.endsWith('30ml')) return BAR_UNIT_ML * quantity;

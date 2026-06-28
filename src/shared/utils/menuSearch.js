@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu Search — Fuzzy search and filtering for POS menu items
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides search utilities for the POS menu item picker:
+//   - getMenuSearchText(item): builds a searchable text blob from item fields
+//     (name, category, price, alias, veg/non-veg keywords)
+//   - searchMenuItems(items, query): filters items by fuzzy matching against
+//     the searchable text, with support for:
+//     - Exact match boosting (items starting with query rank higher)
+//     - Multi-word queries (all words must match)
+//     - Alias matching (alternative names for items)
+//     - Category filtering
+//
+// Item shape: { n: name, c: category, p: price, t: type, id, desc, alias, ... }
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** Build searchable text for a POS menu item ({ n, c, p, t, id, desc, ... }). */
 export function getMenuSearchText(item) {
   if (!item) return "";

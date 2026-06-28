@@ -1,18 +1,38 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu Service — Restaurant menu data fetching, caching, and management
+// ─────────────────────────────────────────────────────────────────────────────
+// Core menu service for regular (non-bar) restaurants:
+//   - fetchMenuFromBackend() — fetch menu from API with 60s timeout
+//   - readMenuCache() / writeMenuCache() — localStorage cache (per-restaurant)
+//   - fetchMenuCategories() — list categories
+//   - createMenuItem() / updateMenuItem() / deleteMenuItem() — CRUD
+//   - createCategory() / updateCategory() / deleteCategory() — category CRUD
+//   - importMenuFromExcel() — bulk import from Excel file
+//   - aiParseMenu() — AI parse menu from image (via Groq)
+//
+// Cache is scoped per restaurantId to prevent cross-tenant data leakage.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
+// localStorage key prefix for menu cache
 export const MENU_STORAGE_KEY = "softshape_menu";
+// React Query key for menu queries
 export const MENU_QUERY_KEY = ["menu"];
 
+// Returns the scoped cache key for a specific restaurant's menu
 export function getMenuStorageKey(restaurantId) {
   return getScopedCacheKey(MENU_STORAGE_KEY, restaurantId);
 }
 
+// Default placeholder image for items without uploaded images
 const DEFAULT_MENU_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
 
-const FETCH_TIMEOUT_MS = 60000; // 60-second timeout per request
+// 60-second timeout for menu fetch requests (large menus may take time)
+const FETCH_TIMEOUT_MS = 60000;
 
 const fetchOpts = {
   method: "GET",

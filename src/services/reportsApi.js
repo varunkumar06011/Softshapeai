@@ -1,6 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Reports API — Frontend API client for sales and GST reports
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions for fetching various report types from the backend:
+//   - fetchDailyReport(date) — daily sales summary with GST breakdown
+//   - fetchMonthlyReport(month) — monthly sales summary
+//   - fetchCaptainReport(date) — captain performance report
+//   - fetchSectionReport(date) — section-wise revenue report
+//   - fetchGstReport(month) — GST liability report
+//   - fetchPaymentReport(date) — payment method summary
+//   - fetchDiscountReport(month) — discount analysis
+//   - fetchTransactionReport(date) — transaction detail export
+//
+// All requests include auth headers. Uses authService for JWT token.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { apiUrl } from "./apiConfig";
 import { authService } from "./authService";
 
+// Helper: parse fetch response, throw on non-OK status with error message
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

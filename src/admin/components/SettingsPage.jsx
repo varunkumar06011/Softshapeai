@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SettingsPage — Restaurant settings: profile, GST, staff, printer, apps
+// ─────────────────────────────────────────────────────────────────────────────
+// Comprehensive settings page with sections for:
+//   - Restaurant Profile: name, slug, address, phone, GST number
+//   - GST Settings: GST registration, category (AC/Non-AC/Takeaway), rates
+//   - Staff Management: add/edit/remove users (captains, cashiers, admins)
+//   - Printer Settings: QZ Tray config, Windows Print Agent setup
+//   - App Downloads: links to Android APKs, desktop apps, print agent
+//   - Theme/Branding: logo, colors, receipt header text
+//
+// Only accessible to ADMIN and OWNER roles. Changes are saved via PATCH /api/restaurant.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import AppsSection from '../settings/AppsSection';
 import { apiFetch } from '../../services/apiConfig';

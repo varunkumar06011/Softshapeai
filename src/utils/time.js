@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Time — Shared IST (Asia/Kolkata) time formatting utilities
+// ─────────────────────────────────────────────────────────────────────────────
+// All time display uses IST timezone to ensure consistency between
+// frontend and backend regardless of the device's OS timezone.
+//
+// Exports:
+//   - IST: 'Asia/Kolkata' constant
+//   - fmtTime(date): "02:30 PM" format
+//   - fmtTimeSec(date): "02:30:45 PM" format (with seconds)
+//   - fmtDateTime(date): "15 Jan 2025, 02:30 PM" format
+//   - fmtDuration(ms): "1h 23m" or "5m 30s" format for elapsed time
+//
+// Import these everywhere instead of raw toLocaleTimeString() calls.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Shared IST (Asia/Kolkata) time formatting utilities.
  * Import these everywhere instead of raw toLocaleTimeString() calls

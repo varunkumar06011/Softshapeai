@@ -1,3 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync Invariant — Runtime invariant checker for table sync item integrity
+// ─────────────────────────────────────────────────────────────────────────────
+// Validates that sync services never drop items during table state updates.
+// Acts as a development safety net to catch item-loss bugs early.
+//
+// Exports:
+//   - recordItemLoss(source, tableId, beforeCount, afterCount, details):
+//     Records a violation when items are dropped during sync operations.
+//     In dev mode, shows an alert dialog. In production, logs to console.
+//   - validateTableIntegrity(source, table, beforeItems, afterItems):
+//     Compares item counts before and after a sync operation.
+//     Returns true if invariant holds, false if items were dropped.
+//   - getViolations(): returns all recorded violations for debugging.
+//
+// Call validateTableIntegrity() after any mapBackendTable operation in
+// tableSyncService or barTableSyncService.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Runtime invariant checker: validates that sync services never drop items.
  * Import and call validateTableIntegrity() after any mapBackendTable operation.

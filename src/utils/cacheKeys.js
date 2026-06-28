@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache Keys — Multi-tenant scoped cache key management for localStorage
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides restaurant-scoped cache key generation and legacy cache purging:
+//   - scopedKey(base): returns `${base}__${restaurantId}` for tenant isolation
+//   - LEGACY_UNSCOPED_KEYS: list of old un-scoped keys that must be purged
+//   - purgeLegacyCaches(): removes all legacy un-scoped keys from localStorage
+//
+// All new caching must use scopedKey() to prevent data leakage between
+// restaurants on shared devices (e.g., multi-outlet login).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { getCurrentRestaurantId } from './getCurrentRestaurantId';
 
 // Legacy, un-scoped cache keys that must be purged so they no longer leak

@@ -1,6 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Bar Table API — Frontend API client for bar table management
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions for managing bar tables via the backend API:
+//   - fetchBarTables() — list all bar tables with sections and active orders
+//   - createBarTable(data) — create a new bar table
+//   - updateBarTable(id, data) — update table status/number/section
+//   - deleteBarTable(id) — delete a bar table
+//   - updateBarTableSession(id, sessionData) — update table session (order items)
+//
+// Includes fetchWithRetry helper with timeout and exponential backoff.
+// All requests include auth headers and restaurantId from current session.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
+// Helper: parse fetch response, throw on non-OK status with error message
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

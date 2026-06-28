@@ -1,3 +1,14 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Captain Target Service — API client for captain revenue targets and discount limits
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions for managing captain performance targets:
+//   - saveCaptainTarget(captainId, revenueTarget, discountLimit) — upsert target
+//   - fetchCaptainTargets() — list all targets for the restaurant
+//   - fetchCaptainTarget(captainId) — get a single captain's target
+//
+// Used by the admin TodaySpecials panel to set and view captain performance goals.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { API_BASE } from './apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 

@@ -1,3 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AdminComponents — Large shared component library for admin dashboard modules
+// ─────────────────────────────────────────────────────────────────────────────
+// Contains the majority of admin UI components including:
+//   - Dashboard overview with live stats and revenue charts
+//   - Menu management (categories, items, variants, bulk import, AI parse)
+//   - Table management (CRUD, QR codes, floor/section layout)
+//   - Order management (live orders, KOT viewing, status transitions)
+//   - Billing and settlement interface
+//   - Inventory management (kitchen + bar)
+//   - AI Tools panel (dish creation, creative engine, pricing engine)
+//   - Marketing panel (campaigns, promotions — TODO WIP)
+//   - Surveillance dashboard integration
+//   - Settings page integration
+//
+// This is the largest frontend file (~7300 lines) and serves as the main
+// component library imported by AdminDashboard.jsx.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import AppsSection from './settings/AppsSection';
 import {

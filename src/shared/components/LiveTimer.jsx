@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// LiveTimer — Real-time elapsed time counter for order preparation tracking
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays a live-updating elapsed time since a given start time:
+//   - Updates every second
+//   - Stops counting when status is 'Ready' (order prepared)
+//   - Shows formatted time (HH:MM:SS or MM:SS)
+//   - Clock icon with color coding (green=fast, yellow=moderate, red=delayed)
+//
+// Used in UnifiedOrdersDashboard and order tracking views.
+// Props: startTime (timestamp), status (order status)
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { Clock } from 'lucide-react';
 

@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OfflineStatusBar — Offline status indicator with sync queue and pending actions
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays a status bar showing the app's online/offline state:
+//   - Online: green bar with "All synced" or last sync time
+//   - Offline: red/amber bar with pending action count and retry button
+//   - Sync error: shows last error message with retry option
+//   - Auth expired: prompts re-login when JWT expires during offline mode
+//   - Expandable details: shows cache age for menu and table data
+//   - Pending actions modal trigger (view/retry/sync queued actions)
+//
+// Uses SyncStatusContext for state and syncEngine for action processing.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, Clock, ChevronDown } from 'lucide-react';
 import { useSyncStatus } from '../../context/SyncStatusContext';

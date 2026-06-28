@@ -1,6 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepStaff — Captain and cashier setup with PINs and shifts (Step 9)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures staff members for the restaurant:
+//   - Add/remove captains (or "Order Managers" for Cloud Kitchen/Cafe)
+//   - Add/remove cashiers (or "Order Managers" for Cloud Kitchen)
+//   - Each staff member: name, PIN (4-digit), shift (Morning/Evening/Night/Full Day)
+//   - PIN visibility toggle (show/hide)
+//   - Copy join code for easy staff onboarding
+//   - Shift assignment (same shift for all or individual)
+//   - Expandable sections for captain/cashier lists
+//
+// Labels adapt based on restaurant type (Cloud Kitchen uses "Order Managers").
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { Users, Plus, Trash2, Key, Clock, Eye, EyeOff, Copy, Check } from 'lucide-react';
 
+// Available shift options
 const SHIFTS = ['Morning', 'Evening', 'Night', 'Full Day'];
 
 const StepStaff = ({ restaurantType, captains, cashiers, venues, onChange, onNext, onBack }) => {

@@ -1,3 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Waiter Call Service — Real-time waiter call management via Socket.IO
+// ─────────────────────────────────────────────────────────────────────────────
+// Manages waiter calls from customer QR menus to restaurant staff:
+//   - Listens to Socket.IO events for incoming waiter calls
+//   - Provides a React hook (useWaiterCalls) for components to subscribe
+//   - Tracks active and resolved calls
+//   - Supports both authenticated (staff) and public (customer) socket channels
+//   - Per-restaurant call tracking with localStorage persistence
+//
+// Socket events:
+//   - 'waiter_call' — new call from a customer (received by staff)
+//   - 'waiter_call_resolved' — call marked as resolved by staff
+//
+// The service uses a pub/sub pattern so multiple components can subscribe
+// to waiter call updates without duplicate socket listeners.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useCallback } from 'react';
 import { getSocket, getPublicSocket } from "../hooks/useSocket";
 import { API_BASE } from "./apiConfig";
@@ -6,8 +24,11 @@ import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 export { API_BASE };
 
+// Set of subscriber functions notified on waiter call state changes
 const subscribers = new Set();
+// Whether the authenticated socket listener has been attached
 let isListenerAttached = false;
+// Whether the public (unauthenticated) socket listener has been attached
 let isPublicListenerAttached = false;
 
 /**

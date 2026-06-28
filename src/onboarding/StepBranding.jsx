@@ -1,6 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepBranding — Logo, receipt header, and theme customization (Step 7)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures visual branding for the restaurant:
+//   - Logo upload (image file with preview)
+//   - Receipt header text (auto-filled from restaurant name)
+//   - Receipt footer text (e.g., "Thank you, visit again!")
+//   - Theme color selection (primary color for UI)
+//   - Live receipt preview with sample items
+//
+// Branding settings are used in printed receipts, KOT slips, and the POS UI.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useEffect, useRef } from 'react';
 import { Palette, FileText, Image as ImageIcon, Upload, Check } from 'lucide-react';
 
+// Sample items for receipt preview
 const SAMPLE_ITEMS = [
   { name: 'Paneer Butter Masala', qty: 1, price: 280 },
   { name: 'Naan', qty: 2, price: 30 },

@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Animations — Framer Motion presets, spring physics, and reduced-motion support
+// ─────────────────────────────────────────────────────────────────────────────
+// Centralized animation configuration used across the app:
+//   - useMotionConfig(): hook that detects prefers-reduced-motion and returns
+//     shouldReduce flag + zero-duration transition override
+//   - springs: spring physics presets (standard, gentle, snappy, page)
+//   - modalBackdropVariants: fade in/out for modal overlays
+//   - modalContentVariants: scale + slide for modal content
+//   - bottomSheetVariants: slide up from bottom for mobile bottom sheets
+//   - stepVariants: slide transitions for onboarding wizard steps
+//   - pageVariants: fade + slide for page transitions
+//
+// All variants respect reduced-motion via useMotionConfig().
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useReducedMotion } from 'framer-motion';
 
 // === Reduced motion support ===

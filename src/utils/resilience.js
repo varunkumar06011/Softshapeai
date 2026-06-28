@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Resilience — Production retry logic, circuit breaker, and error handling
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides production-grade resilience utilities for critical operations:
+//
+// Exports:
+//   - withRetry(fn, options): retries a function with exponential backoff
+//     Options: maxRetries, baseDelayMs, maxDelayMs, onRetry callback, shouldRetry predicate
+//   - CircuitBreaker class: circuit breaker pattern for failing endpoints
+//     States: CLOSED (normal), OPEN (failing, reject fast), HALF_OPEN (testing)
+//   - withTimeout(promise, ms): wraps a promise with a timeout
+//   - debounce(fn, ms): standard debounce utility
+//
+// Used by apiClient, syncEngine, and socket reconnection logic.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Production Resilience Utilities
  * Retry logic, circuit breaker, and error handling for critical operations

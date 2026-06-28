@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Firebase Initialization — Firebase app setup for phone authentication
+// ─────────────────────────────────────────────────────────────────────────────
+// Initializes Firebase with config from Vite environment variables.
+// Used for phone OTP verification during onboarding (Firebase Auth).
+// Falls back to dummy config if env vars are not set (prevents crash in dev).
+//
+// Exports:
+//   firebaseApp — initialized Firebase app instance
+//   firebaseAuth — Firebase Auth instance
+//   RecaptchaVerifier — reCAPTCHA verifier class for phone auth
+//   signInWithPhoneNumber — phone auth sign-in function
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { initializeApp } from "firebase/app";
 import { getAuth, RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 

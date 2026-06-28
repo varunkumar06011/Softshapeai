@@ -1,3 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// DateInputButton — Styled date picker button with native date input
+// ─────────────────────────────────────────────────────────────────────────────
+// Renders a calendar-icon button that opens the browser's native date picker.
+// Displays the selected date in a human-readable format (via formatDateDisplay).
+// Falls back to click-to-focus if showPicker() is not supported.
+//
+// Props: value (YYYY-MM-DD), max (max date), onChange, className
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useRef } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { formatDateDisplay } from '../utils/dateFormat';

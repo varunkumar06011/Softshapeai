@@ -1,6 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Table API — Frontend API client for restaurant table management
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions for managing restaurant tables via the backend API:
+//   - fetchTables() — list all tables with sections and active orders
+//   - createTable(data) — create a new table
+//   - updateTable(id, data) — update table status/number/section
+//   - deleteTable(id) — delete a table
+//   - updateTableSession(id, sessionData) — update table session (order items)
+//   - fetchVenues() — list all venues with floors, sections, and tables
+//   - generateTableQR(id) — generate QR code URL for a table
+//   - swapTables(data) — swap items between two tables
+//
+// All requests include auth headers and restaurantId from current session.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
+// Helper: parse fetch response, throw on non-OK status with error message
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

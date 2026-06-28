@@ -1,3 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PhoneOtpVerifier — Phone OTP verification component for onboarding/settings
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides phone OTP verification flow using Firebase Authentication:
+//   1. User enters phone number (auto-normalized to +91 format)
+//   2. Click "Send OTP" → Firebase sends OTP via SMS
+//   3. User enters 6-digit OTP
+//   4. Click "Verify" → Firebase verifies OTP
+//   5. On success, calls onVerified callback with phone number and Firebase UID
+//
+// Features:
+//   - Cross-platform: web (reCAPTCHA) and Android (Capacitor native)
+//   - Resend OTP with cooldown timer
+//   - Phone format validation
+//   - Loading and error states
+//   - Backend phone uniqueness check
+//
+// Used in StepOwner (onboarding) and SettingsPage (phone change).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { Loader2, CheckCircle, Phone, ArrowLeft } from 'lucide-react';
 import {
@@ -8,6 +28,7 @@ import {
   FirebaseAuthentication,
 } from '../../lib/phoneAuth';
 
+// Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
 }

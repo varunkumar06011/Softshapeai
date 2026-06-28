@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// UserMenuApp — Customer-facing QR menu app controller
+// ─────────────────────────────────────────────────────────────────────────────
+// Root component for the customer-facing QR menu experience:
+//   - Selection: choose Food Menu or Bar Menu
+//   - Engagement: SliceChallenge discount game (optional, skippable)
+//   - Menu: CustomerMenu (food) or BarMenu (liquor)
+//   - Passes discount from game to menu component
+//
+// URL params: { slug, tableId, sig } — from QR code URL
+// The HMAC signature (sig) is verified by the backend before serving menu data.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import CustomerMenu from './CustomerMenu';

@@ -1,7 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepPlan — Subscription plan selection with dynamic pricing (Step 10)
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays available SaaS subscription plans (Starter, Pro, Enterprise):
+//   - Fetches real-time pricing quotes from /api/onboard/quote
+//   - Plan pricing scales with outlet count
+//   - Plan comparison table (features side-by-side)
+//   - Enterprise plan modal (custom pricing, contact sales)
+//   - Fallback prices if API quote fetch fails
+//
+// Selected plan is passed to StepPayment for checkout.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, ArrowRight, Sparkles, Store, Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { apiUrl } from '../services/apiConfig';
 
+// Fallback prices if quote API is unavailable
 const FALLBACK_PRICES = { starter: 999, pro: 2499 };
 
 const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, onBack, loading, error }) => {

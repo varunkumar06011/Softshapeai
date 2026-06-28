@@ -1,14 +1,32 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu Sync Service — Global menu state with pub/sub, caching, and React hook
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a singleton menu store with React hook integration:
+//   - Fetches menu from backend on first access (lazy load)
+//   - Caches to localStorage (per-restaurant scope with timestamp)
+//   - Pub/sub pattern: components subscribe to menu updates
+//   - useGlobalMenuSync() — React hook that re-renders on menu changes
+//   - refreshMenu() — force re-fetch from backend
+//   - setGlobalMenu() — update menu cache (used after mutations)
+//
+// Cache strategy: localStorage with timestamp, refreshed if older than 5 minutes.
+// This is the regular restaurant equivalent of barMenuSyncService.js (for bar menus).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useCallback } from "react";
 import { fetchMenuFromBackend } from "./menuService";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
+// Base localStorage key for the unified menu cache
 const BASE_STORAGE_KEY = "softshape_unified_menu";
 
+// Returns the scoped cache key for a specific restaurant's menu
 function getStorageKey(restaurantId = getCurrentRestaurantId()) {
   return getScopedCacheKey(BASE_STORAGE_KEY, restaurantId);
 }
 
+// Returns the timestamp key for cache freshness checking
 function getTimestampKey(restaurantId = getCurrentRestaurantId()) {
   return `${getStorageKey(restaurantId)}:ts`;
 }

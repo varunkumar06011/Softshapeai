@@ -1,3 +1,14 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Table Helpers — Table labeling and badge color utilities for consistent UI
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides consistent table display helpers across all views:
+//   - getTableSectionLabel(table): returns table number string (e.g., "T1")
+//   - getSectionBadgeColor(section): returns Tailwind color class based on
+//     section type (AC=blue, Non-AC=green, Bar=purple, Terrace=orange, etc.)
+//
+// Used by VenueSectionView, table cards, and KOT printing.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Table Section Helper Functions
  * Provides consistent table labeling and badge colors across all views

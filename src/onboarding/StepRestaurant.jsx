@@ -1,7 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepRestaurant — Restaurant details and type selection (Step 2)
+// ─────────────────────────────────────────────────────────────────────────────
+// Collects core restaurant information:
+//   - Restaurant name, phone, email, address
+//   - Restaurant type (Dine-in, Bar & Lounge, Bar with Dining, Cafe, Cloud Kitchen)
+//   - GST number (optional at this step, completed in StepTax)
+//   - Logo upload (image file, preview)
+//
+// Restaurant type determines which subsequent steps are shown:
+//   - BAR types → additional bar menu configuration in StepMenu
+//   - CLOUD_KITCHEN → simplified staff labels ("Order Managers" instead of "Captains")
+//   - CAFE → no table management
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useRef } from 'react';
 import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 
+// Restaurant type options with icons and descriptions
 const RESTAURANT_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in Restaurant', desc: 'Tables, food menu, KOT printing', icon: Utensils },
   { value: 'BAR_LOUNGE', label: 'Bar & Lounge', desc: 'Bar menu, bottle tracking, ML pricing', icon: Wine },

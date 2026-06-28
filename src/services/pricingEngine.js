@@ -1,9 +1,24 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Pricing Engine — Mock AI-powered pricing recommendations (placeholder)
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulates AI-powered dynamic pricing recommendations based on weather, events,
+// and demand patterns. Generates mock suggestions for price adjustments,
+// promotions, and combo optimizations.
+//
+// TODO (WIP): This is a placeholder service. Real pricing recommendations would
+// require integration with a machine learning model or business intelligence API.
+// ─────────────────────────────────────────────────────────────────────────────
 
+// Mock item names for pricing recommendations
 const ITEMS = ['Chicken Dum Biryani', 'Mango Lassi', 'Paneer Butter Masala', 'Mutton Curry', 'Dragon Prawns', 'Veg Fried Rice'];
+// Weather conditions that affect pricing
 const WEATHER = ['Sunny', 'Rainy', 'Cold', 'Humid'];
+// Events that trigger pricing changes
 const EVENTS = ['Cricket Match', 'Weekend Rush', 'Local Festival', 'Public Holiday', 'None'];
+// Recommendation categories
 const CATEGORIES = ['Pricing', 'Promotion', 'Inventory', 'Demand', 'Marketing', 'Combo Optimization'];
 
+// Pool of recommendation templates with conditional logic
 const RECOMMENDATION_POOL = [
   {
     title: "Increase {item} Price by {percent}%",

@@ -1,10 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer Session Service — Local waiter call cooldown enforcement
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulated backend service for waiter calls, stored in localStorage.
+// Acts as a mock backend to ensure security logic (like cooldowns) is strictly
+// enforced, rather than relying solely on the frontend UI state.
+//
+// Features:
+//   - Device session ID generation and persistence
+//   - Waiter call cooldown enforcement (15 seconds between calls)
+//   - Call history tracking per device
+//
+// TODO (WIP): This is a legacy mock service. The real waiter call system
+// is handled by the backend (routes/public.ts) with Redis-based cooldowns.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Simulated Backend Service for Waiter Calls
 // This file acts as a mock backend to ensure security logic (like cooldowns)
 // are strictly enforced, rather than relying solely on the frontend UI state.
 const WAITER_CALLS_KEY = "softshape_waiter_calls";
 const DEVICE_SESSION_KEY = "softshape_device_session_id";
 
-// Helper to read from local DB
+// Helper to read from local DB (localStorage)
 function readDB(key) {
   try {
     const data = localStorage.getItem(key);

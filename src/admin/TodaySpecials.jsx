@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// TodaySpecials — Today's special items management and captain target tracking
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin panel for managing daily special menu items and captain performance:
+//   - Create/edit/delete special items (with image upload, active toggle, expiry)
+//   - Set captain revenue targets and discount limits
+//   - View all menu items flagged as isSpecial
+//   - Toggle special active/inactive status
+//   - Set expiry date/time for time-limited specials
+//
+// Special items appear highlighted in the POS and customer-facing menu.
+// Captain targets are used in reports to track performance vs goals.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {

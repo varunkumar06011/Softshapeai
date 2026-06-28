@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// captain-entry.jsx — Entry point for the Captain/Cashier Android app
+// ─────────────────────────────────────────────────────────────────────────────
+// Separate entry point for the captain/cashier app (packaged as Android APK
+// via Capacitor). This is a lighter bundle that only includes:
+//   - Login screen (email/password or PIN)
+//   - Captain App (order taking, table management)
+//   - Cashier App (billing, settlement)
+//
+// Excludes the admin dashboard, onboarding wizard, and print station to keep
+// the APK size small. Uses the same AuthContext and MenuContext as the main app.
+// Socket reconnection is initialized on mount for real-time order updates.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'

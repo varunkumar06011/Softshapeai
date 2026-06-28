@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useMenuSync — Hook for syncing and filtering menu data from the backend
+// ─────────────────────────────────────────────────────────────────────────────
+// Wraps the useGlobalMenuSync service and provides filtered menu items
+// suitable for POS displays (Cashier, Captain, Admin). Filters out:
+//   - Inactive special items (isSpecial && !active)
+//   - Expired special items (expiresAt < now)
+//
+// Returns:
+//   menuItems — filtered array of menu items (excluding inactive/expired specials)
+//   isLoadingMenu — true while initial load is in progress
+//   loadError — error from the last load attempt (null if none)
+//   setGlobalMenu — function to update the menu cache
+//   refreshMenu — function to force-refresh from the backend
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useMemo } from "react";
 import { useGlobalMenuSync } from "../services/menuSyncService";
 

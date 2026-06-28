@@ -1,3 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BarMenu — Customer-facing bar/liquor menu for QR code ordering
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer-facing bar menu displayed when scanning a QR code at a bar table:
+//   - Category browsing (Beer, Whisky, Vodka, Rum, Gin, Cocktails, etc.)
+//   - Item cards with image, price, description, veg/non-veg indicator
+//   - Size variant selection (peg, half, full, bottle) for liquor items
+//   - Cart with quantity management
+//   - Place order directly to kitchen/bar printer via Socket.IO
+//   - Waiter call button (calls captain to table)
+//   - Real-time order status updates
+//   - Special items and featured drinks highlighting
+//   - Search within menu
+//   - Framer Motion animations with stagger
+//
+// URL format: /menu/{slug}?table={tableId}&sig={hmac}&type=bar
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
 import { motion, AnimatePresence } from 'framer-motion';

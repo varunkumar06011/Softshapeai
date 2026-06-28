@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ErrorBoundary — React error boundary with retry and logout options
+// ─────────────────────────────────────────────────────────────────────────────
+// Catches unhandled React render errors and displays a fallback UI:
+//   - Error message and stack trace display
+//   - "Retry" button (re-renders the component tree)
+//   - "Logout" button (clears auth and redirects to login)
+//   - Retry counter (limits auto-retry attempts to prevent infinite loops)
+//
+// Wraps the entire app in App.jsx to prevent white-screen crashes.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { Component } from 'react';
 import { AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { authService } from '../../services/authService';

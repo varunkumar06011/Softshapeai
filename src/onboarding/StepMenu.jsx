@@ -1,9 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepMenu — Menu setup with manual entry or file upload (Step 5)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures the restaurant menu during onboarding:
+//   - Two modes: manual entry or file upload (Excel/AI parse)
+//   - Food menu: categories with items (name, price, veg/non-veg toggle)
+//   - Bar menu (for BAR types): categories with items and available sizes
+//   - Per-item tax configuration (GST rate override)
+//   - Delivery platform selection (Swiggy, Zomato, Direct)
+//   - Tabbed interface (Food / Bar) for bar-with-dining restaurants
+//
+// Uses MenuUpload component for Excel upload and AI parsing.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { Utensils, Plus, Trash2, Leaf, Wine, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import MenuUpload from './MenuUpload';
 
+// Supported delivery platforms for integration
 const DELIVERY_PLATFORMS = ['Swiggy', 'Zomato', 'Direct'];
 
+// Default bar menu structure with empty category and item
 const defaultBarMenu = { categories: [{ name: '', items: [{ name: '', price: 0, availableSizes: [] }] }] };
 
 const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], barConfig, onChange, onDeliveryPlatformsChange, onNext, onBack }) => {

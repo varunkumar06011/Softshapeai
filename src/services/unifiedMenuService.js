@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Unified Menu Service — Public menu fetching for customer-facing QR menu
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides functions for fetching the public-facing menu (no auth required):
+//   - fetchPublicMenu(slug, venue, tableId?, sig?) — fetch menu by restaurant slug
+//     with optional tableId and HMAC signature for QR code menu access
+//   - fetchMenuByVenue(slug, venueId) — fetch menu for a specific venue
+//
+// The HMAC signature is verified by the backend to prevent URL tampering
+// on QR code menu links. Used by the customer-facing UserMenuApp.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { apiUrl, getAuthHeaders, API_BASE } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 

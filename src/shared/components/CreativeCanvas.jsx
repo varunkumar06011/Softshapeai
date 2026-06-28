@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CreativeCanvas — Canvas renderer for AI-generated dish presentations
+// ─────────────────────────────────────────────────────────────────────────────
+// Renders a styled dish presentation on an HTML canvas using the creative
+// engine's style configuration:
+//   - Loads background image and food image
+//   - Applies style-specific rendering (lighting, colors, text overlay)
+//   - Used by AIDishCreationModal for previewing AI-generated dish content
+//
+// Props: config (style config from creativeEngine), uploadUrl (food image URL), className
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect, useRef } from "react";
 import { renderToCanvas } from "../../services/creativeEngine";
 

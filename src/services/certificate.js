@@ -1,3 +1,15 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// QZ Tray Digital Certificate — Public certificate for QZ Tray signing
+// ─────────────────────────────────────────────────────────────────────────────
+// Contains the public certificate used by QZ Tray for secure printer communication.
+// The certificate is safe to commit to source control (it's a public key).
+// The matching private key (QZ_PRIVATE_KEY) is stored as an environment variable
+// on the backend and is NEVER committed to source control.
+//
+// The backend uses the private key to sign messages; QZ Tray uses this certificate
+// to verify the signature and establish trust with the print server.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * QZ Tray Digital Certificate
  *

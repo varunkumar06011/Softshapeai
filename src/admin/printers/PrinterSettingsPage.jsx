@@ -1,3 +1,18 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PrinterSettingsPage — Printer configuration and Windows Print Agent management
+// ─────────────────────────────────────────────────────────────────────────────
+// Manages printer setup for the restaurant:
+//   - QZ Tray connection status and certificate display
+//   - Windows Print Agent setup via QR code (agent downloads, pairs with backend)
+//   - Printer agent polling (30s interval) for connection status
+//   - Multiple printer support (kitchen, bar, cashier)
+//   - Print test page functionality
+//   - Agent download links from GitHub releases
+//
+// The Windows Print Agent is a Tauri-based desktop app that runs on the
+// restaurant's POS machine and communicates with the backend via JWT tokens.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Printer, Download, RefreshCw, CheckCircle, Clock,
@@ -7,6 +22,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { apiUrl, getAuthHeaders } from '../../services/apiConfig.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 
+// Poll interval for checking print agent connection status (30 seconds)
 const POLL_INTERVAL_MS = 30_000;
 
 const PRINT_AGENT_DOWNLOAD_URL =

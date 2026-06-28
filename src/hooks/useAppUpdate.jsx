@@ -1,13 +1,29 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useAppUpdate — Hook for checking Android APK updates from GitHub Releases
+// ─────────────────────────────────────────────────────────────────────────────
+// Polls the GitHub Releases API for the latest APK version and compares it
+// with the currently installed app version. If a newer version is found,
+// exposes the download URL so the UI can prompt the user to update.
+//
+// APK mapping: Each Android app package ID maps to a specific APK filename
+// in the GitHub release assets (admin-android.apk, cashier-android.apk, etc.)
+//
+// Returns: { updateAvailable, latestVersion, downloadUrl, appName, checkNow }
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect, useState } from 'react';
 
+// GitHub repo hosting the releases
 const REPO = 'varunkumar06011/Softshapeai';
 
+// Maps Android package IDs to APK filenames in GitHub release assets
 const APK_MAP = {
   'ai.softshape.admin': 'admin-android.apk',
   'ai.softshape.cashier': 'cashier-android.apk',
   'ai.softshape.captain': 'captain-android.apk',
 };
 
+// Human-readable app names for update prompt UI
 const APP_NAME_MAP = {
   'ai.softshape.admin': 'SoftShape Admin',
   'ai.softshape.cashier': 'SoftShape Cashier',

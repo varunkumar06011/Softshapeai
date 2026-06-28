@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CaptainPerformanceDashboard — Captain revenue and performance analytics
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays performance metrics for captains:
+//   - Revenue generated per captain (bar chart)
+//   - Date range filtering (Today, 7 days, 30 days, Custom)
+//   - Total revenue, order count, average bill
+//   - Target vs actual comparison
+//   - Top performing captains leaderboard
+//
+// Fetches data from /api/reports/captain endpoint.
+// Used by admin and captain to track individual performance.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Users, TrendingUp, Calendar } from "lucide-react";
@@ -5,6 +19,7 @@ import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
+// Convert Date to ISO date string (YYYY-MM-DD)
 function toISODate(d) {
   return d.toISOString().split('T')[0];
 }

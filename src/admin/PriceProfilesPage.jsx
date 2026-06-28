@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PriceProfilesPage — Price profile management for venue-specific pricing
+// ─────────────────────────────────────────────────────────────────────────────
+// Allows admins to create and manage price profiles that override base menu
+// prices for specific venues or time periods (e.g. happy hour, lunch special):
+//   - Create/delete price profiles
+//   - Set custom prices per menu item per profile
+//   - Activate/deactivate profiles
+//   - View all menu items with base price vs profile price
+//
+// Used when a restaurant has different pricing for different venues (e.g.
+// bar prices vs family restaurant prices for the same item).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Tag, Loader2 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';

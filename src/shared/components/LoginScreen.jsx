@@ -1,3 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// LoginScreen — Multi-mode login screen (email/password, PIN, phone OTP)
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides login functionality for all user roles:
+//   - Email + Password login (with restaurant join code)
+//   - PIN login (captain/cashier quick login with 4-digit PIN)
+//   - Phone OTP login (Firebase OTP verification)
+//   - Outlet switching (multi-outlet organizations)
+//
+// On successful login:
+//   - Stores JWT token in localStorage
+//   - Calls onLogin callback with auth data
+//   - Reconnects socket with new JWT token
+//
+// Props: role (admin/cashier/captain), onLogin, onBack
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, Users } from 'lucide-react';
@@ -5,6 +22,7 @@ import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { reconnectSocket } from '../../hooks/useSocket';
 
+// Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return (
     import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''

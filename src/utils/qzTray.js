@@ -1,3 +1,28 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// QZ Tray — Unified QZ Tray connection, signing, and printing module
+// ─────────────────────────────────────────────────────────────────────────────
+// Consolidates ALL QZ Tray connection and signing logic in one place.
+//
+// Exports:
+//   - connectQZ(): establishes websocket connection to QZ Tray desktop app
+//   - sendToPrinter(printerName, data): sends ESC/POS bytes to a thermal printer
+//   - signatureCache: cached signing certificates (55s TTL) to avoid round-trips
+//   - keepAliveSign(): pre-fetches signatures so they're always warm
+//
+// Features:
+//   - Signature caching (55s TTL) to avoid round-trips to Render on every print
+//   - keepAliveSign() pre-fetches signatures so they're always warm
+//   - Single QZ Tray websocket connection shared across all callers
+//   - Automatic reconnection on websocket disconnect
+//   - Certificate from certificate.js (QZ_CERT)
+//
+// Signing flow:
+//   1. Frontend requests signature from backend /api/print/sign
+//   2. Backend signs the certificate with its private key
+//   3. QZ Tray verifies the signature against the public certificate
+//   4. Print data is sent via websocket
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Unified QZ Tray module
  *

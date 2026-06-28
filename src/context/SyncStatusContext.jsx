@@ -1,3 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SyncStatusContext — Offline sync engine status and conflict resolution
+// ─────────────────────────────────────────────────────────────────────────────
+// Manages the offline-first sync engine state:
+//   - syncStatus: 'idle' | 'syncing' | 'success' | 'error'
+//   - pendingCount: number of queued actions waiting to sync
+//   - lastSyncAt: timestamp of last successful sync
+//   - lastError: error message from last failed sync attempt
+//   - authExpired: true if JWT expired during sync (triggers re-login)
+//   - isOnline: backend reachability status (checked via health endpoint)
+//
+// Conflict resolution:
+//   - Subscribes to conflict events from the conflictResolver
+//   - Exposes conflicts array and clearConflict/clearAllConflicts functions
+//   - Conflicts occur when offline edits clash with server-side changes
+//
+// On mount:
+//   - Initializes the sync engine
+//   - Subscribes to sync status updates
+//   - Subscribes to conflict events
+//   - Starts periodic backend reachability checks
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus, clearAuthExpired } from '../utils/syncEngine';
 import { subscribeConflicts, clearConflict, clearAllConflicts } from '../utils/conflictResolver';

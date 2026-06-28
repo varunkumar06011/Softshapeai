@@ -1,7 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ForgotPasswordPage — Password reset request page
+// ─────────────────────────────────────────────────────────────────────────────
+// Allows users to request a password reset:
+//   - User enters restaurant join code and email address
+//   - Backend sends a reset link via email (Resend service)
+//   - Reset link contains a JWT token valid for 15 minutes
+//   - Link redirects to /reset-password page
+//
+// Endpoint: POST /api/auth/forgot-password
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Mail } from 'lucide-react';
 
+// Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
 }

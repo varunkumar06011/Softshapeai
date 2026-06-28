@@ -1,5 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AuthContext — Client-side authentication state management
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides global auth state via React Context:
+//   - user: decoded JWT payload (id, role, restaurantId, etc.)
+//   - token: JWT string stored in localStorage
+//   - setAuth(token): stores token, decodes user, persists to localStorage
+//   - logout(): clears token and user from state + localStorage
+//
+// Token validation:
+//   - Client-side expiry check (UX only — NOT security validation)
+//   - Backend always verifies JWT signature on every request
+//   - This check prevents showing logged-in UI with an obviously expired token
+//
+// Usage: Wrap app in <AuthProvider>, then useAuth() in any component.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { createContext, useContext, useState } from 'react';
 
+// React Context for auth state — null until AuthProvider wraps the app
 const AuthContext = createContext(null);
 
 /**

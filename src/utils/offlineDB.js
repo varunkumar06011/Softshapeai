@@ -1,3 +1,27 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Offline DB — IndexedDB wrapper for offline action queueing and print jobs
+// ─────────────────────────────────────────────────────────────────────────────
+// Manages persistent storage for offline-first functionality using IndexedDB:
+//
+// Object stores:
+//   - pendingActions: queued API actions (KOT, order updates, settlements)
+//     replayed by syncEngine when connectivity is restored
+//   - offlinePrintJobs: queued print jobs (KOT, receipts) printed when
+//     printer or backend becomes available
+//
+// Key functions:
+//   - addPendingAction(action): enqueue an offline action
+//   - getPendingActions(): retrieve all queued actions
+//   - removePendingAction(id): dequeue after successful sync
+//   - updatePendingAction(id, updates): update status/retry count
+//   - getPendingCount(): quick count for UI badge
+//   - pruneOldPendingActions(maxAgeMs): cleanup stale actions
+//   - addOfflinePrintJob(job) / getOfflinePrintJobs() / updateOfflinePrintJob()
+//   - getLocalPrinterMapping() / getPrintAgentUrl(): printer config
+//   - setSyncMeta(key, value) / getSyncMeta(key): sync metadata
+//
+// DB schema versioned (v2) with upgrade migration support.
+// ─────────────────────────────────────────────────────────────────────────────
 import { getDeviceId } from './deviceId';
 
 const DB_NAME = 'softshape-offline';

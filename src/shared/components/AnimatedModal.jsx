@@ -1,3 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AnimatedModal — Reusable modal dialog with Framer Motion transitions
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a modal component with two variants:
+//   - 'center' (default): fades in backdrop, scales up content from center
+//   - 'bottom': slides up from bottom (mobile bottom-sheet style)
+//
+// Features:
+//   - Backdrop click to close
+//   - Escape key to close
+//   - Body scroll lock when open
+//   - Reduced-motion support (instant transitions)
+//   - Configurable max width and padding
+//
+// Props: isOpen, onClose, children, variant, maxWidth, className
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {

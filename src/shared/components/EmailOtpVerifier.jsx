@@ -1,6 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// EmailOtpVerifier — Email OTP verification component for onboarding/settings
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides email OTP verification flow:
+//   1. User enters email address
+//   2. Click "Send OTP" → backend sends OTP via Resend email service
+//   3. User enters 6-digit OTP
+//   4. Click "Verify" → backend verifies OTP
+//   5. On success, calls onVerified callback with email
+//
+// Features:
+//   - Resend OTP with cooldown timer
+//   - Email format validation
+//   - Loading and error states
+//   - Rate limiting (enforced by backend)
+//
+// Used in StepOwner (onboarding) and SettingsPage (email change).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, CheckCircle, Mail } from 'lucide-react';
 
+// Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
 }

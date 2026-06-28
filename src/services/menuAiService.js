@@ -1,8 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu AI Service — Mock dish detection from images (placeholder for AI integration)
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulates AI-powered dish detection from food images. Currently returns
+// mock results after a 2-second delay. Used by the creative engine for
+// menu item image analysis.
+//
+// TODO (WIP): This is a placeholder. Replace with real AI API integration
+// (e.g., Google Vision, OpenAI Vision) when available.
+// ─────────────────────────────────────────────────────────────────────────────
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Simple string hash function for deterministic mock results
 const hashCode = (value) =>
   value.split("").reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0);
 
+// Clamp a value between min and max
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 export async function detectDish(imageUrl) {

@@ -1,3 +1,28 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Order API — Order lifecycle API client with offline support and retry logic
+// ─────────────────────────────────────────────────────────────────────────────
+// The largest frontend service — handles all order-related API calls:
+//   - fetchOrders() — list orders with filters (status, date, table)
+//   - createOrder() — create a new order
+//   - updateOrderStatus() — transition order status (PENDING → CONFIRMED → ...)
+//   - addOrderItems() — add items to an existing order
+//   - updateOrderItem() — modify an order item (quantity, notes)
+//   - removeOrderItem() — remove an item from an order
+//   - settleOrder() — settle the bill (creates a transaction)
+//   - cancelOrder() — cancel an order
+//   - transferOrder() — transfer order to another table
+//   - mergeOrders() — merge orders from multiple tables
+//
+// Offline support:
+//   - When backend is unreachable, actions are queued in IndexedDB (offlineDB)
+//   - Pending actions are synced when connectivity is restored (syncEngine)
+//   - Offline transactions and print jobs are also queued
+//
+// Retry logic:
+//   - Uses withRetry wrapper with exponential backoff
+//   - Request IDs generated for idempotency
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { apiUrl, getAuthHeaders, isBackendReachable } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
@@ -9,6 +34,7 @@ import {
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
 
+// Generate a unique request ID for idempotency tracking
 function generateRequestId() {
   return (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()

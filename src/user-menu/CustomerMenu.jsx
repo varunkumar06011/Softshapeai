@@ -1,3 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CustomerMenu — Customer-facing food menu for QR code ordering
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer-facing food menu displayed when scanning a QR code at a restaurant table:
+//   - Category browsing with icons
+//   - Item cards with image, price, description, veg/non-veg indicator
+//   - Special items highlighting (Today's Specials)
+//   - Cart with quantity management
+//   - Place order directly to kitchen via Socket.IO
+//   - Waiter call button (calls captain to table)
+//   - Real-time order status updates
+//   - Search within menu (fuzzy search via menuSearch.js)
+//   - Discount application (from SliceChallenge game)
+//   - Framer Motion animations with stagger
+//
+// URL format: /menu/{slug}?table={tableId}&sig={hmac}
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, AlertTriangle } from 'lucide-react';

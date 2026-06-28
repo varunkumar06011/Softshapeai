@@ -1,6 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// StepYourSpace — Venue layout with sections and tables (Step 4)
+// ─────────────────────────────────────────────────────────────────────────────
+// Configures the physical layout of the restaurant:
+//   - Venue/area presets based on restaurant type (Dine-in, Bar, Cafe)
+//   - Add/remove venues (e.g., Restaurant, Bar for Bar-with-Dining)
+//   - Per-venue: add sections (e.g., AC Hall, Non-AC, Terrace)
+//   - Per-section: add tables with numbers and seating capacity
+//   - Visual layout preview
+//
+// Venue type labels map internal types to display names (DINE_IN → "Dine-in").
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Users, ArrowRight, MapPin, LayoutGrid, Hash, Armchair } from 'lucide-react';
 
+// Default venue presets based on restaurant type
 const AREA_PRESETS = {
   DINE_IN: [{ name: 'Restaurant', venueType: 'DINE_IN' }],
   BAR_LOUNGE: [{ name: 'Bar', venueType: 'BAR' }],

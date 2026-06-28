@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// TableQRCodes — QR code generation and printing for restaurant tables
+// ─────────────────────────────────────────────────────────────────────────────
+// Generates QR codes for each table that link to the customer-facing menu:
+//   - Fetches all tables for the current restaurant
+//   - Generates QR code SVG for each table with HMAC-signed URL
+//   - QR code encodes: {API_BASE}/menu/{slug}?table={tableId}&sig={hmac}
+//   - Print all QR codes (one per page) for physical table stickers
+//   - Download individual QR codes as SVG
+//
+// The HMAC signature prevents customers from tampering with table IDs in the URL.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';

@@ -1,5 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Date Format — IST (Kolkata) timezone date utilities for consistent display
+// ─────────────────────────────────────────────────────────────────────────────
+// All date display and filtering uses IST (Asia/Kolkata) timezone to ensure
+// consistency between frontend and backend (which also uses IST for business day).
+//
+// Exports:
+//   - KOLKATA_TIME_ZONE: 'Asia/Kolkata' constant
+//   - getKolkataDateString(date): returns YYYY-MM-DD in IST
+//   - shiftKolkataDate(dateStr, days): adds/subtracts days from an IST date string
+//   - getKolkataMonthString(date): returns YYYY-MM in IST
+//   - formatDateDisplay(dateStr): human-readable date (e.g., "15 Jan 2025")
+//   - formatTxnDisplayId(date, number): bill number format DD/MM/YY-NNN
+// ─────────────────────────────────────────────────────────────────────────────
+
+// IST timezone constant used by all date functions
 const KOLKATA_TIME_ZONE = 'Asia/Kolkata';
 
+// Helper: get date parts (day, month, year) in IST using Intl.DateTimeFormat
 function getParts(date, options = {}) {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: KOLKATA_TIME_ZONE,

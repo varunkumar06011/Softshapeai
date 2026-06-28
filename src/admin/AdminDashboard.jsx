@@ -1,3 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AdminDashboard — Main admin dashboard with tabbed navigation for all modules
+// ─────────────────────────────────────────────────────────────────────────────
+// Root component for the admin portal. Provides tabbed navigation between:
+//   - Dashboard (overview stats, live orders, revenue charts)
+//   - Tables (table management, QR codes, floor/section layout)
+//   - Menu (menu items, categories, bulk import, AI parsing)
+//   - Orders (live order tracking, KOT management)
+//   - Billing (transactions, settlement, GST)
+//   - Reports (sales, GST, captain, section, payment reports with PDF/Excel export)
+//   - Today's Specials (special items, captain targets)
+//   - Surveillance (camera monitoring — TODO WIP)
+//   - Inventory (kitchen and bar inventory)
+//   - AI Tools (AI dish creation, creative engine — TODO WIP)
+//   - Settings (restaurant profile, GST, printer config, app downloads)
+//
+// Accessible to ADMIN and OWNER roles only. Uses Framer Motion for transitions.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {

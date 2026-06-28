@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// MenuUpload — Excel menu upload with AI parsing support
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides menu import functionality via file upload:
+//   - Drag-and-drop or click to upload Excel (.xlsx) or CSV files
+//   - Parses uploaded file and displays editable preview table
+//   - AI parsing option: upload menu image → Groq API extracts items
+//   - Edit parsed rows before importing (name, price, category, veg/non-veg)
+//   - Import to backend via /api/menu/import or /api/menu/ai-parse
+//   - Works in both onboarding mode and admin menu management mode
+//
+// Used by StepMenu (onboarding) and AdminComponents (menu management).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf, Download, Layers } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
@@ -16,6 +30,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   const [categorySuggestions, setCategorySuggestions] = useState(existingCategories);
   const [uploadMode, setUploadMode] = useState('standard'); // 'standard' | 'rate-card'
   const [venueNames, setVenueNames] = useState([]);
+  const isPdf = file?.name?.toLowerCase().endsWith('.pdf') || false;
 
   // Fetch existing categories in non-onboarding mode if not provided via props
   useEffect(() => {
@@ -117,6 +132,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
         method: 'POST',
         headers: { ...getAuthHeaders() },
         body: formData,
+        signal: AbortSignal.timeout(isPdf ? 120000 : 30000),
       });
 
       if (!res.ok) {
@@ -279,7 +295,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
           className="w-full py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {loading ? <Loader size={18} className="animate-spin" /> : <FileSpreadsheet size={18} />}
-          {loading ? 'Parsing...' : 'Parse File'}
+          {loading ? (isPdf ? 'AI parsing menu...' : 'Parsing...') : 'Parse File'}
         </button>
       )}
 

@@ -1,3 +1,29 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Conflict Resolver — Offline sync conflict resolution matrix
+// ─────────────────────────────────────────────────────────────────────────────
+// Defines per-action-type policies for resolving conflicts when offline
+// actions are replayed to the backend and encounter state mismatches.
+//
+// Each resolver receives: { action, result, context: { serverOrder, localOrder } }
+// Each resolver returns: { resolution, message, updatedBody?, alertLevel }
+//
+// Resolution types:
+//   - adopt_server: accept server state, discard local changes
+//   - keep_local: retry with local state (server may be stale)
+//   - merge: combine server and local data intelligently
+//   - skip: drop the action (no-op or already applied)
+//   - manual: requires user intervention (shows alert)
+//
+// Conflict types handled:
+//   - Order already settled (KOT sent after bill generated)
+//   - Table status mismatch (table was reassigned while offline)
+//   - Item already added (duplicate KOT item)
+//   - Price changed on server (menu updated while offline)
+//   - Order not found (deleted on server while offline)
+//
+// Also provides: addConflict(), clearConflict(), getConflicts() for tracking.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Conflict Resolution Matrix ───────────────────────────────────────────────
 // Per-action-type policies for resolving conflicts when offline actions are
 // replayed to the backend and encounter state mismatches.

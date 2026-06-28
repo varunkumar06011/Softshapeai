@@ -1,3 +1,11 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Pricing — SaaS pricing plan cards for subscription display
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays subscription plans (Starter, Growth, Pro) with features and pricing
+// for both daily and monthly billing cycles. Used in the admin settings page
+// and onboarding flow to show available SaaS plans.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React from 'react';
 import { Check } from 'lucide-react';
 

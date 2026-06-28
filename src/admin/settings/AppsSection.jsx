@@ -1,9 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AppsSection — App download links and QR codes for all platform clients
+// ─────────────────────────────────────────────────────────────────────────────
+// Displays download links and QR codes for all Softshape client apps:
+//   - Cashier Desktop (Windows/Mac)
+//   - Cashier Android (APK)
+//   - Admin Desktop (Windows/Mac)
+//   - Admin Android (APK)
+//   - Captain Android (APK)
+//   - Windows Print Agent (desktop app for printer management)
+//
+// URLs are configured via Vite environment variables. QR codes are generated
+// for mobile app downloads so users can scan and install directly.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useMemo } from 'react';
 import { Download, Smartphone, Monitor, Tablet, Printer, QrCode, AlertTriangle, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
+// Fallback URL for print agent downloads
 const DEFAULT_PRINT_AGENT_URL = 'https://github.com/varunkumar06011/softshape-print-agent/releases/latest';
 
+// Download URLs for each platform (from Vite env vars)
 const DOWNLOAD_URLS = {
   cashierDesktop: import.meta.env.VITE_CASHIER_DESKTOP_DOWNLOAD_URL,
   cashierAndroid: import.meta.env.VITE_CASHIER_ANDROID_DOWNLOAD_URL,
