@@ -102,11 +102,18 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
   };
 
   const cats = getTargetCategories();
-  const isValid =
-    cats.length >= 1 &&
-    cats.every(cat => cat.name.length >= 1 && cat.items.length >= 1 && cat.items.every(item => item.name.length >= 1 && item.price > 0));
+  const allFoodCategories = data.categories || [];
+  const allBarCategories = data.barMenu?.categories || [];
 
-  // Duplicate detection
+  const categoriesValid = (list) =>
+    list.length >= 1 &&
+    list.every(cat => cat.name.length >= 1 && cat.items.length >= 1 && cat.items.every(item => item.name.length >= 1 && item.price > 0));
+
+  const isValid = isBarType
+    ? (categoriesValid(allFoodCategories) || categoriesValid(allBarCategories))
+    : categoriesValid(cats);
+
+  // Duplicate detection across the active tab
   const duplicateNames = [];
   cats.forEach((cat, ci) => {
     const names = cat.items.map(i => i.name.trim().toLowerCase()).filter(n => n);
