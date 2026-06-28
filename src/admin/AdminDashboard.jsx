@@ -44,7 +44,7 @@ import {
   Store
 } from 'lucide-react';
 import {
-  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement
+  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement, Attendance
 } from './AdminComponents';
 import SettingsPage from './components/SettingsPage';
 import { useAuth } from '../context/AuthContext';
@@ -78,6 +78,7 @@ const navItems = [
   ["staff", "Staff", Users],
   ["captains", "Captain Analytics", ChartNoAxesCombined],
   ["payroll", "Payroll", DollarSign],
+  ["attendance", "Attendance", Users],
   ["kitchen-inventory", "Kitchen/Bar Inventory", UtensilsCrossed],
   ["marketing", "Marketing AI", Megaphone],
   ["surveillance", "Surveillance", Camera],
@@ -274,6 +275,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       if (key === 'reports') return true;
       if (key === 'captains') return enabledModules.tables !== false;
       if (key === 'payroll') return enabledModules.payroll !== false;
+      if (key === 'attendance') return enabledModules.payroll !== false;
       if (key === 'marketing') return enabledModules.marketing !== false;
       if (key === 'kitchen-inventory') return enabledModules.food !== false || enabledModules.bar_inventory === true || enabledModules.bar !== false;
       if (key === 'settings') return true;
@@ -409,6 +411,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
             <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
           )}
           {page === "payroll" && <Payroll onPayslip={() => { }} />}
+          {page === "attendance" && <Attendance />}
           {page === "kitchen-inventory" && <KitchenInventory />}
           {page === "marketing" && <Marketing upload={mUpload} setUpload={setMUpload} uploadRef={mUploadRef} generated={mGenerated} setGenerated={setMGenerated} posted={mPosted} setPosted={setMPosted} />}
           {page === "surveillance" && <SurveillanceDashboard onIncident={() => { }} />}

@@ -85,6 +85,7 @@ import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '..
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
+import { getTodayAttendanceSummary, getAttendance, markAttendance, checkIn, checkOut } from '../services/attendanceService';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { authService } from '../services/authService';
@@ -222,6 +223,8 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
   const { tables } = useTableSync();
   const [sales, setSales] = useState([]);
   const [salesLoading, setSalesLoading] = useState(true);
+  const [staffPresent, setStaffPresent] = useState(0);
+  const [staffTotal, setStaffTotal] = useState(0);
 
   const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
   const totalTables = tables.length;
@@ -296,6 +299,30 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStaff = async () => {
+      try {
+        const summary = await getTodayAttendanceSummary();
+        if (cancelled) return;
+        setStaffPresent(summary.present ?? 0);
+        setStaffTotal(summary.total ?? 0);
+      } catch (err) {
+        console.warn('[Dashboard] Failed to load staff attendance:', err.message);
+      }
+    };
+
+    loadStaff();
+    const interval = setInterval(loadStaff, 60000); // Refresh every 1 minute
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   return <div className="space-y-4 font-sans">
     <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base animate-fade-in flex items-center gap-3">
       <span className="text-xl">✨</span>
@@ -307,7 +334,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
         { label: "Today's Revenue", value: `₹${revenue.toLocaleString()}`, sub: "↑12%", color: "text-[#2E7D32]" },
         { label: "Total Orders", value: liveOrdersCount || ordersCount, sub: "live", color: "text-[#1A1A1A]" },
         { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
-        { label: "Staff Present", value: "18/21", sub: "today", color: "text-[#1A1A1A]" },
+        { label: "Staff Present", value: `${staffPresent}/${staffTotal}`, sub: "today", color: "text-[#1A1A1A]" },
       ].map((x) => (
         <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-3 md:p-4 min-w-0 shadow-sm transition-all hover:translate-y-[-2px]"}>
           <p className="text-[10px] md:text-xs font-bold uppercase tracking-tight text-[#6B6B6B] truncate">{x.label}</p>
@@ -7393,4 +7420,169 @@ export function StaffManagement() {
   );
 }
 
+export function Attendance() {
+  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [employees, setEmployees] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [empData, attData] = await Promise.all([
+        apiFetch('/api/payroll/employees'),
+        getAttendance(date),
+      ]);
+      setEmployees(empData || []);
+      setAttendance(attData.attendance || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load attendance');
+    } finally {
+      setLoading(false);
+    }
+  }, [date]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const getStatus = (employeeId) => {
+    const record = attendance.find(a => a.employeeId === employeeId);
+    return record?.status || 'NOT_MARKED';
+  };
+
+  const getRecordId = (employeeId) => {
+    return attendance.find(a => a.employeeId === employeeId)?.id || null;
+  };
+
+  const markStatus = async (employeeId, status) => {
+    try {
+      await markAttendance({ employeeId, date, status });
+      loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to mark attendance');
+    }
+  };
+
+  const handleCheckIn = async (employeeId) => {
+    const id = getRecordId(employeeId);
+    if (!id) return;
+    try {
+      await checkIn(id);
+      loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to check in');
+    }
+  };
+
+  const handleCheckOut = async (employeeId) => {
+    const id = getRecordId(employeeId);
+    if (!id) return;
+    try {
+      await checkOut(id);
+      loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to check out');
+    }
+  };
+
+  const presentCount = attendance.filter(a => a.status === 'PRESENT' || a.status === 'HALF_DAY').length;
+  const totalCount = employees.length;
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 font-sans">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-[12px] font-bold">
+          {error}
+        </div>
+      )}
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">Staff Attendance</h3>
+          <p className="text-[12px] text-gray-500">Present today: {presentCount}/{totalCount}</p>
+        </div>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+        />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-[12px]">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Employee</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Role</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Status</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Check In</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Check Out</th>
+              <th className="px-4 py-2 text-right font-bold text-gray-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((emp) => {
+              const status = getStatus(emp.id);
+              const record = attendance.find(a => a.employeeId === emp.id);
+              return (
+                <tr key={emp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3 font-bold text-gray-900">{emp.name}</td>
+                  <td className="px-4 py-3 text-gray-600">{emp.role || '-'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                      status === 'PRESENT' ? 'bg-green-100 text-green-700' :
+                      status === 'HALF_DAY' ? 'bg-yellow-100 text-yellow-700' :
+                      status === 'ABSENT' ? 'bg-red-100 text-red-700' :
+                      status === 'LEAVE' ? 'bg-gray-100 text-gray-700' :
+                      'bg-blue-50 text-blue-700'
+                    }`}>
+                      {status === 'NOT_MARKED' ? 'Not Marked' : status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {record?.checkInTime ? new Date(record.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {record?.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1 flex-wrap">
+                      <button onClick={() => markStatus(emp.id, 'PRESENT')} className="px-2 py-1 rounded text-[10px] font-bold bg-green-100 text-green-700 hover:bg-green-200">P</button>
+                      <button onClick={() => markStatus(emp.id, 'ABSENT')} className="px-2 py-1 rounded text-[10px] font-bold bg-red-100 text-red-700 hover:bg-red-200">A</button>
+                      <button onClick={() => markStatus(emp.id, 'LEAVE')} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-100 text-gray-700 hover:bg-gray-200">L</button>
+                      <button onClick={() => markStatus(emp.id, 'HALF_DAY')} className="px-2 py-1 rounded text-[10px] font-bold bg-yellow-100 text-yellow-700 hover:bg-yellow-200">H</button>
+                      {status === 'PRESENT' && !record?.checkOutTime && (
+                        <>
+                          <button onClick={() => handleCheckIn(emp.id)} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200">In</button>
+                          <button onClick={() => handleCheckOut(emp.id)} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200">Out</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {employees.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
+                  No employees found. Add employees in Payroll first.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
