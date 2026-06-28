@@ -201,7 +201,16 @@ const OnboardingWizard = () => {
           .filter(cat => cat.name.trim().length >= 1)
           .map(cat => ({
             ...cat,
-            items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
+            items: cat.items
+              .filter(item => item.name.trim().length >= 1 && item.price > 0)
+              .map(item => ({
+                ...item,
+                // Ensure rate-card fields are preserved
+                ...(item.venuePrices ? { venuePrices: item.venuePrices } : {}),
+                ...(item.menuType ? { menuType: item.menuType } : {}),
+                ...(item.unit ? { unit: item.unit } : {}),
+                ...(item.isAvailable === false ? { isAvailable: false } : {}),
+              }))
           }))
           .filter(cat => cat.items.length > 0)
       };
@@ -211,7 +220,15 @@ const OnboardingWizard = () => {
           .filter(cat => cat.name.trim().length >= 1)
           .map(cat => ({
             ...cat,
-            items: cat.items.filter(item => item.name.trim().length >= 1 && item.price > 0)
+            items: cat.items
+              .filter(item => item.name.trim().length >= 1 && item.price > 0)
+              .map(item => ({
+                ...item,
+                ...(item.venuePrices ? { venuePrices: item.venuePrices } : {}),
+                ...(item.menuType ? { menuType: item.menuType } : {}),
+                ...(item.unit ? { unit: item.unit } : {}),
+                ...(item.isAvailable === false ? { isAvailable: false } : {}),
+              }))
           }))
           .filter(cat => cat.items.length > 0)
       };

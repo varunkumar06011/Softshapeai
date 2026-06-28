@@ -343,23 +343,34 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
         <MenuUpload
           onboardingMode={true}
           restaurantType={restaurantType}
-          onImported={(rows) => {
+          onImported={(payload) => {
+            // payload can be { rows, mode, venueHeaders } (rate-card) or rows array (legacy)
+            const rows = Array.isArray(payload) ? payload : (payload.rows || []);
+            if (!Array.isArray(rows) || rows.length === 0) return;
             const grouped = rows.reduce((acc, row) => {
               const cat = acc.find(c => c.name === row.category);
               if (activeTab === 'bar') {
-                const item = { name: row.name, price: row.price, availableSizes: [], ...(row.variants ? { variants: row.variants } : {}) };
-                if (cat) {
-                  cat.items.push(item);
-                } else {
-                  acc.push({ name: row.category, items: [item] });
-                }
+                const item = {
+                  name: row.name, price: row.price, availableSizes: [],
+                  ...(row.variants ? { variants: row.variants } : {}),
+                  ...(row.venuePrices ? { venuePrices: row.venuePrices } : {}),
+                  ...(row.menuType ? { menuType: row.menuType } : {}),
+                  ...(row.unit ? { unit: row.unit } : {}),
+                  ...(row.isAvailable === false ? { isAvailable: false } : {}),
+                };
+                if (cat) { cat.items.push(item); }
+                else { acc.push({ name: row.category, items: [item] }); }
               } else {
-                const item = { name: row.name, price: row.price, isVeg: row.isVeg, platforms: [], ...(row.variants ? { variants: row.variants } : {}) };
-                if (cat) {
-                  cat.items.push(item);
-                } else {
-                  acc.push({ name: row.category, items: [item] });
-                }
+                const item = {
+                  name: row.name, price: row.price, isVeg: row.isVeg, platforms: [],
+                  ...(row.variants ? { variants: row.variants } : {}),
+                  ...(row.venuePrices ? { venuePrices: row.venuePrices } : {}),
+                  ...(row.menuType ? { menuType: row.menuType } : {}),
+                  ...(row.unit ? { unit: row.unit } : {}),
+                  ...(row.isAvailable === false ? { isAvailable: false } : {}),
+                };
+                if (cat) { cat.items.push(item); }
+                else { acc.push({ name: row.category, items: [item] }); }
               }
               return acc;
             }, []);
