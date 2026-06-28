@@ -9,7 +9,7 @@ import {
   fetchVenues, createVenue, updateVenue, deleteVenue,
   createSection, updateSection, deleteSection,
   createTable, updateTable, deleteTable,
-} from '../../services/tableApi';
+} from '../services/tableApi';
 
 const cls = {
   input: 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E53935] focus:ring-1 focus:ring-red-100 bg-white transition',
