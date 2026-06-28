@@ -1132,6 +1132,20 @@ const CashierDashboard = ({ onLogout }) => {
         if (existingItem?.removedFromBill && !incomingItem.removedFromBill) {
           return { ...incomingItem, removedFromBill: true, quantity: 0 };
         }
+        // Incoming confirms a cancel — use it
+        if (incomingItem.removedFromBill && existingItem && !existingItem.removedFromBill) {
+          return { ...existingItem, ...incomingItem };
+        }
+        // Neither is cancelled — prefer the HIGHER quantity to protect additions
+        // from being overwritten by a stale order:created with the old qty
+        if (existingItem && !existingItem.removedFromBill && !incomingItem.removedFromBill) {
+          const existingQty = Number(existingItem.quantity ?? existingItem.q ?? 0);
+          const incomingQty = Number(incomingItem.quantity ?? incomingItem.q ?? 0);
+          if (incomingQty > existingQty) {
+            return { ...existingItem, ...incomingItem };
+          }
+          return { ...incomingItem, ...existingItem };
+        }
         return incomingItem;
       });
 

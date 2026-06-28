@@ -833,6 +833,7 @@ export function MenuPage({ onAddDish }) {
   const [saving, setSaving] = useState(false);
   const [deleteWorking, setDeleteWorking] = useState(false);
   const [togglingId, setTogglingId] = useState(null);
+  const [togglingMenuTypeId, setTogglingMenuTypeId] = useState(null);
 
   // Recipe editor state (Phase 5)
   const [recipeRows, setRecipeRows] = useState([]);
@@ -871,6 +872,41 @@ export function MenuPage({ onAddDish }) {
       setTogglingId(null);
     }
   }, [togglingId, refreshMenu]);
+
+  const handleToggleMenuType = useCallback(async (item) => {
+    if (togglingMenuTypeId) return;
+    const newType = item.menuType === 'LIQUOR' ? 'FOOD' : 'LIQUOR';
+    setTogglingMenuTypeId(item.id);
+
+    // Optimistic update
+    setAdminItems(prev =>
+      prev.map(i => i.id === item.id ? { ...i, menuType: newType } : i)
+    );
+
+    try {
+      const endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${item.id}`
+        : `${API_BASE}/api/menu/items/${item.id}/menu-type`;
+
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        ...(activeOutlet === 'bar' ? { body: JSON.stringify({ menuType: newType }) } : {}),
+      });
+
+      if (!res.ok) throw new Error('Toggle failed');
+      refreshMenu().catch(() => {});
+    } catch (err) {
+      console.error('[MenuPage] Menu type toggle failed:', err);
+      // Revert on error
+      setAdminItems(prev =>
+        prev.map(i => i.id === item.id ? { ...i, menuType: item.menuType } : i)
+      );
+      alert('Could not update menu type. Please try again.');
+    } finally {
+      setTogglingMenuTypeId(null);
+    }
+  }, [togglingMenuTypeId, refreshMenu, activeOutlet]);
 
   // ── Dynamic categories ────────────────────────────────────────────────
   const [dbCategories, setDbCategories] = useState([]);
@@ -1571,6 +1607,18 @@ export function MenuPage({ onAddDish }) {
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   {togglingId === item.id ? '…' : item.isAvailable ? 'Disable' : 'Enable'}
+                </button>
+                <button
+                  onClick={() => handleToggleMenuType(item)}
+                  disabled={togglingMenuTypeId === item.id}
+                  title={item.menuType === 'LIQUOR' ? 'Switch to Food (Kitchen KOT)' : 'Switch to Bar (Liquor KOT)'}
+                  className={`text-xs font-bold px-2 py-1 rounded-md border transition-all ${
+                    item.menuType === 'LIQUOR'
+                      ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                      : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {togglingMenuTypeId === item.id ? '…' : item.menuType === 'LIQUOR' ? '🥃→🍽' : '🍽→🥃'}
                 </button>
                 <button onClick={() => handleEdit(item)} className="text-blue-600 hover:scale-110 transition-transform">✏️</button>
                 <button onClick={() => handleDeleteClick(item)} className="text-red-600 hover:scale-110 transition-transform">🗑️</button>

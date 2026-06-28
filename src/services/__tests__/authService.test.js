@@ -155,6 +155,7 @@ describe('authService', () => {
       };
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
+        headers: { get: (key) => key === 'content-type' ? 'application/json' : null },
         json: () => Promise.resolve(mockData),
       });
 
@@ -168,6 +169,7 @@ describe('authService', () => {
     it('should throw on failed login', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: false,
+        headers: { get: (key) => key === 'content-type' ? 'application/json' : null },
         json: () => Promise.resolve({ error: 'Invalid credentials' }),
       });
 

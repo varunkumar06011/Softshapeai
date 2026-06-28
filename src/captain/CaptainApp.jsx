@@ -1499,11 +1499,32 @@ export default function CaptainApp({ onLogout }) {
         if (i.id) map.set(i.id, i);
       });
 
-      // Merge incoming items on top. Incoming is authoritative for cancellation state.
+      // Merge incoming items on top. Incoming is authoritative for cancellation state
+      // EXCEPT when existing is locally cancelled and incoming is stale (not cancelled).
       incoming.forEach(i => {
         if (!i.id) return;
         const existingItem = map.get(i.id);
-        map.set(i.id, { ...(existingItem || {}), ...i });
+        if (!existingItem) {
+          map.set(i.id, i);
+          return;
+        }
+        // Don't let a stale incoming revive a locally-cancelled item
+        if (existingItem.removedFromBill && !i.removedFromBill) {
+          return;
+        }
+        // Incoming confirms a cancel — use it
+        if (i.removedFromBill && !existingItem.removedFromBill) {
+          map.set(i.id, { ...existingItem, ...i });
+          return;
+        }
+        // Neither is cancelled — prefer the HIGHER quantity to protect additions
+        const existingQty = Number(existingItem.quantity ?? existingItem.q ?? 0);
+        const incomingQty = Number(i.quantity ?? i.q ?? 0);
+        if (incomingQty > existingQty) {
+          map.set(i.id, { ...existingItem, ...i });
+        } else {
+          map.set(i.id, { ...i, ...existingItem });
+        }
       });
 
       return Array.from(map.values());
@@ -1589,11 +1610,18 @@ export default function CaptainApp({ onLogout }) {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
-      const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId
-          ? { ...t, activeOrder: order, status: t.status === 'Free' ? 'Occupied' : t.status, workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus }
-          : t
-      );
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId !== order.tableId) return t;
+        // Merge items with existing so previously sent KOT items don't vanish
+        // if order:created arrives after order:updated (socket race condition)
+        const mergedItems = mergeOrderItems(t.activeOrder?.items || [], order.items || []);
+        return {
+          ...t,
+          activeOrder: { ...order, items: mergedItems },
+          status: t.status === 'Free' ? 'Occupied' : t.status,
+          workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
+        };
+      });
       setActiveTables(updateTables);
     };
     socket.on('order:created', onOrderCreated);

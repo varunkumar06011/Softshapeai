@@ -94,6 +94,63 @@ function unwrapTableEvent(payload) {
   return payload?.table || payload;
 }
 
+// Merge incoming order items into existing items without losing any.
+// - Existing items with ids are kept unless the incoming set has a matching id.
+// - When the same id appears in both, the merge is NOT a naive replace:
+//     1. If existing has removedFromBill=true, keep it cancelled — a stale
+//        order:created must never revive a cancelled item.
+//     2. If incoming has removedFromBill=true, use it (cancel confirmed by backend).
+//     3. Otherwise prefer the HIGHER quantity — protects captain additions
+//        from being overwritten by a stale order:created with the old qty.
+// - Items only in existing (not in incoming) are preserved so KOTs never vanish.
+function mergeOrderItems(existing = [], incoming = []) {
+  const map = new Map();
+  const incomingByName = new Map(
+    incoming.map(i => [i.name ?? i.n, i]).filter(([k]) => !!k)
+  );
+  existing.forEach(i => {
+    const name = i.name ?? i.n;
+    if (!i.id && name && incomingByName.has(name)) return;
+    if (i.id) map.set(i.id, i);
+  });
+  incoming.forEach(i => {
+    if (!i.id) return;
+    const existingItem = map.get(i.id);
+    if (!existingItem) {
+      map.set(i.id, i);
+      return;
+    }
+    // Don't let a stale incoming revive a locally-cancelled item
+    if (existingItem.removedFromBill && !i.removedFromBill) {
+      // Keep existing cancelled state
+      return;
+    }
+    // Incoming confirms a cancel — use it
+    if (i.removedFromBill && !existingItem.removedFromBill) {
+      map.set(i.id, { ...existingItem, ...i });
+      return;
+    }
+    // Neither is cancelled — prefer the higher quantity to protect additions
+    const existingQty = Number(existingItem.quantity ?? existingItem.q ?? 0);
+    const incomingQty = Number(i.quantity ?? i.q ?? 0);
+    if (incomingQty > existingQty) {
+      map.set(i.id, { ...existingItem, ...i });
+    } else {
+      // Keep existing (higher or equal qty) but merge in any new metadata from incoming
+      map.set(i.id, { ...i, ...existingItem });
+    }
+  });
+  return Array.from(map.values());
+}
+
+// Merge an incoming order into an existing order, preserving items that the
+// incoming payload may not include (race conditions, partial payloads).
+function mergeOrder(incoming, existing) {
+  if (!existing) return incoming;
+  const mergedItems = mergeOrderItems(existing.items || [], incoming.items || []);
+  return { ...incoming, items: mergedItems };
+}
+
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   // Staleness guard: if existing has a newer updatedAt, keep existing status/currentBill
   const incomingTableUpdated = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
@@ -485,8 +542,8 @@ export function useBarTableSync() {
                   ...t,
                   status: t.status === 'Free' ? 'Occupied' : t.status,
                   workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
-                  activeOrder: order,
-                  items: order.items || t.items || [],
+                  activeOrder: mergeOrder(order, t.activeOrder),
+                  items: mergeOrderItems(t.items || [], order.items || []),
                   currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
                   lastUpdatedAt: Date.now(),
                 }
@@ -509,8 +566,8 @@ export function useBarTableSync() {
             }
             return {
               ...t,
-              activeOrder: order,
-              items: order.items || t.items || [],
+              activeOrder: mergeOrder(order, t.activeOrder),
+              items: mergeOrderItems(t.items || [], order.items || []),
               currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
               lastUpdatedAt: Date.now(),
             };

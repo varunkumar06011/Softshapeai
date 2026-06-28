@@ -280,6 +280,7 @@ export function useGlobalMenuSync() {
                 c: updated.category ?? item.c,
                 imageUrl: updated.imageUrl ?? item.imageUrl,
                 available: updated.isAvailable ?? item.available,
+                menuType: updated.menuType ?? item.menuType,
               }
             : item
         );
