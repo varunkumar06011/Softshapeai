@@ -427,7 +427,8 @@ const OnboardingWizard = () => {
             return s + oTables.length;
           }, 0),
           staff: (wizardData.captains?.length || 0) + (wizardData.cashiers?.length || 0),
-          menuItems: wizardData.menu?.categories?.reduce((s, cat) => s + (cat.items?.length || 0), 0) || 0,
+          menuItems: (wizardData.menu?.categories?.reduce((s, cat) => s + (cat.items?.length || 0), 0) || 0)
+            + (wizardData.menu?.barMenu?.categories?.reduce((s, cat) => s + (cat.items?.length || 0), 0) || 0),
         };
         return <StepPlan selectedPlan={wizardData.selectedPlan} outletCount={wizardData.restaurant.outletCount} wizardSummary={summary} onSelect={(plan) => updateWizardData('selectedPlan', plan)} onNext={handleNext} onBack={handleBack} loading={loading} error={error} />;
       case 'payment':

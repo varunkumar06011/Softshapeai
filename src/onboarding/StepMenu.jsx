@@ -109,9 +109,10 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
     list.length >= 1 &&
     list.every(cat => cat.name.length >= 1 && cat.items.length >= 1 && cat.items.every(item => item.name.length >= 1 && item.price > 0));
 
-  const isValid = isBarType
+  const hasRateCardImport = (data._rateCardImported || 0) > 0;
+  const isValid = hasRateCardImport || (isBarType
     ? (categoriesValid(allFoodCategories) || categoriesValid(allBarCategories))
-    : categoriesValid(cats);
+    : categoriesValid(cats));
 
   // Duplicate detection across the active tab
   const duplicateNames = [];
@@ -398,11 +399,22 @@ const StepMenu = ({ restaurantType, taxConfig, data, deliveryPlatforms = [], bar
               }
               return acc;
             }, []);
-            if (activeTab === 'bar') {
+            const isRateCard = !Array.isArray(payload) && payload.mode === 'rate-card';
+            // For rate-card imports, always route to the correct menu bucket for the restaurant type
+            // regardless of the currently selected tab.
+            if (activeTab === 'bar' || (isRateCard && isBarType)) {
               const targetBar = data.barMenu || { categories: [] };
-              onChange({ ...data, barMenu: { ...targetBar, categories: grouped.length > 0 ? grouped : targetBar.categories } });
+              onChange({
+                ...data,
+                barMenu: { ...targetBar, categories: grouped.length > 0 ? grouped : targetBar.categories },
+                _rateCardImported: grouped.length,
+              });
             } else {
-              onChange({ ...data, categories: grouped.length > 0 ? grouped : data.categories });
+              onChange({
+                ...data,
+                categories: grouped.length > 0 ? grouped : data.categories,
+                _rateCardImported: grouped.length,
+              });
             }
           }}
         />

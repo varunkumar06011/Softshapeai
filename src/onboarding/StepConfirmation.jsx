@@ -38,11 +38,13 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
   }, 0);
   const totalCaptains = captains.length;
   const totalCashiers = cashiers.length;
-  const totalMenuItems = menu.categories.reduce((sum, cat) => sum + cat.items.length, 0);
+  const isBarType = restaurant?.restaurantType === 'BAR_LOUNGE' || restaurant?.restaurantType === 'BAR_WITH_DINING';
+  const reviewMenu = isBarType && (menu?.barMenu?.categories || []).length > 0 ? menu.barMenu : menu;
+  const totalMenuItems = reviewMenu.categories.reduce((sum, cat) => sum + cat.items.length, 0);
 
   const firstSection = sections[0]?.name || 'Main Hall';
   const firstTable = tables[0]?.number || 1;
-  const sampleItems = menu.categories.flatMap(cat => cat.items).slice(0, 3);
+  const sampleItems = reviewMenu.categories.flatMap(cat => cat.items).slice(0, 3);
   const sampleSubtotal = sampleItems.reduce((sum, item) => sum + (item.price || 0), 0);
   const effectiveTaxConfig = taxConfig || { gstCategory: 'NON_AC', pricesIncludeGst: false };
   const isAcPreview = String(effectiveTaxConfig.gstCategory).toUpperCase() === 'AC';
@@ -254,11 +256,11 @@ const StepConfirmation = ({ wizardData, onConfirm, onBack, loading, error, onGoT
       <div className="bg-gray-50 rounded-xl p-5 space-y-3">
         <SectionHeader icon={<Utensils size={18} className="text-[#E53935]" />} title="Menu" stepId="menu" />
         <div className="text-sm">
-          <span className="text-gray-400">Categories:</span> <span className="font-medium text-gray-900">{menu.categories.length}</span>
+          <span className="text-gray-400">Categories:</span> <span className="font-medium text-gray-900">{reviewMenu.categories.length}</span>
           <span className="text-gray-400 ml-3">Items:</span> <span className="font-medium text-gray-900">{totalMenuItems}</span>
         </div>
         <div className="text-sm text-gray-400">
-          {menu.categories.map(cat => `${cat.name} (${cat.items.length})`).join(' • ')}
+          {reviewMenu.categories.map(cat => `${cat.name} (${cat.items.length})`).join(' • ')}
         </div>
       </div>
 

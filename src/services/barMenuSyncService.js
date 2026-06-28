@@ -36,6 +36,17 @@ function notifySubscribers() {
 async function loadBarMenu() {
   if (loadPromise) return loadPromise;
 
+  // Skip authenticated fetch if no token is available (e.g. during onboarding).
+  // The service will retry when a component subscribes after login.
+  const token = localStorage.getItem('ss_token') || localStorage.getItem('ss_preauth_token');
+  if (!token) {
+    _isLoading = false;
+    _loadError = null;
+    barGlobalMenu = readBarMenuCache();
+    notifySubscribers();
+    return Promise.resolve();
+  }
+
   const currentPromise = (async () => {
     _isLoading = true;
     _loadError = null;
@@ -83,7 +94,8 @@ async function loadBarMenu() {
   return currentPromise;
 }
 
-loadBarMenu();
+// Lazy load only when a component subscribes; do not fetch at module import time
+// because onboarding pages may import this service before the user is authenticated.
 
 export function useBarMenuSync() {
   const [state, setState] = useState({
