@@ -2921,16 +2921,26 @@ const CashierDashboard = ({ onLogout }) => {
     let currentVenueId = null;
     const matchingSection = fetchedSections.find(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory);
     if (matchingSection) {
-      currentVenueId = matchingSection.sectionTag || matchingSection.venueId || null;
+      currentVenueId = matchingSection.venueId || matchingSection.venue?.id || null;
     } else if (selectedTable) {
-      const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
-      const tableSection = fetchedSections.find(s => s.name.toLowerCase() === sectionName);
-      if (tableSection) {
-        currentVenueId = tableSection.sectionTag || tableSection.venueId || null;
+      currentVenueId = selectedTable.section?.venueId || selectedTable.section?.venue?.id || null;
+      if (!currentVenueId) {
+        const sectionName = (selectedTable.sectionName || selectedTable.section?.name || '').toLowerCase();
+        const tableSection = fetchedSections.find(s => s.name.toLowerCase() === sectionName);
+        if (tableSection) {
+          currentVenueId = tableSection.venueId || tableSection.venue?.id || null;
+        }
       }
     }
 
+    // Build venue price map from item.venuePrices keyed by venue ID
     const venueSpecificPrices = {};
+    if (currentVenueId) {
+      for (const item of itemsToFilter) {
+        const vp = item.venuePrices?.[currentVenueId];
+        if (vp !== undefined) venueSpecificPrices[item.id] = vp;
+      }
+    }
 
     const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && Boolean(currentVenueId);
 
