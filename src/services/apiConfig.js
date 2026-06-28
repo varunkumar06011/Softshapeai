@@ -61,6 +61,30 @@ export async function apiFetch(path, options = {}) {
       signal: controller.signal,
     });
 
+    if (response.status === 401 && !options._isRetry) {
+      try {
+        const refreshRes = await fetch(apiUrl('/api/auth/refresh'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        });
+        if (refreshRes.ok) {
+          const { token } = await refreshRes.json();
+          localStorage.setItem('ss_token', token);
+          return apiFetch(path, { ...options, _isRetry: true });
+        }
+      } catch {
+        // refresh failed — fall through to error
+      }
+      // Token refresh failed or not possible — clear session
+      localStorage.removeItem('ss_token');
+      localStorage.removeItem('ss_user');
+      localStorage.removeItem('ss_restaurant');
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+      throw new Error('Session expired. Please log in again.');
+    }
+
     if (!response.ok) {
       let errorText = '';
       try {

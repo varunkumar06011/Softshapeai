@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { Component } from 'react';
+import * as Sentry from '@sentry/react';
 import { AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { authService } from '../../services/authService';
 
@@ -29,7 +30,12 @@ export class ErrorBoundary extends Component {
       error,
       errorInfo,
     });
-    
+
+    // Report to Sentry with component stack context
+    Sentry.captureException(error, {
+      contexts: { componentStack: errorInfo?.componentStack },
+    });
+
     // Log critical error with context
     console.error('[ErrorBoundary] Caught error:', {
       error: error.message,

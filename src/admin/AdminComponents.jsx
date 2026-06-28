@@ -91,6 +91,7 @@ import { authService } from '../services/authService';
 import { useVenueSections } from '../hooks/useVenueSections';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 import { useSocket } from '../hooks/useSocket';
+import FloorPlanEditor from './FloorPlanEditor';
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 const BAR_FULL_BOTTLE_MULTIPLIER = Math.round(FULL_BOTTLE_ML / BAR_UNIT_ML);
@@ -509,12 +510,38 @@ export function Pos() {
 
 export function Tables({ onOpen }) {
   const [activePopupTableId, setActivePopupTableId] = useState(null);
+  const [editMode, setEditMode] = useState(false);
   const { tables } = useTableSync();
+
+  if (editMode) {
+    return (
+      <div className="space-y-4 font-sans">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">Space Management</h3>
+          <button
+            onClick={() => setEditMode(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-900 text-xs font-bold rounded-lg transition"
+          >
+            <Edit2 size={14} /> Exit Edit
+          </button>
+        </div>
+        <FloorPlanEditor />
+      </div>
+    );
+  }
 
   return <div className="space-y-4 font-sans">
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <h3 className="font-semibold">Floor Plan — Main Hall</h3>
-      <select className={input + " w-full sm:max-w-52"}><option>Main Hall</option><option>Terrace</option></select>
+      <div className="flex items-center gap-2">
+        <select className={input + " w-full sm:max-w-52"}><option>Main Hall</option><option>Terrace</option></select>
+        <button
+          onClick={() => setEditMode(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#E53935] text-white text-xs font-bold rounded-lg hover:bg-[#B71C1C] transition flex-shrink-0"
+        >
+          <Edit2 size={14} /> Edit Layout
+        </button>
+      </div>
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
       {tables.map((t) => {

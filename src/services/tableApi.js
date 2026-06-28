@@ -132,4 +132,71 @@ export async function deleteTable(tableId) {
   return parseResponse(res);
 }
 
+// ── Venue CRUD ──────────────────────────────────────────────────────────────
+
+export async function createVenue({ name, venueType, sortOrder }) {
+  const res = await fetch(apiUrl("/api/venues"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ name, venueType, sortOrder }),
+  });
+  return parseResponse(res);
+}
+
+export async function updateVenue(id, { name, venueType, sortOrder, isActive }) {
+  const res = await fetch(apiUrl(`/api/venues/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ name, venueType, sortOrder, isActive }),
+  });
+  return parseResponse(res);
+}
+
+export async function deleteVenue(id) {
+  const res = await fetch(apiUrl(`/api/venues/${id}`), {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// ── Section CRUD ────────────────────────────────────────────────────────────
+
+export async function createSection({ name, venueId }) {
+  const res = await fetch(apiUrl("/api/sections"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ name, venueId }),
+  });
+  return parseResponse(res);
+}
+
+export async function updateSection(id, { name, venueId, sortOrder }) {
+  const res = await fetch(apiUrl(`/api/sections/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ name, venueId, sortOrder }),
+  });
+  return parseResponse(res);
+}
+
+export async function deleteSection(id) {
+  const res = await fetch(apiUrl(`/api/sections/${id}`), {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// ── Table update (layout fields) ────────────────────────────────────────────
+
+export async function updateTable(id, { number, capacity, sectionId }) {
+  const res = await fetch(apiUrl(`/api/tables/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ number, capacity, sectionId }),
+  });
+  return parseResponse(res);
+}
+
 export { API_BASE };

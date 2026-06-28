@@ -560,7 +560,7 @@ function SettingsPage({ onNavigate }) {
                 onClick={() => onNavigate?.('tables')}
                 className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-bold transition-all"
               >
-                Edit Space
+                Manage Space
               </button>
             </div>
           </SectionCard>
