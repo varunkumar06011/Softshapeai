@@ -53,6 +53,9 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({});
+  const [emailExists, setEmailExists] = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailExistsCode, setEmailExistsCode] = useState(null);
 
   // Phone OTP state
   const [phoneOtpStatus, setPhoneOtpStatus] = useState('idle');
@@ -107,6 +110,29 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const handleEmailBlur = async () => {
+    const email = (data.email || '').trim();
+    if (!email || !email.includes('@')) return;
+
+    setEmailChecking(true);
+    setEmailExists(false);
+    setEmailExistsCode(null);
+
+    try {
+      const res = await apiFetch(`/api/onboard/check-email?email=${encodeURIComponent(email)}`);
+      const json = await res.json();
+      if (json.exists) {
+        setEmailExists(true);
+        setEmailExistsCode(json.restaurantCode || null);
+        setErrors(prev => ({ ...prev, email: null }));
+      }
+    } catch {
+      // Network error — silent fail, backend will catch it at submit
+    } finally {
+      setEmailChecking(false);
+    }
   };
 
   const handleChange = (field, value) => {
@@ -278,12 +304,40 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
             <input
               type="email"
               value={data.email}
-              onChange={(e) => handleChange('email', e.target.value)}
-              className={`w-full pl-10 pr-4 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${errors.email ? 'border-red-500' : 'border-gray-300'}`}
+              onChange={(e) => {
+                handleChange('email', e.target.value);
+                setEmailExists(false);
+                setEmailExistsCode(null);
+              }}
+              onBlur={handleEmailBlur}
+              className={`w-full pl-10 pr-4 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${
+                emailExists ? 'border-red-500 bg-red-50' : errors.email ? 'border-red-500' : 'border-gray-300'
+              }`}
               placeholder="e.g., owner@example.com"
             />
           </div>
+          {emailChecking && (
+            <p className="text-xs text-gray-400 mt-1 animate-pulse">Checking email…</p>
+          )}
           {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+          {emailExists && (
+            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex flex-col gap-1">
+              <p className="text-sm font-bold text-red-700">
+                This email is already registered to a restaurant.
+              </p>
+              <p className="text-xs text-red-500">
+                {emailExistsCode
+                  ? `Your restaurant code is ${emailExistsCode}. Please log in instead.`
+                  : 'Please log in with your existing credentials, or contact support.'}
+              </p>
+              <a
+                href="/admin"
+                className="mt-1 text-xs font-bold text-red-700 underline underline-offset-2 w-fit"
+              >
+                Go to Login →
+              </a>
+            </div>
+          )}
           <p className="text-xs text-gray-400 mt-1">You&apos;ll verify this later from your account settings</p>
         </div>
 
@@ -458,7 +512,7 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
         </button>
         <button
           onClick={handleContinue}
-          disabled={!phoneVerified}
+          disabled={!phoneVerified || emailExists || emailChecking}
           className="flex-1 py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Continue
