@@ -27,3 +27,8 @@ android/
 
 # Android signing keystore
 softshape-release.keystore
+
+# Tauri signing keys
+*.key
+*.key.pub
+.tauri/
