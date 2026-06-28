@@ -313,7 +313,11 @@ const OnboardingWizard = () => {
         tables: isCloud ? [] : wizardData.tables,
         venues: cleanVenues.length > 0 ? cleanVenues : undefined,
         priceProfiles: wizardData.priceProfiles || [],
-        menu: cleanMenu,
+        menu: cleanMenu.categories.length > 0 ? cleanMenu : {
+          categories: isBarType && cleanBarMenu.categories.length > 0
+            ? [{ name: 'Bar Menu', items: [{ name: 'Bar Items', price: 1, isVeg: false, platforms: [] }] }]
+            : []
+        },
         printers: wizardData.printers,
         sectionRouting: wizardData.sectionRouting,
         outlets: cleanOutlets.length > 0 ? cleanOutlets : undefined,
