@@ -96,12 +96,12 @@ jobs:
           echo "exe=$exe"
           echo "sig=$sig"
           if [ -n "$exe" ] && [ -f "$exe" ]; then
-            cp "$exe" "$dir/$fixed"
-            echo "copied $exe -> $dir/$fixed"
+            mv "$exe" "$dir/$fixed"
+            echo "renamed $exe -> $dir/$fixed"
           fi
           if [ -n "$sig" ] && [ -f "$sig" ]; then
-            cp "$sig" "$dir/${fixed}.sig"
-            echo "copied $sig -> $dir/${fixed}.sig"
+            mv "$sig" "$dir/${fixed}.sig"
+            echo "renamed $sig -> $dir/${fixed}.sig"
           fi
 
       - name: Attach to release
