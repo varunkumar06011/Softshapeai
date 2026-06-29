@@ -133,7 +133,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
         throw new Error('No staff found for this restaurant.');
       }
       setStaffList(staff);
-      setRestaurantId(data.restaurantId);
+      setRestaurantId(data.outletId || data.restaurantId);
       setStep('staff');
     } catch (err) {
       setError(err.message || 'Failed to load staff');
