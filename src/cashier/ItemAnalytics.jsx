@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
-import { API_BASE } from '../services/apiConfig';
+import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 // Standard bar unit sizes in milliliters
@@ -144,7 +144,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [] }) 
       if (source === 'all') {
         if (outletSections.length === 0) {
           const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`;
-          const response = await fetch(url);
+          const response = await fetch(url, { headers: getAuthHeaders() });
           const data = await response.json();
           if (data.items) { setItemsData(data.items); setSummary(data.summary); }
           return;
@@ -154,7 +154,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [] }) 
           outletSections.map(section => {
             let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}&outletType=${outletType}`;
             url += `&sectionName=${encodeURIComponent(section.name)}`;
-            return fetch(url).then(r => r.json()).catch(() => ({ items: [], summary: null }));
+            return fetch(url, { headers: getAuthHeaders() }).then(r => r.json()).catch(() => ({ items: [], summary: null }));
           })
         );
 
@@ -191,7 +191,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [] }) 
         url += `&sectionName=${encodeURIComponent(sectionName)}`;
       }
       url += `&outletType=${outletType}`;
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: getAuthHeaders() });
       const data = await response.json();
       if (data.items) {
         setItemsData(data.items);

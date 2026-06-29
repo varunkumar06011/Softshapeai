@@ -218,7 +218,7 @@ export function logCriticalError(context, error, additionalContext = {}) {
 export const RETRY_CONFIG = {
   SETTLE: { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 5000 },
   PRINT_BILL: { maxRetries: 2, baseDelayMs: 500, maxDelayMs: 2000 },
-  KOT: { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 5000 },
+  KOT: { maxRetries: 0, baseDelayMs: 1000, maxDelayMs: 5000 },
   TABLE_UPDATE: { maxRetries: 3, baseDelayMs: 500, maxDelayMs: 2000 },
   INVENTORY: { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 5000 },
   TRANSACTIONS: { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 5000 },

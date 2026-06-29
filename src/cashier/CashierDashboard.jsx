@@ -1039,7 +1039,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       refetchRestaurantTables();
       // Refresh transactions so history stays current after a disconnect gap
-      loadTransactions(txnDateFilterRef.current);
+      loadTransactions(txnDateFilterRef.current, null, { silent: true });
     };
 
     const onDisconnect = () => {
@@ -1354,11 +1354,11 @@ const CashierDashboard = ({ onLogout }) => {
           items: socketTxn.itemCount || (Array.isArray(socketTxn.items) ? socketTxn.items.length : 0),
           itemsList: socketTxn.items || [],
           captainId: socketTxn.captainId || 'CASHIER',
-          captainName: socketTxn.captainId && socketTxn.captainId !== 'CASHIER' ? socketTxn.captainId : 'Head Cashier',
+          captainName: socketTxn.captainName || (socketTxn.captainId && socketTxn.captainId !== 'CASHIER' ? socketTxn.captainId : 'Head Cashier'),
           method: socketTxn.method || 'UPI',
           tableNumber: socketTxn.tableNumber || null,
           tableDisplayName: socketTxn.tableLabel || (socketTxn.tableNumber ? `T${socketTxn.tableNumber}` : '—'),
-          source: activeOutlet,
+          source: sectionTagToSource[socketTxn.sectionTag] || activeOutlet,
           restaurantId: activeRestaurantId,
         };
         setPastTransactions(prev => {
@@ -1442,14 +1442,18 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Cooldown on both tables to prevent socket echo flickering on all devices
-      if (payload?.sourceTableId) tableClickCooldownRef.current.set(payload.sourceTableId, Date.now() + 3000);
-      if (payload?.targetTableId) tableClickCooldownRef.current.set(payload.targetTableId, Date.now() + 3000);
-      syncPauseUntilRef.current = Date.now() + 3000;
+      if (payload?.sourceTableId) tableClickCooldownRef.current.set(payload.sourceTableId, Date.now() + 5000);
+      if (payload?.targetTableId) tableClickCooldownRef.current.set(payload.targetTableId, Date.now() + 5000);
+      syncPauseUntilRef.current = Date.now() + 5000;
     };
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
       if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
+      // Skip if either table is in cooldown (just swapped)
+      const srcCooldown = tableClickCooldownRef.current.get(sourceTableId);
+      const tgtCooldown = tableClickCooldownRef.current.get(targetTableId);
+      if ((srcCooldown && Date.now() < srcCooldown) || (tgtCooldown && Date.now() < tgtCooldown)) return;
       const allTables = activeTablesRef.current;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
@@ -1524,7 +1528,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
-      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`);
+      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders() });
       if (response.ok) {
         const freshOrder = await response.json();
         return freshOrder || null;
@@ -1887,12 +1891,12 @@ const CashierDashboard = ({ onLogout }) => {
         return true;
       });
 
-      // Enrich results with tableDisplayName for rendering
+      // Enrich results with tableDisplayName and itemsList for rendering
       const enriched = isolated.map(txn => {
         const num = txn.tableNumber;
         const secName = (txn.sectionTag || '').toLowerCase();
         const tableDisplayName = num ? getVenueTableLabel(secName, num) : '—';
-        return { ...txn, tableDisplayName };
+        return { ...txn, tableDisplayName, itemsList: txn.items || [] };
       });
 
       setBillFinderSearched(true);
@@ -1912,14 +1916,26 @@ const CashierDashboard = ({ onLogout }) => {
     setShowReprintPinModal(true);
   };
 
-  const verifyReprintPin = () => {
-    const storedPin = localStorage.getItem('cashier_pin') || localStorage.getItem(getTenantScopedKey('cashier_pin')) || '';
-    if (reprintPinInput && reprintPinInput === storedPin) {
-      setShowReprintPinModal(false);
-      setReprintPinError('');
-      doReprintFoundBill(reprintPinTarget);
-    } else {
-      setReprintPinError('Incorrect PIN. Please try again.');
+  const verifyReprintPin = async () => {
+    if (!reprintPinInput || reprintPinInput.length < 4) {
+      setReprintPinError('Please enter a valid PIN.');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ pin: reprintPinInput }),
+      });
+      if (res.ok) {
+        setShowReprintPinModal(false);
+        setReprintPinError('');
+        doReprintFoundBill(reprintPinTarget);
+      } else {
+        setReprintPinError('Incorrect PIN. Please try again.');
+      }
+    } catch (error) {
+      setReprintPinError('Failed to verify PIN. Please try again.');
     }
   };
 
@@ -1929,10 +1945,10 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       const response = await fetch(`${API_BASE}/api/print/reprint-by-transaction`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           orderId: txn.orderId,
-          restaurantId: txn._sourceRestaurantId
+          restaurantId: txn._sourceRestaurantId || activeRestaurantId
         }),
       });
       if (!response.ok) throw new Error('Print request failed');
@@ -2032,7 +2048,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (!selectedTable.isExtra) {
           await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ discount: discountPercent })
           });
           // Persist discount so it survives modal close/reopen until settlement
@@ -2404,7 +2420,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           restaurantId: activeRestaurantId,
           billData: {
@@ -2486,7 +2502,7 @@ const CashierDashboard = ({ onLogout }) => {
           `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           }
         );
 
@@ -2749,11 +2765,11 @@ const CashierDashboard = ({ onLogout }) => {
               items: txn.itemCount || (Array.isArray(txn.items) ? txn.items.length : 0),
               itemsList: txn.items || [],
               captainId: txn.captainId || 'CASHIER',
-              captainName: txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier',
+              captainName: txn.captainName || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
               method: txn.method || method,
               tableNumber: txn.tableNumber || null,
               tableDisplayName: txn.tableLabel || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
-              source: activeOutlet,
+              source: sectionTagToSource[txn.sectionTag] || activeOutlet,
               restaurantId: activeRestaurantId,
             };
             setPastTransactions(prev => {
@@ -2830,7 +2846,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         const response = await fetch(terminateUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         });
 
         if (!response.ok) {
@@ -3154,8 +3170,8 @@ const CashierDashboard = ({ onLogout }) => {
     lastAnyItemAddedRef.current = 0;
     // Set click cooldown to prevent socket echo from flickering the table
     if (table.backendId) {
-      tableClickCooldownRef.current.set(table.backendId, Date.now() + 1500);
-      setTimeout(() => { tableClickCooldownRef.current.delete(table.backendId); }, 1500);
+      tableClickCooldownRef.current.set(table.backendId, Date.now() + 2500);
+      setTimeout(() => { tableClickCooldownRef.current.delete(table.backendId); }, 2500);
     }
     setSelectedTable(table);
     setCart([]);
@@ -3219,7 +3235,7 @@ const CashierDashboard = ({ onLogout }) => {
     const itemKey = String(item.id || item.n || '');
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 2000) return; // 2-second cooldown per item
+    if (now - lastAdd < 3000) return; // 3-second cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
     // Beer items should be added directly
@@ -3308,7 +3324,7 @@ const CashierDashboard = ({ onLogout }) => {
     const now = Date.now();
     const existingInCart = cart.find(i => i.n === item.n);
     if (!existingInCart) {
-      if (now - lastAnyItemAddedRef.current < 2000) return;
+      if (now - lastAnyItemAddedRef.current < 3000) return;
       lastAnyItemAddedRef.current = now;
     }
     setCart(prev => {
@@ -5941,14 +5957,14 @@ const CashierDashboard = ({ onLogout }) => {
                     // Clear localStorage for source table
                     localStorage.removeItem(`cashier_cart_${sourceId}`);
 
-                    // Set 3-second cooldown on both tables to prevent socket echo flickering
-                    tableClickCooldownRef.current.set(sourceId, Date.now() + 3000);
-                    tableClickCooldownRef.current.set(targetId, Date.now() + 3000);
-                    syncPauseUntilRef.current = Date.now() + 3000;
+                    // Set 5-second cooldown on both tables to prevent socket echo flickering
+                    tableClickCooldownRef.current.set(sourceId, Date.now() + 5000);
+                    tableClickCooldownRef.current.set(targetId, Date.now() + 5000);
+                    syncPauseUntilRef.current = Date.now() + 5000;
                     setTimeout(() => {
                       tableClickCooldownRef.current.delete(sourceId);
                       tableClickCooldownRef.current.delete(targetId);
-                    }, 3000);
+                    }, 5000);
 
                     setShowSwapModal(false);
                     setShowTableModal(false);
