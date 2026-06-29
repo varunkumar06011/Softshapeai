@@ -104,6 +104,13 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [] }) 
     fetchAnalytics();
   }, [timeFilter, customDate, source, outletSections]);
 
+  // Re-fetch analytics when a settlement occurs (custom event dispatched from CashierDashboard)
+  useEffect(() => {
+    const handler = () => fetchAnalytics();
+    window.addEventListener('softshape_order_updated', handler);
+    return () => window.removeEventListener('softshape_order_updated', handler);
+  }, [timeFilter, customDate, source, outletSections]);
+
   const getDateRange = () => {
     const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
     const now = new Date(Date.now() + IST_OFFSET_MS);

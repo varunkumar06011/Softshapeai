@@ -30,7 +30,7 @@ import {
 
   FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
 
-  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart
+  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp
 
 } from 'lucide-react';
 
@@ -4757,7 +4757,7 @@ export default function CaptainApp({ onLogout }) {
 
               {/* SESSION ORDER PANEL */}
 
-              <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'h-16 lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`}>
+              <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'h-20 lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
 
                 <div
 
@@ -4884,7 +4884,7 @@ export default function CaptainApp({ onLogout }) {
                                     ) : Number(item.cancelledQuantity ?? 0) > 0 ? (
                                       // Partial cancellation — show original (struck) → remaining
                                       <span>
-                                        <span className="line-through text-red-400 text-[9px]">{Number(item.q) + Number(item.cancelledQuantity ?? 0)}x</span>
+                                        <span className="line-through text-red-400 text-xs">{Number(item.q) + Number(item.cancelledQuantity ?? 0)}x</span>
                                         <span className="text-green-600 font-black ml-1">{item.q}x</span>
                                       </span>
                                     ) : (
@@ -4893,7 +4893,7 @@ export default function CaptainApp({ onLogout }) {
 
                                   </div>
 
-                                  <p className={`text-[11px] font-bold ${isCancelled ? 'line-through text-red-400' : 'text-gray-700'}`}>{item.n}</p>
+                                  <p className={`text-sm font-bold ${isCancelled ? 'line-through text-red-400' : 'text-gray-700'}`}>{item.n}</p>
 
                                 </div>
 
@@ -5264,6 +5264,17 @@ export default function CaptainApp({ onLogout }) {
           </div>
 
         )}
+
+      {/* FLOATING VIEW CART BUTTON — visible on mobile when cart is minimized with items */}
+      {isCartMinimized && currentSessionItems.length > 0 && view === 'tables' && activeTableId && (
+        <button
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[150] lg:hidden bg-[#E53935] text-white px-6 py-3 rounded-full shadow-2xl font-black text-sm uppercase flex items-center gap-2"
+          onClick={() => setIsCartMinimized(false)}
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+        >
+          <ChevronUp size={16} /> View Cart & Send KOT ({currentSessionItems.length})
+        </button>
+      )}
 
       </main>
 
