@@ -4043,7 +4043,7 @@ export default function CaptainApp({ onLogout }) {
 
               {/* MENU INTERFACE */}
 
-              <div className={`flex-grow flex flex-col overflow-hidden bg-gray-50/30 ${(isCartMinimized || isSearchFocused) ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} border-b lg:border-b-0 lg:border-r border-gray-100 transition-all duration-300`}>
+              <div className={`flex-grow flex flex-col overflow-hidden bg-gray-50/30 ${isSearchFocused ? 'h-full lg:h-auto' : isCartMinimized ? 'min-h-0 lg:h-auto' : 'h-1/2 lg:h-auto'} border-b lg:border-b-0 lg:border-r border-gray-100 transition-all duration-300`}>
 
                 {/* STICKY MENU BAR */}
 
