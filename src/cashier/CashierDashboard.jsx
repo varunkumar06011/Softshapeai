@@ -445,6 +445,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
+  const isSubmittingPaymentRef = useRef(false);
+  const [isSettling, setIsSettling] = useState(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
 
@@ -1389,6 +1391,16 @@ const CashierDashboard = ({ onLogout }) => {
       });
       setActiveTables(updateTables);
 
+      if (sourceTableId) {
+        recentlyTerminatedRef.current[sourceTableId] = Date.now();
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+        } catch {}
+        setTimeout(() => {
+          delete recentlyTerminatedRef.current[sourceTableId];
+        }, 10000);
+      }
+
       // If cashier had the source table open, switch selection to the new table
       if (selectedTable?.backendId === sourceTableId && mappedTarget) {
         // Clear stale localStorage for the source table before switching
@@ -1410,7 +1422,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
       if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      const allTables = activeTables;
+      const allTables = activeTablesRef.current;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
         allTables.find((table) => table.backendId === sourceTableId) || null,
@@ -1463,7 +1475,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
     };
-  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
+  }, [socket, activeRestaurantId, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
@@ -1518,7 +1530,7 @@ const CashierDashboard = ({ onLogout }) => {
     // to a non-Waiting-Bill status. The button must stay as "Settlement".
     if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
       // Only let sync through if it brings a Free/AVAILABLE (settlement confirmed elsewhere)
-      const liveTable = activeTables.find((t) => t.backendId === selectedTable.backendId);
+      const liveTable = activeTablesRef.current.find((t) => t.backendId === selectedTable.backendId);
       if (liveTable) {
         const isNowFree = liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free';
         if (isNowFree) {
@@ -1553,7 +1565,7 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
+    const liveTable = activeTablesRef.current.find((table) => table.backendId === selectedTable.backendId);
 
     // Guard: if fetchFreshOrderData just updated this selectedTable, skip the activeTables-driven
     // merge for a few seconds to avoid a stale activeTables snapshot overwriting a fresh order.
@@ -1610,7 +1622,7 @@ const CashierDashboard = ({ onLogout }) => {
         });
       }
     }
-  }, [activeTables, selectedTable, billPrintedTableIds]);
+  }, [selectedTable, billPrintedTableIds]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -2444,6 +2456,8 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handlePayment = async (method) => {
     if (!selectedTable || !method) return;
+    if (isSubmittingPaymentRef.current) return;
+    isSubmittingPaymentRef.current = true;
 
     // Validate transaction amount
     const txnAmount = Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal);
@@ -2454,6 +2468,7 @@ const CashierDashboard = ({ onLogout }) => {
         'error'
       );
       setShowMethodPicker(false);
+      isSubmittingPaymentRef.current = false;
       return;
     }
 
@@ -2465,6 +2480,7 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Already Settled', 'This order has already been settled.', 'error');
       setShowMethodPicker(false);
       setShowPaymentModal(false);
+      isSubmittingPaymentRef.current = false;
       return;
     }
 
@@ -2591,6 +2607,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Commit function: call backend settle endpoint
     const commitFn = async () => {
+      setIsSettling(true);
       // Add to background queue for final bill + inventory deduction
       await settlementQueue.add(async () => {
         // Call backend settle endpoint (creates transaction, marks paid, resets table)
@@ -2616,6 +2633,12 @@ const CashierDashboard = ({ onLogout }) => {
               cgst: Number(activeCgst),
               sgst: Number(activeSgst),
               restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+              items: getBillableItems(selectedTable).map(i => ({
+                name: i.name ?? i.n,
+                quantity: Number(i.quantity ?? i.q ?? 1),
+                price: Number(i.price ?? i.p ?? 0),
+                menuType: i.menuType || 'FOOD',
+              })),
             }
           );
 
@@ -2722,6 +2745,8 @@ const CashierDashboard = ({ onLogout }) => {
     // Safety-net: once settlement succeeds, reload transactions one more time
     // to ensure the new bill is visible even if the setTimeout race was lost
     loadTransactions(txnDateFilterRef.current);
+    setIsSettling(false);
+    isSubmittingPaymentRef.current = false;
   };
 
   const terminateTableSession = async () => {
@@ -3427,12 +3452,14 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
-      setCart([]);
-      lastAnyItemAddedRef.current = 0;
-      setExpandedNoteItemId(null);
-      setIsKotSuccess(true);
-      addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
-      setTimeout(() => setIsKotSuccess(false), 2000);
+      if (orderResponse || !selectedTable?.backendId) {
+        setCart([]);
+        lastAnyItemAddedRef.current = 0;
+        setExpandedNoteItemId(null);
+        setIsKotSuccess(true);
+        addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
+        setTimeout(() => setIsKotSuccess(false), 2000);
+      }
     } catch (err) {
       console.error('[KOT] API failed:', err.message);
       // Cart is retained so the cashier can retry immediately or add more items.
@@ -5092,7 +5119,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     e.stopPropagation();
                                     setShowCancelModal(true);
                                     if (item.originalIds.length === 1) {
-                                      setCancelSelected({ [item.originalIds[0]]: 1 });
+                                      setCancelSelected({ [item.originalIds[0]]: { item, quantity: 1 } });
                                     } else {
                                       const selection = {};
                                       item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
@@ -5222,8 +5249,9 @@ const CashierDashboard = ({ onLogout }) => {
                     return s === 'Waiting Bill' || s === 'BILLING_REQUESTED';
                   })() ? (
                     <button
-                      onClick={() => setShowMethodPicker(true)}
-                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
+                      onClick={() => { if (isPrintingBill) return; setShowMethodPicker(true); }}
+                      disabled={isSettling}
+                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Settlement
                     </button>
