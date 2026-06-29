@@ -794,9 +794,10 @@ const CashierDashboard = ({ onLogout }) => {
     return '—';
   }
 
-  const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
+  const loadTransactions = useCallback(async (filter = 'today', dateOverride = null, opts = {}) => {
+    const { silent = false } = opts;
     const myGeneration = ++loadTxnsGenerationRef.current; // increment BEFORE any await
-    setTxnsLoading(true);
+    if (!silent) setTxnsLoading(true);
     try {
       let dateParam = null;
       let monthParam = null;
@@ -952,7 +953,7 @@ const CashierDashboard = ({ onLogout }) => {
       const cached = localStorage.getItem(TX_CACHE_KEY);
       if (cached) setPastTransactions(JSON.parse(cached));
     } finally {
-      if (myGeneration === loadTxnsGenerationRef.current) {
+      if (!silent && myGeneration === loadTxnsGenerationRef.current) {
         setTxnsLoading(false);
       }
     }
@@ -2723,10 +2724,10 @@ const CashierDashboard = ({ onLogout }) => {
 
         // Immediate refresh (catches fast DB writes)
         loadTransactions(txnDateFilterRef.current);
-        // Secondary refresh at 3s (catches delayed DB propagation + cache invalidation)
+        // Secondary refresh at 3s — silent (no loading overlay flicker)
         setTimeout(() => {
           console.log(`[Settlement] Secondary loadTransactions for orderId=${orderId}`);
-          loadTransactions(txnDateFilterRef.current);
+          loadTransactions(txnDateFilterRef.current, null, { silent: true });
         }, 3000);
       });
     };
@@ -2742,9 +2743,6 @@ const CashierDashboard = ({ onLogout }) => {
       }
     });
 
-    // Safety-net: once settlement succeeds, reload transactions one more time
-    // to ensure the new bill is visible even if the setTimeout race was lost
-    loadTransactions(txnDateFilterRef.current);
     setIsSettling(false);
     isSubmittingPaymentRef.current = false;
   };
