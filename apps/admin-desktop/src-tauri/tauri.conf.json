@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "SoftShape Admin",
-    "version": "1.2.7"
+    "version": "1.2.8"
   },
   "tauri": {
     "windows": [
