@@ -81,6 +81,7 @@ jobs:
       - name: Rename installer to fixed filename
         shell: bash
         run: |
+          set +e
           app="${{ matrix.app }}"
           dir="apps/${app}/src-tauri/target/release/bundle/nsis"
           if [ "$app" = "admin-desktop" ]; then
@@ -88,10 +89,20 @@ jobs:
           elif [ "$app" = "cashier-desktop" ]; then
             fixed="SoftShape.Cashier_x64-setup.exe"
           fi
+          echo "Renaming installer in $dir"
+          ls -la "$dir" || echo "(directory not found or empty)"
           exe=$(ls "$dir"/*.exe 2>/dev/null | grep -v "$fixed" | head -n 1)
           sig=$(ls "$dir"/*.sig 2>/dev/null | head -n 1)
-          if [ -n "$exe" ]; then cp "$exe" "$dir/$fixed"; fi
-          if [ -n "$sig" ]; then cp "$sig" "$dir/${fixed}.sig"; fi
+          echo "exe=$exe"
+          echo "sig=$sig"
+          if [ -n "$exe" ] && [ -f "$exe" ]; then
+            cp "$exe" "$dir/$fixed"
+            echo "copied $exe -> $dir/$fixed"
+          fi
+          if [ -n "$sig" ] && [ -f "$sig" ]; then
+            cp "$sig" "$dir/${fixed}.sig"
+            echo "copied $sig -> $dir/${fixed}.sig"
+          fi
 
       - name: Attach to release
         if: github.event_name == 'release'
