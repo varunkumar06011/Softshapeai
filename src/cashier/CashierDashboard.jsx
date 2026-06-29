@@ -6473,13 +6473,16 @@ const CashierDashboard = ({ onLogout }) => {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setCancelSelected(prev => ({
-                                    ...prev,
-                                    [gKey]: {
-                                      ...prev[gKey],
-                                      quantity: Math.max(1, Number(prev[gKey]?.quantity ?? 1) - 1),
-                                    },
-                                  }));
+                                  setCancelSelected(prev => {
+                                    if (!prev[gKey]) return prev;
+                                    return {
+                                      ...prev,
+                                      [gKey]: {
+                                        ...prev[gKey],
+                                        quantity: Math.max(1, Number(prev[gKey]?.quantity ?? 1) - 1),
+                                      },
+                                    };
+                                  });
                                 }}
                                 className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
                               >
@@ -6492,13 +6495,16 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={cancelQuantity}
                                 onChange={(e) => {
                                   const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
-                                  setCancelSelected(prev => ({
-                                    ...prev,
-                                    [gKey]: {
-                                      ...prev[gKey],
-                                      quantity: nextValue,
-                                    },
-                                  }));
+                                  setCancelSelected(prev => {
+                                    if (!prev[gKey]) return prev;
+                                    return {
+                                      ...prev,
+                                      [gKey]: {
+                                        ...prev[gKey],
+                                        quantity: nextValue,
+                                      },
+                                    };
+                                  });
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                                 className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
@@ -6507,13 +6513,16 @@ const CashierDashboard = ({ onLogout }) => {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setCancelSelected(prev => ({
-                                    ...prev,
-                                    [gKey]: {
-                                      ...prev[gKey],
-                                      quantity: Math.min(Number(item.q ?? 1), Number(prev[gKey]?.quantity ?? 1) + 1),
-                                    },
-                                  }));
+                                  setCancelSelected(prev => {
+                                    if (!prev[gKey]) return prev;
+                                    return {
+                                      ...prev,
+                                      [gKey]: {
+                                        ...prev[gKey],
+                                        quantity: Math.min(Number(item.q ?? 1), Number(prev[gKey]?.quantity ?? 1) + 1),
+                                      },
+                                    };
+                                  });
                                 }}
                                 className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
                               >
