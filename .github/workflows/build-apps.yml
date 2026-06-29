@@ -14,12 +14,12 @@ env:
   VITE_FIREBASE_PROJECT_ID: softshapeai-14324
   VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
   VITE_SENTRY_DSN: https://0265523fc50be65aad6018cb11266b19@o4511625453699072.ingest.us.sentry.io/4511625461497856
-  VITE_PRINT_AGENT_DOWNLOAD_URL: https://github.com/varunkumar06011/softshape-print-agent/releases/latest/download/SoftShape.Print.Agent_1.2.7_x64-setup.exe
-  VITE_CASHIER_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7/SoftShape.Cashier_1.2.7_x64-setup.exe
-  VITE_CASHIER_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7/cashier-android.apk
-  VITE_ADMIN_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7/SoftShape.Admin_1.2.7_x64-setup.exe
-  VITE_ADMIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7/admin-android.apk
-  VITE_CAPTAIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7/captain-android.apk
+  VITE_PRINT_AGENT_DOWNLOAD_URL: https://github.com/varunkumar06011/softshape-print-agent/releases/latest/download/SoftShape.Print.Agent_x64-setup.exe
+  VITE_CASHIER_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/SoftShape.Cashier_x64-setup.exe
+  VITE_CASHIER_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/cashier-android.apk
+  VITE_ADMIN_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/SoftShape.Admin_x64-setup.exe
+  VITE_ADMIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/admin-android.apk
+  VITE_CAPTAIN_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/captain-android.apk
 
 permissions:
   contents: write
@@ -77,6 +77,21 @@ jobs:
             apps/${{ matrix.app }}/src-tauri/target/release/bundle/nsis/*.sig
             apps/${{ matrix.app }}/src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: warn
+
+      - name: Rename installer to fixed filename
+        shell: bash
+        run: |
+          app="${{ matrix.app }}"
+          dir="apps/${app}/src-tauri/target/release/bundle/nsis"
+          if [ "$app" = "admin-desktop" ]; then
+            fixed="SoftShape.Admin_x64-setup.exe"
+          elif [ "$app" = "cashier-desktop" ]; then
+            fixed="SoftShape.Cashier_x64-setup.exe"
+          fi
+          exe=$(ls "$dir"/*.exe 2>/dev/null | grep -v "$fixed" | head -n 1)
+          sig=$(ls "$dir"/*.sig 2>/dev/null | head -n 1)
+          if [ -n "$exe" ]; then cp "$exe" "$dir/$fixed"; fi
+          if [ -n "$sig" ]; then cp "$sig" "$dir/${fixed}.sig"; fi
 
       - name: Attach to release
         if: github.event_name == 'release'
