@@ -4757,7 +4757,7 @@ export default function CaptainApp({ onLogout }) {
 
               {/* SESSION ORDER PANEL */}
 
-              <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'h-20 lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+              <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 16px)', height: isCartMinimized ? 'calc(5rem + env(safe-area-inset-bottom, 16px))' : undefined }}>
 
                 <div
 
