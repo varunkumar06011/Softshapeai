@@ -444,6 +444,63 @@ const card = cardBase + " bg-white";
 
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
+// ── Shared helpers (module-level so all components can use them) ──────────
+
+const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
+  const base64Data = base64DataUri.includes(',') ? base64DataUri.split(',')[1] : base64DataUri;
+  const bytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'image/jpeg' });
+
+  const formData = new FormData();
+  formData.append('file', blob, 'image.jpg');
+  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+  if (itemName?.trim()) {
+    formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
+  }
+
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    { method: 'POST', body: formData }
+  );
+  const data = await res.json();
+  if (!data.secure_url) throw new Error(data?.error?.message || 'Cloudinary upload failed');
+  return data.secure_url;
+};
+
+function compressImage(file, callback) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 600;
+      const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      callback(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+const AVATAR_COLORS = ['#B71C1C','#1B5E20','#0D47A1','#4A148C',
+                       '#E65100','#006064','#827717','#37474F'];
+
+function IngredientAvatar({ name }) {
+  const bg = AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
+  return (
+    <div
+      style={{ background: bg }}
+      className="h-9 w-9 rounded-full flex items-center justify-center text-white text-[11px] font-black shrink-0"
+    >
+      {name.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
+
 
 
 export function Dashboard({ revenue, ordersCount, activityLog }) {
@@ -1068,6 +1125,19 @@ export function Tables({ onOpen }) {
 
   const [loadingVenues, setLoadingVenues] = useState(true);
 
+  const [staffMap, setStaffMap] = useState({});
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/auth/staff`, { headers: { ...getAuthHeaders() } })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const map = {};
+        (Array.isArray(data) ? data : []).forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
+        setStaffMap(map);
+      })
+      .catch(() => {});
+  }, []);
+
 
 
   useEffect(() => {
@@ -1248,7 +1318,7 @@ export function Tables({ onOpen }) {
 
         const itemsCount = items.reduce((sum, i) => sum + i.q, 0);
 
-        const captainName = t.captainName || t.captainId || 'Staff';
+        const captainName = t.captainName || staffMap[t.captainId] || 'Staff';
 
 
 
@@ -1406,7 +1476,7 @@ export function Tables({ onOpen }) {
 
       const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
 
-      const pCaptainName = pTable.captainName || pTable.captainId || 'Staff';
+      const pCaptainName = pTable.captainName || staffMap[pTable.captainId] || 'Staff';
 
       
 
@@ -2231,51 +2301,6 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
-
-  const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
-
-    // Convert base64 data URI → Blob for multipart/form-data upload
-
-    const base64Data = base64DataUri.includes(',') ? base64DataUri.split(',')[1] : base64DataUri;
-
-    const bytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-
-    const blob = new Blob([bytes], { type: 'image/jpeg' });
-
-
-
-    const formData = new FormData();
-
-    formData.append('file', blob, 'image.jpg');
-
-    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
-
-    if (itemName?.trim()) {
-
-      formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
-
-    }
-
-
-
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
-
-    const res = await fetch(
-
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-
-      { method: 'POST', body: formData }
-
-    );
-
-    const data = await res.json();
-
-    if (!data.secure_url) throw new Error(data?.error?.message || 'Cloudinary upload failed');
-
-    return data.secure_url;
-
-  };
 
 
 
@@ -2607,7 +2632,7 @@ export function MenuPage({ onAddDish }) {
 
         method: 'POST',
 
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
         body: JSON.stringify({
 
@@ -2696,6 +2721,28 @@ export function MenuPage({ onAddDish }) {
         setAdminItems(prev => [...prev, { ...optimisticItem, isAvailable: true }]);
 
         window.dispatchEvent(new CustomEvent('softshape_venue_prices_updated'));
+
+        // Save recipe if present
+        if (activeOutlet === 'restaurant' && recipeRows.length > 0 && serverItem?.id) {
+          try {
+            await fetch(`${API_BASE}/api/recipes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+              body: JSON.stringify({
+                menuItemId: serverItem.id,
+                ingredients: recipeRows.map(r => ({
+                  kitchenInventoryItemId: r.ingredientId,
+                  quantity: Number(r.qty) || 0,
+                  unit: r.unit,
+                })).filter(r => r.kitchenInventoryItemId),
+              }),
+            });
+          } catch (e) {
+            console.error('[MenuPage] Recipe save failed:', e);
+          }
+        }
+
+        setRecipeRows([]);
 
         setAddingItem(null);
 
@@ -2812,6 +2859,18 @@ export function MenuPage({ onAddDish }) {
               menuType: 'FOOD',
 
             });
+
+            setRecipeRows([]);
+
+            const rid = getCurrentRestaurantId();
+
+            fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${rid}`, { headers: { ...getAuthHeaders() } })
+
+              .then(r => r.ok ? r.json() : [])
+
+              .then(data => setKitchenIngredients(data))
+
+              .catch(() => {});
 
           }}
 
@@ -4019,13 +4078,13 @@ export function MenuPage({ onAddDish }) {
 
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in">
 
-        <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
+        <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
 
-          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
 
             <h3 className="font-black text-lg text-gray-900 tracking-tight">Add New Item</h3>
 
-            <button onClick={() => setAddingItem(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+            <button onClick={() => { setAddingItem(null); setRecipeRows([]); }} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
 
           </div>
 
@@ -4383,11 +4442,57 @@ export function MenuPage({ onAddDish }) {
 
             )}
 
+            {/* Recipe Editor for Add Modal */}
+            {activeOutlet === 'restaurant' && (
+              <div className="border-t border-dashed border-gray-200 pt-4 mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Inventory)</label>
+                  <span className="text-[9px] font-bold text-gray-400">{recipeRows.length} ingredient{recipeRows.length !== 1 ? 's' : ''}</span>
+                </div>
+                {recipeRows.map((row, idx) => (
+                  <div key={idx} className="flex items-center gap-2 mb-2">
+                    <select
+                      value={row.ingredientId || ''}
+                      onChange={(e) => {
+                        const ing = kitchenIngredients.find(i => i.id === e.target.value);
+                        setRecipeRows(prev => prev.map((r, i) => i === idx ? { ...r, ingredientId: e.target.value, unit: ing?.unit || '' } : r));
+                      }}
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs"
+                    >
+                      <option value="">Select ingredient…</option>
+                      {kitchenIngredients.map(ing => (
+                        <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Qty"
+                      value={row.qty || ''}
+                      onChange={(e) => setRecipeRows(prev => prev.map((r, i) => i === idx ? { ...r, qty: e.target.value } : r))}
+                      className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-xs"
+                    />
+                    <span className="text-xs font-bold text-gray-400 w-10">{row.unit}</span>
+                    <button onClick={() => setRecipeRows(prev => prev.filter((_, i) => i !== idx))} className="p-1.5 text-red-500 hover:text-red-700 rounded-lg">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => setRecipeRows(prev => [...prev, { ingredientId: '', qty: '', unit: '' }])}
+                  className="text-xs font-bold text-[#E53935] hover:text-red-700 flex items-center gap-1"
+                >
+                  <Plus size={14} /> Add Ingredient
+                </button>
+              </div>
+            )}
+
           </div>
 
           <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
 
-            <button onClick={() => setAddingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button onClick={() => { setAddingItem(null); setRecipeRows([]); }} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
 
             <button onClick={handleSaveAdd} disabled={!addingItem.n || !addingItem.p || saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Saving…' : 'Add Item'}</button>
 
@@ -5381,7 +5486,7 @@ export function KitchenInventory() {
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', currentStock: '', prize: '' });
+  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', currentStock: '', prize: '', image: null, imagePreview: null });
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -5408,6 +5513,12 @@ export function KitchenInventory() {
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const [addError, setAddError] = useState(null);
+
+  const [editingImageItem, setEditingImageItem] = useState(null);
+
+  const [imageEditPreview, setImageEditPreview] = useState(null);
 
   const csvImportRef = useRef(null);
 
@@ -5453,7 +5564,15 @@ export function KitchenInventory() {
 
     if (!newItem.name || !newItem.unit) return;
 
+    setAddError(null);
+
     try {
+
+      let imageUrl = null;
+
+      if (newItem.image && newItem.image.startsWith('data:')) {
+        imageUrl = await uploadImageToCloudinary(newItem.image, newItem.name);
+      }
 
       const res = await fetch(`${API_BASE}/api/inventory/kitchen/items`, {
 
@@ -5473,6 +5592,8 @@ export function KitchenInventory() {
 
           price: parseFloat(newItem.prize) || 0,
 
+          ...(imageUrl ? { image: imageUrl } : {}),
+
         }),
 
       });
@@ -5480,14 +5601,14 @@ export function KitchenInventory() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         if (res.status === 409) {
-          alert(`"${newItem.name}" already exists in inventory. It was not overwritten.`);
+          setAddError(`"${newItem.name}" already exists in inventory.`);
         } else {
-          alert(body.error || 'Failed to add ingredient');
+          setAddError(body.error || 'Failed to add ingredient');
         }
         return;
       }
 
-      setNewItem({ name: '', unit: 'kg', currentStock: '', prize: '' });
+      setNewItem({ name: '', unit: 'kg', currentStock: '', prize: '', image: null, imagePreview: null });
 
       setShowAddModal(false);
 
@@ -5497,10 +5618,27 @@ export function KitchenInventory() {
 
       console.error('[KitchenInventory] Add item failed:', err);
 
-      alert('Failed to add ingredient');
+      setAddError(err.message || 'Failed to add ingredient');
 
     }
 
+  };
+
+  const handleImageEditSave = async () => {
+    if (!editingImageItem || !imageEditPreview) return;
+    try {
+      const imageUrl = await uploadImageToCloudinary(imageEditPreview, editingImageItem.name);
+      await fetch(`${API_BASE}/api/inventory/kitchen/items/${editingImageItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ image: imageUrl }),
+      });
+      setItems(prev => prev.map(i => i.id === editingImageItem.id ? { ...i, image: imageUrl } : i));
+      setEditingImageItem(null);
+      setImageEditPreview(null);
+    } catch (err) {
+      console.error('[KitchenInventory] Image edit failed:', err);
+    }
   };
 
 
@@ -6200,7 +6338,11 @@ export function KitchenInventory() {
 
           <button
 
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setNewItem({ name: '', unit: 'kg', currentStock: '', prize: '', image: null, imagePreview: null });
+              setAddError(null);
+              setShowAddModal(true);
+            }}
 
             className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
 
@@ -6296,7 +6438,8 @@ export function KitchenInventory() {
 
 
 
-      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
+      {/* Laptop Table */}
+      <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
 
         <div className="overflow-x-auto">
 
@@ -6418,15 +6561,45 @@ export function KitchenInventory() {
 
                       <div className="flex items-center gap-3">
 
-                        <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-black ${isLow ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}>
+                        <div className="relative group">
 
-                          <Package size={16} />
+                          {item.image ? (
+
+                            <img
+
+                              src={item.image}
+
+                              alt={item.name}
+
+                              className="h-12 w-12 rounded-full object-cover border border-gray-200 shadow-sm shrink-0"
+
+                            />
+
+                          ) : (
+
+                            <IngredientAvatar name={item.name} />
+
+                          )}
+
+                          <button
+
+                            onClick={(e) => { e.stopPropagation(); setEditingImageItem(item); setImageEditPreview(null); }}
+
+                            className="absolute -bottom-1 -right-1 p-1 bg-white rounded-full shadow border border-gray-200 text-gray-500 hover:text-[#E53935] opacity-0 group-hover:opacity-100 transition-opacity"
+
+                            title="Change image"
+
+                          >
+
+                            <Pencil size={10} />
+
+                          </button>
 
                         </div>
 
                         <div>
 
-                          <p className="font-black text-gray-900">{item.name}</p>
+                          <p className="font-black text-gray-900 text-sm">{item.name}</p>
 
                           {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
 
@@ -6537,7 +6710,78 @@ export function KitchenInventory() {
 
       </div>
 
+      {/* Mobile Card List */}
+      <div className="block md:hidden space-y-3">
+        {filteredItems.map((item) => {
+          const isLow = item.currentStock <= item.reorderLevel && item.reorderLevel > 0;
+          const price = Number(item.price || 0);
+          const hasEntry = !!item.todayEntry;
+          const isCarryOver = item.todayEntry?.isCarryOver === true;
+          const opening  = hasEntry ? Number(item.todayEntry.openingStock  ?? 0) : null;
+          const purchase = hasEntry ? Number(item.todayEntry.addedStock    ?? 0) : null;
+          const consumed = hasEntry ? Number(item.todayEntry.consumedStock ?? 0) : null;
+          const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
+          const totalStock = hasEntry ? opening + purchase : null;
+          const fmtAmt = (val) => val == null ? '—' : `₹${Number(val).toFixed(0)}`;
+          const fmtVal = (val, suffix = '') => val == null ? '—' : `${val} ${suffix}`.trim();
 
+          return (
+            <div key={item.id} className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 ${isCarryOver ? 'bg-blue-50/40' : ''}`}>
+              <div className="flex items-start gap-3">
+                <div className="relative">
+                  {item.image ? (
+                    <img src={item.image} alt={item.name} className="h-16 w-16 rounded-lg object-cover border border-gray-200 shrink-0" />
+                  ) : (
+                    <IngredientAvatar name={item.name} />
+                  )}
+                  <button
+                    onClick={() => { setEditingImageItem(item); setImageEditPreview(null); }}
+                    className="absolute -bottom-1 -right-1 p-1 bg-white rounded-full shadow border border-gray-200 text-gray-500 hover:text-[#E53935]"
+                    title="Change image"
+                  >
+                    <Pencil size={10} />
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className="font-black text-gray-900 truncate">{item.name}</p>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">{item.unit}</span>
+                  </div>
+                  <p className="text-sm font-bold text-gray-900 mt-0.5">₹{price.toFixed(2)} <span className="text-[10px] font-medium text-gray-400">/ unit</span></p>
+                  {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase">Opening</p>
+                  <p className="text-sm font-black text-gray-900">{fmtVal(opening, item.unit)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase">Purchase</p>
+                  <p className="text-sm font-black text-gray-900">{fmtVal(purchase, item.unit)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase">Consumed</p>
+                  <p className="text-sm font-black text-gray-900">{fmtVal(consumed, item.unit)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase">Balance</p>
+                  <p className="text-sm font-black text-gray-900">{fmtVal(closingStock, item.unit)}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
+                <div>
+                  <p className="text-[9px] font-bold text-gray-400 uppercase">Total Value</p>
+                  <p className="text-sm font-black text-[#B71C1C]">{totalStock != null ? fmtAmt(totalStock * price) : '—'}</p>
+                </div>
+                <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-red-600 hover:text-red-500">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {items.length === 0 && (
 
@@ -6595,11 +6839,41 @@ export function KitchenInventory() {
 
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
 
+            {/* Image Upload */}
+            <div className="flex items-center gap-3">
+              {newItem.imagePreview ? (
+                <img src={newItem.imagePreview} alt="Preview" className="h-12 w-12 rounded-full object-cover border border-gray-200" />
+              ) : (
+                <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                  <Package size={20} />
+                </div>
+              )}
+              <label className="flex-1 cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files[0]) {
+                      compressImage(e.target.files[0], (b64) => {
+                        setNewItem(prev => ({ ...prev, image: b64, imagePreview: b64 }));
+                      });
+                    }
+                  }}
+                />
+                <span className="block w-full px-4 py-2 border border-gray-200 border-dashed rounded-lg text-sm text-gray-500 hover:border-[#E53935] hover:text-[#E53935] transition-colors text-center">
+                  {newItem.imagePreview ? 'Change Image' : 'Upload Image'}
+                </span>
+              </label>
+            </div>
+
+            {addError && <p className="text-red-600 text-xs font-bold">{addError}</p>}
+
             <div className="flex gap-3 pt-2">
 
-              <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
+              <button onClick={() => { setShowAddModal(false); setAddError(null); }} disabled={adding} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm disabled:opacity-50">Cancel</button>
 
-              <button onClick={handleAddItem} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Add</button>
+              <button onClick={handleAddItem} disabled={adding} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50 disabled:cursor-not-allowed">{adding ? 'Saving…' : 'Add'}</button>
 
             </div>
 
@@ -6609,7 +6883,43 @@ export function KitchenInventory() {
 
       )}
 
-
+      {/* Inline Image Edit Modal */}
+      {editingImageItem && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setEditingImageItem(null); setImageEditPreview(null); }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-gray-900">Edit Image</h3>
+            <p className="text-sm text-gray-500">{editingImageItem.name}</p>
+            <div className="flex justify-center">
+              {imageEditPreview ? (
+                <img src={imageEditPreview} alt="Preview" className="h-32 w-32 rounded-full object-cover border border-gray-200" />
+              ) : editingImageItem.image ? (
+                <img src={editingImageItem.image} alt={editingImageItem.name} className="h-32 w-32 rounded-full object-cover border border-gray-200" />
+              ) : (
+                <IngredientAvatar name={editingImageItem.name} />
+              )}
+            </div>
+            <label className="block cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files[0]) {
+                    compressImage(e.target.files[0], (b64) => setImageEditPreview(b64));
+                  }
+                }}
+              />
+              <span className="block w-full px-4 py-2 border border-gray-200 border-dashed rounded-lg text-sm text-gray-500 hover:border-[#E53935] hover:text-[#E53935] transition-colors text-center">
+                {imageEditPreview ? 'Change Image' : 'Choose New Image'}
+              </span>
+            </label>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => { setEditingImageItem(null); setImageEditPreview(null); }} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
+              <button onClick={handleImageEditSave} disabled={!imageEditPreview} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Selling Modal */}
 
@@ -13977,7 +14287,18 @@ export function BarTables() {
 
   const { tables } = useBarTableSync();
 
+  const [staffMap, setStaffMap] = useState({});
 
+  useEffect(() => {
+    fetch(`${API_BASE}/api/auth/staff`, { headers: { ...getAuthHeaders() } })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const map = {};
+        (Array.isArray(data) ? data : []).forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
+        setStaffMap(map);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
 
@@ -14083,7 +14404,7 @@ export function BarTables() {
 
         const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
 
-        const pCaptainName = pTable.captainName || pTable.captainId || 'Staff';
+        const pCaptainName = pTable.captainName || staffMap[pTable.captainId] || 'Staff';
 
         
 
@@ -14091,7 +14412,7 @@ export function BarTables() {
 
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in duration-200" onClick={() => setActivePopupTableId(null)}>
 
-            <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={(e) => e.stopPropagation()}>
 
                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
 
@@ -14631,51 +14952,6 @@ export function BarMenuPage() {
 
 
 
-  // Cloudinary direct upload — bypasses backend proxy for 2-4s vs 10-15s latency
-
-  const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
-
-    // Convert base64 data URI → Blob for multipart/form-data upload
-
-    const [, b64] = base64DataUri.split(',');
-
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-
-    const blob = new Blob([bytes], { type: 'image/jpeg' });
-
-
-
-    const formData = new FormData();
-
-    formData.append('file', blob, 'image.jpg');
-
-    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
-
-    if (itemName?.trim()) {
-
-      formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
-
-    }
-
-
-
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dnlhxmtqu';
-
-    const res = await fetch(
-
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-
-      { method: 'POST', body: formData }
-
-    );
-
-    const data = await res.json();
-
-    if (!data.secure_url) throw new Error(data?.error?.message || 'Cloudinary upload failed');
-
-    return data.secure_url;
-
-  };
 
 
 
