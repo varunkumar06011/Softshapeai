@@ -4088,7 +4088,7 @@ export function MenuPage({ onAddDish }) {
 
           </div>
 
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-4 overflow-y-auto min-h-0">
 
             <div>
 
@@ -4490,7 +4490,7 @@ export function MenuPage({ onAddDish }) {
 
           </div>
 
-          <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
+          <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50 shrink-0">
 
             <button onClick={() => { setAddingItem(null); setRecipeRows([]); }} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
 
