@@ -588,6 +588,8 @@ const CashierDashboard = ({ onLogout }) => {
   // snapshot. Without this sync, handleFinalBill can't find the real orderId and modal shows stale data.
   useEffect(() => {
     if (!selectedTable?.isExtra) return;
+    // Guard: skip during KOT submission to prevent duplicate items in display cart
+    if (isSubmittingKotRef.current) return;
     const fresh = extraTables.find(et => et.id === selectedTable.id);
     if (!fresh) return;
     // Only update if something meaningful changed to avoid infinite loops
@@ -1095,19 +1097,23 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs1 && Date.now() - termTs1 < 5000) return;
       // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
-        setSelectedTable(prev => {
-          if (!prev) return prev;
-          const before = prev;
-          const nextVal = {
-            ...prev,
-            activeOrder: mergeOrder(order, prev.activeOrder),
-            status: prev.status === 'Free' ? 'Occupied' : prev.status,
-            workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
-            currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-          };
-          validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
-          return nextVal;
-        });
+        // Guard: skip during KOT submission to prevent duplicate items in display cart
+        // (socket event would add items to sessionItems while they're still in pendingItems)
+        if (!isSubmittingKotRef.current) {
+          setSelectedTable(prev => {
+            if (!prev) return prev;
+            const before = prev;
+            const nextVal = {
+              ...prev,
+              activeOrder: mergeOrder(order, prev.activeOrder),
+              status: prev.status === 'Free' ? 'Occupied' : prev.status,
+              workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
+              currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            };
+            validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
+            return nextVal;
+          });
+        }
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
@@ -1198,13 +1204,16 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs2 && Date.now() - termTs2 < 5000) return;
       // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
-        setSelectedTable(prev => {
-          if (!prev) return prev;
-          const before = prev;
-          const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) };
-          validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
-          return nextVal;
-        });
+        // Guard: skip during KOT submission to prevent duplicate items in display cart
+        if (!isSubmittingKotRef.current) {
+          setSelectedTable(prev => {
+            if (!prev) return prev;
+            const before = prev;
+            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) };
+            validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
+            return nextVal;
+          });
+        }
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
@@ -1276,6 +1285,8 @@ const CashierDashboard = ({ onLogout }) => {
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
       if (selectedTable?.backendId === table.id && !selectedTable?.isExtra) {
+        // Guard: skip during KOT submission to prevent duplicate items in display cart
+        if (isSubmittingKotRef.current) return;
         setSelectedTable(prev => {
           if (!prev) return prev;
 
@@ -1545,6 +1556,10 @@ const CashierDashboard = ({ onLogout }) => {
   }, [txnDateFilter, activeTab]);
 
   useEffect(() => {
+    // Guard: skip during KOT submission — handleSmartKOT updates selectedTable + cart synchronously
+    // after the API resolves. Letting this effect run mid-submission would merge stale activeTables
+    // data and cause duplicate items in the display cart.
+    if (isSubmittingKotRef.current) return;
     if (!selectedTable?.backendId) return;
     // Extra tables share backendId with their parent table. The parent may be AVAILABLE
     // (already settled), which would cause this effect to null out the extra table's
@@ -2399,10 +2414,7 @@ const CashierDashboard = ({ onLogout }) => {
               sgst: sgstAmt,
               discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
               captain: 'Walk-in',
-              sectionTag: (fetchedSections.find(s => {
-                const n = (s.name || '').toLowerCase();
-                return n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY';
-              })?.sectionTag) || 'venue-restaurant-parcel',
+              sectionTag: (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel',
               requestId
             }
           },
@@ -2470,10 +2482,7 @@ const CashierDashboard = ({ onLogout }) => {
             sgst: sgstAmt,
             discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
             captain: 'Walk-in',
-            sectionTag: (fetchedSections.find(s => {
-              const n = (s.name || '').toLowerCase();
-              return n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY';
-            })?.sectionTag) || 'venue-restaurant-parcel',
+            sectionTag: (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel',
             requestId
           }
         })
@@ -4092,6 +4101,8 @@ const CashierDashboard = ({ onLogout }) => {
                             const firstBarSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
                             const firstBarIdentifier = firstBarSection?.name || '';
                             if (section.venue?.venueType === 'BAR' && section.name === firstBarIdentifier && firstBarIdentifier) return false;
+                            // Skip KOT-off sections — they show walk-in tables instead of regular tables
+                            if (section.venue?.kotEnabled === false) return false;
                             const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
                             if (activeOutlet === 'both') return true;
                             return sectionOutlet === activeOutlet;
@@ -4120,8 +4131,7 @@ const CashierDashboard = ({ onLogout }) => {
                         }
                         {activeOutlet === 'restaurant' && fetchedSections.some(s => {
                           const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
-                          const n = (s.name || '').toLowerCase();
-                          return sourceKey === tableSubCategory && (n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY');
+                          return sourceKey === tableSubCategory && s.venue?.kotEnabled === false;
                         }) && (
                           <div className="mt-4">
                             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
@@ -5157,8 +5167,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="pt-0.5">
                         {(isWalkinMode || (activeOutlet === 'restaurant' && fetchedSections.some(s => {
                           const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
-                          const n = (s.name || '').toLowerCase();
-                          return sourceKey === tableSubCategory && (n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY');
+                          return sourceKey === tableSubCategory && s.venue?.kotEnabled === false;
                         }))) ? (
                           <button
                             onClick={handleWalkinFinalBill}
@@ -5425,10 +5434,9 @@ const CashierDashboard = ({ onLogout }) => {
                         // Determine section context for restaurant outlet
                         const sectionTag = (selectedTable?.sectionTag || '').toLowerCase();
                         const tableSection = fetchedSections.find(s => s.sectionTag?.toLowerCase() === sectionTag);
-                        const sectionName = (selectedTable?.section?.name || '').toLowerCase();
                         const isParcelSection = tableSection
-                          ? ['parcel', 'takeaway', 'go box', 'gobox'].some(t => (tableSection.name || '').toLowerCase().includes(t)) || tableSection.venue?.venueType === 'TAKEAWAY'
-                          : ['parcel', 'takeaway', 'go box', 'gobox'].some(t => sectionName.includes(t));
+                          ? tableSection.venue?.kotEnabled === false
+                          : (selectedTable?.section?.venue?.kotEnabled === false);
                         const isRestaurantSection = activeOutlet === 'restaurant' || (tableSection && tableSection.venue?.venueType !== 'BAR');
                         const isFamilyRestaurant = isRestaurantSection && !isParcelSection;
 

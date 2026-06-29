@@ -55,7 +55,6 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
   const [errors, setErrors] = useState({});
   const [emailExists, setEmailExists] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
-  const [emailExistsCode, setEmailExistsCode] = useState(null);
 
   // Phone OTP state
   const [phoneOtpStatus, setPhoneOtpStatus] = useState('idle');
@@ -118,14 +117,12 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
 
     setEmailChecking(true);
     setEmailExists(false);
-    setEmailExistsCode(null);
 
     try {
       const res = await apiFetch(`/api/onboard/check-email?email=${encodeURIComponent(email)}`);
       const json = await res.json();
       if (json.exists) {
         setEmailExists(true);
-        setEmailExistsCode(json.restaurantCode || null);
         setErrors(prev => ({ ...prev, email: null }));
       }
     } catch {
@@ -307,7 +304,6 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
               onChange={(e) => {
                 handleChange('email', e.target.value);
                 setEmailExists(false);
-                setEmailExistsCode(null);
               }}
               onBlur={handleEmailBlur}
               className={`w-full pl-10 pr-4 py-3 bg-white border rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-red-100 text-gray-900 transition-all ${
@@ -323,19 +319,8 @@ const StepOwner = ({ data, onChange, onNext, onBack, sessionId }) => {
           {emailExists && (
             <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex flex-col gap-1">
               <p className="text-sm font-bold text-red-700">
-                This email is already registered to a restaurant.
+                This email is already in use, please use another email.
               </p>
-              <p className="text-xs text-red-500">
-                {emailExistsCode
-                  ? `Your restaurant code is ${emailExistsCode}. Please log in instead.`
-                  : 'Please log in with your existing credentials, or contact support.'}
-              </p>
-              <a
-                href="/admin"
-                className="mt-1 text-xs font-bold text-red-700 underline underline-offset-2 w-fit"
-              >
-                Go to Login →
-              </a>
             </div>
           )}
           <p className="text-xs text-gray-400 mt-1">You&apos;ll verify this later from your account settings</p>

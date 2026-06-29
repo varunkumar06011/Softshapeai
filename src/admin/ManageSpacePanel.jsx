@@ -105,12 +105,12 @@ function SpaceEditor({ onBack }) {
     return nums.length > 0 ? Math.max(...nums) + 1 : 1;
   };
 
-  const handleAddVenue = async (name, venueType) => {
-    try { await createVenue({ name, venueType }); await loadVenues(); showSuccess(`Venue "${name}" created`); }
+  const handleAddVenue = async (name, venueType, kotEnabled) => {
+    try { await createVenue({ name, venueType, kotEnabled }); await loadVenues(); showSuccess(`Venue "${name}" created`); }
     catch (err) { setError(err.message); }
   };
-  const handleRenameVenue = async (id, name, venueType) => {
-    try { await updateVenue(id, { name, venueType }); await loadVenues(); showSuccess('Venue updated'); }
+  const handleRenameVenue = async (id, name, venueType, kotEnabled) => {
+    try { await updateVenue(id, { name, venueType, kotEnabled }); await loadVenues(); showSuccess('Venue updated'); }
     catch (err) { setError(err.message); }
   };
   const handleDeleteVenue = async (id, name, sectionsCount) => {
@@ -238,12 +238,17 @@ function AddVenueInline({ onAdd }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('DINE_IN');
-  const submit = () => { if (name.trim()) { onAdd(name.trim(), type); setName(''); setType('DINE_IN'); setOpen(false); } };
+  const [kotOn, setKotOn] = useState(true);
+  const submit = () => { if (name.trim()) { onAdd(name.trim(), type, kotOn); setName(''); setType('DINE_IN'); setKotOn(true); setOpen(false); } };
   if (!open) return <button onClick={() => setOpen(true)} className={cls.btnRed}><Plus size={13} /> Add Venue</button>;
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setOpen(false); setName(''); } }} placeholder="Venue name…" className={cls.input + ' w-40'} />
       <select value={type} onChange={e => setType(e.target.value)} className={cls.input + ' w-32'}>{VENUE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+      <button type="button" onClick={() => setKotOn(v => !v)} className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${kotOn ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={kotOn ? 'KOT ON' : 'KOT OFF — direct bill only'}>
+        <span className={`w-2 h-2 rounded-full ${kotOn ? 'bg-green-500' : 'bg-gray-400'}`} />
+        KOT: {kotOn ? 'ON' : 'OFF'}
+      </button>
       <button onClick={submit} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
       <button onClick={() => { setOpen(false); setName(''); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
     </div>
@@ -254,13 +259,14 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(venue.name);
   const [typeInput, setTypeInput] = useState(venue.venueType || 'DINE_IN');
+  const [kotInput, setKotInput] = useState(venue.kotEnabled !== false);
   const [addingSection, setAddingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
 
   const sections = [...(venue.sections || []), ...((venue.floors || []).flatMap(f => f.sections || []))];
   const totalTables = sections.reduce((a, s) => a + (s.tables?.length || 0), 0);
 
-  const saveVenue = () => { if (nameInput.trim()) onRenameVenue(venue.id, nameInput.trim(), typeInput); setEditing(false); };
+  const saveVenue = () => { if (nameInput.trim()) onRenameVenue(venue.id, nameInput.trim(), typeInput, kotInput); setEditing(false); };
   const addSection = () => { if (newSectionName.trim()) { onAddSection(newSectionName.trim(), venue.id); setNewSectionName(''); setAddingSection(false); } };
 
   return (
@@ -272,13 +278,18 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
           <div className="flex items-center gap-2 flex-1 flex-wrap">
             <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveVenue(); if (e.key === 'Escape') { setEditing(false); setNameInput(venue.name); } }} className={cls.input + ' max-w-[160px]'} />
             <select value={typeInput} onChange={e => setTypeInput(e.target.value)} className={cls.input + ' max-w-[120px]'}>{VENUE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+            <button type="button" onClick={() => setKotInput(v => !v)} className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${kotInput ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={kotInput ? 'KOT ON' : 'KOT OFF — direct bill only'}>
+              <span className={`w-2 h-2 rounded-full ${kotInput ? 'bg-green-500' : 'bg-gray-400'}`} />
+              KOT: {kotInput ? 'ON' : 'OFF'}
+            </button>
             <button onClick={saveVenue} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
-            <button onClick={() => { setEditing(false); setNameInput(venue.name); setTypeInput(venue.venueType || 'DINE_IN'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
+            <button onClick={() => { setEditing(false); setNameInput(venue.name); setTypeInput(venue.venueType || 'DINE_IN'); setKotInput(venue.kotEnabled !== false); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="font-bold text-sm text-gray-900 truncate">{venue.name}</span>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${venueTypeColor(venue.venueType)}`}>{venueTypeLabel(venue.venueType)}</span>
+            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${venue.kotEnabled !== false ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={venue.kotEnabled !== false ? 'KOT printing enabled' : 'KOT printing disabled — direct bill only'}>KOT: {venue.kotEnabled !== false ? 'ON' : 'OFF'}</span>
             <span className="text-[10px] text-gray-400 flex-shrink-0">{sections.length} section{sections.length !== 1 ? 's' : ''} · {totalTables} table{totalTables !== 1 ? 's' : ''}</span>
           </div>
         )}

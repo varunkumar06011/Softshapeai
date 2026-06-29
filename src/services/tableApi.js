@@ -134,20 +134,20 @@ export async function deleteTable(tableId) {
 
 // ── Venue CRUD ──────────────────────────────────────────────────────────────
 
-export async function createVenue({ name, venueType, sortOrder }) {
+export async function createVenue({ name, venueType, kotEnabled, sortOrder }) {
   const res = await fetch(apiUrl("/api/venues"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ name, venueType, sortOrder }),
+    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder }),
   });
   return parseResponse(res);
 }
 
-export async function updateVenue(id, { name, venueType, sortOrder, isActive }) {
+export async function updateVenue(id, { name, venueType, kotEnabled, sortOrder, isActive }) {
   const res = await fetch(apiUrl(`/api/venues/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ name, venueType, sortOrder, isActive }),
+    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder, isActive }),
   });
   return parseResponse(res);
 }

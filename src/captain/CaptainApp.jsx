@@ -465,9 +465,17 @@ export default function CaptainApp({ onLogout }) {
       });
   }, []);
 
-  const { tables: barTables, setTables: setBarTables } = useBarTableSync();
+  // Refs needed by table sync guards — declared early so they're available to useTableSync/useBarTableSync
+  const isSubmittingKotRef = useRef(false);
+  const activeTableIdRef = useRef(null);
 
-  const { tables, setTables, isSyncing: tablesLoading, refetch: refetchRestaurantTables } = useTableSync();
+  const { tables: barTables, setTables: setBarTables } = useBarTableSync({
+    shouldSkipTableUpdate: (t) => isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current),
+  });
+
+  const { tables, setTables, isSyncing: tablesLoading, refetch: refetchRestaurantTables } = useTableSync({
+    shouldSkipTableUpdate: (t) => isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current),
+  });
 
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
 
@@ -627,10 +635,8 @@ export default function CaptainApp({ onLogout }) {
   // value without needing to be in its dependency array.
 
   const activeOrderIdRef = useRef(null);
-  const activeTableIdRef = useRef(null);
   const kotRequestIdRef = useRef(null);
 
-  const isSubmittingKotRef = useRef(false);
   const kotSubmitStartRef = useRef(0); // timestamp guard against stuck submissions
   const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
@@ -1546,6 +1552,8 @@ export default function CaptainApp({ onLogout }) {
       if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
+        // Guard: skip active table during KOT submission to prevent duplicate items in display
+        if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
 
         const incomingIsAvailable = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
@@ -1585,6 +1593,8 @@ export default function CaptainApp({ onLogout }) {
       if (!order?.tableId) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
+        // Guard: skip active table during KOT submission to prevent duplicate items in display
+        if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
         // Merge incoming items with existing so KOTs don't vanish
         const mergedItems = mergeOrderItems(t.activeOrder?.items || [], order.items || []);
         const mergedOrder = { ...(t.activeOrder || {}), ...order, items: mergedItems };
@@ -1612,6 +1622,8 @@ export default function CaptainApp({ onLogout }) {
       if (!order?.tableId) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
+        // Guard: skip active table during KOT submission to prevent duplicate items in display
+        if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
         // Merge items with existing so previously sent KOT items don't vanish
         // if order:created arrives after order:updated (socket race condition)
         const mergedItems = mergeOrderItems(t.activeOrder?.items || [], order.items || []);

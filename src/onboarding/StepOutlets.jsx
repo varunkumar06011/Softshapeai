@@ -104,6 +104,7 @@ const StepOutlets = ({ outlets, outletCount, parentType, mainVenues, mainMenu, o
       return {
         name: v.name,
         venueType: v.venueType || 'DINE_IN',
+        kotEnabled: v.kotEnabled !== false,
         sections: [...sections, ...directSections],
       };
     });

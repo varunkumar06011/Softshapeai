@@ -363,7 +363,7 @@ async function persistStatusChanges(prevTables, nextTables) {
   return [];
 }
 
-export function useBarTableSync() {
+export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
     if (cached.length > 0) {
@@ -450,7 +450,11 @@ export function useBarTableSync() {
         return row;
       });
       // Deduplicate by backendId to prevent duplicate cards
-      const deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
+      let deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
+      // Guard: preserve active table's existing entry during KOT submission to prevent duplicate display
+      if (shouldSkipTableUpdate) {
+        deduped = deduped.map(t => shouldSkipTableUpdate(t) ? (current.find(c => c.backendId === t.backendId) || t) : t);
+      }
       writeCache(deduped);
       return deduped;
     });
@@ -483,6 +487,8 @@ export function useBarTableSync() {
         setTablesState((prev) => {
           const next = prev.map((t) => {
             if (t.backendId !== updatedTable.id) return t;
+            // Guard: skip active table during KOT submission to prevent duplicate items in display
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
             // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
@@ -536,19 +542,20 @@ export function useBarTableSync() {
         if (!order?.tableId) return;
         if (isRecentlyTerminated(order.tableId)) return;
         setTablesState((prev) => {
-          const next = prev.map((t) =>
-            t.backendId === order.tableId
-              ? {
-                  ...t,
-                  status: t.status === 'Free' ? 'Occupied' : t.status,
-                  workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
-                  activeOrder: mergeOrder(order, t.activeOrder),
-                  items: mergeOrderItems(t.items || [], order.items || []),
-                  currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-                  lastUpdatedAt: Date.now(),
-                }
-              : t
-          );
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            // Guard: skip active table during KOT submission to prevent duplicate items in display
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            return {
+              ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              items: mergeOrderItems(t.items || [], order.items || []),
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+              lastUpdatedAt: Date.now(),
+            };
+          });
           writeCache(next);
           return next;
         });
@@ -560,6 +567,8 @@ export function useBarTableSync() {
         setTablesState((prev) => {
           const next = prev.map((t) => {
             if (t.backendId !== order.tableId) return t;
+            // Guard: skip active table during KOT submission to prevent duplicate items in display
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
             if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
               console.warn('[BarTableSync] Ignoring stale order:updated for settled table', t.number);
               return t;
