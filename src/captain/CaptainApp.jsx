@@ -2195,13 +2195,6 @@ export default function CaptainApp({ onLogout }) {
     if (now - lastAdd < 2000) return; // 2-second cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
-    // Global 2s cooldown — any item add blocks all other item adds
-    const existingInCart = (tableCarts[activeTableId] ?? []).find(i => i.n === item.n);
-    if (!existingInCart) {
-      if (now - lastAnyItemAddedRef.current < 2000) return;
-      lastAnyItemAddedRef.current = now;
-    }
-
     const finalPrice = variant ? Number(variant.price) : item.p;
 
 

@@ -41,7 +41,6 @@ import { validateTableIntegrity } from '../utils/syncInvariant';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
-import { updateTableSession } from '../services/tableApi';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getTenantScopedKey, getTablesCacheKey, getBarTablesCacheKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext';
@@ -52,7 +51,6 @@ import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { authService } from '../services/authService';
-import { updateBarTableSession, deleteBarTableSession } from '../services/barTableApi';
 import ItemAnalytics from './ItemAnalytics';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
@@ -569,7 +567,7 @@ const CashierDashboard = ({ onLogout }) => {
     setExtraTables(prev => {
       const filtered = prev.filter(et => {
         const termTs = recentlyTerminatedRef.current[et.id];
-        return !(termTs && Date.now() - termTs < 30000);
+        return !(termTs && Date.now() - termTs < 5000);
       });
       return filtered;
     });
@@ -612,13 +610,9 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
-    // --- Bill-print cooldown: ignore all sync for 5s after printing ---
-    const billCooldownUntil = billPrintCooldownRef.current.get(tableId) || 0;
-    if (Date.now() < billCooldownUntil) return true;
-
-    // --- Recently terminated (survives hard refresh via localStorage for 30s) ---
+    // --- Recently terminated (survives hard refresh via localStorage for 5s) ---
     const termTs = recentlyTerminatedRef.current[tableId];
-    if (termTs && Date.now() - termTs < 30000) return true;
+    if (termTs && Date.now() - termTs < 5000) return true;
 
     // --- Bill printed but not yet settled: block any status that would revert to non-Waiting-Bill ---
     if (billPrintedTableIdsRef.current.has(tableId)) {
@@ -871,11 +865,10 @@ const CashierDashboard = ({ onLogout }) => {
           : subtotal && discountAmount > 0
             ? Math.round((discountAmount / subtotal) * 10000) / 100
             : 0;
-        const source = txn._sourceRestaurantId === getCurrentRestaurantId()
-          ? (sectionTagToSource[txn.sectionTag] || txn.sectionTag || 'venue')
-          : txn._sourceRestaurantId === getCurrentRestaurantId()
-            ? 'restaurant'
-            : 'bar';
+        const source = sectionTagToSource[txn.sectionTag]
+          || (txn.sectionTag && txn.sectionTag.startsWith('venue-bar') ? 'bar'
+            : txn.sectionTag && txn.sectionTag.startsWith('venue-restaurant') ? 'restaurant'
+            : txn.sectionTag || activeOutlet);
 
         return {
           id: txn.id,
@@ -949,7 +942,12 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
       console.log(`[Transactions] Applying gen=${myGeneration}, total=${sorted.length}`);
-      setPastTransactions(sorted);
+      // Merge: keep existing transactions that aren't in the new fetch (preserves optimistic settlements)
+      setPastTransactions(prev => {
+        const newIds = new Set(sorted.map(t => t.id));
+        const preserved = prev.filter(t => !newIds.has(t.id));
+        return [...sorted, ...preserved];
+      });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
 
       // Only cache today's data + add version stamp
@@ -1094,7 +1092,7 @@ const CashierDashboard = ({ onLogout }) => {
       // NOTE: no shouldBlockTableUpdate here — item additions must never be suppressed by the bill-print cooldown
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs1 = recentlyTerminatedRef.current[order.tableId];
-      if (termTs1 && Date.now() - termTs1 < 30000) return;
+      if (termTs1 && Date.now() - termTs1 < 5000) return;
       // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => {
@@ -1201,7 +1199,7 @@ const CashierDashboard = ({ onLogout }) => {
       // NOTE: no shouldBlockTableUpdate here — item updates (captain adding items) must always be visible
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs2 = recentlyTerminatedRef.current[order.tableId];
-      if (termTs2 && Date.now() - termTs2 < 30000) return;
+      if (termTs2 && Date.now() - termTs2 < 5000) return;
       // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         setSelectedTable(prev => {
@@ -1214,9 +1212,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
-      // Click cooldown: skip grid updates for 1.5s after a table is clicked
-      const clickTs2 = tableClickCooldownRef.current.get(order.tableId);
-      if (clickTs2 && Date.now() < clickTs2) return;
+      // No click cooldown — real-time updates from captain must always be visible
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1232,9 +1228,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
-      // Click cooldown: skip socket updates for 1.5s after a table is clicked
-      const clickTs = tableClickCooldownRef.current.get(table.id);
-      if (clickTs && Date.now() < clickTs) return;
+      // No click cooldown — real-time updates must always be processed
       if (shouldBlockTableUpdate(table.id, table.status)) return;
       if (terminatedTableIdsRef.current.has(table.id)) return;
       const applyTableUpdate = (prev) => prev.map(t => {
@@ -1263,10 +1257,13 @@ const CashierDashboard = ({ onLogout }) => {
           ? (table.orders[0] || null)
           : (t.activeOrder || null);  // keep existing if socket didn't send orders
         // Never downgrade a table that is locally in 'Waiting Bill' state back to a lesser state
-        const protectedStatus = (t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill')
+        // Also protect tables where bill was printed but not yet settled
+        const isBillPrintedGrid = billPrintedTableIdsRef.current.has(t.backendId);
+        const isSettledGrid = settledTableIdsRef.current.has(t.backendId);
+        const protectedStatus = (t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill' || (isBillPrintedGrid && !isSettledGrid))
           && incomingStatus !== 'Free' && incomingStatus !== 'AVAILABLE'
           ? 'Waiting Bill'
-          : incomingStatus;
+          : ((isBillPrintedGrid && !isSettledGrid && (incomingStatus === 'Free' || incomingStatus === 'AVAILABLE')) ? 'Waiting Bill' : incomingStatus);
         const incomingBillAmt = table.currentBill ?? table.orders?.[0]?.totalAmount ?? t.currentBill;
         const isIncomingFree = (table.workflowStatus === 'Free' || table.status === 'AVAILABLE' || table.status === 'Free');
         const resolvedBill = isIncomingFree ? 0 : Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0));
@@ -1297,15 +1294,19 @@ const CashierDashboard = ({ onLogout }) => {
 
           const isTableFree = (table.workflowStatus || table.status) === 'Free';
           const isTableSettled = settledTableIdsRef.current.has(prev.backendId);
+          const isBillPrinted = billPrintedTableIdsRef.current.has(prev.backendId);
+          // If bill was printed but not settled, do NOT let socket set table to Free
+          // (that would clear the bill-printed flag and revert button to "Final Bill")
+          const effectiveIsTableFree = isTableFree && (!isBillPrinted || isTableSettled);
           // Always clear kotHistory when table becomes Free — a Free table must have zero KOT history
-          const shouldClearKotHistory = isTableFree;
+          const shouldClearKotHistory = effectiveIsTableFree;
           const incomingHasOrdersSel = Array.isArray(table.orders) && table.orders.length > 0;
-          const mergedKotHistory = isTableFree
+          const mergedKotHistory = effectiveIsTableFree
             ? []
             : dedupKotHistory(prev.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
           // Never flicker bill to 0 unless table is actually free
-          const incomingBill = isTableFree ? 0 : (table.currentBill ?? prev.currentBill);
-          const stableBill = isTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
+          const incomingBill = effectiveIsTableFree ? 0 : (table.currentBill ?? prev.currentBill);
+          const stableBill = effectiveIsTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
           const protectedStatusSel = (prev.status === 'Waiting Bill' || prev.workflowStatus === 'Waiting Bill')
             && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
             ? 'Waiting Bill'
@@ -1314,9 +1315,9 @@ const CashierDashboard = ({ onLogout }) => {
             ...prev,
             kotHistory: shouldClearKotHistory ? [] : mergedKotHistory,
             currentBill: stableBill,
-            status: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
-            workflowStatus: isTableFree && isTableSettled ? 'Free' : protectedStatusSel,
-            activeOrder: (isTableFree && isTableSettled)
+            status: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
+            workflowStatus: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
+            activeOrder: (effectiveIsTableFree && isTableSettled)
               ? null
               : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder),  // merge, never replace
           };
@@ -1421,7 +1422,7 @@ const CashierDashboard = ({ onLogout }) => {
         } catch {}
         setTimeout(() => {
           delete recentlyTerminatedRef.current[sourceTableId];
-        }, 10000);
+        }, 3000);
       }
 
       // If cashier had the source table open, switch selection to the new table
@@ -1442,18 +1443,14 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Cooldown on both tables to prevent socket echo flickering on all devices
-      if (payload?.sourceTableId) tableClickCooldownRef.current.set(payload.sourceTableId, Date.now() + 5000);
-      if (payload?.targetTableId) tableClickCooldownRef.current.set(payload.targetTableId, Date.now() + 5000);
-      syncPauseUntilRef.current = Date.now() + 5000;
+      if (payload?.sourceTableId) tableClickCooldownRef.current.set(payload.sourceTableId, Date.now() + 1500);
+      if (payload?.targetTableId) tableClickCooldownRef.current.set(payload.targetTableId, Date.now() + 1500);
+      syncPauseUntilRef.current = Date.now() + 1500;
     };
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
-      if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      // Skip if either table is in cooldown (just swapped)
-      const srcCooldown = tableClickCooldownRef.current.get(sourceTableId);
-      const tgtCooldown = tableClickCooldownRef.current.get(targetTableId);
-      if ((srcCooldown && Date.now() < srcCooldown) || (tgtCooldown && Date.now() < tgtCooldown)) return;
+      // No cooldown blocking — item transfers must always be processed for real-time sync
       const allTables = activeTablesRef.current;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
@@ -1752,6 +1749,45 @@ const CashierDashboard = ({ onLogout }) => {
         'Cashier',
         selectedTable.section?.restaurantId || activeRestaurantId,
       );
+
+      // Optimistic update: remove transferred items from source, let socket sync handle the rest
+      const sourceId = selectedTable.backendId;
+      const targetId = itemSwapTargetId;
+      const transferredIds = new Set(itemSwapSelectedIds);
+
+      setActiveTables(prev => prev.map(t => {
+        if (t.backendId === sourceId) {
+          const updatedItems = (t.activeOrder?.items || [])
+            .map(i => transferredIds.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i);
+          const newBill = updatedItems
+            .filter(i => !i.removedFromBill && i.quantity > 0)
+            .reduce((sum, i) => sum + Number(i.price) * Number(i.quantity), 0);
+          const allCancelled = updatedItems.every(i => i.removedFromBill || i.quantity === 0);
+          return {
+            ...t,
+            activeOrder: t.activeOrder ? { ...t.activeOrder, items: updatedItems } : t.activeOrder,
+            currentBill: allCancelled ? 0 : newBill,
+            status: allCancelled ? 'Free' : t.status,
+            workflowStatus: allCancelled ? 'Free' : t.workflowStatus,
+          };
+        }
+        return t;
+      }));
+
+      // Update selectedTable if it's the source
+      if (selectedTable?.backendId === sourceId) {
+        setSelectedTable(prev => {
+          if (!prev) return prev;
+          const updatedItems = (prev.activeOrder?.items || [])
+            .map(i => transferredIds.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i);
+          const allCancelled = updatedItems.every(i => i.removedFromBill || i.quantity === 0);
+          return {
+            ...prev,
+            activeOrder: prev.activeOrder ? { ...prev.activeOrder, items: updatedItems } : prev.activeOrder,
+          };
+        });
+      }
+
       setShowItemSwapModal(false);
       setItemSwapSelectedIds([]);
       setItemSwapTargetId(null);
@@ -1881,10 +1917,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Apply outlet-level isolation filter using sectionTag
       const isolated = filtered.filter(txn => {
-        if (!txn.sectionTag) {
-          const rid = txn._sourceRestaurantId || '';
-          return rid === getCurrentRestaurantId();
-        }
+        if (!txn.sectionTag) return true; // no sectionTag = include (backend already filtered by restaurantId)
         const mappedSource = sectionTagToSource[txn.sectionTag] || txn.sectionTag;
         if (activeOutlet === 'bar') return barSources.has(mappedSource);
         if (activeOutlet === 'restaurant') return restaurantSources.has(mappedSource);
@@ -2043,6 +2076,30 @@ const CashierDashboard = ({ onLogout }) => {
       setIsPrintingBill(true);
       lastKnownBillRef.current = 0; // Reset bill ref before print to allow recalculation
 
+      // ── BILL-PRINT GUARD: arm BEFORE the print API call to prevent socket race ──
+      const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
+      setBillPrintedTableIds(prev => {
+        const next = new Set(prev);
+        next.add(tableId);
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
+        } catch {}
+        return next;
+      });
+      // Immediately update status to 'Waiting Bill' so button changes instantly
+      setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
+      if (selectedTable.isExtra) {
+        setExtraTables(prev => prev.map(et =>
+          et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
+        ));
+      } else {
+        const updateBillStatus = (prev) =>
+          prev.map((t) =>
+            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+          );
+        setActiveTables(updateBillStatus);
+      }
+
       // Step 1: Update table discount if entered
       if (discountPercent > 0) {
         if (!selectedTable.isExtra) {
@@ -2118,52 +2175,30 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
-      // ── BILL-PRINT GUARD: arm AFTER the print API succeeds ──
-      // The button stays as "Final Bill" until the print job is confirmed.
-      const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
-      setBillPrintedTableIds(prev => {
-        const next = new Set(prev);
-        next.add(tableId);
-        try {
-          localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
-        } catch {}
-        return next;
-      });
-      // Now update table status to 'Waiting Bill' and show Settlement button
-      setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
-      billPrintCooldownRef.current.set(tableId, Date.now() + 1000);
-      if (selectedTable.isExtra) {
-        setExtraTables(prev => prev.map(et =>
-          et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
-        ));
-      } else {
-        const updateBillStatus = (prev) =>
-          prev.map((t) =>
-            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
-          );
-        setActiveTables(updateBillStatus);
+      // Update localStorage cache for the table status
+      const tableIdForCache = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
+      if (!selectedTable.isExtra && tableIdForCache) {
         try {
           const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
           const updatedCache = cached.map(t =>
-            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+            t.backendId === tableIdForCache ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
           );
           localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
         } catch {}
       }
-      // ── END GUARD SETUP ──
 
       addNotification('Success', 'Bill printed successfully.', 'success');
 
       window.dispatchEvent(new Event('softshape_order_updated'));
 
-      // Per-table cooldown: only block this specific table's button for 8s, not all tables
+      // Per-table cooldown: only block this specific table's button for 2s, not all tables
       const printedTableKey = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
       if (printedTableKey) {
-        billPrintCooldownRef.current.set(printedTableKey, Date.now() + 8000);
+        billPrintCooldownRef.current.set(printedTableKey, Date.now() + 2000);
         setTimeout(() => {
           billPrintCooldownRef.current.delete(printedTableKey);
-        }, 8000);
+        }, 2000);
       }
 
     } catch (error) {
@@ -2854,25 +2889,8 @@ const CashierDashboard = ({ onLogout }) => {
           throw new Error(errBody.error || `Server returned ${response.status}`);
         }
 
-        // Step 2: Backend confirmed success — now safe to clear local state
-        if (activeOutlet === 'bar' || activeOutlet === 'both') {
-          // Use DELETE for bar tables — fully wipes session including activeOrder on backend
-          deleteBarTableSession(tableSnap.backendId)
-            .catch(err => console.warn('[Terminate] deleteBarSession failed:', err.message));
-        } else {
-          const resetSessionPayload = {
-            status: 'Free',
-            kotHistory: [],
-            currentBill: 0,
-            captainId: null,
-            guests: 0,
-            activeOrder: null,
-            orders: [],
-            items: [],
-          };
-          updateTableSession(tableSnap.backendId, resetSessionPayload)
-            .catch(err => console.warn('[Terminate] resetTableSession failed:', err.message));
-        }
+        // Step 2: Backend confirmed success — table is already fully reset by terminate endpoint
+        // (order items deleted, order cancelled, table status set to Free, kotHistory cleared)
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
@@ -2908,6 +2926,24 @@ const CashierDashboard = ({ onLogout }) => {
       setExpandedNoteItemId(null);
       setRemovedItemIds([]);
       setShowTableModal(false);
+
+      // Step 5b: Clear bill-printed and settlement guards for this table
+      const terminatedKey = tableSnap.isExtra ? tableSnap.id : tableSnap.backendId;
+      if (terminatedKey) {
+        setBillPrintedTableIds(prev => {
+          const next = new Set(prev);
+          next.delete(terminatedKey);
+          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
+          return next;
+        });
+        billPrintCooldownRef.current.delete(terminatedKey);
+        setSettledTableIds(prev => {
+          const next = new Set(prev);
+          next.delete(terminatedKey);
+          return next;
+        });
+      }
+
       // Clean up persisted discount on terminate
 
       // Step 6: Evict terminated table from localStorage cache so hard refresh never shows it again
@@ -3170,8 +3206,8 @@ const CashierDashboard = ({ onLogout }) => {
     lastAnyItemAddedRef.current = 0;
     // Set click cooldown to prevent socket echo from flickering the table
     if (table.backendId) {
-      tableClickCooldownRef.current.set(table.backendId, Date.now() + 2500);
-      setTimeout(() => { tableClickCooldownRef.current.delete(table.backendId); }, 2500);
+      tableClickCooldownRef.current.set(table.backendId, Date.now() + 500);
+      setTimeout(() => { tableClickCooldownRef.current.delete(table.backendId); }, 500);
     }
     setSelectedTable(table);
     setCart([]);
@@ -3320,12 +3356,6 @@ const CashierDashboard = ({ onLogout }) => {
       setActiveTab('tables');
       localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables');
       return;
-    }
-    const now = Date.now();
-    const existingInCart = cart.find(i => i.n === item.n);
-    if (!existingInCart) {
-      if (now - lastAnyItemAddedRef.current < 3000) return;
-      lastAnyItemAddedRef.current = now;
     }
     setCart(prev => {
       const existing = prev.find(i => i.n === item.n);
@@ -3739,7 +3769,7 @@ const CashierDashboard = ({ onLogout }) => {
                       {dashboardFloorTables.filter(t => {
                         if (!t.status || t.status === 'Free') return false;
                         const termTs = recentlyTerminatedRef.current[t.backendId];
-                        if (termTs && Date.now() - termTs < 30000) return false;
+                        if (termTs && Date.now() - termTs < 5000) return false;
                         return true;
                       }).length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -3753,7 +3783,7 @@ const CashierDashboard = ({ onLogout }) => {
                             .filter(t => {
                               if (!t.status || t.status === 'Free') return false;
                               const termTs = recentlyTerminatedRef.current[t.backendId];
-                              if (termTs && Date.now() - termTs < 30000) return false;
+                              if (termTs && Date.now() - termTs < 5000) return false;
                               return true;
                             })
                             .sort((a, b) => {
@@ -3885,7 +3915,7 @@ const CashierDashboard = ({ onLogout }) => {
                               ...extraTables
                                 .filter(et => {
                                   const termTs = recentlyTerminatedRef.current[et.id];
-                                  return !(termTs && Date.now() - termTs < 30000);
+                                  return !(termTs && Date.now() - termTs < 5000);
                                 })
                                 .sort((a, b) => String(a.number).localeCompare(String(b.number)))
                             ]
@@ -5957,14 +5987,14 @@ const CashierDashboard = ({ onLogout }) => {
                     // Clear localStorage for source table
                     localStorage.removeItem(`cashier_cart_${sourceId}`);
 
-                    // Set 5-second cooldown on both tables to prevent socket echo flickering
-                    tableClickCooldownRef.current.set(sourceId, Date.now() + 5000);
-                    tableClickCooldownRef.current.set(targetId, Date.now() + 5000);
-                    syncPauseUntilRef.current = Date.now() + 5000;
+                    // Set 1.5-second cooldown on both tables to prevent socket echo flickering
+                    tableClickCooldownRef.current.set(sourceId, Date.now() + 1500);
+                    tableClickCooldownRef.current.set(targetId, Date.now() + 1500);
+                    syncPauseUntilRef.current = Date.now() + 1500;
                     setTimeout(() => {
                       tableClickCooldownRef.current.delete(sourceId);
                       tableClickCooldownRef.current.delete(targetId);
-                    }, 5000);
+                    }, 1500);
 
                     setShowSwapModal(false);
                     setShowTableModal(false);
