@@ -44,14 +44,18 @@ function generateRequestId() {
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
+    let body = null;
     try {
-      const body = await res.json();
+      body = await res.json();
       if (body?.error) message = body.error;
     } catch {
       /* ignore */
     }
     const err = new Error(message);
     err.status = res.status;
+    err.statusCode = res.status;
+    if (body?.existingOrderId) err.existingOrderId = body.existingOrderId;
+    if (body?.missing) err.missing = body.missing;
     throw err;
   }
   if (res.status === 204) return null;

@@ -1157,15 +1157,11 @@ const CashierDashboard = ({ onLogout }) => {
         if (incomingItem.removedFromBill && existingItem && !existingItem.removedFromBill) {
           return { ...existingItem, ...incomingItem };
         }
-        // Neither is cancelled — prefer the HIGHER quantity to protect additions
-        // from being overwritten by a stale order:created with the old qty
+        // Neither is cancelled — prefer INCOMING quantity (backend is authoritative)
+        // The old 'prefer higher' logic caused quantity inflation when stale local state
+        // had a higher count than the backend's actual quantity
         if (existingItem && !existingItem.removedFromBill && !incomingItem.removedFromBill) {
-          const existingQty = Number(existingItem.quantity ?? existingItem.q ?? 0);
-          const incomingQty = Number(incomingItem.quantity ?? incomingItem.q ?? 0);
-          if (incomingQty > existingQty) {
-            return { ...existingItem, ...incomingItem };
-          }
-          return { ...incomingItem, ...existingItem };
+          return { ...existingItem, ...incomingItem };
         }
         return incomingItem;
       });
@@ -1226,8 +1222,10 @@ const CashierDashboard = ({ onLogout }) => {
       if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
 
-    const onTableUpdated = ({ table } = {}) => {
+    const onTableUpdated = ({ table, requestId } = {}) => {
       if (!table?.id) return;
+      // Skip our own KOT submission echo — handleSmartKOT already updated the UI from the API response
+      if (requestId && processedSocketRequestIds.current.has(requestId)) return;
       // No click cooldown — real-time updates must always be processed
       if (shouldBlockTableUpdate(table.id, table.status)) return;
       if (terminatedTableIdsRef.current.has(table.id)) return;
@@ -3271,7 +3269,7 @@ const CashierDashboard = ({ onLogout }) => {
     const itemKey = String(item.id || item.n || '');
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 3000) return; // 3-second cooldown per item
+    if (now - lastAdd < 500) return; // 500ms cooldown per item — prevents accidental double-clicks only
     addItemCooldownRef.current[itemKey] = now;
 
     // Beer items should be added directly
@@ -3358,8 +3356,16 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
     setCart(prev => {
-      const existing = prev.find(i => i.n === item.n);
-      if (existing) return prev.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
+      const itemId = String(item.id || item.menuItemId || '');
+      const existing = prev.find(i => {
+        if (itemId && String(i.id || i.menuItemId || '') === itemId) return true;
+        return i.n === item.n;
+      });
+      if (existing) return prev.map(i => {
+        if (itemId && String(i.id || i.menuItemId || '') === itemId) return { ...i, q: i.q + 1 };
+        if (!itemId && i.n === item.n) return { ...i, q: i.q + 1 };
+        return i;
+      });
       return [...prev, { ...item, q: 1 }];
     });
   };
@@ -3442,17 +3448,29 @@ const CashierDashboard = ({ onLogout }) => {
           orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 10000);
         } else {
           // Regular table: First KOT — create a brand-new order row
-          orderResponse = await createOrder({
-            tableId: selectedTable.backendId,
-            tableNumber: selectedTable.number || selectedTable.id,
-            restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-            items: apiItems,
-            requestId,
-            captainName: undefined,
-            sectionTag: selectedTable.sectionTag || undefined,
-            platform: selectedOrderPlatform,
-            timeoutMs: 10000,
-          });
+          try {
+            orderResponse = await createOrder({
+              tableId: selectedTable.backendId,
+              tableNumber: selectedTable.number || selectedTable.id,
+              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+              items: apiItems,
+              requestId,
+              captainName: undefined,
+              sectionTag: selectedTable.sectionTag || undefined,
+              platform: selectedOrderPlatform,
+              timeoutMs: 10000,
+            });
+          } catch (createErr) {
+            // 409 means another device already created an order for this table — retry as update
+            if (createErr.statusCode === 409 && createErr.existingOrderId) {
+              console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+              orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 10000);
+              // Update selectedTable with the existing order ID so future KOTs use update path
+              setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+            } else {
+              throw createErr;
+            }
+          }
         }
       }
 
