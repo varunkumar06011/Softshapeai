@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Eye
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -445,6 +445,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
+  const isSubmittingPaymentRef = useRef(false);
+  const [isSettling, setIsSettling] = useState(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
 
@@ -469,6 +471,12 @@ const CashierDashboard = ({ onLogout }) => {
   })());
   const terminatedTableIdsRef = useRef(new Set());
   const syncPauseUntilRef = useRef(0);
+  // --- Socket request dedup: prevents feedback loop when our own KOT emit comes back ---
+  const processedSocketRequestIds = useRef(new Set());
+  // --- Table click cooldown: prevents socket echo from flickering table right after click ---
+  const tableClickCooldownRef = useRef(new Map());
+  // --- Concurrent fetch guard for transactions ---
+  const txnFetchingRef = useRef(false);
   // --- Bill-printed guard ---
   // Primary flag: table IDs where bill was printed but settlement not yet confirmed.
   // This is the single source of truth for the Settlement button and socket guards.
@@ -792,9 +800,14 @@ const CashierDashboard = ({ onLogout }) => {
     return '—';
   }
 
-  const loadTransactions = useCallback(async (filter = 'today', dateOverride = null) => {
+  const [txnInitialLoaded, setTxnInitialLoaded] = useState(false);
+
+  const loadTransactions = useCallback(async (filter = 'today', dateOverride = null, opts = {}) => {
+    const { silent = false } = opts;
+    if (txnFetchingRef.current) return;
+    txnFetchingRef.current = true;
     const myGeneration = ++loadTxnsGenerationRef.current; // increment BEFORE any await
-    setTxnsLoading(true);
+    if (!silent) setTxnsLoading(true);
     try {
       let dateParam = null;
       let monthParam = null;
@@ -937,6 +950,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       console.log(`[Transactions] Applying gen=${myGeneration}, total=${sorted.length}`);
       setPastTransactions(sorted);
+      if (!txnInitialLoaded) setTxnInitialLoaded(true);
 
       // Only cache today's data + add version stamp
       if (filter === 'today') {
@@ -950,11 +964,12 @@ const CashierDashboard = ({ onLogout }) => {
       const cached = localStorage.getItem(TX_CACHE_KEY);
       if (cached) setPastTransactions(JSON.parse(cached));
     } finally {
-      if (myGeneration === loadTxnsGenerationRef.current) {
+      txnFetchingRef.current = false;
+      if (!silent && myGeneration === loadTxnsGenerationRef.current) {
         setTxnsLoading(false);
       }
     }
-  }, [activeOutlet, txnCustomDate]);
+  }, [activeOutlet, txnCustomDate, txnInitialLoaded]);
 
   // FIX 2: Filtered transactions based on method and search
   const filteredTransactions = useMemo(() => {
@@ -1073,6 +1088,8 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      // Dedup: skip if this is our own KOT submission echo
+      if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
       console.log('[CashierDashboard] Received order:created for table:', order.tableId, 'isExtra:', payload?.isExtraTable);
       // NOTE: no shouldBlockTableUpdate here — item additions must never be suppressed by the bill-print cooldown
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
@@ -1179,6 +1196,8 @@ const CashierDashboard = ({ onLogout }) => {
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      // Dedup: skip if this is our own KOT submission echo
+      if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
       // NOTE: no shouldBlockTableUpdate here — item updates (captain adding items) must always be visible
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs2 = recentlyTerminatedRef.current[order.tableId];
@@ -1195,6 +1214,9 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
+      // Click cooldown: skip grid updates for 1.5s after a table is clicked
+      const clickTs2 = tableClickCooldownRef.current.get(order.tableId);
+      if (clickTs2 && Date.now() < clickTs2) return;
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1210,6 +1232,9 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
+      // Click cooldown: skip socket updates for 1.5s after a table is clicked
+      const clickTs = tableClickCooldownRef.current.get(table.id);
+      if (clickTs && Date.now() < clickTs) return;
       if (shouldBlockTableUpdate(table.id, table.status)) return;
       if (terminatedTableIdsRef.current.has(table.id)) return;
       const applyTableUpdate = (prev) => prev.map(t => {
@@ -1389,6 +1414,16 @@ const CashierDashboard = ({ onLogout }) => {
       });
       setActiveTables(updateTables);
 
+      if (sourceTableId) {
+        recentlyTerminatedRef.current[sourceTableId] = Date.now();
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+        } catch {}
+        setTimeout(() => {
+          delete recentlyTerminatedRef.current[sourceTableId];
+        }, 10000);
+      }
+
       // If cashier had the source table open, switch selection to the new table
       if (selectedTable?.backendId === sourceTableId && mappedTarget) {
         // Clear stale localStorage for the source table before switching
@@ -1405,12 +1440,17 @@ const CashierDashboard = ({ onLogout }) => {
         setShowSwapModal(false);
         addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
       }
+
+      // Cooldown on both tables to prevent socket echo flickering on all devices
+      if (payload?.sourceTableId) tableClickCooldownRef.current.set(payload.sourceTableId, Date.now() + 3000);
+      if (payload?.targetTableId) tableClickCooldownRef.current.set(payload.targetTableId, Date.now() + 3000);
+      syncPauseUntilRef.current = Date.now() + 3000;
     };
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
       if (shouldBlockTableUpdate(sourceTableId, null) || shouldBlockTableUpdate(targetTableId, null)) return;
-      const allTables = activeTables;
+      const allTables = activeTablesRef.current;
       const mappedSource = mapRealtimeTablePayload(
         sourceTable,
         allTables.find((table) => table.backendId === sourceTableId) || null,
@@ -1463,7 +1503,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
     };
-  }, [socket, activeRestaurantId, activeTables, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
+  }, [socket, activeRestaurantId, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
@@ -1497,11 +1537,13 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   // ── Load transactions from DB — re-fires when filter or tab changes ───
+  const loadTxnsRef = useRef(loadTransactions);
+  useEffect(() => { loadTxnsRef.current = loadTransactions; }, [loadTransactions]);
   useEffect(() => {
     if (activeTab === 'history') {
-      loadTransactions(txnDateFilter);
+      loadTxnsRef.current(txnDateFilter);
     }
-  }, [txnDateFilter, activeTab, loadTransactions, activeOutlet]);
+  }, [txnDateFilter, activeTab]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -1518,7 +1560,7 @@ const CashierDashboard = ({ onLogout }) => {
     // to a non-Waiting-Bill status. The button must stay as "Settlement".
     if (billPrintedTableIdsRef.current.has(selectedTable.backendId)) {
       // Only let sync through if it brings a Free/AVAILABLE (settlement confirmed elsewhere)
-      const liveTable = activeTables.find((t) => t.backendId === selectedTable.backendId);
+      const liveTable = activeTablesRef.current.find((t) => t.backendId === selectedTable.backendId);
       if (liveTable) {
         const isNowFree = liveTable.status === 'Free' || liveTable.status === 'AVAILABLE' || liveTable.workflowStatus === 'Free';
         if (isNowFree) {
@@ -1553,7 +1595,7 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    const liveTable = activeTables.find((table) => table.backendId === selectedTable.backendId);
+    const liveTable = activeTablesRef.current.find((table) => table.backendId === selectedTable.backendId);
 
     // Guard: if fetchFreshOrderData just updated this selectedTable, skip the activeTables-driven
     // merge for a few seconds to avoid a stale activeTables snapshot overwriting a fresh order.
@@ -1610,7 +1652,7 @@ const CashierDashboard = ({ onLogout }) => {
         });
       }
     }
-  }, [activeTables, selectedTable, billPrintedTableIds]);
+  }, [selectedTable, billPrintedTableIds]);
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
@@ -1763,6 +1805,12 @@ const CashierDashboard = ({ onLogout }) => {
   const [billFinderLoading, setBillFinderLoading] = useState(false);
   const [billFinderSearched, setBillFinderSearched] = useState(false);
   const [isReprintingFoundBill, setIsReprintingFoundBill] = useState(false);
+  const [expandedBillRow, setExpandedBillRow] = useState(null);
+  const [billPreviewTxn, setBillPreviewTxn] = useState(null);
+  const [showReprintPinModal, setShowReprintPinModal] = useState(false);
+  const [reprintPinTarget, setReprintPinTarget] = useState(null);
+  const [reprintPinInput, setReprintPinInput] = useState('');
+  const [reprintPinError, setReprintPinError] = useState('');
 
   // Reset bill finder state when switching outlets to prevent stale empty state
   useEffect(() => {
@@ -1857,7 +1905,26 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  const handleReprintFoundBill = async (txn) => {
+  const handleReprintFoundBill = (txn) => {
+    setReprintPinTarget(txn);
+    setReprintPinInput('');
+    setReprintPinError('');
+    setShowReprintPinModal(true);
+  };
+
+  const verifyReprintPin = () => {
+    const storedPin = localStorage.getItem('cashier_pin') || localStorage.getItem(getTenantScopedKey('cashier_pin')) || '';
+    if (reprintPinInput && reprintPinInput === storedPin) {
+      setShowReprintPinModal(false);
+      setReprintPinError('');
+      doReprintFoundBill(reprintPinTarget);
+    } else {
+      setReprintPinError('Incorrect PIN. Please try again.');
+    }
+  };
+
+  const doReprintFoundBill = async (txn) => {
+    if (!txn) return;
     setIsReprintingFoundBill(true);
     try {
       const response = await fetch(`${API_BASE}/api/print/reprint-by-transaction`, {
@@ -1875,6 +1942,7 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Re-print Failed', error.message || 'Failed to re-print bill', 'error');
     } finally {
       setIsReprintingFoundBill(false);
+      setReprintPinTarget(null);
     }
   };
 
@@ -1959,45 +2027,6 @@ const CashierDashboard = ({ onLogout }) => {
       setIsPrintingBill(true);
       lastKnownBillRef.current = 0; // Reset bill ref before print to allow recalculation
 
-      // ── BILL-PRINT GUARD: arm BEFORE the async call so the button locks immediately ──
-      const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
-      setBillPrintedTableIds(prev => {
-        const next = new Set(prev);
-        next.add(tableId);
-        // Persist so the flag survives component remount
-        try {
-          localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
-        } catch {}
-        return next;
-      });
-      // Update selectedTable status optimistically right now
-      setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
-      // Start 5-second per-table socket cooldown
-      billPrintCooldownRef.current.set(tableId, Date.now() + 1000);
-      // Update the table list cache immediately to 'Waiting Bill'
-      if (selectedTable.isExtra) {
-        // Update extra table in extraTables state
-        setExtraTables(prev => prev.map(et =>
-          et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
-        ));
-      } else {
-        const updateBillStatus = (prev) =>
-          prev.map((t) =>
-            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
-          );
-        setActiveTables(updateBillStatus);
-        // Also persist 'bill_printed' in the table localStorage cache
-        try {
-          const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
-          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-          const updatedCache = cached.map(t =>
-            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
-          );
-          localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
-        } catch {}
-      }
-      // ── END GUARD SETUP ──
-
       // Step 1: Update table discount if entered
       if (discountPercent > 0) {
         if (!selectedTable.isExtra) {
@@ -2073,6 +2102,41 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
+      // ── BILL-PRINT GUARD: arm AFTER the print API succeeds ──
+      // The button stays as "Final Bill" until the print job is confirmed.
+      const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
+      setBillPrintedTableIds(prev => {
+        const next = new Set(prev);
+        next.add(tableId);
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
+        } catch {}
+        return next;
+      });
+      // Now update table status to 'Waiting Bill' and show Settlement button
+      setSelectedTable(prev => prev ? { ...prev, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : prev);
+      billPrintCooldownRef.current.set(tableId, Date.now() + 1000);
+      if (selectedTable.isExtra) {
+        setExtraTables(prev => prev.map(et =>
+          et.id === tableId ? { ...et, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : et
+        ));
+      } else {
+        const updateBillStatus = (prev) =>
+          prev.map((t) =>
+            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+          );
+        setActiveTables(updateBillStatus);
+        try {
+          const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+          const updatedCache = cached.map(t =>
+            t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+          );
+          localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+        } catch {}
+      }
+      // ── END GUARD SETUP ──
+
       addNotification('Success', 'Bill printed successfully.', 'success');
 
       window.dispatchEvent(new Event('softshape_order_updated'));
@@ -2081,7 +2145,6 @@ const CashierDashboard = ({ onLogout }) => {
       const printedTableKey = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
       if (printedTableKey) {
         billPrintCooldownRef.current.set(printedTableKey, Date.now() + 8000);
-        // Clear after 8 seconds so cashier can reprint if needed
         setTimeout(() => {
           billPrintCooldownRef.current.delete(printedTableKey);
         }, 8000);
@@ -2444,6 +2507,8 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handlePayment = async (method) => {
     if (!selectedTable || !method) return;
+    if (isSubmittingPaymentRef.current) return;
+    isSubmittingPaymentRef.current = true;
 
     // Validate transaction amount
     const txnAmount = Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal);
@@ -2454,6 +2519,7 @@ const CashierDashboard = ({ onLogout }) => {
         'error'
       );
       setShowMethodPicker(false);
+      isSubmittingPaymentRef.current = false;
       return;
     }
 
@@ -2465,6 +2531,7 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Already Settled', 'This order has already been settled.', 'error');
       setShowMethodPicker(false);
       setShowPaymentModal(false);
+      isSubmittingPaymentRef.current = false;
       return;
     }
 
@@ -2591,6 +2658,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     // Commit function: call backend settle endpoint
     const commitFn = async () => {
+      setIsSettling(true);
       // Add to background queue for final bill + inventory deduction
       await settlementQueue.add(async () => {
         // Call backend settle endpoint (creates transaction, marks paid, resets table)
@@ -2616,6 +2684,12 @@ const CashierDashboard = ({ onLogout }) => {
               cgst: Number(activeCgst),
               sgst: Number(activeSgst),
               restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+              items: getBillableItems(selectedTable).map(i => ({
+                name: i.name ?? i.n,
+                quantity: Number(i.quantity ?? i.q ?? 1),
+                price: Number(i.price ?? i.p ?? 0),
+                menuType: i.menuType || 'FOOD',
+              })),
             }
           );
 
@@ -2698,12 +2772,12 @@ const CashierDashboard = ({ onLogout }) => {
           }
         }
 
-        // Immediate refresh (catches fast DB writes)
-        loadTransactions(txnDateFilterRef.current);
-        // Secondary refresh at 3s (catches delayed DB propagation + cache invalidation)
+        // Immediate refresh (silent to avoid loading flicker)
+        loadTransactions(txnDateFilterRef.current, null, { silent: true });
+        // Secondary refresh at 3s — silent (no loading overlay flicker)
         setTimeout(() => {
           console.log(`[Settlement] Secondary loadTransactions for orderId=${orderId}`);
-          loadTransactions(txnDateFilterRef.current);
+          loadTransactions(txnDateFilterRef.current, null, { silent: true });
         }, 3000);
       });
     };
@@ -2719,9 +2793,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
     });
 
-    // Safety-net: once settlement succeeds, reload transactions one more time
-    // to ensure the new bill is visible even if the setTimeout race was lost
-    loadTransactions(txnDateFilterRef.current);
+    setIsSettling(false);
+    isSubmittingPaymentRef.current = false;
   };
 
   const terminateTableSession = async () => {
@@ -3079,6 +3152,11 @@ const CashierDashboard = ({ onLogout }) => {
     clearCashierTableCache(selectedTable);
     lastKnownBillRef.current = 0; // Reset bill ref when selecting a new table
     lastAnyItemAddedRef.current = 0;
+    // Set click cooldown to prevent socket echo from flickering the table
+    if (table.backendId) {
+      tableClickCooldownRef.current.set(table.backendId, Date.now() + 1500);
+      setTimeout(() => { tableClickCooldownRef.current.delete(table.backendId); }, 1500);
+    }
     setSelectedTable(table);
     setCart([]);
     setSelectedOrder(null);
@@ -3269,6 +3347,10 @@ const CashierDashboard = ({ onLogout }) => {
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36));
     kotRequestIdRef.current = requestId;
+    // Register this requestId so socket echoes from our own KOT submission are skipped
+    processedSocketRequestIds.current.add(requestId);
+    // Clean up after 30s to prevent unbounded growth
+    setTimeout(() => { processedSocketRequestIds.current.delete(requestId); }, 30000);
 
     const apiItems = cart
       .map(i => ({
@@ -3336,7 +3418,7 @@ const CashierDashboard = ({ onLogout }) => {
       const kotsToCreate = [];
       if (foodItems.length > 0) {
         kotsToCreate.push({
-          id: Math.floor(1000 + Math.random() * 9000).toString(),
+          id: `${requestId}-food`,
           type: 'FOOD',
           time: timeStr,
           items: foodItems.map(i => ({ ...i, s: 'KOT Sent' })),
@@ -3347,7 +3429,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       if (barItems.length > 0) {
         kotsToCreate.push({
-          id: Math.floor(1000 + Math.random() * 9000).toString(),
+          id: `${requestId}-liquor`,
           type: 'LIQUOR',
           time: timeStr,
           items: barItems.map(i => ({ ...i, s: 'KOT Sent' })),
@@ -3358,7 +3440,12 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       const serverItems = orderResponse?.order?.items || orderResponse?.items || [];
-      const serverKotHistory = orderResponse?.order?.kotHistory || orderResponse?.kotHistory || kotsToCreate;
+      // Always prefer server kotHistory over local kotsToCreate (which are only a fallback)
+      const serverKotHistory = (orderResponse?.order?.kotHistory?.length > 0)
+        ? orderResponse.order.kotHistory
+        : (orderResponse?.kotHistory?.length > 0)
+          ? orderResponse.kotHistory
+          : kotsToCreate;
       const resolvedOrderId = orderResponse?.id || orderResponse?.order?.id || selectedTable?.activeOrder?.id;
 
       if (selectedTable) {
@@ -3427,12 +3514,14 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
-      setCart([]);
-      lastAnyItemAddedRef.current = 0;
-      setExpandedNoteItemId(null);
-      setIsKotSuccess(true);
-      addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
-      setTimeout(() => setIsKotSuccess(false), 2000);
+      if (orderResponse || !selectedTable?.backendId) {
+        setCart([]);
+        lastAnyItemAddedRef.current = 0;
+        setExpandedNoteItemId(null);
+        setIsKotSuccess(true);
+        addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
+        setTimeout(() => setIsKotSuccess(false), 2000);
+      }
     } catch (err) {
       console.error('[KOT] API failed:', err.message);
       // Cart is retained so the cashier can retry immediately or add more items.
@@ -4128,7 +4217,7 @@ const CashierDashboard = ({ onLogout }) => {
                           />
                         </div>
                         <div className="overflow-x-auto scrollbar-hide relative">
-                          {txnsLoading && filteredTransactions.length > 0 && (
+                          {txnsLoading && !txnInitialLoaded && filteredTransactions.length > 0 && (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
                               <div className="flex flex-col items-center gap-2">
                                 <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
@@ -4149,7 +4238,7 @@ const CashierDashboard = ({ onLogout }) => {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                              {txnsLoading && filteredTransactions.length === 0 ? (
+                              {txnsLoading && !txnInitialLoaded && filteredTransactions.length === 0 ? (
                                 <tr>
                                   <td colSpan={7} className="p-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2 py-8">
@@ -4394,7 +4483,8 @@ const CashierDashboard = ({ onLogout }) => {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                   {billFinderResults.map((txn) => (
-                                    <tr key={txn.id} className="hover:bg-gray-50">
+                                    <>
+                                      <tr key={txn.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedBillRow(expandedBillRow === txn.id ? null : txn.id)}>
                                       <td className="px-4 py-3 text-sm font-bold text-gray-900">{txn.billNumber || txn.displayId || '—'}</td>
                                       <td className="px-4 py-3 text-xs font-bold text-gray-600">
                                         {(() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch { return '—'; } })()}
@@ -4423,16 +4513,48 @@ const CashierDashboard = ({ onLogout }) => {
                                       </td>
                                       <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</td>
                                       <td className="px-4 py-3 text-center">
-                                        <button
-                                          onClick={() => handleReprintFoundBill(txn)}
-                                          disabled={isReprintingFoundBill}
-                                          className="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-xs font-bold uppercase hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1 mx-auto"
-                                        >
-                                          <Printer size={12} />
-                                          Reprint
-                                        </button>
+                                        <div className="flex items-center justify-center gap-1.5">
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); setBillPreviewTxn(txn); }}
+                                            className="bg-gray-100 text-gray-700 rounded-lg px-3 py-1.5 text-xs font-bold uppercase hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                                          >
+                                            <Eye size={12} />
+                                            Preview
+                                          </button>
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); handleReprintFoundBill(txn); }}
+                                            disabled={isReprintingFoundBill}
+                                            className="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-xs font-bold uppercase hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                          >
+                                            <Printer size={12} />
+                                            Reprint
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
+                                    {expandedBillRow === txn.id && (
+                                      <tr key={`${txn.id}-detail`}>
+                                        <td colSpan={7} className="px-4 py-3 bg-gray-50">
+                                          <div className="space-y-1.5">
+                                            <p className="text-xs font-black uppercase text-gray-500 mb-2">Items ({Array.isArray(txn.itemsList) ? txn.itemsList.length : 0})</p>
+                                            {Array.isArray(txn.itemsList) && txn.itemsList.length > 0 ? (
+                                              txn.itemsList.map((item, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-sm">
+                                                  <span className="font-bold text-gray-700">
+                                                    <span className="text-gray-500 mr-2">{item.quantity ?? item.q ?? 1}×</span>
+                                                    {item.name ?? item.n ?? 'Unknown'}
+                                                  </span>
+                                                  <span className="font-bold text-gray-600">₹{Number((item.price ?? item.p ?? 0) * (item.quantity ?? item.q ?? 1)).toFixed(0)}</span>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <p className="text-xs text-gray-400 italic">No item details available</p>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                    </>
                                   ))}
                                 </tbody>
                               </table>
@@ -5085,14 +5207,14 @@ const CashierDashboard = ({ onLogout }) => {
                                 ₹{Number(item.p * item.q).toFixed(0)}
                               </span>
                               {isCancelled ? (
-                                <span className="text-[9px] font-black text-red-400 uppercase tracking-widest">Cancelled</span>
+                                <span className="text-xs font-black text-red-400 uppercase tracking-widest">Cancelled</span>
                               ) : (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setShowCancelModal(true);
                                     if (item.originalIds.length === 1) {
-                                      setCancelSelected({ [item.originalIds[0]]: 1 });
+                                      setCancelSelected({ [item.originalIds[0]]: { item, quantity: 1 } });
                                     } else {
                                       const selection = {};
                                       item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
@@ -5222,8 +5344,9 @@ const CashierDashboard = ({ onLogout }) => {
                     return s === 'Waiting Bill' || s === 'BILLING_REQUESTED';
                   })() ? (
                     <button
-                      onClick={() => setShowMethodPicker(true)}
-                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer"
+                      onClick={() => { if (isPrintingBill) return; setShowMethodPicker(true); }}
+                      disabled={isSettling}
+                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Settlement
                     </button>
@@ -5818,6 +5941,15 @@ const CashierDashboard = ({ onLogout }) => {
                     // Clear localStorage for source table
                     localStorage.removeItem(`cashier_cart_${sourceId}`);
 
+                    // Set 3-second cooldown on both tables to prevent socket echo flickering
+                    tableClickCooldownRef.current.set(sourceId, Date.now() + 3000);
+                    tableClickCooldownRef.current.set(targetId, Date.now() + 3000);
+                    syncPauseUntilRef.current = Date.now() + 3000;
+                    setTimeout(() => {
+                      tableClickCooldownRef.current.delete(sourceId);
+                      tableClickCooldownRef.current.delete(targetId);
+                    }, 3000);
+
                     setShowSwapModal(false);
                     setShowTableModal(false);
                     setSwapTargetId(null);
@@ -5837,6 +5969,80 @@ const CashierDashboard = ({ onLogout }) => {
                   }`}
               >
                 {isSwapping ? 'Moving...' : swapTargetId ? 'Confirm Move' : 'Select a Table'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BILL PREVIEW MODAL */}
+      {billPreviewTxn && (
+        <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setBillPreviewTxn(null)}>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-black text-gray-900 uppercase tracking-wider">Bill Preview</h3>
+              <button onClick={() => setBillPreviewTxn(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              <div className="text-center mb-4">
+                <p className="text-sm font-black text-gray-900">{billPreviewTxn.billNumber || billPreviewTxn.displayId || '—'}</p>
+                <p className="text-xs text-gray-500">{billPreviewTxn.tableDisplayName || '—'} • {billPreviewTxn.method || '—'}</p>
+                <p className="text-xs text-gray-500">{(() => { try { const d = new Date(billPreviewTxn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }); } catch { return '—'; } })()}</p>
+              </div>
+              <div className="border-t border-dashed border-gray-300 pt-3 space-y-1.5">
+                {Array.isArray(billPreviewTxn.itemsList) && billPreviewTxn.itemsList.length > 0 ? (
+                  billPreviewTxn.itemsList.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-sm">
+                      <span className="font-bold text-gray-700">
+                        <span className="text-gray-500 mr-2">{item.quantity ?? item.q ?? 1}×</span>
+                        {item.name ?? item.n ?? 'Unknown'}
+                      </span>
+                      <span className="font-bold text-gray-600">₹{Number((item.price ?? item.p ?? 0) * (item.quantity ?? item.q ?? 1)).toFixed(0)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 italic text-center py-4">No item details available</p>
+                )}
+              </div>
+              <div className="border-t border-dashed border-gray-300 mt-3 pt-3 space-y-1">
+                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Subtotal</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.subtotal ?? 0).toFixed(0)}</span></div>
+                {Number(billPreviewTxn.discountAmount ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Discount ({billPreviewTxn.discountPercent ?? 0}%)</span><span className="font-bold text-red-500">-₹{Number(billPreviewTxn.discountAmount ?? 0).toFixed(0)}</span></div>
+                )}
+                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">CGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.cgst ?? 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">SGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.sgst ?? 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#E53935]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REPRINT PIN MODAL */}
+      {showReprintPinModal && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowReprintPinModal(false)}>
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <h3 className="text-lg font-black text-gray-900 uppercase tracking-wider">Enter PIN</h3>
+              <button onClick={() => setShowReprintPinModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-500 mb-4">Enter your PIN to authorize bill reprint.</p>
+              <input
+                type="password"
+                autoFocus
+                value={reprintPinInput}
+                onChange={e => { setReprintPinInput(e.target.value); setReprintPinError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') verifyReprintPin(); }}
+                placeholder="Enter PIN..."
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935] mb-2"
+              />
+              {reprintPinError && <p className="text-xs font-bold text-red-500 mb-2">{reprintPinError}</p>}
+              <button
+                onClick={verifyReprintPin}
+                className="w-full bg-[#E53935] text-white rounded-lg py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors"
+              >
+                Verify & Reprint
               </button>
             </div>
           </div>
