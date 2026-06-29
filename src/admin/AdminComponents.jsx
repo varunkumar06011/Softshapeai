@@ -17,7 +17,7 @@
 // component library imported by AdminDashboard.jsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import AppsSection from './settings/AppsSection';
 import {
   ChartNoAxesCombined,
@@ -66,7 +66,8 @@ import {
   FileSpreadsheet,
   FileText,
   Printer,
-  Edit2
+  Edit2,
+  Pencil
 } from 'lucide-react';
 import { 
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
@@ -83,6 +84,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
+import { generateRecipe } from '../services/recipeAiService';
 import { fetchVenues } from '../services/tableApi';
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 import { fetchTransactions } from '../services/orderApi';
@@ -871,6 +873,7 @@ export function MenuPage({ onAddDish }) {
   const [recipeRows, setRecipeRows] = useState([]);
   const [kitchenIngredients, setKitchenIngredients] = useState([]);
   const [recipeLoading, setRecipeLoading] = useState(false);
+  const [aiRecipeLoading, setAiRecipeLoading] = useState(false);
 
   // ── Availability toggle with optimistic update ─────────────────────────
   const handleToggleAvailability = useCallback(async (item) => {
@@ -1097,6 +1100,32 @@ export function MenuPage({ onAddDish }) {
       setRecipeRows([]);
     }
   };
+
+  const handleGenerateRecipe = async () => {
+    if (!editingItem?.id || editingItem.menuType === 'LIQUOR') return;
+    setAiRecipeLoading(true);
+    try {
+      const { ingredients } = await generateRecipe(editingItem.id);
+      const mappedRows = ingredients.map((suggestion) => {
+        const match = kitchenIngredients.find(
+          (i) => i.name && i.name.toLowerCase() === suggestion.name.toLowerCase()
+        );
+        return {
+          ingredientId: match?.id || '',
+          name: match?.name || suggestion.name,
+          unit: match?.unit || suggestion.unit,
+          quantity: String(suggestion.quantity),
+        };
+      });
+      setRecipeRows(mappedRows);
+    } catch (err) {
+      console.error('[MenuPage] AI recipe generation failed:', err);
+      alert(err.message || 'AI failed to suggest a recipe — please add ingredients manually');
+    } finally {
+      setAiRecipeLoading(false);
+    }
+  };
+
   const handleDeleteClick = (item) => setDeletingItem(item);
 
   // ── Cloudinary direct upload (bypasses backend proxy — 2-4s vs 10-15s) ────
@@ -1842,11 +1871,21 @@ export function MenuPage({ onAddDish }) {
               <div className="border-t border-gray-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Ingredients)</label>
-                  <button
-                    type="button"
-                    onClick={() => setRecipeRows([...recipeRows, { ingredientId: '', quantity: '', name: '', unit: '' }])}
-                    className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C]"
-                  >+ Add Ingredient</button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleGenerateRecipe}
+                      disabled={aiRecipeLoading}
+                      className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C] disabled:opacity-50"
+                    >
+                      {aiRecipeLoading ? 'Generating...' : 'AI Generate Recipe'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecipeRows([...recipeRows, { ingredientId: '', quantity: '', name: '', unit: '' }])}
+                      className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C]"
+                    >+ Add Ingredient</button>
+                  </div>
                 </div>
                 {recipeLoading ? (
                   <p className="text-xs text-gray-400">Loading recipe...</p>
@@ -2569,19 +2608,37 @@ export function Payroll() {
 // KITCHEN INVENTORY MANAGEMENT (Phase 5)
 // ==========================================
 
+function getISTDateString() {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + istOffset);
+  return istDate.toISOString().slice(0, 10);
+}
+
 export function KitchenInventory() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', currentStock: '', reorderLevel: '' });
+  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', currentStock: '', prize: '' });
+  const [searchQuery, setSearchQuery] = useState('');
   const [addStockModal, setAddStockModal] = useState(null);
   const [addStockAmount, setAddStockAmount] = useState('');
+  const [selectedDate, setSelectedDate] = useState(getISTDateString);
+  const [manualConsumption, setManualConsumption] = useState({});
+  const [savingItemId, setSavingItemId] = useState(null);
+  const [topSelling, setTopSelling] = useState(null);
+  const [topSellingLoading, setTopSellingLoading] = useState(false);
+  const [editingCell, setEditingCell] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const csvImportRef = useRef(null);
+  const [selectedItems, setSelectedItems] = useState(new Set());
   const restaurantId = getCurrentRestaurantId();
 
   const loadItems = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}`, {
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(selectedDate)}`, {
         headers: { ...getAuthHeaders() },
       });
       if (res.ok) setItems(await res.json());
@@ -2590,9 +2647,10 @@ export function KitchenInventory() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId]);
+  }, [restaurantId, selectedDate]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
+  useEffect(() => { setManualConsumption({}); }, [selectedDate]);
 
   const handleAddItem = async () => {
     if (!newItem.name || !newItem.unit) return;
@@ -2605,10 +2663,10 @@ export function KitchenInventory() {
           name: newItem.name,
           unit: newItem.unit,
           currentStock: parseFloat(newItem.currentStock) || 0,
-          reorderLevel: parseFloat(newItem.reorderLevel) || 0,
+          price: parseFloat(newItem.prize) || 0,
         }),
       });
-      setNewItem({ name: '', unit: 'kg', currentStock: '', reorderLevel: '' });
+      setNewItem({ name: '', unit: 'kg', currentStock: '', prize: '' });
       setShowAddModal(false);
       loadItems();
     } catch (err) {
@@ -2626,6 +2684,7 @@ export function KitchenInventory() {
           restaurantId,
           itemId: addStockModal.id,
           addStock: parseFloat(addStockAmount),
+          date: selectedDate,
         }),
       });
       setAddStockModal(null);
@@ -2633,6 +2692,191 @@ export function KitchenInventory() {
       loadItems();
     } catch (err) {
       console.error('[KitchenInventory] Add stock failed:', err);
+    }
+  };
+
+  const handleSaveManualConsumption = async (item) => {
+    const delta = parseFloat(manualConsumption[item.id]);
+    if (!delta || delta <= 0 || isNaN(delta)) return;
+
+    setSavingItemId(item.id);
+    try {
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen/entries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          restaurantId,
+          itemId: item.id,
+          consumedStock: delta,
+          date: selectedDate,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Failed to save consumption');
+      } else {
+        setManualConsumption(prev => ({ ...prev, [item.id]: '' }));
+        loadItems();
+      }
+    } catch (err) {
+      console.error('[KitchenInventory] Save consumption failed:', err);
+      alert('Failed to save consumption');
+    } finally {
+      setSavingItemId(null);
+    }
+  };
+
+  const [importProgress, setImportProgress] = useState('');
+
+  const handleImportCSV = async (file) => {
+    if (!file.name.endsWith('.csv')) { alert('Please select a .csv file.'); return; }
+
+    const parseCSVLine = (line) => {
+      const result = []; let current = ''; let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') { inQuotes = !inQuotes; }
+        else if (ch === ',' && !inQuotes) { result.push(current); current = ''; }
+        else { current += ch; }
+      }
+      result.push(current);
+      return result;
+    };
+
+    const rawText = await file.text();
+    // Strip UTF-8 BOM (Excel adds \uFEFF at start of CSV files)
+    const text = rawText.replace(/^\uFEFF/, '');
+    const lines = text.trim().split('\n');
+    const header = lines[0].trim().replace(/\r/g, '');
+    if (header !== 'S.NO,INGREDIENT,TYPE,PRICE') {
+      alert(`Invalid CSV format.\nExpected header: S.NO,INGREDIENT,TYPE,PRICE\nGot: ${header}`);
+      return;
+    }
+
+    // Parse all valid rows first
+    const rows = [];
+    let skipped = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim().replace(/\r/g, '');
+      if (!line) continue;
+      const cols = parseCSVLine(line);
+      if (cols.length < 4) { skipped++; continue; }
+      const [, ingredient, type, price] = cols.map(c => c.trim());
+      if (!ingredient) { skipped++; continue; }
+      const prize = (price === 'N/A' || price === '' || price === '0') ? 0 : parseFloat(price) || 0;
+      const unit  = (type  === 'N/A' || type  === '')                 ? '' : type;
+      rows.push({ ingredient, unit, prize, rowNum: i + 1 });
+    }
+
+    if (rows.length === 0) { alert('No valid rows found in the file.'); return; }
+
+    setImporting(true);
+    setImportProgress(`0 / ${rows.length}`);
+    let done = 0, succeeded = 0;
+    const errors = [];
+    const BATCH = 10;
+
+    // Process in parallel batches of 10 so 200 items takes ~6s not 60s
+    for (let b = 0; b < rows.length; b += BATCH) {
+      const batch = rows.slice(b, b + BATCH);
+      await Promise.all(batch.map(async ({ ingredient, unit, prize, rowNum }) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/inventory/kitchen/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ restaurantId, name: ingredient, unit, prize, currentStock: 0, reorderLevel: 0 }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            errors.push(`Row ${rowNum} (${ingredient}): ${body.error || res.status}`);
+          } else {
+            succeeded++;
+          }
+        } catch (err) {
+          errors.push(`Row ${rowNum} (${ingredient}): ${err.message}`);
+        }
+        done++;
+        setImportProgress(`${done} / ${rows.length}`);
+      }));
+    }
+
+    setImporting(false);
+    setImportProgress('');
+    loadItems();
+    const errMsg = errors.length ? `\n\nErrors (${errors.length}):\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n…and ${errors.length - 5} more` : ''}` : '';
+    alert(`Import complete!\n✅ ${succeeded} items saved\n⏭ ${skipped} rows skipped${errMsg}`);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedItems.size === 0) return;
+    if (!window.confirm(`Delete ${selectedItems.size} selected item(s)? This cannot be undone.`)) return;
+    await Promise.all([...selectedItems].map(id =>
+      fetch(`${API_BASE}/api/inventory/kitchen/items/${id}`, {
+        method: 'DELETE', headers: { ...getAuthHeaders() },
+      })
+    ));
+    setSelectedItems(new Set());
+    loadItems();
+  };
+
+  const handleUpdateItem = async (id, fields) => {
+    try {
+      await fetch(`${API_BASE}/api/inventory/kitchen/items/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(fields),
+      });
+      loadItems();
+    } catch (err) {
+      console.error('[KitchenInventory] Update item failed:', err);
+    }
+  };
+
+  const handleInlineSave = async (item, field) => {
+    if (!editingCell) return;
+    setEditSaving(true);
+    try {
+      if (field === 'price') {
+        await handleUpdateItem(item.id, { price: parseFloat(editingCell.value) || 0 });
+        setEditingCell(null);
+        return;
+      } else {
+        const payload = { restaurantId, itemId: item.id, date: selectedDate, replace: true };
+        if (field === 'opening') payload.openingStock = parseFloat(editingCell.value) || 0;
+        else if (field === 'purchase') payload.addStock = parseFloat(editingCell.value) || 0;
+        else if (field === 'consumed') payload.consumedStock = parseFloat(editingCell.value) || 0;
+        await fetch(`${API_BASE}/api/inventory/kitchen/entries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify(payload),
+        });
+      }
+      setEditingCell(null);
+      loadItems();
+    } catch (err) {
+      console.error('[KitchenInventory] Inline save failed:', err);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleFetchTopSelling = async () => {
+    setTopSellingLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/inventory/kitchen/top-selling?restaurantId=${restaurantId}&startDate=${encodeURIComponent(selectedDate)}&endDate=${encodeURIComponent(selectedDate)}`,
+        { headers: { ...getAuthHeaders() } }
+      );
+      if (res.ok) {
+        setTopSelling(await res.json());
+      } else {
+        setTopSelling([]);
+      }
+    } catch (err) {
+      console.error('[KitchenInventory] Top selling failed:', err);
+      setTopSelling([]);
+    } finally {
+      setTopSellingLoading(false);
     }
   };
 
@@ -2649,6 +2893,41 @@ export function KitchenInventory() {
     }
   };
 
+  const renderEditCell = (item, field, displayValue) => {
+    const isEditing = editingCell?.itemId === item.id && editingCell?.field === field;
+    const currentFieldValue = field === 'price' ? Number(item.price || 0)
+      : field === 'opening' ? (item.todayEntry ? Number(item.todayEntry.openingStock || 0) : 0)
+      : field === 'purchase' ? (item.todayEntry ? Number(item.todayEntry.addedStock || 0) : 0)
+      : (item.todayEntry ? Number(item.todayEntry.consumedStock || 0) : 0);
+    if (isEditing) {
+      return (
+        <div className="flex items-center justify-center gap-1">
+          <input
+            type="number" step="0.01" min="0"
+            value={editingCell.value}
+            onChange={(e) => setEditingCell(prev => ({ ...prev, value: e.target.value }))}
+            className="w-20 px-2 py-1 border border-gray-300 rounded text-xs text-center outline-none focus:border-blue-400"
+            autoFocus
+            disabled={editSaving}
+          />
+          <button onClick={() => handleInlineSave(item, field)} disabled={editSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+          <button onClick={() => setEditingCell(null)} disabled={editSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-center gap-1 group/cell">
+        <span>{displayValue}</span>
+        <button
+          onClick={() => setEditingCell({ itemId: item.id, field, value: String(currentFieldValue) })}
+          className="p-0.5 text-gray-400 hover:text-gray-700"
+        >
+          <Pencil size={12} />
+        </button>
+      </div>
+    );
+  };
+
   const lowStockItems = items.filter((i) => i.currentStock <= i.reorderLevel && i.reorderLevel > 0);
 
   if (loading) {
@@ -2663,21 +2942,38 @@ export function KitchenInventory() {
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Ingredients & Daily Tracking</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
+          {selectedItems.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="w-full sm:w-auto text-xs font-bold bg-red-600 text-white px-6 py-4 rounded-2xl hover:bg-red-700 flex items-center justify-center gap-2"
+            >
+              <Trash2 size={14} /> Delete Selected ({selectedItems.size})
+            </button>
+          )}
           <button
             onClick={() => {
               if (items.length === 0) return;
-              const headers = ['Ingredient', 'Unit', 'Current Stock', 'Reorder Level', 'Status', 'Last Updated'];
-              const rows = items.map((i) => {
-                const isLow = Number(i.currentStock || 0) <= Number(i.reorderLevel || 0) && Number(i.reorderLevel || 0) > 0;
-                const status = isLow ? 'Low' : Number(i.currentStock || 0) === 0 ? 'Out of Stock' : 'OK';
-                return [
-                  i.name, i.unit, Number(i.currentStock || 0), Number(i.reorderLevel || 0), status,
-                  i.updatedAt ? new Date(i.updatedAt).toLocaleDateString('en-IN') : '—',
-                ].join(',');
+              const headers = ['S.NO', 'INGREDIENT', 'TYPE', 'PRICE'];
+              const rows = items.map((item, index) => {
+                const prize = parseFloat(item.price);
+                const priceCell = (!item.price || isNaN(prize) || prize === 0) ? 'N/A' : prize.toFixed(2);
+                const typeCell  = (item.unit && item.unit.trim() !== '') ? item.unit : 'N/A';
+                const safeName  = item.name.includes(',') ? `"${item.name}"` : item.name;
+                const safeType  = typeCell.includes(',')  ? `"${typeCell}"` : typeCell;
+                return [index + 1, safeName, safeType, priceCell].join(',');
               });
-              const csv = [headers.join(','), ...rows].join('\n');
-              const blob = new Blob([csv], { type: 'text/csv' });
-              const url = URL.createObjectURL(blob);
+              const csv  = [headers.join(','), ...rows].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+              const url  = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
               a.download = `kitchen-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -2689,11 +2985,39 @@ export function KitchenInventory() {
           >
             <Download size={14} /> CSV
           </button>
+          <input
+            ref={csvImportRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={(e) => { if (e.target.files[0]) handleImportCSV(e.target.files[0]); e.target.value = ''; }}
+          />
+          <button
+            onClick={() => csvImportRef.current?.click()}
+            disabled={importing}
+            className="w-full sm:w-auto text-xs font-bold bg-[#F4F4F5] text-gray-700 px-6 py-4 rounded-2xl hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <Download size={14} className="rotate-180" /> {importing ? `Importing ${importProgress}…` : 'Import CSV'}
+          </button>
+          <input
+            type="text"
+            placeholder="Search ingredients..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none w-40"
+          />
           <button
             onClick={() => setShowAddModal(true)}
             className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
           >
             Add Ingredient
+          </button>
+          <button
+            onClick={handleFetchTopSelling}
+            disabled={topSellingLoading}
+            className="w-full sm:w-auto bg-[#FFF3E0] text-[#E65100] px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#FFE0B2] transition-all active:scale-95 disabled:opacity-50"
+          >
+            {topSellingLoading ? 'Loading...' : 'Top 3 Selling Items'}
           </button>
         </div>
       </div>
@@ -2713,18 +3037,64 @@ export function KitchenInventory() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
               <tr>
+                <th className="px-4 py-4">
+                  <input type="checkbox"
+                    className="w-4 h-4 accent-red-600 cursor-pointer"
+                    checked={items.length > 0 && items.every(i => selectedItems.has(i.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedItems(new Set(items.map(i => i.id)));
+                      else setSelectedItems(new Set());
+                    }}
+                  />
+                </th>
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Ingredient</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Current Stock</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Reorder Level</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Today's Entry</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Type</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock Amount</th>
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {items.map((item) => {
+              {items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item) => {
                 const isLow = item.currentStock <= item.reorderLevel && item.reorderLevel > 0;
+                const price = Number(item.price || 0);
+                const hasEntry = !!item.todayEntry;
+                const isCarryOver = item.todayEntry?.isCarryOver === true;
+                const opening  = hasEntry ? Number(item.todayEntry.openingStock  ?? 0) : null;
+                const purchase = hasEntry ? Number(item.todayEntry.addedStock    ?? 0) : null;
+                const consumed = hasEntry ? Number(item.todayEntry.consumedStock ?? 0) : null;
+                const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
+                const openingAmt     = opening     != null ? opening     * price : null;
+                const purchaseAmt    = purchase    != null ? purchase    * price : null;
+                const totalStock     = hasEntry    ? opening + purchase          : null;
+                const totalStockAmt  = totalStock  != null ? totalStock  * price : null;
+                const consumptionAmt = consumed    != null ? consumed    * price : null;
+                const balanceStock   = closingStock;
+                const balanceStockAmt = balanceStock != null ? balanceStock * price : null;
+                const fmtAmt = (val) => val == null ? '—' : `₹ ${Number(val).toFixed(2)}`;
+                const fmtVal = (val, suffix = '') => val == null ? '—' : `${val} ${suffix}`.trim();
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={item.id} className={`transition-colors ${selectedItems.has(item.id) ? 'bg-red-50' : isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
+                    <td className="px-4 py-4">
+                      <input type="checkbox"
+                        className="w-4 h-4 accent-red-600 cursor-pointer"
+                        checked={selectedItems.has(item.id)}
+                        onChange={(e) => {
+                          const next = new Set(selectedItems);
+                          e.target.checked ? next.add(item.id) : next.delete(item.id);
+                          setSelectedItems(next);
+                        }}
+                      />
+                    </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
                         <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-black ${isLow ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}>
@@ -2732,40 +3102,26 @@ export function KitchenInventory() {
                         </div>
                         <div>
                           <p className="font-black text-gray-900">{item.name}</p>
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.unit}</p>
+                          {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
                         </div>
                       </div>
                     </td>
-                    <td className={`px-4 py-4 text-right font-black ${isLow ? 'text-amber-600' : 'text-gray-900'}`}>
-                      {item.currentStock} {item.unit}
-                    </td>
-                    <td className="px-4 py-4 text-right font-bold text-gray-500">
-                      {item.reorderLevel} {item.unit}
-                    </td>
-                    <td className="px-4 py-4 text-center text-xs text-gray-500">
-                      {item.todayEntry ? (
-                        <span>
-                          O: {item.todayEntry.openingStock} · A: +{item.todayEntry.addedStock} · C: -{item.todayEntry.consumedStock} · Cl: {item.todayEntry.closingStock}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">No entry today</span>
-                      )}
-                    </td>
+                    <td className="px-4 py-4 text-center text-gray-500 text-sm">{item.unit}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'opening', fmtVal(opening, item.unit))}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(openingAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'purchase', fmtVal(purchase, item.unit))}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(purchaseAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtVal(totalStock, item.unit)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(totalStockAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'consumed', fmtVal(consumed, item.unit))}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(consumptionAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtVal(balanceStock, item.unit)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(balanceStockAmt)}</td>
                     <td className="px-4 py-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => { setAddStockModal(item); setAddStockAmount(''); }}
-                          className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-gray-800"
-                        >
-                          Add Stock
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          className="p-1.5 text-red-600 hover:text-red-500"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-red-600 hover:text-red-500">
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -2801,12 +3157,41 @@ export function KitchenInventory() {
             </select>
             <input type="number" step="0.01" placeholder="Current Stock" value={newItem.currentStock} onChange={(e) => setNewItem({ ...newItem, currentStock: e.target.value })}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
-            <input type="number" step="0.01" placeholder="Reorder Level" value={newItem.reorderLevel} onChange={(e) => setNewItem({ ...newItem, reorderLevel: e.target.value })}
+            <input type="number" step="0.01" min="0" placeholder="Price per unit (₹)" value={newItem.prize} onChange={(e) => setNewItem({ ...newItem, prize: e.target.value })}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Cancel</button>
               <button onClick={handleAddItem} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Add</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Selling Modal */}
+      {topSelling !== null && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setTopSelling(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-gray-900">Top 3 Selling Items — {selectedDate}</h3>
+              <button onClick={() => setTopSelling(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+            </div>
+            {topSelling.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No sales data for this date.</p>
+            ) : (
+              <div className="space-y-3">
+                {topSelling.map((item, idx) => (
+                  <div key={item.menuItemId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-black ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : idx === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-gray-900">{item.name}</p>
+                      <p className="text-xs text-gray-500">{item.totalSold} sold</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
