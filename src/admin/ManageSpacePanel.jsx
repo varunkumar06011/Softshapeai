@@ -8,7 +8,7 @@ import {
 import {
   fetchVenues, createVenue, updateVenue, deleteVenue,
   createSection, updateSection, deleteSection,
-  createTable, updateTable, deleteTable,
+  createTable, bulkCreateTables, updateTable, deleteTable,
 } from '../services/tableApi';
 
 const cls = {
@@ -135,6 +135,10 @@ function SpaceEditor({ onBack }) {
     try { await createTable({ number, capacity, sectionId }); await loadVenues(); showSuccess(`Table ${number} added`); }
     catch (err) { setError(err.message); }
   };
+  const handleBulkAddTable = async (sectionId, count, capacity) => {
+    try { const res = await bulkCreateTables({ sectionId, count, capacity }); await loadVenues(); showSuccess(`${res.created || count} tables added`); }
+    catch (err) { setError(err.message); }
+  };
   const handleUpdateTable = async (id, data) => {
     try { await updateTable(id, data); await loadVenues(); showSuccess('Table updated'); }
     catch (err) { setError(err.message); }
@@ -221,6 +225,7 @@ function SpaceEditor({ onBack }) {
                 onRenameSection={handleRenameSection}
                 onDeleteSection={handleDeleteSection}
                 onAddTable={handleAddTable}
+                onBulkAddTable={handleBulkAddTable}
                 onUpdateTable={handleUpdateTable}
                 onDeleteTable={handleDeleteTable}
                 allSections={allSections}
@@ -255,7 +260,7 @@ function AddVenueInline({ onAdd }) {
   );
 }
 
-function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSection, onRenameVenue, onDeleteVenue, onAddSection, onRenameSection, onDeleteSection, onAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
+function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSection, onRenameVenue, onDeleteVenue, onAddSection, onRenameSection, onDeleteSection, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(venue.name);
   const [typeInput, setTypeInput] = useState(venue.venueType || 'DINE_IN');
@@ -304,7 +309,7 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
       {expanded && (
         <div className="p-3 space-y-2">
           {sections.map(section => (
-            <SectionCard key={section.id} section={section} expanded={expandedSections.has(section.id)} onToggle={() => onToggleSection(section.id)} onRename={onRenameSection} onDelete={onDeleteSection} onAddTable={onAddTable} onUpdateTable={onUpdateTable} onDeleteTable={onDeleteTable} allSections={allSections} nextTableNum={nextTableNum} />
+            <SectionCard key={section.id} section={section} expanded={expandedSections.has(section.id)} onToggle={() => onToggleSection(section.id)} onRename={onRenameSection} onDelete={onDeleteSection} onAddTable={onAddTable} onBulkAddTable={onBulkAddTable} onUpdateTable={onUpdateTable} onDeleteTable={onDeleteTable} allSections={allSections} nextTableNum={nextTableNum} />
           ))}
           {sections.length === 0 && !addingSection && <p className="text-xs text-gray-400 text-center py-3">No sections — add one below</p>}
           {addingSection ? (
@@ -323,16 +328,26 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
   );
 }
 
-function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
+function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(section.name);
   const [addingTable, setAddingTable] = useState(false);
   const [newNum, setNewNum] = useState('');
   const [newCap, setNewCap] = useState('4');
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkCount, setBulkCount] = useState('4');
+  const [bulkCap, setBulkCap] = useState('4');
 
   const tables = section.tables || [];
   const saveName = () => { if (nameInput.trim() && nameInput !== section.name) onRename(section.id, nameInput.trim()); setEditing(false); };
-  const startAddTable = () => { setNewNum(String(nextTableNum)); setAddingTable(true); };
+  const startAddTable = () => { setBulkMode(false); setNewNum(String(nextTableNum)); setAddingTable(true); };
+  const startBulkAdd = () => { setAddingTable(false); setBulkMode(true); };
+  const submitBulk = () => {
+    const count = Math.max(1, Math.min(100, parseInt(bulkCount) || 1));
+    const cap = Math.max(1, parseInt(bulkCap) || 4);
+    onBulkAddTable(section.id, count, cap);
+    setBulkCount('4'); setBulkCap('4'); setBulkMode(false);
+  };
   const submitTable = () => {
     const num = parseInt(newNum); const cap = parseInt(newCap) || 4;
     if (num > 0) { onAddTable(num, cap, section.id); setNewNum(''); setNewCap('4'); setAddingTable(false); }
@@ -375,9 +390,22 @@ function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTab
               <button onClick={submitTable} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
               <button onClick={() => { setAddingTable(false); setNewNum(''); setNewCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
             </div>
+          ) : bulkMode ? (
+            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 flex-wrap">
+              <span className="text-xs text-gray-500 font-bold">Add</span>
+              <input autoFocus type="number" min="1" max="100" value={bulkCount} onChange={e => setBulkCount(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitBulk(); if (e.key === 'Escape') { setBulkMode(false); } }} className={cls.input + ' w-20'} placeholder="Count" />
+              <span className="text-xs text-gray-400">tables ×</span>
+              <input type="number" min="1" max="20" value={bulkCap} onChange={e => setBulkCap(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitBulk(); }} className={cls.input + ' w-20'} placeholder="Seats" />
+              <span className="text-xs text-gray-400">seats each</span>
+              <button onClick={submitBulk} className="flex items-center gap-1 px-2.5 py-1.5 bg-[#E53935] text-white text-xs font-bold rounded-lg hover:bg-[#B71C1C]"><Plus size={12} /> Add Tables</button>
+              <button onClick={() => { setBulkMode(false); setBulkCount('4'); setBulkCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
+            </div>
           ) : (
-            <button onClick={startAddTable} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Add Table</button>
-          )}
+            <div className="flex items-center gap-2">
+              <button onClick={startAddTable} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Add Table</button>
+              <button onClick={startBulkAdd} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Quick Add Tables</button>
+            </div>
+          )
         </div>
       )}
     </div>

@@ -124,6 +124,15 @@ export async function createTable({ number, capacity, sectionId, restaurantId })
   return parseResponse(res);
 }
 
+export async function bulkCreateTables({ sectionId, count, capacity, startNumber }) {
+  const res = await fetch(apiUrl("/api/tables/bulk"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ sectionId, count, capacity, startNumber }),
+  });
+  return parseResponse(res);
+}
+
 export async function deleteTable(tableId) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}`), {
     method: "DELETE",
