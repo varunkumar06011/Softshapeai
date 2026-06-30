@@ -221,13 +221,20 @@ const HighlightedText = ({ text, highlight }) => {
 };
 
 const CashierDashboard = ({ onLogout }) => {
-  console.log('[BUILD] CashierDashboard loaded — version 2025-06-13-v2');
+  console.log('[BUILD] CashierDashboard loaded — version 5.0.0');
   const { user, restaurant } = useAuth();
   const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
   const enabledModules = restaurant?.enabledModules || {};
-  const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
+  const defaultOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
     : 'restaurant';
+  const [activeOutlet, setActiveOutlet] = useState(() => {
+    const saved = localStorage.getItem(getTenantScopedKey('cashier_active_outlet'));
+    return saved || defaultOutlet;
+  });
+  useEffect(() => {
+    localStorage.setItem(getTenantScopedKey('cashier_active_outlet'), activeOutlet);
+  }, [activeOutlet]);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem(getTenantScopedKey('cashier_active_tab')) || 'dashboard');
   const [tableSubCategory, setTableSubCategory] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
@@ -305,6 +312,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Fetch sections dynamically for tab labels
   const [fetchedSections, setFetchedSections] = useState([]);
+  const [sectionsFetchKey, setSectionsFetchKey] = useState(0);
   useEffect(() => {
     fetch(`${API_BASE}/api/venue/sections`, {
       credentials: 'include',
@@ -325,7 +333,7 @@ const CashierDashboard = ({ onLogout }) => {
         console.error('[fetchedSections] fetch failed:', err);
         setFetchedSections([]);
       });
-  }, []);
+  }, [sectionsFetchKey]);
 
   // Build dynamic source maps from fetchedSections (replaces hardcoded constants)
   const sectionTagToSource = useMemo(() => {
@@ -553,6 +561,11 @@ const CashierDashboard = ({ onLogout }) => {
       : tables;
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
+
+  // Refetch sections when the active restaurant/outlet changes
+  useEffect(() => {
+    setSectionsFetchKey(k => k + 1);
+  }, [activeRestaurantId]);
 
   const socket = useSocket(activeRestaurantId);
   // ── End moved block ──
@@ -1997,7 +2010,7 @@ const CashierDashboard = ({ onLogout }) => {
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           orderId: txn.orderId,
-          restaurantId: txn._sourceRestaurantId || activeRestaurantId
+          restaurantId: txn._sourceRestaurantId || txn.restaurantId || activeRestaurantId
         }),
       });
       if (!response.ok) throw new Error('Print request failed');
@@ -4110,7 +4123,7 @@ const CashierDashboard = ({ onLogout }) => {
               {activeTab !== 'dashboard' && activeTab !== 'pos' && (
                 <div className="flex-grow p-3 overflow-y-auto custom-scrollbar bg-gray-50/50">
                   <div className="max-w-6xl mx-auto space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
                           ? (fetchedSections.find(s => s.name === tableSubCategory)?.name
@@ -4118,6 +4131,22 @@ const CashierDashboard = ({ onLogout }) => {
                             || tableSubCategory)
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
+                      {enabledModules.bar && enabledModules.food && (
+                        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                          {['both', 'bar', 'restaurant'].map(outlet => (
+                            <button
+                              key={outlet}
+                              onClick={() => setActiveOutlet(outlet)}
+                              className={`px-3 py-1.5 rounded-md text-xs font-black uppercase tracking-wider transition-all ${activeOutlet === outlet
+                                ? 'bg-[#E53935] text-white shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            >
+                              {outlet === 'both' ? 'All' : outlet}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {activeTab === 'tables' && enabledModules.tables !== false && (
