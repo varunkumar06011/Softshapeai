@@ -152,7 +152,7 @@ export default function VoucherModule() {
       const body = {
         paidToType,
         paidToName: paidToType === 'STAFF' ? (selectedEmployee?.name || paidToSearch.trim()) : paidToSearch.trim(),
-        employeeId: paidToType === 'STAFF' ? selectedEmployee?.id : undefined,
+        employeeId: paidToType === 'STAFF' ? (selectedEmployee?.employeeId || selectedEmployee?.id) : undefined,
         amount: parseFloat(amount),
         narration: narration.trim() || undefined,
         approvedById: selectedApprover?.id || undefined,
