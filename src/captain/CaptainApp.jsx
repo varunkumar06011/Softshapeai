@@ -3456,7 +3456,9 @@ export default function CaptainApp({ onLogout }) {
 
             setIsLoginView(true);
 
-          }} className="p-2 text-gray-400 hover:text-red-600 transition-colors"><LogOut size={18} /></button>
+            if (onLogout) onLogout();
+
+          }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors text-xs font-bold"><LogOut size={16} /> Logout</button>
 
         </div>
 
