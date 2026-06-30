@@ -44,6 +44,12 @@ export default function VoucherModule() {
 
   const [todaySummary, setTodaySummary] = useState(null);
   const [recentVouchers, setRecentVouchers] = useState([]);
+  const [summaryDate, setSummaryDate] = useState(() => {
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const ist = new Date(now.getTime() + istOffset);
+    return ist.toISOString().split('T')[0];
+  });
 
   const paidToRef = useRef(null);
   const approverRef = useRef(null);
@@ -51,14 +57,14 @@ export default function VoucherModule() {
   const [showApproverDropdown, setShowApproverDropdown] = useState(false);
   const [showNarrationSuggestions, setShowNarrationSuggestions] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (date = summaryDate) => {
     try {
       const [opts, approverList, narrations, summary, recent] = await Promise.all([
         apiFetch('/api/vouchers/paid-to-options'),
         apiFetch('/api/vouchers/approver-options'),
         apiFetch('/api/vouchers/narration-suggestions'),
-        apiFetch('/api/vouchers/today-summary'),
-        apiFetch('/api/vouchers?limit=10'),
+        apiFetch(`/api/vouchers/today-summary?date=${date}`),
+        apiFetch(`/api/vouchers?date=${date}&limit=10`),
       ]);
       setPaidToOptions(opts || { staff: [] });
       setApprovers(approverList || []);
@@ -68,11 +74,15 @@ export default function VoucherModule() {
     } catch (err) {
       console.error('[VoucherModule] Failed to load data:', err);
     }
-  }, []);
+  }, [summaryDate]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    loadData(summaryDate);
+  }, [summaryDate]);
 
   // Debounced narration
   useEffect(() => {
@@ -203,12 +213,28 @@ export default function VoucherModule() {
 
   return (
     <div className="space-y-4">
+      {/* Date Filter */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 flex items-center gap-2">
+            <Calendar size={18} className="text-[#E53935]" />
+            Vouchers On
+          </h3>
+          <input
+            type="date"
+            value={summaryDate}
+            onChange={(e) => setSummaryDate(e.target.value)}
+            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+          />
+        </div>
+      </div>
+
       {/* Today's Summary */}
       {todaySummary && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-3">
             <Wallet size={18} className="text-[#E53935]" />
-            <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">Today's Vouchers</h3>
+            <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">Vouchers — {todaySummary.date}</h3>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-gray-50 rounded-lg p-3">

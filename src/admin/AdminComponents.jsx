@@ -16098,11 +16098,8 @@ export function StaffManagement() {
   const handleSave = async () => {
 
     if (!form.name.trim()) return;
-    if (form.role === 'OWNER') {
-      if (!editing && (!form.email?.trim() || !form.password?.trim())) return;
-    } else {
-      if (!form.pin || form.pin.length !== 4) return;
-    }
+    if (form.role !== 'OWNER' && form.pin && form.pin.length !== 4) return;
+    if (form.role === 'OWNER' && form.email?.trim() && !form.password?.trim()) return;
 
     setSaving(true);
 
@@ -16433,7 +16430,7 @@ export function StaffManagement() {
 
                 onClick={handleSave}
 
-                disabled={saving || !form.name.trim() || (!editing ? (form.role === 'OWNER' ? (!form.email?.trim() || !form.password?.trim()) : form.pin.length !== 4) : false)}
+                disabled={saving || !form.name.trim() || (form.role !== 'OWNER' && form.pin.length > 0 && form.pin.length !== 4) || (form.role === 'OWNER' && form.email?.trim() && !form.password?.trim())}
 
                 className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition"
 
