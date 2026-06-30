@@ -329,7 +329,7 @@ async function persistStatusChanges(prevTables, nextTables) {
   return Promise.all(tasks);
 }
 
-export function useTableSync() {
+export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
   const [tables, setTablesState] = useState(() => {
     const cached = readCache();
     if (cached.length > 0) {
@@ -389,7 +389,11 @@ export function useTableSync() {
       }
       const merged = apiEmpty ? [] : mergeTablesFromApi(apiTables, current);
       // Deduplicate by backendId to prevent duplicate cards
-      const deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
+      let deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
+      // Guard: preserve active table's existing entry during KOT submission to prevent duplicate display
+      if (shouldSkipTableUpdate) {
+        deduped = deduped.map(t => shouldSkipTableUpdate(t) ? (current.find(c => c.backendId === t.backendId) || t) : t);
+      }
       writeCache(deduped);
       return deduped;
     });
@@ -425,6 +429,8 @@ export function useTableSync() {
         setTablesState((prev) => {
           const next = prev.map((t) => {
             if (t.backendId !== updatedTable.id) return t;
+            // Guard: skip active table during KOT submission to prevent duplicate items in display
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
             // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the

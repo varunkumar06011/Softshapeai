@@ -1986,7 +1986,7 @@ export function MenuPage({ onAddDish }) {
 
       setCategoriesLoading(true);
 
-      const res = await fetch(`${API_BASE}/api/menu/categories`);
+      const res = await fetch(`${API_BASE}/api/menu/categories?restaurantId=${getCurrentRestaurantId()}`);
 
       if (!res.ok) throw new Error('Failed to fetch categories');
 
@@ -2396,19 +2396,7 @@ export function MenuPage({ onAddDish }) {
 
         },
 
-        ...(activeOutlet === 'restaurant' && editingItem.categoryPrinterTarget !== undefined
-
-          ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
-
-          : {}),
-
-        ...(activeOutlet === 'restaurant' && editingItem.printerTarget !== undefined
-
-          ? { printerTarget: editingItem.printerTarget }
-
-          : {}),
-
-        ...(activeOutlet === 'restaurant' && editingItem.printerName !== undefined
+        ...(editingItem.printerName !== undefined
 
           ? { printerName: editingItem.printerName || null }
 
@@ -2652,19 +2640,7 @@ export function MenuPage({ onAddDish }) {
 
           ),
 
-          ...(activeOutlet === 'restaurant' && addingItem.categoryPrinterTarget !== undefined
-
-            ? { categoryPrinterTarget: addingItem.categoryPrinterTarget }
-
-            : {}),
-
-          ...(activeOutlet === 'restaurant' && addingItem.printerTarget !== undefined
-
-            ? { printerTarget: addingItem.printerTarget }
-
-            : {}),
-
-          ...(activeOutlet === 'restaurant' && addingItem.printerName !== undefined
+          ...(addingItem.printerName !== undefined
 
             ? { printerName: addingItem.printerName || null }
 

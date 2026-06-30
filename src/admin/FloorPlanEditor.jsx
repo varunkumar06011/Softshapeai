@@ -5,7 +5,7 @@ import {
 import {
   fetchVenues, createVenue, updateVenue, deleteVenue,
   createSection, updateSection, deleteSection,
-  createTable, updateTable, deleteTable,
+  createTable, bulkCreateTables, updateTable, deleteTable,
 } from '../services/tableApi';
 
 const VENUE_TYPES = [
@@ -84,6 +84,10 @@ export default function FloorPlanEditor() {
     try { await createTable({ number, capacity, sectionId }); await loadVenues(); }
     catch (err) { setError(err.message); }
   };
+  const handleBulkAddTable = async (sectionId, count, capacity) => {
+    try { await bulkCreateTables({ sectionId, count, capacity }); await loadVenues(); }
+    catch (err) { setError(err.message); }
+  };
   const handleUpdateTable = async (id, data) => {
     try { await updateTable(id, data); await loadVenues(); }
     catch (err) { setError(err.message); }
@@ -141,6 +145,7 @@ export default function FloorPlanEditor() {
             onRenameSection={handleRenameSection}
             onDeleteSection={handleDeleteSection}
             onAddTable={handleAddTable}
+            onBulkAddTable={handleBulkAddTable}
             onUpdateTable={handleUpdateTable}
             onDeleteTable={handleDeleteTable}
             onRenameVenue={handleRenameVenue}
@@ -201,7 +206,7 @@ function AddVenueButton({ onAdd }) {
 function VenueCard({
   venue, expanded, onToggle, expandedSections, onToggleSection,
   onAddSection, onRenameSection, onDeleteSection,
-  onAddTable, onUpdateTable, onDeleteTable,
+  onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable,
   onRenameVenue, onDeleteVenue, allSections,
 }) {
   const [editing, setEditing] = useState(false);
@@ -280,6 +285,7 @@ function VenueCard({
               onRename={onRenameSection}
               onDelete={onDeleteSection}
               onAddTable={onAddTable}
+              onBulkAddTable={onBulkAddTable}
               onUpdateTable={onUpdateTable}
               onDeleteTable={onDeleteTable}
               allSections={allSections}
@@ -316,13 +322,16 @@ function VenueCard({
 
 function SectionRow({
   section, venue, expanded, onToggle,
-  onRename, onDelete, onAddTable, onUpdateTable, onDeleteTable, allSections,
+  onRename, onDelete, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections,
 }) {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(section.name);
   const [addingTable, setAddingTable] = useState(false);
   const [newTableNum, setNewTableNum] = useState('');
   const [newTableCap, setNewTableCap] = useState('4');
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkCount, setBulkCount] = useState('4');
+  const [bulkCap, setBulkCap] = useState('4');
 
   const tables = section.tables || [];
 
@@ -348,6 +357,13 @@ function SectionRow({
       setNewTableCap('4');
       setAddingTable(false);
     }
+  };
+  const startBulkAdd = () => { setAddingTable(false); setBulkMode(true); };
+  const handleBulkSubmit = () => {
+    const count = Math.max(1, Math.min(100, parseInt(bulkCount) || 1));
+    const cap = Math.max(1, parseInt(bulkCap) || 4);
+    onBulkAddTable(section.id, count, cap);
+    setBulkCount('4'); setBulkCap('4'); setBulkMode(false);
   };
 
   return (
@@ -420,12 +436,44 @@ function SectionRow({
               <button onClick={handleAddTableSubmit} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={14} /></button>
               <button onClick={() => { setAddingTable(false); setNewTableNum(''); setNewTableCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={14} /></button>
             </div>
+          ) : bulkMode ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-bold">Add</span>
+              <input
+                autoFocus
+                type="number"
+                min="1"
+                max="100"
+                value={bulkCount}
+                onChange={e => setBulkCount(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleBulkSubmit(); if (e.key === 'Escape') { setBulkMode(false); } }}
+                placeholder="Count"
+                className={inputCls + ' w-24'}
+              />
+              <span className="text-xs text-gray-400">tables ×</span>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={bulkCap}
+                onChange={e => setBulkCap(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleBulkSubmit(); }}
+                placeholder="Seats"
+                className={inputCls + ' w-24'}
+              />
+              <span className="text-xs text-gray-400">seats each</span>
+              <button onClick={handleBulkSubmit} className="flex items-center gap-1 px-2.5 py-1.5 bg-[#E53935] text-white text-xs font-bold rounded-lg hover:bg-[#B71C1C]"><Plus size={12} /> Add Tables</button>
+              <button onClick={() => { setBulkMode(false); setBulkCount('4'); setBulkCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={14} /></button>
+            </div>
           ) : (
-            <button onClick={() => {
-              setAddingTable(true);
-              const maxNum = tables.length > 0 ? Math.max(...tables.map(t => t.number || 0)) : 0;
-              setNewTableNum(String(maxNum + 1));
-            }} className={btnGhost}><Plus size={12} /> Add Table</button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => {
+                setAddingTable(true);
+                const maxNum = tables.length > 0 ? Math.max(...tables.map(t => t.number || 0)) : 0;
+                setNewTableNum(String(maxNum + 1));
+              }} className={btnGhost}><Plus size={12} /> Add Table</button>
+              <button onClick={startBulkAdd} className={btnGhost}><Plus size={12} /> Quick Add Tables</button>
+            </div>
           )}
         </div>
       )}

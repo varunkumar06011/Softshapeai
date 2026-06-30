@@ -124,6 +124,15 @@ export async function createTable({ number, capacity, sectionId, restaurantId })
   return parseResponse(res);
 }
 
+export async function bulkCreateTables({ sectionId, count, capacity, startNumber }) {
+  const res = await fetch(apiUrl("/api/tables/bulk"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ sectionId, count, capacity, startNumber }),
+  });
+  return parseResponse(res);
+}
+
 export async function deleteTable(tableId) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}`), {
     method: "DELETE",
@@ -132,22 +141,30 @@ export async function deleteTable(tableId) {
   return parseResponse(res);
 }
 
-// ── Venue CRUD ──────────────────────────────────────────────────────────────
-
-export async function createVenue({ name, venueType, sortOrder }) {
-  const res = await fetch(apiUrl("/api/venues"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ name, venueType, sortOrder }),
+export async function deleteAllTables() {
+  const res = await fetch(apiUrl("/api/tables/all"), {
+    method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return parseResponse(res);
 }
 
-export async function updateVenue(id, { name, venueType, sortOrder, isActive }) {
+// ── Venue CRUD ──────────────────────────────────────────────────────────────
+
+export async function createVenue({ name, venueType, kotEnabled, sortOrder }) {
+  const res = await fetch(apiUrl("/api/venues"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder }),
+  });
+  return parseResponse(res);
+}
+
+export async function updateVenue(id, { name, venueType, kotEnabled, sortOrder, isActive }) {
   const res = await fetch(apiUrl(`/api/venues/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ name, venueType, sortOrder, isActive }),
+    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder, isActive }),
   });
   return parseResponse(res);
 }

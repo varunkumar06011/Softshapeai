@@ -23,7 +23,7 @@
 //   - Request IDs generated for idempotency
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { apiUrl, getAuthHeaders, isBackendReachable } from "./apiConfig";
+import { apiUrl, getAuthHeaders, isBackendReachable, apiFetch } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { withRetry, RETRY_CONFIG, logCriticalError } from "../utils/resilience";
 import { authService } from "./authService";
@@ -75,13 +75,19 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 45000 }) {
+export async function reserveKotNumber() {
+  return apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 5000 });
+}
+
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
   if (isExtraTable) { orderData.isExtraTable = true; }
   if (sectionTag) { orderData.sectionTag = sectionTag; }
   if (platform) { orderData.platform = platform; }
+  if (localPrinted) { orderData.localPrinted = true; }
+  if (preReservedKotNumber != null) { orderData.preReservedKotNumber = preReservedKotNumber; }
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
   if (!isBackendReachable()) {
@@ -154,13 +160,15 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 45000) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
   if (isExtraTable) { body.isExtraTable = true; }
   if (tableNumber) { body.tableNumber = tableNumber; }
   if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
+  if (localPrinted) { body.localPrinted = true; }
+  if (preReservedKotNumber != null) { body.preReservedKotNumber = preReservedKotNumber; }
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
   if (!isBackendReachable()) {

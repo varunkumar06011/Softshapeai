@@ -16,13 +16,13 @@ import { Plus, Trash2, Users, ArrowRight, MapPin, LayoutGrid, Hash, Armchair } f
 
 // Default venue presets based on restaurant type
 const AREA_PRESETS = {
-  DINE_IN: [{ name: 'Restaurant', venueType: 'DINE_IN' }],
-  BAR_LOUNGE: [{ name: 'Bar', venueType: 'BAR' }],
+  DINE_IN: [{ name: 'Restaurant', venueType: 'DINE_IN', kotEnabled: true }],
+  BAR_LOUNGE: [{ name: 'Bar', venueType: 'BAR', kotEnabled: true }],
   BAR_WITH_DINING: [
-    { name: 'Restaurant', venueType: 'DINE_IN' },
-    { name: 'Bar', venueType: 'BAR' },
+    { name: 'Restaurant', venueType: 'DINE_IN', kotEnabled: true },
+    { name: 'Bar', venueType: 'BAR', kotEnabled: true },
   ],
-  CAFE: [{ name: 'Cafe', venueType: 'CAFE' }],
+  CAFE: [{ name: 'Cafe', venueType: 'CAFE', kotEnabled: true }],
 };
 
 const VENUE_TYPE_LABELS = {
@@ -51,6 +51,7 @@ function buildInitialAreas(restaurantType, existingVenues) {
       return {
         name: v.name,
         venueType: v.venueType || 'DINE_IN',
+        kotEnabled: v.kotEnabled !== false,
         sections: [...sections, ...directSections],
       };
     });
@@ -59,6 +60,7 @@ function buildInitialAreas(restaurantType, existingVenues) {
   return presets.map(p => ({
     name: p.name,
     venueType: p.venueType,
+    kotEnabled: p.kotEnabled !== false,
     sections: [{ name: 'Main Hall', tables: [{ number: 1, capacity: 4 }] }],
   }));
 }
@@ -94,6 +96,7 @@ const StepYourSpace = ({ restaurantType, venues, sections, tables, onChange, onN
     const nestedVenues = updatedAreas.map(area => ({
       name: area.name,
       venueType: area.venueType,
+      kotEnabled: area.kotEnabled !== false,
       floors: [{
         name: 'Ground Floor',
         sections: area.sections.map(s => ({
@@ -123,7 +126,7 @@ const StepYourSpace = ({ restaurantType, venues, sections, tables, onChange, onN
   };
 
   const addArea = () => {
-    updateAreas([...areas, { name: '', venueType: 'DINE_IN', sections: [{ name: '', tables: [] }] }]);
+    updateAreas([...areas, { name: '', venueType: 'DINE_IN', kotEnabled: true, sections: [{ name: '', tables: [] }] }]);
   };
 
   const removeArea = (areaIdx) => {
@@ -134,6 +137,14 @@ const StepYourSpace = ({ restaurantType, venues, sections, tables, onChange, onN
 
   const updateAreaName = (areaIdx, name) => {
     updateAreas(areas.map((a, i) => i === areaIdx ? { ...a, name } : a));
+  };
+
+  const updateAreaVenueType = (areaIdx, venueType) => {
+    updateAreas(areas.map((a, i) => i === areaIdx ? { ...a, venueType } : a));
+  };
+
+  const updateAreaKotEnabled = (areaIdx, kotEnabled) => {
+    updateAreas(areas.map((a, i) => i === areaIdx ? { ...a, kotEnabled } : a));
   };
 
   const addSection = (areaIdx) => {
@@ -252,18 +263,37 @@ const StepYourSpace = ({ restaurantType, venues, sections, tables, onChange, onN
         return (
           <div key={areaIdx} className="rounded-2xl border-2 border-gray-100 overflow-hidden">
             {/* Area Header */}
-            <div className="bg-gray-50 px-5 py-4 flex items-center gap-3">
+            <div className="bg-gray-50 px-5 py-4 flex items-center gap-3 flex-wrap">
               <MapPin size={20} className="text-[#E53935] shrink-0" />
               <input
                 type="text"
                 value={area.name}
                 onChange={(e) => updateAreaName(areaIdx, e.target.value)}
-                className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 font-medium"
+                className="flex-1 min-w-[180px] px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-gray-900 font-medium"
                 placeholder="Area name (e.g., Restaurant, Bar, Rooftop)"
               />
-              <span className="shrink-0 px-2.5 py-1 bg-[#E53935]/10 text-[#E53935] text-xs font-semibold rounded-full">
-                {VENUE_TYPE_LABELS[area.venueType] || area.venueType}
-              </span>
+              <select
+                value={area.venueType}
+                onChange={(e) => updateAreaVenueType(areaIdx, e.target.value)}
+                className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 focus:outline-none focus:border-[#E53935]"
+              >
+                {Object.entries(VENUE_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => updateAreaKotEnabled(areaIdx, !area.kotEnabled)}
+                className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  area.kotEnabled !== false
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                    : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                }`}
+                title={area.kotEnabled !== false ? 'KOT printing is ON — kitchen gets order tickets' : 'KOT printing is OFF — direct bill only, no kitchen tickets'}
+              >
+                <span className={`w-2 h-2 rounded-full ${area.kotEnabled !== false ? 'bg-green-500' : 'bg-gray-400'}`} />
+                KOT: {area.kotEnabled !== false ? 'ON' : 'OFF'}
+              </button>
               {areas.length > 1 && (
                 <button
                   onClick={() => removeArea(areaIdx)}

@@ -33,7 +33,9 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber } from '../services/orderApi';
+import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
+import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
@@ -219,13 +221,20 @@ const HighlightedText = ({ text, highlight }) => {
 };
 
 const CashierDashboard = ({ onLogout }) => {
-  console.log('[BUILD] CashierDashboard loaded — version 2025-06-13-v2');
+  console.log('[BUILD] CashierDashboard loaded — version 5.0.0');
   const { user, restaurant } = useAuth();
   const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
   const enabledModules = restaurant?.enabledModules || {};
-  const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
+  const defaultOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
     : 'restaurant';
+  const [activeOutlet, setActiveOutlet] = useState(() => {
+    const saved = localStorage.getItem(getTenantScopedKey('cashier_active_outlet'));
+    return saved || defaultOutlet;
+  });
+  useEffect(() => {
+    localStorage.setItem(getTenantScopedKey('cashier_active_outlet'), activeOutlet);
+  }, [activeOutlet]);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem(getTenantScopedKey('cashier_active_tab')) || 'dashboard');
   const [tableSubCategory, setTableSubCategory] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
@@ -303,6 +312,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Fetch sections dynamically for tab labels
   const [fetchedSections, setFetchedSections] = useState([]);
+  const [sectionsFetchKey, setSectionsFetchKey] = useState(0);
   useEffect(() => {
     fetch(`${API_BASE}/api/venue/sections`, {
       credentials: 'include',
@@ -323,7 +333,7 @@ const CashierDashboard = ({ onLogout }) => {
         console.error('[fetchedSections] fetch failed:', err);
         setFetchedSections([]);
       });
-  }, []);
+  }, [sectionsFetchKey]);
 
   // Build dynamic source maps from fetchedSections (replaces hardcoded constants)
   const sectionTagToSource = useMemo(() => {
@@ -433,6 +443,7 @@ const CashierDashboard = ({ onLogout }) => {
   const isSubmittingKotRef = useRef(false);
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const kotRequestIdRef = useRef(null);
+  const lastKotCartSignatureRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
   const loadTxnsGenerationRef = useRef(0);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
@@ -551,6 +562,11 @@ const CashierDashboard = ({ onLogout }) => {
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
 
+  // Refetch sections when the active restaurant/outlet changes
+  useEffect(() => {
+    setSectionsFetchKey(k => k + 1);
+  }, [activeRestaurantId]);
+
   const socket = useSocket(activeRestaurantId);
   // ── End moved block ──
 
@@ -588,6 +604,8 @@ const CashierDashboard = ({ onLogout }) => {
   // snapshot. Without this sync, handleFinalBill can't find the real orderId and modal shows stale data.
   useEffect(() => {
     if (!selectedTable?.isExtra) return;
+    // Guard: skip during KOT submission to prevent duplicate items in display cart
+    if (isSubmittingKotRef.current) return;
     const fresh = extraTables.find(et => et.id === selectedTable.id);
     if (!fresh) return;
     // Only update if something meaningful changed to avoid infinite loops
@@ -1095,19 +1113,23 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs1 && Date.now() - termTs1 < 5000) return;
       // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
-        setSelectedTable(prev => {
-          if (!prev) return prev;
-          const before = prev;
-          const nextVal = {
-            ...prev,
-            activeOrder: mergeOrder(order, prev.activeOrder),
-            status: prev.status === 'Free' ? 'Occupied' : prev.status,
-            workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
-            currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-          };
-          validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
-          return nextVal;
-        });
+        // Guard: skip during KOT submission to prevent duplicate items in display cart
+        // (socket event would add items to sessionItems while they're still in pendingItems)
+        if (!isSubmittingKotRef.current) {
+          setSelectedTable(prev => {
+            if (!prev) return prev;
+            const before = prev;
+            const nextVal = {
+              ...prev,
+              activeOrder: mergeOrder(order, prev.activeOrder),
+              status: prev.status === 'Free' ? 'Occupied' : prev.status,
+              workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
+              currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            };
+            validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
+            return nextVal;
+          });
+        }
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
@@ -1169,6 +1191,12 @@ const CashierDashboard = ({ onLogout }) => {
       // Add back any existing items NOT present in incoming (additive — never drop items)
       const localOnlyItems = existingItems.filter(i => !incomingMap.has(i.id) && i.id);
 
+      // ── DIAGNOSTIC: trace localOnlyItems in mergeOrder ──
+      if (localOnlyItems.length > 0) {
+        console.log('[DIAG mergeOrder] localOnlyItems (in existing, NOT in incoming):', localOnlyItems.map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
+      }
+      // ── END DIAGNOSTIC ──
+
       // Remove id:null placeholders whose name matches a real-id item (server confirmed them)
       const realItemNames = new Set(
         mergedByIncoming.filter(i => i.id).map(i => (i.name ?? i.n ?? '').toLowerCase().trim())
@@ -1196,15 +1224,21 @@ const CashierDashboard = ({ onLogout }) => {
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs2 = recentlyTerminatedRef.current[order.tableId];
       if (termTs2 && Date.now() - termTs2 < 5000) return;
+      // ── DIAGNOSTIC: trace socket order:updated ──
+      console.log('[DIAG order:updated] incoming items:', (order.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
+      // ── END DIAGNOSTIC ──
       // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
-        setSelectedTable(prev => {
-          if (!prev) return prev;
-          const before = prev;
-          const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) };
-          validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
-          return nextVal;
-        });
+        // Guard: skip during KOT submission to prevent duplicate items in display cart
+        if (!isSubmittingKotRef.current) {
+          setSelectedTable(prev => {
+            if (!prev) return prev;
+            const before = prev;
+            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) };
+            validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
+            return nextVal;
+          });
+        }
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
@@ -1229,6 +1263,10 @@ const CashierDashboard = ({ onLogout }) => {
       // No click cooldown — real-time updates must always be processed
       if (shouldBlockTableUpdate(table.id, table.status)) return;
       if (terminatedTableIdsRef.current.has(table.id)) return;
+      // ── DIAGNOSTIC: trace socket table:updated ──
+      const _tblOrdersItems = (table.orders?.[0]?.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill }));
+      console.log('[DIAG table:updated] table.id:', table.id, 'orders[0].items:', _tblOrdersItems, 'workflowStatus:', table.workflowStatus);
+      // ── END DIAGNOSTIC ──
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
 
@@ -1276,6 +1314,8 @@ const CashierDashboard = ({ onLogout }) => {
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
       if (selectedTable?.backendId === table.id && !selectedTable?.isExtra) {
+        // Guard: skip during KOT submission to prevent duplicate items in display cart
+        if (isSubmittingKotRef.current) return;
         setSelectedTable(prev => {
           if (!prev) return prev;
 
@@ -1545,6 +1585,10 @@ const CashierDashboard = ({ onLogout }) => {
   }, [txnDateFilter, activeTab]);
 
   useEffect(() => {
+    // Guard: skip during KOT submission — handleSmartKOT updates selectedTable + cart synchronously
+    // after the API resolves. Letting this effect run mid-submission would merge stale activeTables
+    // data and cause duplicate items in the display cart.
+    if (isSubmittingKotRef.current) return;
     if (!selectedTable?.backendId) return;
     // Extra tables share backendId with their parent table. The parent may be AVAILABLE
     // (already settled), which would cause this effect to null out the extra table's
@@ -1979,7 +2023,7 @@ const CashierDashboard = ({ onLogout }) => {
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           orderId: txn.orderId,
-          restaurantId: txn._sourceRestaurantId || activeRestaurantId
+          restaurantId: txn._sourceRestaurantId || txn.restaurantId || activeRestaurantId
         }),
       });
       if (!response.ok) throw new Error('Print request failed');
@@ -2043,6 +2087,16 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Error', 'Invalid table selected.', 'error');
       return;
     }
+
+    // ── DIAGNOSTIC: trace cancelled-item display bug ──
+    const _allItems = getAllOrderItems(selectedTable);
+    const _billable = getBillableItems(selectedTable);
+    const _activeItems = selectedTable?.activeOrder?.items || [];
+    console.log('[DIAG finalBill] selectedTable.activeOrder.items (raw):', _activeItems.map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
+    console.log('[DIAG finalBill] getAllOrderItems:', _allItems.map(i => ({ id: i.id, name: i.n ?? i.name, qty: i.q ?? i.quantity, removedFromBill: i.removedFromBill })));
+    console.log('[DIAG finalBill] getBillableItems:', _billable.map(i => ({ id: i.id, name: i.n ?? i.name, qty: i.q ?? i.quantity, removedFromBill: i.removedFromBill })));
+    console.log('[DIAG finalBill] kotHistory items:', (selectedTable?.kotHistory || []).flatMap(k => (k.items || []).map(i => ({ kotId: k.id, name: i.n, q: i.q, s: i.s, removedFromBill: i.removedFromBill }))));
+    // ── END DIAGNOSTIC ──
 
     // Ref guard - synchronous check to prevent race condition
     if (isPrintingBillRef.current) return;
@@ -2154,6 +2208,11 @@ const CashierDashboard = ({ onLogout }) => {
                 sgst: billCalc.sgst,
                 grandTotal: billCalc.grandTotal,
                 billNumber: response.billNumber,
+                restaurant: {
+                  name: restaurant?.name || undefined,
+                  receiptHeader: restaurant?.receiptHeader || undefined,
+                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                },
               },
             });
             if (result.printed) {
@@ -2399,10 +2458,7 @@ const CashierDashboard = ({ onLogout }) => {
               sgst: sgstAmt,
               discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
               captain: 'Walk-in',
-              sectionTag: (fetchedSections.find(s => {
-                const n = (s.name || '').toLowerCase();
-                return n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY';
-              })?.sectionTag) || 'venue-restaurant-parcel',
+              sectionTag: (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel',
               requestId
             }
           },
@@ -2470,10 +2526,7 @@ const CashierDashboard = ({ onLogout }) => {
             sgst: sgstAmt,
             discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
             captain: 'Walk-in',
-            sectionTag: (fetchedSections.find(s => {
-              const n = (s.name || '').toLowerCase();
-              return n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY';
-            })?.sectionTag) || 'venue-restaurant-parcel',
+            sectionTag: (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel',
             requestId
           }
         })
@@ -3349,6 +3402,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const addToCart = (item) => {
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
     if (!selectedTable) {
       addNotification('Select Table', 'Please assign a table before adding items.', 'warning');
       setActiveTab('tables');
@@ -3371,6 +3426,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const updateQty = (id, delta) => {
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
     setCart(prev => {
       const updated = prev.map(item => {
         if (item.id === id) {
@@ -3383,6 +3440,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const updateItemNote = (itemId, note) => {
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
     setCart(prev =>
       prev.map(i => i.id === itemId ? { ...i, notes: note.trim() || null } : i)
     );
@@ -3394,11 +3453,19 @@ const CashierDashboard = ({ onLogout }) => {
     setIsKotSending(true);
     setIsKotSuccess(false);
 
-    // Generate requestId for idempotency; do not update UI until the API confirms.
-    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2) + Date.now().toString(36));
-    kotRequestIdRef.current = requestId;
+    // Generate requestId for idempotency; reuse on retry if cart hasn't changed.
+    const cartSignature = cart.map(i => `${i.id || i.menuItemId}:${i.q ?? i.quantity ?? 1}:${i.notes ?? ''}`).sort().join('|');
+    let requestId;
+    if (kotRequestIdRef.current && lastKotCartSignatureRef.current === cartSignature) {
+      // Retry with same cart contents — reuse the same requestId so backend idempotency short-circuits
+      requestId = kotRequestIdRef.current;
+    } else {
+      requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36));
+      kotRequestIdRef.current = requestId;
+      lastKotCartSignatureRef.current = cartSignature;
+    }
     // Register this requestId so socket echoes from our own KOT submission are skipped
     processedSocketRequestIds.current.add(requestId);
     // Clean up after 30s to prevent unbounded growth
@@ -3421,54 +3488,184 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       let orderResponse = null;
 
-      if (selectedTable?.backendId || selectedTable?.isExtra) {
-        if (selectedTable.isExtra) {
-          const orderId = selectedTable.activeOrder?.id;
-          if (orderId) {
-            // Subsequent KOT for extra table — append to existing order
-            console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-            orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 10000);
-          } else {
-            // First KOT for extra table — create order tied to the parent DB table
-            orderResponse = await createOrder({
-              tableId: selectedTable.backendId,
-              tableNumber: selectedTable.number,
-              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-              items: apiItems,
-              requestId,
-              captainName: undefined,
-              isExtraTable: true,
-              sectionTag: selectedTable.sectionTag || undefined,
-              platform: selectedOrderPlatform,
-              timeoutMs: 10000,
-            });
-          }
-        } else if (selectedTable.activeOrder?.id) {
-          // Regular table: Subsequent KOT — append new items to existing order
-          orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 10000);
-        } else {
-          // Regular table: First KOT — create a brand-new order row
-          try {
-            orderResponse = await createOrder({
-              tableId: selectedTable.backendId,
-              tableNumber: selectedTable.number || selectedTable.id,
-              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-              items: apiItems,
-              requestId,
-              captainName: undefined,
-              sectionTag: selectedTable.sectionTag || undefined,
-              platform: selectedOrderPlatform,
-              timeoutMs: 10000,
-            });
-          } catch (createErr) {
-            // 409 means another device already created an order for this table — retry as update
-            if (createErr.statusCode === 409 && createErr.existingOrderId) {
-              console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
-              orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 10000);
-              // Update selectedTable with the existing order ID so future KOTs use update path
-              setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+      // 1. Reserve KOT number first (for local printing with real number)
+      let preReservedKotNumber = null;
+      let localPrinted = false;
+      try {
+        const reserved = await reserveKotNumber();
+        preReservedKotNumber = reserved?.kotNumber ?? null;
+      } catch (reserveErr) {
+        console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);
+      }
+
+      // 2. If we have a reserved KOT number, generate ESC/POS and fire local print
+      //    in parallel with the cloud API call.
+      if (preReservedKotNumber != null && (selectedTable?.backendId || selectedTable?.isExtra)) {
+        const kotOrderData = {
+          tableNumber: selectedTable?.number ?? selectedTable?.id,
+          orderId: selectedTable?.activeOrder?.id || 'pending',
+          items: cart.map(i => ({
+            name: i.n || i.name,
+            quantity: i.q ?? i.quantity ?? 1,
+            price: Number(i.p ?? i.price ?? 0),
+            notes: i.notes || null,
+            type: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'liquor' : 'food',
+          })),
+          kotId: String(preReservedKotNumber),
+          sectionName: selectedTable?.section?.name || 'Main Hall',
+          captainName: 'Cashier',
+          sectionTag: selectedTable?.sectionTag || undefined,
+          restaurantName: restaurant?.name || undefined,
+        };
+
+        const foodEscpos = buildFoodKOT(kotOrderData);
+        const liquorEscpos = buildLiquorKOT(kotOrderData);
+
+        const localPrintPromises = [];
+        if (foodEscpos.length > 0) {
+          localPrintPromises.push(
+            printLocal({
+              type: 'KOT',
+              escposData: foodEscpos,
+              eventId: `${requestId}-food`,
+              data: kotOrderData,
+            }).catch(err => console.warn('[KOT] Local food print failed:', err.message))
+          );
+        }
+        if (liquorEscpos.length > 0) {
+          localPrintPromises.push(
+            printLocal({
+              type: 'BAR_KOT',
+              escposData: liquorEscpos,
+              eventId: `${requestId}-liquor`,
+              data: kotOrderData,
+            }).catch(err => console.warn('[KOT] Local liquor print failed:', err.message))
+          );
+        }
+
+        // Fire local print and API call in parallel.
+        // Use allSettled so a local print success is not masked by an API failure
+        // — otherwise the printer prints the KOT but the UI shows "not sent".
+        const [localPrintSettled, apiSettled] = await Promise.allSettled([
+          Promise.all(localPrintPromises),
+          (async () => {
+            if (selectedTable.isExtra) {
+              const orderId = selectedTable.activeOrder?.id;
+              if (orderId) {
+                return await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, true, preReservedKotNumber);
+              } else {
+                return await createOrder({
+                  tableId: selectedTable.backendId,
+                  tableNumber: selectedTable.number,
+                  restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                  items: apiItems,
+                  requestId,
+                  captainName: undefined,
+                  isExtraTable: true,
+                  sectionTag: selectedTable.sectionTag || undefined,
+                  platform: selectedOrderPlatform,
+                  timeoutMs: 45000,
+                  localPrinted: true,
+                  preReservedKotNumber,
+                });
+              }
+            } else if (selectedTable.activeOrder?.id) {
+              return await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, true, preReservedKotNumber);
             } else {
-              throw createErr;
+              try {
+                return await createOrder({
+                  tableId: selectedTable.backendId,
+                  tableNumber: selectedTable.number || selectedTable.id,
+                  restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                  items: apiItems,
+                  requestId,
+                  captainName: undefined,
+                  sectionTag: selectedTable.sectionTag || undefined,
+                  platform: selectedOrderPlatform,
+                  timeoutMs: 45000,
+                  localPrinted: true,
+                  preReservedKotNumber,
+                });
+              } catch (createErr) {
+                if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                  console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                  setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, true, preReservedKotNumber);
+                } else {
+                  throw createErr;
+                }
+              }
+            }
+          })(),
+        ]);
+
+        const localPrintResults = localPrintSettled.status === 'fulfilled' ? localPrintSettled.value : [];
+        localPrinted = localPrintResults.some(r => r?.printed);
+
+        // If the API call failed but local print succeeded, warn the user
+        // that the KOT was printed but server sync failed — don't show "not sent".
+        if (apiSettled.status === 'rejected' && localPrinted) {
+          console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
+          addNotification(
+            `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
+            'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
+            'warning'
+          );
+          return;
+        }
+
+        // If both API and local print failed, throw the API error to hit the catch block
+        if (apiSettled.status === 'rejected') {
+          throw apiSettled.reason;
+        }
+
+        orderResponse = apiSettled.value;
+
+      } else {
+        // Fallback: cloud-only flow (reserve failed or no table)
+        if (selectedTable?.backendId || selectedTable?.isExtra) {
+          if (selectedTable.isExtra) {
+            const orderId = selectedTable.activeOrder?.id;
+            if (orderId) {
+              console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000);
+            } else {
+              orderResponse = await createOrder({
+                tableId: selectedTable.backendId,
+                tableNumber: selectedTable.number,
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: undefined,
+                isExtraTable: true,
+                sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
+                timeoutMs: 45000,
+              });
+            }
+          } else if (selectedTable.activeOrder?.id) {
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000);
+          } else {
+            try {
+              orderResponse = await createOrder({
+                tableId: selectedTable.backendId,
+                tableNumber: selectedTable.number || selectedTable.id,
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: undefined,
+                sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
+                timeoutMs: 45000,
+              });
+            } catch (createErr) {
+              if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000);
+                setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+              } else {
+                throw createErr;
+              }
             }
           }
         }
@@ -3580,6 +3777,8 @@ const CashierDashboard = ({ onLogout }) => {
 
       if (orderResponse || !selectedTable?.backendId) {
         setCart([]);
+        kotRequestIdRef.current = null;
+        lastKotCartSignatureRef.current = null;
         lastAnyItemAddedRef.current = 0;
         setExpandedNoteItemId(null);
         setIsKotSuccess(true);
@@ -3588,12 +3787,87 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } catch (err) {
       console.error('[KOT] API failed:', err.message);
-      // Cart is retained so the cashier can retry immediately or add more items.
-      addNotification(
-        'KOT Not Sent to Kitchen',
-        `${err.message || 'Network error'}. Cart kept — tap KOT again to retry.`,
-        'error'
-      );
+      const isTimeout = err.message?.includes('timed out') || err.name === 'AbortError';
+      // Network-level errors (no HTTP status code) are ambiguous — the backend
+      // may have processed the request and emitted the print job, but the response
+      // was lost in transit.  HTTP errors (400, 401, 409, etc.) have a status code
+      // and are definitive — the backend rejected the request, no print happened.
+      const isNetworkError = !err.status && !err.statusCode;
+      const needsVerification = (isTimeout || isNetworkError) && selectedTable?.backendId;
+
+      if (needsVerification) {
+        // Timeout or network error = unknown outcome. Check if the server actually committed the items.
+        try {
+          const verifyController = new AbortController();
+          const verifyTimeout = setTimeout(() => verifyController.abort(), 5000);
+          const verifyRes = await fetch(`${API_BASE}/api/orders/table/${selectedTable.backendId}`, {
+            headers: getAuthHeaders(),
+            signal: verifyController.signal,
+          });
+          clearTimeout(verifyTimeout);
+          if (verifyRes.ok) {
+            const freshOrder = await verifyRes.json();
+            const serverItems = freshOrder?.items || [];
+            // Check if all cart items are present in the server order
+            const serverItemMap = new Map();
+            for (const si of serverItems) {
+              if (!si.removedFromBill) {
+                const key = `${si.menuItemId}::${si.notes ?? ''}`;
+                serverItemMap.set(key, (serverItemMap.get(key) || 0) + Number(si.quantity ?? si.q ?? 0));
+              }
+            }
+            const allPresent = apiItems.every(ai => {
+              const key = `${ai.menuItemId}::${ai.notes ?? ''}`;
+              return (serverItemMap.get(key) || 0) >= ai.quantity;
+            });
+
+            if (allPresent) {
+              // Items were actually committed — treat as success
+              const serverKotHistory = freshOrder?.kotHistory?.length > 0 ? freshOrder.kotHistory : [];
+              if (selectedTable.isExtra) {
+                setExtraTables(prev => prev.map(et => {
+                  if (et.id !== selectedTable.id) return et;
+                  return { ...et, kotHistory: serverKotHistory, activeOrder: { ...et.activeOrder, id: freshOrder.id, items: serverItems } };
+                }));
+              } else {
+                setActiveTables(prev => prev.map(t => {
+                  if (t.backendId !== selectedTable.backendId) return t;
+                  return { ...t, kotHistory: serverKotHistory, activeOrder: { ...t.activeOrder, id: freshOrder.id, items: serverItems } };
+                }));
+              }
+              setSelectedTable(prev => prev ? {
+                ...prev,
+                kotHistory: serverKotHistory,
+                activeOrder: { ...prev.activeOrder, id: freshOrder.id, items: serverItems },
+              } : prev);
+
+              setCart([]);
+              kotRequestIdRef.current = null;
+              lastKotCartSignatureRef.current = null;
+              lastAnyItemAddedRef.current = 0;
+              setIsKotSuccess(true);
+              addNotification('KOT Sent', 'Server confirmed items were committed.', 'success');
+              setTimeout(() => setIsKotSuccess(false), 2000);
+              return;
+            }
+          }
+        } catch (verifyErr) {
+          console.warn('[KOT] Verification fetch failed:', verifyErr.message);
+        }
+        // Verification failed or items not found — show uncertain message
+        addNotification(
+          'KOT Submission Uncertain',
+          'Request failed and server state could not be verified. Please check the order before retrying.',
+          'warning'
+        );
+      } else {
+        // Definitive HTTP error (400, 401, 409, etc.) — keep cart for retry
+        addNotification(
+          'KOT Not Sent to Kitchen',
+          `${err.message || 'Network error'}. Cart kept — tap KOT again to retry.`,
+          'error'
+        );
+      }
     } finally {
       isSubmittingKotRef.current = false;
       setIsKotSending(false);
@@ -3877,7 +4151,7 @@ const CashierDashboard = ({ onLogout }) => {
               {activeTab !== 'dashboard' && activeTab !== 'pos' && (
                 <div className="flex-grow p-3 overflow-y-auto custom-scrollbar bg-gray-50/50">
                   <div className="max-w-6xl mx-auto space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">
                         {activeTab === 'tables'
                           ? (fetchedSections.find(s => s.name === tableSubCategory)?.name
@@ -3885,6 +4159,22 @@ const CashierDashboard = ({ onLogout }) => {
                             || tableSubCategory)
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
+                      {enabledModules.bar && enabledModules.food && (
+                        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                          {['both', 'bar', 'restaurant'].map(outlet => (
+                            <button
+                              key={outlet}
+                              onClick={() => setActiveOutlet(outlet)}
+                              className={`px-3 py-1.5 rounded-md text-xs font-black uppercase tracking-wider transition-all ${activeOutlet === outlet
+                                ? 'bg-[#E53935] text-white shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            >
+                              {outlet === 'both' ? 'All' : outlet}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {activeTab === 'tables' && enabledModules.tables !== false && (
@@ -4092,6 +4382,8 @@ const CashierDashboard = ({ onLogout }) => {
                             const firstBarSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
                             const firstBarIdentifier = firstBarSection?.name || '';
                             if (section.venue?.venueType === 'BAR' && section.name === firstBarIdentifier && firstBarIdentifier) return false;
+                            // Skip KOT-off sections — they show walk-in tables instead of regular tables
+                            if (section.venue?.kotEnabled === false) return false;
                             const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
                             if (activeOutlet === 'both') return true;
                             return sectionOutlet === activeOutlet;
@@ -4120,8 +4412,7 @@ const CashierDashboard = ({ onLogout }) => {
                         }
                         {activeOutlet === 'restaurant' && fetchedSections.some(s => {
                           const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
-                          const n = (s.name || '').toLowerCase();
-                          return sourceKey === tableSubCategory && (n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY');
+                          return sourceKey === tableSubCategory && s.venue?.kotEnabled === false;
                         }) && (
                           <div className="mt-4">
                             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
@@ -5157,8 +5448,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="pt-0.5">
                         {(isWalkinMode || (activeOutlet === 'restaurant' && fetchedSections.some(s => {
                           const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
-                          const n = (s.name || '').toLowerCase();
-                          return sourceKey === tableSubCategory && (n.includes('parcel') || n.includes('takeaway') || n.includes('go box') || n.includes('gobox') || s.venue?.venueType === 'TAKEAWAY');
+                          return sourceKey === tableSubCategory && s.venue?.kotEnabled === false;
                         }))) ? (
                           <button
                             onClick={handleWalkinFinalBill}
@@ -5277,13 +5567,8 @@ const CashierDashboard = ({ onLogout }) => {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setShowCancelModal(true);
-                                    if (item.originalIds.length === 1) {
-                                      setCancelSelected({ [item.originalIds[0]]: { item, quantity: 1 } });
-                                    } else {
-                                      const selection = {};
-                                      item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
-                                      setCancelSelected(selection);
-                                    }
+                                    const gKey = `${item.n}::${item.p}`;
+                                    setCancelSelected({ [gKey]: { item, quantity: 1 } });
                                   }}
                                   className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
                                   title="Cancel Item"
@@ -5425,10 +5710,9 @@ const CashierDashboard = ({ onLogout }) => {
                         // Determine section context for restaurant outlet
                         const sectionTag = (selectedTable?.sectionTag || '').toLowerCase();
                         const tableSection = fetchedSections.find(s => s.sectionTag?.toLowerCase() === sectionTag);
-                        const sectionName = (selectedTable?.section?.name || '').toLowerCase();
                         const isParcelSection = tableSection
-                          ? ['parcel', 'takeaway', 'go box', 'gobox'].some(t => (tableSection.name || '').toLowerCase().includes(t)) || tableSection.venue?.venueType === 'TAKEAWAY'
-                          : ['parcel', 'takeaway', 'go box', 'gobox'].some(t => sectionName.includes(t));
+                          ? tableSection.venue?.kotEnabled === false
+                          : (selectedTable?.section?.venue?.kotEnabled === false);
                         const isRestaurantSection = activeOutlet === 'restaurant' || (tableSection && tableSection.venue?.venueType !== 'BAR');
                         const isFamilyRestaurant = isRestaurantSection && !isParcelSection;
 
@@ -6341,6 +6625,25 @@ const CashierDashboard = ({ onLogout }) => {
               }
             }
 
+            // Clamp safeguard: ensure total batch quantity never exceeds what the cashier selected
+            const totalBatchQty = batchItems.reduce((sum, b) => sum + b.cancelQuantity, 0);
+            const totalSelectedQty = Object.values(cancelSelected).reduce(
+              (sum, e) => sum + Math.max(1, Math.round(Number(e.quantity ?? 1))), 0
+            );
+            if (totalBatchQty > totalSelectedQty) {
+              console.error('[CancelBatch] Clamp violation: batch qty > selected qty', { totalBatchQty, totalSelectedQty });
+              const clamped = [];
+              let clampRemaining = totalSelectedQty;
+              for (const b of batchItems) {
+                if (clampRemaining <= 0) break;
+                const q = Math.min(b.cancelQuantity, clampRemaining);
+                clamped.push({ ...b, cancelQuantity: q });
+                clampRemaining -= q;
+              }
+              batchItems.length = 0;
+              batchItems.push(...clamped);
+            }
+
             if (batchItems.length === 0) {
               setCancelSelected({});
               setShowCancelModal(false);
@@ -6391,6 +6694,8 @@ const CashierDashboard = ({ onLogout }) => {
                 return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
               };
               setSelectedTable(applyCancelOptimistic);
+              // ── DIAGNOSTIC: confirm optimistic cancel landed ──
+              console.log('[DIAG cancel] optimistic update applied, cancelledIds:', [...cancelledIdSet]);
 
               const setTargetTables = setActiveTables;
               setTargetTables(prev => prev.map(t => {

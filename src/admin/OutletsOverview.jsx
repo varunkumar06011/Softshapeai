@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from 'react';
-import { Store, MapPin, Users, Hash, ArrowRight, Loader2, CheckCircle, XCircle, Building2, Calendar } from 'lucide-react';
+import { Store, MapPin, Users, Hash, ArrowRight, Loader2, CheckCircle, XCircle, Building2, Calendar, Plus, X, Copy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
 
@@ -40,12 +40,28 @@ const OutletsOverview = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [switching, setSwitching] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState(null);
+  const [newOutlet, setNewOutlet] = useState({
+    name: '',
+    restaurantType: 'DINE_IN',
+    address: '',
+    phone: '',
+    email: '',
+    copyFromOutletId: '',
+  });
 
-  useEffect(() => {
+  const fetchOutlets = () => {
+    setLoading(true);
     apiFetch('/api/restaurant/outlets-overview')
       .then((res) => setData(res))
       .catch((err) => setError(err.message || 'Failed to load outlets'))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchOutlets();
   }, []);
 
   const handleSwitch = async (outletId) => {
@@ -63,6 +79,30 @@ const OutletsOverview = () => {
       setError(err.message || 'Failed to switch outlet');
     } finally {
       setSwitching(null);
+    }
+  };
+
+  const handleAddOutlet = async () => {
+    if (!newOutlet.name.trim() || newOutlet.name.trim().length < 2) {
+      setAddError('Outlet name is required (min 2 characters)');
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    try {
+      const payload = { ...newOutlet };
+      if (!payload.copyFromOutletId) delete payload.copyFromOutletId;
+      await apiFetch('/api/restaurant/add-outlet', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setShowAddModal(false);
+      setNewOutlet({ name: '', restaurantType: 'DINE_IN', address: '', phone: '', email: '', copyFromOutletId: '' });
+      fetchOutlets();
+    } catch (err) {
+      setAddError(err.message || 'Failed to add outlet');
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -103,11 +143,19 @@ const OutletsOverview = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Your Outlets</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {data.outlets.length} outlet{data.outlets.length !== 1 ? 's' : ''} under {orgName}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Your Outlets</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {data.outlets.length} outlet{data.outlets.length !== 1 ? 's' : ''} under {orgName}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold text-sm transition-all"
+        >
+          <Plus size={18} /> Add Outlet
+        </button>
       </div>
 
       {/* Outlet Cards */}
@@ -263,6 +311,151 @@ const OutletsOverview = () => {
           </table>
         </div>
       </div>
+
+      {/* Add Outlet Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddModal(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Add New Outlet</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            {addError && (
+              <div className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{addError}</div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Outlet Name *</label>
+                <input
+                  type="text"
+                  value={newOutlet.name}
+                  onChange={(e) => setNewOutlet({ ...newOutlet, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-sm"
+                  placeholder="e.g., Ongole Branch 2"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Outlet Type</label>
+                <select
+                  value={newOutlet.restaurantType}
+                  onChange={(e) => setNewOutlet({ ...newOutlet, restaurantType: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-sm"
+                >
+                  {Object.entries(RESTAURANT_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Setup Method */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Setup Method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewOutlet({ ...newOutlet, copyFromOutletId: '' })}
+                    className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                      !newOutlet.copyFromOutletId
+                        ? 'border-[#E53935] bg-[#E53935]/5 text-[#E53935]'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    Fresh Setup
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewOutlet({ ...newOutlet, copyFromOutletId: data.outlets[0]?.id || '' })}
+                    className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition-all flex items-center justify-center gap-1.5 ${
+                      newOutlet.copyFromOutletId
+                        ? 'border-[#E53935] bg-[#E53935]/5 text-[#E53935]'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <Copy size={14} /> Copy from Outlet
+                  </button>
+                </div>
+              </div>
+
+              {/* Copy from outlet dropdown */}
+              {newOutlet.copyFromOutletId && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Copy configuration from</label>
+                  <select
+                    value={newOutlet.copyFromOutletId}
+                    onChange={(e) => setNewOutlet({ ...newOutlet, copyFromOutletId: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-sm"
+                  >
+                    {data.outlets.map((outlet) => (
+                      <option key={outlet.id} value={outlet.id}>
+                        {outlet.name} ({RESTAURANT_TYPE_LABELS[outlet.restaurantType] || outlet.restaurantType})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Clones menu, venues, tables, tax & price profiles from the selected outlet.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
+                <input
+                  type="text"
+                  value={newOutlet.address}
+                  onChange={(e) => setNewOutlet({ ...newOutlet, address: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-sm"
+                  placeholder="Inherited from parent if empty"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Phone</label>
+                  <input
+                    type="text"
+                    value={newOutlet.phone}
+                    onChange={(e) => setNewOutlet({ ...newOutlet, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-sm"
+                    placeholder="Inherited if empty"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={newOutlet.email}
+                    onChange={(e) => setNewOutlet({ ...newOutlet, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] text-sm"
+                    placeholder="Inherited if empty"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold text-sm transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddOutlet}
+                disabled={adding}
+                className="flex-1 py-2.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2"
+              >
+                {adding ? <Loader2 size={16} className="animate-spin" /> : 'Add Outlet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

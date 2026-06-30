@@ -155,19 +155,25 @@ function buildKotText({ tableNumber, items, kotNumber, restaurantName, captainNa
  * Attempt to print a job locally based on the current platform.
  * Returns true if printed, false if queued.
  *
- * @param {{ jobType: string, text?: string, data?: object, printerName?: string }} job
+ * When escposData is provided (from buildFoodKOT/buildLiquorKOT), it is sent
+ * to the Print Agent as the new { type, printerName, escposData, eventId } contract.
+ * When not provided (backward compat with existing offline calls), falls back to
+ * the legacy { jobType, printerName, text, bytes } contract.
+ *
+ * @param {{ jobType?: string, type?: string, text?: string, escposData?: object[], data?: object, printerName?: string, eventId?: string }} job
  * @returns {Promise<{ printed: boolean, queued: boolean, error?: string }>}
  */
 export async function printLocal(job) {
   const platform = detectPlatform();
   const mapping = await getPrinterMapping();
-  const printerName = job.printerName || resolvePrinter(job.jobType, mapping);
+  const jobType = job.type || job.jobType;
+  const printerName = job.printerName || resolvePrinter(jobType, mapping);
   const printAgentUrl = await getPrintAgentUrl();
 
-  // Generate text content if not provided
-  const text = job.text || (job.jobType === 'FINAL_BILL' || job.jobType === 'BILL'
+  // Generate text content if not provided (legacy fallback)
+  const text = job.text || (jobType === 'FINAL_BILL' || jobType === 'BILL'
     ? buildBillText(job.data || {})
-    : job.jobType === 'KOT' || job.jobType === 'BAR_KOT'
+    : jobType === 'KOT' || jobType === 'BAR_KOT'
     ? buildKotText(job.data || {})
     : JSON.stringify(job.data || {}));
   const bytes = Array.from(textToEscpos(text));
@@ -178,21 +184,33 @@ export async function printLocal(job) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
+
+    // Use new contract when escposData is available, legacy contract otherwise
+    const body = job.escposData
+      ? {
+          type: jobType,
+          printerName: printerName || undefined,
+          escposData: job.escposData,
+          eventId: job.eventId || undefined,
+          data: job.data || {},
+        }
+      : {
+          jobType,
+          printerName: printerName || undefined,
+          text,
+          bytes,
+          data: job.data || {},
+        };
+
     const res = await fetch(`${printAgentUrl}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jobType: job.jobType,
-        printerName: printerName || undefined,
-        text,
-        bytes,
-        data: job.data || {},
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     clearTimeout(timeout);
     if (res.ok) {
-      console.log(`[printOffline] Printed [${job.jobType}] via Print Agent at ${printAgentUrl}`);
+      console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${printAgentUrl}`);
       return { printed: true, queued: false };
     }
   } catch (err) {

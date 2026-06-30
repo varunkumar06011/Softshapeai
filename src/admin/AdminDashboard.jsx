@@ -268,7 +268,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       if (key === 'kitchen-inventory') return enabledModules.food !== false || enabledModules.bar_inventory === true || enabledModules.bar !== false;
       if (key === 'settings') return true;
       if (key === 'printers') return true;
-      if (key === 'outlets-overview') return restaurant?.outletCount > 1;
+      if (key === 'outlets-overview') return true;
       return enabledModules[key] !== false;
     });
 

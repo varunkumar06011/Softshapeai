@@ -8,7 +8,7 @@ import {
 import {
   fetchVenues, createVenue, updateVenue, deleteVenue,
   createSection, updateSection, deleteSection,
-  createTable, updateTable, deleteTable,
+  createTable, bulkCreateTables, updateTable, deleteTable, deleteAllTables,
 } from '../services/tableApi';
 
 const cls = {
@@ -28,6 +28,52 @@ const VENUE_TYPES = [
 
 function venueTypeColor(v) { return VENUE_TYPES.find(t => t.value === v)?.color || 'bg-gray-100 text-gray-600'; }
 function venueTypeLabel(v) { return VENUE_TYPES.find(t => t.value === v)?.label || v; }
+
+function DeleteAllTablesModal({ tableCount, onConfirm, onCancel }) {
+  const [confirmText, setConfirmText] = useState('');
+  const canConfirm = confirmText.trim().toUpperCase() === 'DELETE';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <Trash2 size={20} className="text-red-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-gray-900">Delete all {tableCount} tables?</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              This will permanently remove all tables across every venue and section. Tables with active orders will be skipped.
+            </p>
+          </div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 space-y-1">
+          <p className="font-bold">This action cannot be undone.</p>
+          <p>· All tables without active orders will be deleted</p>
+          <p>· You will need to recreate tables manually</p>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-gray-600">Type <span className="text-red-600 font-mono">DELETE</span> to confirm</label>
+          <input
+            autoFocus
+            value={confirmText}
+            onChange={e => setConfirmText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && canConfirm) onConfirm(); }}
+            placeholder="DELETE"
+            className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100"
+          />
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCancel} className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 transition">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            className={`flex-1 px-4 py-2.5 text-white text-sm font-bold rounded-xl transition ${canConfirm ? 'bg-[#E53935] hover:bg-[#B71C1C]' : 'bg-gray-300 cursor-not-allowed'}`}
+          >Delete All</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function WarningModal({ onConfirm, onCancel }) {
   return (
@@ -74,6 +120,12 @@ function SpaceEditor({ onBack }) {
   const [expandedVenues, setExpandedVenues] = useState(new Set());
   const [expandedSections, setExpandedSections] = useState(new Set());
   const [successMsg, setSuccessMsg] = useState('');
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+
+  const totalTables = venues.reduce((acc, v) => {
+    const secs = [...(v.sections || []), ...((v.floors || []).flatMap(f => f.sections || []))];
+    return acc + secs.reduce((a, s) => a + (s.tables?.length || 0), 0);
+  }, 0);
 
   const showSuccess = (msg) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 2500); };
 
@@ -105,12 +157,12 @@ function SpaceEditor({ onBack }) {
     return nums.length > 0 ? Math.max(...nums) + 1 : 1;
   };
 
-  const handleAddVenue = async (name, venueType) => {
-    try { await createVenue({ name, venueType }); await loadVenues(); showSuccess(`Venue "${name}" created`); }
+  const handleAddVenue = async (name, venueType, kotEnabled) => {
+    try { await createVenue({ name, venueType, kotEnabled }); await loadVenues(); showSuccess(`Venue "${name}" created`); }
     catch (err) { setError(err.message); }
   };
-  const handleRenameVenue = async (id, name, venueType) => {
-    try { await updateVenue(id, { name, venueType }); await loadVenues(); showSuccess('Venue updated'); }
+  const handleRenameVenue = async (id, name, venueType, kotEnabled) => {
+    try { await updateVenue(id, { name, venueType, kotEnabled }); await loadVenues(); showSuccess('Venue updated'); }
     catch (err) { setError(err.message); }
   };
   const handleDeleteVenue = async (id, name, sectionsCount) => {
@@ -135,6 +187,10 @@ function SpaceEditor({ onBack }) {
     try { await createTable({ number, capacity, sectionId }); await loadVenues(); showSuccess(`Table ${number} added`); }
     catch (err) { setError(err.message); }
   };
+  const handleBulkAddTable = async (sectionId, count, capacity) => {
+    try { const res = await bulkCreateTables({ sectionId, count, capacity }); await loadVenues(); showSuccess(`${res.created || count} tables added`); }
+    catch (err) { setError(err.message); }
+  };
   const handleUpdateTable = async (id, data) => {
     try { await updateTable(id, data); await loadVenues(); showSuccess('Table updated'); }
     catch (err) { setError(err.message); }
@@ -143,6 +199,18 @@ function SpaceEditor({ onBack }) {
     if (isActive) { setError(`Table ${num} has an active session — bill it first.`); return; }
     try { await deleteTable(id); await loadVenues(); showSuccess(`Table ${num} deleted`); }
     catch (err) { setError(err.message); }
+  };
+  const handleDeleteAllTables = async () => {
+    try {
+      const res = await deleteAllTables();
+      await loadVenues();
+      setShowDeleteAllModal(false);
+      if (res.skipped > 0) {
+        showSuccess(`${res.deleted} tables deleted, ${res.skipped} skipped (active orders)`);
+      } else {
+        showSuccess(`${res.deleted} table${res.deleted !== 1 ? 's' : ''} deleted`);
+      }
+    } catch (err) { setError(err.message); }
   };
 
   return (
@@ -195,6 +263,14 @@ function SpaceEditor({ onBack }) {
               }, 0)} tables
             </span>
             <div className="flex-1" />
+            {totalTables > 0 && (
+              <button
+                onClick={() => setShowDeleteAllModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition"
+              >
+                <Trash2 size={13} /> Delete All Tables
+              </button>
+            )}
             <AddVenueInline onAdd={handleAddVenue} />
           </div>
 
@@ -221,6 +297,7 @@ function SpaceEditor({ onBack }) {
                 onRenameSection={handleRenameSection}
                 onDeleteSection={handleDeleteSection}
                 onAddTable={handleAddTable}
+                onBulkAddTable={handleBulkAddTable}
                 onUpdateTable={handleUpdateTable}
                 onDeleteTable={handleDeleteTable}
                 allSections={allSections}
@@ -230,6 +307,14 @@ function SpaceEditor({ onBack }) {
           </div>
         </>
       )}
+
+      {showDeleteAllModal && (
+        <DeleteAllTablesModal
+          tableCount={totalTables}
+          onConfirm={handleDeleteAllTables}
+          onCancel={() => setShowDeleteAllModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -238,29 +323,35 @@ function AddVenueInline({ onAdd }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('DINE_IN');
-  const submit = () => { if (name.trim()) { onAdd(name.trim(), type); setName(''); setType('DINE_IN'); setOpen(false); } };
+  const [kotOn, setKotOn] = useState(true);
+  const submit = () => { if (name.trim()) { onAdd(name.trim(), type, kotOn); setName(''); setType('DINE_IN'); setKotOn(true); setOpen(false); } };
   if (!open) return <button onClick={() => setOpen(true)} className={cls.btnRed}><Plus size={13} /> Add Venue</button>;
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setOpen(false); setName(''); } }} placeholder="Venue name…" className={cls.input + ' w-40'} />
       <select value={type} onChange={e => setType(e.target.value)} className={cls.input + ' w-32'}>{VENUE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+      <button type="button" onClick={() => setKotOn(v => !v)} className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${kotOn ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={kotOn ? 'KOT ON' : 'KOT OFF — direct bill only'}>
+        <span className={`w-2 h-2 rounded-full ${kotOn ? 'bg-green-500' : 'bg-gray-400'}`} />
+        KOT: {kotOn ? 'ON' : 'OFF'}
+      </button>
       <button onClick={submit} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
       <button onClick={() => { setOpen(false); setName(''); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
     </div>
   );
 }
 
-function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSection, onRenameVenue, onDeleteVenue, onAddSection, onRenameSection, onDeleteSection, onAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
+function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSection, onRenameVenue, onDeleteVenue, onAddSection, onRenameSection, onDeleteSection, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(venue.name);
   const [typeInput, setTypeInput] = useState(venue.venueType || 'DINE_IN');
+  const [kotInput, setKotInput] = useState(venue.kotEnabled !== false);
   const [addingSection, setAddingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
 
   const sections = [...(venue.sections || []), ...((venue.floors || []).flatMap(f => f.sections || []))];
   const totalTables = sections.reduce((a, s) => a + (s.tables?.length || 0), 0);
 
-  const saveVenue = () => { if (nameInput.trim()) onRenameVenue(venue.id, nameInput.trim(), typeInput); setEditing(false); };
+  const saveVenue = () => { if (nameInput.trim()) onRenameVenue(venue.id, nameInput.trim(), typeInput, kotInput); setEditing(false); };
   const addSection = () => { if (newSectionName.trim()) { onAddSection(newSectionName.trim(), venue.id); setNewSectionName(''); setAddingSection(false); } };
 
   return (
@@ -272,13 +363,18 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
           <div className="flex items-center gap-2 flex-1 flex-wrap">
             <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveVenue(); if (e.key === 'Escape') { setEditing(false); setNameInput(venue.name); } }} className={cls.input + ' max-w-[160px]'} />
             <select value={typeInput} onChange={e => setTypeInput(e.target.value)} className={cls.input + ' max-w-[120px]'}>{VENUE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+            <button type="button" onClick={() => setKotInput(v => !v)} className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${kotInput ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={kotInput ? 'KOT ON' : 'KOT OFF — direct bill only'}>
+              <span className={`w-2 h-2 rounded-full ${kotInput ? 'bg-green-500' : 'bg-gray-400'}`} />
+              KOT: {kotInput ? 'ON' : 'OFF'}
+            </button>
             <button onClick={saveVenue} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
-            <button onClick={() => { setEditing(false); setNameInput(venue.name); setTypeInput(venue.venueType || 'DINE_IN'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
+            <button onClick={() => { setEditing(false); setNameInput(venue.name); setTypeInput(venue.venueType || 'DINE_IN'); setKotInput(venue.kotEnabled !== false); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="font-bold text-sm text-gray-900 truncate">{venue.name}</span>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${venueTypeColor(venue.venueType)}`}>{venueTypeLabel(venue.venueType)}</span>
+            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${venue.kotEnabled !== false ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={venue.kotEnabled !== false ? 'KOT printing enabled' : 'KOT printing disabled — direct bill only'}>KOT: {venue.kotEnabled !== false ? 'ON' : 'OFF'}</span>
             <span className="text-[10px] text-gray-400 flex-shrink-0">{sections.length} section{sections.length !== 1 ? 's' : ''} · {totalTables} table{totalTables !== 1 ? 's' : ''}</span>
           </div>
         )}
@@ -293,7 +389,7 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
       {expanded && (
         <div className="p-3 space-y-2">
           {sections.map(section => (
-            <SectionCard key={section.id} section={section} expanded={expandedSections.has(section.id)} onToggle={() => onToggleSection(section.id)} onRename={onRenameSection} onDelete={onDeleteSection} onAddTable={onAddTable} onUpdateTable={onUpdateTable} onDeleteTable={onDeleteTable} allSections={allSections} nextTableNum={nextTableNum} />
+            <SectionCard key={section.id} section={section} expanded={expandedSections.has(section.id)} onToggle={() => onToggleSection(section.id)} onRename={onRenameSection} onDelete={onDeleteSection} onAddTable={onAddTable} onBulkAddTable={onBulkAddTable} onUpdateTable={onUpdateTable} onDeleteTable={onDeleteTable} allSections={allSections} nextTableNum={nextTableNum} />
           ))}
           {sections.length === 0 && !addingSection && <p className="text-xs text-gray-400 text-center py-3">No sections — add one below</p>}
           {addingSection ? (
@@ -312,16 +408,26 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
   );
 }
 
-function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
+function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(section.name);
   const [addingTable, setAddingTable] = useState(false);
   const [newNum, setNewNum] = useState('');
   const [newCap, setNewCap] = useState('4');
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkCount, setBulkCount] = useState('4');
+  const [bulkCap, setBulkCap] = useState('4');
 
   const tables = section.tables || [];
   const saveName = () => { if (nameInput.trim() && nameInput !== section.name) onRename(section.id, nameInput.trim()); setEditing(false); };
-  const startAddTable = () => { setNewNum(String(nextTableNum)); setAddingTable(true); };
+  const startAddTable = () => { setBulkMode(false); setNewNum(String(nextTableNum)); setAddingTable(true); };
+  const startBulkAdd = () => { setAddingTable(false); setBulkMode(true); };
+  const submitBulk = () => {
+    const count = Math.max(1, Math.min(100, parseInt(bulkCount) || 1));
+    const cap = Math.max(1, parseInt(bulkCap) || 4);
+    onBulkAddTable(section.id, count, cap);
+    setBulkCount('4'); setBulkCap('4'); setBulkMode(false);
+  };
   const submitTable = () => {
     const num = parseInt(newNum); const cap = parseInt(newCap) || 4;
     if (num > 0) { onAddTable(num, cap, section.id); setNewNum(''); setNewCap('4'); setAddingTable(false); }
@@ -364,8 +470,21 @@ function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTab
               <button onClick={submitTable} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
               <button onClick={() => { setAddingTable(false); setNewNum(''); setNewCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
             </div>
+          ) : bulkMode ? (
+            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 flex-wrap">
+              <span className="text-xs text-gray-500 font-bold">Add</span>
+              <input autoFocus type="number" min="1" max="100" value={bulkCount} onChange={e => setBulkCount(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitBulk(); if (e.key === 'Escape') { setBulkMode(false); } }} className={cls.input + ' w-20'} placeholder="Count" />
+              <span className="text-xs text-gray-400">tables ×</span>
+              <input type="number" min="1" max="20" value={bulkCap} onChange={e => setBulkCap(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitBulk(); }} className={cls.input + ' w-20'} placeholder="Seats" />
+              <span className="text-xs text-gray-400">seats each</span>
+              <button onClick={submitBulk} className="flex items-center gap-1 px-2.5 py-1.5 bg-[#E53935] text-white text-xs font-bold rounded-lg hover:bg-[#B71C1C]"><Plus size={12} /> Add Tables</button>
+              <button onClick={() => { setBulkMode(false); setBulkCount('4'); setBulkCap('4'); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
+            </div>
           ) : (
-            <button onClick={startAddTable} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Add Table</button>
+            <div className="flex items-center gap-2">
+              <button onClick={startAddTable} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Add Table</button>
+              <button onClick={startBulkAdd} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Quick Add Tables</button>
+            </div>
           )}
         </div>
       )}
