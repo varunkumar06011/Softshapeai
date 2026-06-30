@@ -12,10 +12,11 @@
 // Only accessible to ADMIN and OWNER roles. Changes are saved via PATCH /api/restaurant.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import AppsSection from '../settings/AppsSection';
-import { apiFetch } from '../../services/apiConfig';
+import { apiFetch, API_BASE, getAuthHeaders } from '../../services/apiConfig';
 import ManageSpacePanel from '../ManageSpacePanel';
+import MenuUpload from '../../onboarding/MenuUpload';
 import { useAuth } from '../../context/AuthContext';
 import {
   Building2,
@@ -29,6 +30,9 @@ import {
   Receipt,
   Wine,
   Loader2,
+  FileSpreadsheet,
+  MapPin,
+  Copy,
 } from 'lucide-react';
 
 const BAR_TYPES = ['BAR_LOUNGE', 'BAR_WITH_DINING'];
@@ -147,6 +151,11 @@ function SettingsPage({ onNavigate }) {
     halfBottleMl: 375,
   });
 
+  // Venue list for menu import targeting
+  const [venues, setVenues] = useState([]);
+  const [venuesLoading, setVenuesLoading] = useState(false);
+  const [targetVenueId, setTargetVenueId] = useState('all'); // 'all' or venue.id
+
   useEffect(() => {
     let cancelled = false;
     const loadData = async () => {
@@ -232,8 +241,35 @@ function SettingsPage({ onNavigate }) {
     }
   };
 
+  const menuImportSessionId = useMemo(
+    () => crypto.randomUUID?.() || Date.now().toString(36),
+    []
+  );
+
   const restaurantType = profileData?.restaurantType;
   const isBarType = BAR_TYPES.includes(restaurantType);
+
+  // Fetch venues for the current restaurant (for menu import targeting)
+  const fetchVenues = useCallback(async () => {
+    setVenuesLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/venues`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVenues(Array.isArray(data) ? data.filter(v => !v.isDeleted) : []);
+      }
+    } catch (err) {
+      console.error('[SettingsPage] Failed to fetch venues:', err);
+    } finally {
+      setVenuesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVenues();
+  }, [fetchVenues]);
 
   if (loading) {
     return (
@@ -261,6 +297,13 @@ function SettingsPage({ onNavigate }) {
         >
           <Building2 size={16} />
           Restaurant Settings
+        </button>
+        <button
+          onClick={() => setTab('menu-import')}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${tab === 'menu-import' ? 'bg-red-50 text-[#E53935]' : 'text-gray-500 hover:bg-gray-50'}`}
+        >
+          <FileSpreadsheet size={16} />
+          Menu Import
         </button>
         <button
           onClick={() => setTab('apps')}
@@ -593,6 +636,76 @@ function SettingsPage({ onNavigate }) {
               </button>
             </div>
           </SectionCard>
+        </div>
+      )}
+
+      {tab === 'menu-import' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-gray-100 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <FileSpreadsheet size={20} className="text-[#E53935]" />
+              <h3 className="text-base font-bold text-gray-900">Import Menu Items</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Upload a PDF, Excel, or CSV file to add menu items. PDFs are parsed with AI (Groq) automatically.
+              You can review and edit all items before importing.
+            </p>
+
+            {/* Venue selector */}
+            {venues.length > 1 && (
+              <div className="mb-4 bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <MapPin size={16} className="text-[#E53935]" />
+                  <label className="text-sm font-bold text-gray-900">Target Venue</label>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Choose which venue this menu import applies to, or select &quot;All Venues&quot; to use the same menu across all venues.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setTargetVenueId('all')}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                      targetVenueId === 'all'
+                        ? 'bg-[#E53935] text-white shadow-sm'
+                        : 'bg-white border border-gray-200 text-gray-700 hover:border-[#E53935]'
+                    }`}
+                  >
+                    <Copy size={14} />
+                    All Venues (Same Menu)
+                  </button>
+                  {venuesLoading ? (
+                    <span className="flex items-center gap-2 text-sm text-gray-400">
+                      <Loader2 size={14} className="animate-spin" /> Loading venues…
+                    </span>
+                  ) : (
+                    venues.map(v => (
+                      <button
+                        key={v.id}
+                        onClick={() => setTargetVenueId(v.id)}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                          targetVenueId === v.id
+                            ? 'bg-[#E53935] text-white shadow-sm'
+                            : 'bg-white border border-gray-200 text-gray-700 hover:border-[#E53935]'
+                        }`}
+                      >
+                        {v.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            <MenuUpload
+              onboardingMode={false}
+              restaurantType={restaurantType}
+              sessionId={menuImportSessionId}
+              targetVenueId={targetVenueId}
+              onImported={() => {
+                window.dispatchEvent(new CustomEvent('menu-item-updated'));
+              }}
+            />
+          </div>
         </div>
       )}
 

@@ -17,7 +17,7 @@ import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Le
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
-export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [], sessionId }) {
+export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [], sessionId, targetVenueId }) {
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -181,6 +181,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
           rows: editedRows || parsed.rows,
           mode: parsed.mode || 'standard',
           venueMap: parsed.venueMap || {},
+          ...(targetVenueId && targetVenueId !== 'all' ? { targetVenueId } : {}),
         }),
       });
 
