@@ -19,6 +19,13 @@ export async function markAttendance({ employeeId, date, status, notes }) {
   });
 }
 
+export async function markAttendanceBulk({ date, items }) {
+  return apiFetch('/api/attendance/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ date, items }),
+  });
+}
+
 export async function checkIn(attendanceId) {
   return apiFetch(`/api/attendance/${attendanceId}/check-in`, {
     method: 'POST',

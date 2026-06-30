@@ -180,7 +180,7 @@ import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
 import { fetchTransactions } from '../services/orderApi';
 
-import { getTodayAttendanceSummary, getAttendance, markAttendance, checkIn, checkOut } from '../services/attendanceService';
+import { getTodayAttendanceSummary, getAttendance, markAttendance, markAttendanceBulk, checkIn, checkOut } from '../services/attendanceService';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
@@ -4828,6 +4828,14 @@ export function Payroll() {
 
   const [editValues, setEditValues] = useState({});
 
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const [savingRecordId, setSavingRecordId] = useState(null);
+
+  const [deletingId, setDeletingId] = useState(null);
+
+  const saveTimers = useRef({});
+
 
 
   const restaurantId = getCurrentRestaurantId();
@@ -4927,30 +4935,52 @@ export function Payroll() {
   const handleSaveRecord = async (employeeId) => {
 
     const vals = editValues[employeeId] || {};
+    const rec = getRecord(employeeId);
+    const emp = employees.find((e) => e.id === employeeId);
+    if (!emp) return;
 
     try {
 
-      await apiFetch('/api/payroll/records', {
+      setSavingRecordId(employeeId);
 
-        method: 'POST',
+      // Save base salary on Employee if it was edited
+      if (vals.baseSalary !== undefined && vals.baseSalary !== Number(emp.baseSalary)) {
+        await apiFetch('/api/payroll/employees', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: employeeId,
+            name: emp.name,
+            age: emp.age,
+            role: emp.role,
+            baseSalary: vals.baseSalary,
+            restaurantId,
+          }),
+        });
+      }
 
-        body: JSON.stringify({
+      // Save absentDays/otDays on PayrollRecord. advanceAmount is read-only and
+      // derived from vouchers, so we do not send it to the backend.
+      if (vals.absentDays !== undefined || vals.otDays !== undefined) {
+        await apiFetch('/api/payroll/records', {
 
-          restaurantId,
+          method: 'POST',
 
-          employeeId,
+          body: JSON.stringify({
 
-          monthYear,
+            restaurantId,
 
-          absentDays: vals.absentDays || 0,
+            employeeId,
 
-          otDays: vals.otDays || 0,
+            monthYear,
 
-          advanceAmount: vals.advanceAmount || 0,
+            absentDays: vals.absentDays ?? rec?.absentDays ?? 0,
 
-        }),
+            otDays: vals.otDays ?? rec?.otDays ?? 0,
 
-      });
+          }),
+
+        });
+      }
 
       loadData();
 
@@ -4958,8 +4988,35 @@ export function Payroll() {
 
       console.error('[Payroll] Save record failed:', err);
 
+    } finally {
+
+      setSavingRecordId(null);
+
     }
 
+  };
+
+  const debouncedSave = useCallback((employeeId) => {
+    if (saveTimers.current[employeeId]) clearTimeout(saveTimers.current[employeeId]);
+    saveTimers.current[employeeId] = setTimeout(() => {
+      handleSaveRecord(employeeId);
+    }, 800);
+  }, []);
+
+  const handleDeleteEmployee = async (employeeId) => {
+    if (!window.confirm('Delete this employee? They will be hidden from payroll but existing records stay.')) return;
+    try {
+      setDeletingId(employeeId);
+      await apiFetch(`/api/payroll/employees/${employeeId}`, {
+        method: 'DELETE',
+      });
+      loadData();
+    } catch (err) {
+      console.error('[Payroll] Delete employee failed:', err);
+      alert(err.message || 'Failed to delete employee');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
 
@@ -4994,15 +5051,33 @@ export function Payroll() {
 
 
 
-  const totalPayable = records.reduce((s, r) => s + Number(r.netPayable), 0);
+  const getRecord = (empId) => records.find((r) => r.employeeId === empId);
+
+  const totalBaseSalary = employees.reduce((sum, emp) => {
+    const vals = editValues[emp.id] || {};
+    return sum + (Number(vals.baseSalary ?? emp.baseSalary) || 0);
+  }, 0);
+
+  const totalAdvance = employees.reduce((sum, emp) => {
+    const rec = getRecord(emp.id);
+    return sum + (Number(rec?.advanceAmount) || 0);
+  }, 0);
+
+  const totalPayable = employees.reduce((sum, emp) => {
+    const rec = getRecord(emp.id);
+    const vals = editValues[emp.id] || {};
+    const baseSalary = Number(vals.baseSalary ?? emp.baseSalary) || 0;
+    const absentDays = vals.absentDays ?? rec?.absentDays ?? 0;
+    const otDays = vals.otDays ?? rec?.otDays ?? 0;
+    const advanceAmount = rec?.advanceAmount ?? 0;
+    const perDaySalary = baseSalary / 30;
+    const netPayable = baseSalary - (perDaySalary * absentDays) + (perDaySalary * 0.5 * otDays) - Number(advanceAmount);
+    return sum + Math.round(netPayable * 100) / 100;
+  }, 0);
 
   const totalPaid = records.reduce((s, r) => s + Number(r.paidAmount), 0);
 
   const totalOutstanding = totalPayable - totalPaid;
-
-
-
-  const getRecord = (empId) => records.find((r) => r.employeeId === empId);
 
 
 
@@ -5108,9 +5183,20 @@ export function Payroll() {
 
           <div className="text-left sm:text-right">
 
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
-
-            <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹{totalPayable.toLocaleString()}</p>
+            <div className="flex gap-6">
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Base</p>
+                <p className="text-xl font-black text-gray-900 tracking-tighter">₹{totalBaseSalary.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Advance</p>
+                <p className="text-xl font-black text-amber-600 tracking-tighter">₹{totalAdvance.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
+                <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹{totalPayable.toLocaleString()}</p>
+              </div>
+            </div>
 
             {totalOutstanding > 0 && (
 
@@ -5146,6 +5232,24 @@ export function Payroll() {
 
 
 
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <div className="flex items-center gap-3">
+          <Search size={18} className="text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search employee by name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 bg-transparent outline-none text-sm font-bold text-gray-900 placeholder-gray-400"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-gray-500 hover:text-gray-700">
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
 
         <div className="overflow-x-auto">
@@ -5180,7 +5284,9 @@ export function Payroll() {
 
             <tbody className="divide-y divide-gray-50">
 
-              {employees.map((emp) => {
+              {employees
+                .filter((emp) => emp.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map((emp) => {
 
                 const rec = getRecord(emp.id);
 
@@ -5188,7 +5294,7 @@ export function Payroll() {
 
                 return (
 
-                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={`${emp.id}-${monthYear}`} className="hover:bg-gray-50 transition-colors">
 
                     <td className="px-4 py-4">
 
@@ -5212,7 +5318,19 @@ export function Payroll() {
 
                     </td>
 
-                    <td className="px-4 py-4 font-bold text-gray-700 text-right">₹{Number(emp.baseSalary).toLocaleString()}</td>
+                    <td className="px-4 py-4 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        defaultValue={Number(emp.baseSalary) || 0}
+                        onChange={(e) => {
+                          setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
+                          debouncedSave(emp.id);
+                        }}
+                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
+                      />
+                    </td>
 
                     <td className="px-4 py-4 text-center">
 
@@ -5226,7 +5344,10 @@ export function Payroll() {
 
                         defaultValue={rec?.absentDays || 0}
 
-                        onChange={(e) => setEditValues({ ...editValues, [emp.id]: { ...vals, absentDays: parseInt(e.target.value) || 0 } })}
+                        onChange={(e) => {
+                          setEditValues({ ...editValues, [emp.id]: { ...vals, absentDays: parseInt(e.target.value) || 0 } });
+                          debouncedSave(emp.id);
+                        }}
 
                         className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
 
@@ -5244,7 +5365,10 @@ export function Payroll() {
 
                         defaultValue={rec?.otDays || 0}
 
-                        onChange={(e) => setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } })}
+                        onChange={(e) => {
+                          setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } });
+                          debouncedSave(emp.id);
+                        }}
 
                         className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
 
@@ -5252,29 +5376,21 @@ export function Payroll() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-right">
-
-                      <input
-
-                        type="number"
-
-                        min="0"
-
-                        step="0.01"
-
-                        defaultValue={rec?.advanceAmount || 0}
-
-                        onChange={(e) => setEditValues({ ...editValues, [emp.id]: { ...vals, advanceAmount: parseFloat(e.target.value) || 0 } })}
-
-                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
-
-                      />
-
+                    <td className="px-4 py-4 text-right font-bold text-amber-600">
+                      ₹{Number(rec?.advanceAmount || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-right font-black text-gray-900">
 
-                      ₹{rec ? Number(rec.netPayable).toLocaleString() : '—'}
+                      {(() => {
+                        const baseSalary = Number(vals.baseSalary ?? emp.baseSalary) || 0;
+                        const absentDays = vals.absentDays ?? rec?.absentDays ?? 0;
+                        const otDays = vals.otDays ?? rec?.otDays ?? 0;
+                        const advanceAmount = rec?.advanceAmount ?? 0;
+                        const perDaySalary = baseSalary / 30;
+                        const netPayable = baseSalary - (perDaySalary * absentDays) + (perDaySalary * 0.5 * otDays) - Number(advanceAmount);
+                        return '₹' + (Math.round(netPayable * 100) / 100).toLocaleString();
+                      })()}
 
                     </td>
 
@@ -5314,17 +5430,9 @@ export function Payroll() {
 
                       <div className="flex items-center justify-center gap-2">
 
-                        <button
-
-                          onClick={() => handleSaveRecord(emp.id)}
-
-                          className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-gray-800"
-
-                        >
-
-                          Save
-
-                        </button>
+                        {savingRecordId === emp.id && (
+                          <span className="text-[10px] font-bold text-blue-600 animate-pulse">Saving...</span>
+                        )}
 
                         {rec && rec.status !== 'PAID' && (
 
@@ -5341,6 +5449,14 @@ export function Payroll() {
                           </button>
 
                         )}
+
+                        <button
+                          onClick={() => handleDeleteEmployee(emp.id)}
+                          disabled={deletingId === emp.id}
+                          className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+                        >
+                          {deletingId === emp.id ? '...' : 'Delete'}
+                        </button>
 
                       </div>
 
@@ -5362,7 +5478,7 @@ export function Payroll() {
 
 
 
-      {employees.length === 0 && (
+      {employees.length === 0 && !searchTerm && (
 
         <div className="text-center py-12 text-gray-400">
 
@@ -5372,6 +5488,12 @@ export function Payroll() {
 
         </div>
 
+      )}
+
+      {employees.length > 0 && employees.filter((e) => e.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <p className="text-sm font-bold">No employees match your search.</p>
+        </div>
       )}
 
 
@@ -16470,6 +16592,10 @@ export function Attendance() {
 
   const [error, setError] = useState('');
 
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const [markingIds, setMarkingIds] = useState(new Set());
+
 
 
   const loadData = useCallback(async () => {
@@ -16532,23 +16658,95 @@ export function Attendance() {
 
 
 
-  const markStatus = async (employeeId, status) => {
-
-    try {
-
-      await markAttendance({ employeeId, date, status });
-
-      loadData();
-
-    } catch (err) {
-
-      setError(err.message || 'Failed to mark attendance');
-
-    }
-
+  const updateAttendanceRecord = (employeeId, status, checkInTime = null, checkOutTime = null) => {
+    setAttendance(prev => {
+      const idx = prev.findIndex(a => a.employeeId === employeeId);
+      const now = new Date().toISOString();
+      const updated = {
+        employeeId,
+        date,
+        status,
+        checkInTime: checkInTime === undefined ? (prev[idx]?.checkInTime || null) : checkInTime,
+        checkOutTime: checkOutTime === undefined ? (prev[idx]?.checkOutTime || null) : checkOutTime,
+        updatedAt: now,
+        employee: prev[idx]?.employee || employees.find(e => e.id === employeeId),
+        // Preserve a real id if we have one; otherwise use a temp placeholder
+        id: prev[idx]?.id || `temp-${employeeId}`,
+      };
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...prev[idx], ...updated };
+        return next;
+      }
+      return [...prev, updated];
+    });
   };
 
+  const markStatus = async (employeeId, status) => {
+    setMarkingIds(prev => new Set(prev).add(employeeId));
+    setError('');
 
+    // Optimistic update: immediately show new status (and auto-check-in time if PRESENT)
+    const nowIso = status === 'PRESENT' ? new Date().toISOString() : undefined;
+    updateAttendanceRecord(employeeId, status, nowIso);
+
+    try {
+      await markAttendance({ employeeId, date, status });
+      loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to mark attendance');
+      loadData();
+    } finally {
+      setMarkingIds(prev => {
+        const next = new Set(prev);
+        next.delete(employeeId);
+        return next;
+      });
+    }
+  };
+
+  const bulkMarkStatus = async (status) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setMarkingIds(prev => new Set([...prev, ...ids]));
+    setError('');
+
+    const nowIso = status === 'PRESENT' ? new Date().toISOString() : undefined;
+    ids.forEach(id => updateAttendanceRecord(id, status, nowIso));
+
+    try {
+      const items = ids.map(employeeId => ({ employeeId, status }));
+      await markAttendanceBulk({ date, items });
+      setSelectedIds(new Set());
+      loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to mark attendance for selected employees');
+      loadData();
+    } finally {
+      setMarkingIds(prev => {
+        const next = new Set(prev);
+        ids.forEach(id => next.delete(id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelection = (employeeId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) next.delete(employeeId);
+      else next.add(employeeId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === employees.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(employees.map(e => e.id)));
+    }
+  };
 
   const handleCheckIn = async (employeeId) => {
 
@@ -16652,6 +16850,26 @@ export function Attendance() {
 
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={toggleSelectAll}
+          className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
+        >
+          {selectedIds.size === employees.length && employees.length > 0 ? 'Deselect All' : 'Select All'}
+        </button>
+        <span className="text-[11px] text-gray-500 font-bold">
+          {selectedIds.size} selected
+        </span>
+        {selectedIds.size > 0 && (
+          <>
+            <span className="text-gray-300">|</span>
+            <button onClick={() => bulkMarkStatus('PRESENT')} disabled={markingIds.size > 0} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50">Mark Present</button>
+            <button onClick={() => bulkMarkStatus('ABSENT')} disabled={markingIds.size > 0} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50">Mark Absent</button>
+            <button onClick={() => bulkMarkStatus('LEAVE')} disabled={markingIds.size > 0} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50">Mark Leave</button>
+            <button onClick={() => bulkMarkStatus('HALF_DAY')} disabled={markingIds.size > 0} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-yellow-100 text-yellow-700 hover:bg-yellow-200 disabled:opacity-50">Mark Half-Day</button>
+          </>
+        )}
+      </div>
 
 
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -16661,6 +16879,15 @@ export function Attendance() {
           <thead className="bg-gray-50">
 
             <tr>
+
+              <th className="px-2 py-2 text-left font-bold text-gray-500 w-10">
+                <input
+                  type="checkbox"
+                  checked={employees.length > 0 && selectedIds.size === employees.length}
+                  onChange={toggleSelectAll}
+                  className="accent-[#E53935]"
+                />
+              </th>
 
               <th className="px-4 py-2 text-left font-bold text-gray-500">Employee</th>
 
@@ -16685,10 +16912,20 @@ export function Attendance() {
               const status = getStatus(emp.id);
 
               const record = attendance.find(a => a.employeeId === emp.id);
+              const isMarking = markingIds.has(emp.id);
 
               return (
 
-                <tr key={emp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                <tr key={emp.id} className={`border-t border-gray-100 hover:bg-gray-50 ${isMarking ? 'opacity-70' : ''}`}>
+
+                  <td className="px-2 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(emp.id)}
+                      onChange={() => toggleSelection(emp.id)}
+                      className="accent-[#E53935]"
+                    />
+                  </td>
 
                   <td className="px-4 py-3 font-bold text-gray-900">{emp.name}</td>
 
@@ -16732,21 +16969,21 @@ export function Attendance() {
 
                     <div className="flex items-center justify-end gap-1 flex-wrap">
 
-                      <button onClick={() => markStatus(emp.id, 'PRESENT')} className="px-2 py-1 rounded text-[10px] font-bold bg-green-100 text-green-700 hover:bg-green-200">P</button>
+                      <button onClick={() => markStatus(emp.id, 'PRESENT')} disabled={isMarking} className="px-2 py-1 rounded text-[10px] font-bold bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50">P</button>
 
-                      <button onClick={() => markStatus(emp.id, 'ABSENT')} className="px-2 py-1 rounded text-[10px] font-bold bg-red-100 text-red-700 hover:bg-red-200">A</button>
+                      <button onClick={() => markStatus(emp.id, 'ABSENT')} disabled={isMarking} className="px-2 py-1 rounded text-[10px] font-bold bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50">A</button>
 
-                      <button onClick={() => markStatus(emp.id, 'LEAVE')} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-100 text-gray-700 hover:bg-gray-200">L</button>
+                      <button onClick={() => markStatus(emp.id, 'LEAVE')} disabled={isMarking} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50">L</button>
 
-                      <button onClick={() => markStatus(emp.id, 'HALF_DAY')} className="px-2 py-1 rounded text-[10px] font-bold bg-yellow-100 text-yellow-700 hover:bg-yellow-200">H</button>
+                      <button onClick={() => markStatus(emp.id, 'HALF_DAY')} disabled={isMarking} className="px-2 py-1 rounded text-[10px] font-bold bg-yellow-100 text-yellow-700 hover:bg-yellow-200 disabled:opacity-50">H</button>
 
                       {status === 'PRESENT' && !record?.checkOutTime && (
 
                         <>
 
-                          <button onClick={() => handleCheckIn(emp.id)} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200">In</button>
+                          <button onClick={() => handleCheckIn(emp.id)} disabled={isMarking} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50">In</button>
 
-                          <button onClick={() => handleCheckOut(emp.id)} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200">Out</button>
+                          <button onClick={() => handleCheckOut(emp.id)} disabled={isMarking} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50">Out</button>
 
                         </>
 
@@ -16766,7 +17003,7 @@ export function Attendance() {
 
               <tr>
 
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
 
                   No employees found. Add employees in Payroll first.
 

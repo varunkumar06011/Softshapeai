@@ -27,12 +27,6 @@ export default function VoucherModule() {
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
   const [narrationDebounce, setNarrationDebounce] = useState('');
-  const [voucherDate, setVoucherDate] = useState(() => {
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const ist = new Date(now.getTime() + istOffset);
-    return ist.toISOString().split('T')[0];
-  });
   const [selectedApprover, setSelectedApprover] = useState(null);
   const [approverSearch, setApproverSearch] = useState('');
 
@@ -157,7 +151,7 @@ export default function VoucherModule() {
         narration: narration.trim() || undefined,
         approvedById: selectedApprover?.id || undefined,
         idempotencyKey,
-        voucherDate,
+        voucherDate: summaryDate,
       };
 
       const result = await apiFetch('/api/vouchers', {
@@ -172,12 +166,6 @@ export default function VoucherModule() {
       setSelectedEmployee(null);
       setSelectedApprover(null);
       setApproverSearch('');
-      setVoucherDate(() => {
-        const now = new Date();
-        const istOffset = 5.5 * 60 * 60 * 1000;
-        const ist = new Date(now.getTime() + istOffset);
-        return ist.toISOString().split('T')[0];
-      });
       loadData();
     } catch (err) {
       setError(err.message || 'Failed to create voucher');
@@ -325,26 +313,6 @@ export default function VoucherModule() {
                 )}
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Voucher Date */}
-        <div>
-          <label className="text-xs font-black uppercase text-gray-400 mb-1 block">Voucher Date</label>
-          <div className="relative">
-            <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="date"
-              value={voucherDate}
-              max={(() => {
-                const now = new Date();
-                const istOffset = 5.5 * 60 * 60 * 1000;
-                const ist = new Date(now.getTime() + istOffset);
-                return ist.toISOString().split('T')[0];
-              })()}
-              onChange={(e) => setVoucherDate(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-            />
           </div>
         </div>
 
