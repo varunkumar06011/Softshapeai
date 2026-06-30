@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye
+  Maximize2, Minimize2, Eye, Receipt
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -54,6 +54,7 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { authService } from '../services/authService';
 import ItemAnalytics from './ItemAnalytics';
+import VoucherModule from './VoucherModule';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { isBeerItem } from '../utils/itemHelpers';
@@ -3904,6 +3905,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'tables', label: 'Tables', icon: Table2 },
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
+            { id: 'vouchers', label: 'Vouchers', icon: Receipt },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
           ].map((item) => (
             <button
@@ -4755,6 +4757,10 @@ const CashierDashboard = ({ onLogout }) => {
 
                     {activeTab === 'analytics' && (
                       <ItemAnalytics outlet={activeOutlet} sections={fetchedSections} />
+                    )}
+
+                    {activeTab === 'vouchers' && (
+                      <VoucherModule />
                     )}
 
                     {activeTab === 'billfinder' && (
