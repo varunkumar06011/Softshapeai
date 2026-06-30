@@ -138,7 +138,9 @@ import {
 
   Edit2,
 
-  Pencil
+  Pencil,
+
+  Upload
 
 } from 'lucide-react';
 
@@ -193,6 +195,8 @@ import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInve
 import { useSocket } from '../hooks/useSocket';
 
 import FloorPlanEditor from './FloorPlanEditor';
+
+import MenuUpload from '../onboarding/MenuUpload';
 
 
 
@@ -1800,6 +1804,8 @@ export function MenuPage({ onAddDish }) {
 
   const [deletingItem, setDeletingItem] = useState(null);
 
+  const [showUploadModal, setShowUploadModal] = useState(false);
+
   const [saving, setSaving] = useState(false);
 
   const [deleteWorking, setDeleteWorking] = useState(false);
@@ -2853,6 +2859,18 @@ export function MenuPage({ onAddDish }) {
         >
 
           <span className="text-gray-400 font-black">+</span> Add Item
+
+        </button>
+
+        <button
+
+          onClick={() => setShowUploadModal(true)}
+
+          className="rounded-lg bg-white border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md hover:border-gray-300 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap w-full sm:w-auto"
+
+        >
+
+          <Upload size={16} className="text-gray-500" /> Upload Menu
 
         </button>
 
@@ -4509,6 +4527,46 @@ export function MenuPage({ onAddDish }) {
             <button onClick={() => setDeletingItem(null)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
 
             <button onClick={confirmDelete} disabled={deleteWorking} className="flex-1 py-2.5 text-sm font-black text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl shadow-md transition-colors">{deleteWorking ? 'Removing…' : 'Yes, Delete'}</button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    )}
+
+    {showUploadModal && (
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in">
+
+        <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col">
+
+          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+
+            <h3 className="font-black text-lg text-gray-900 tracking-tight">Upload Menu (PDF / Excel / CSV)</h3>
+
+            <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+
+          </div>
+
+          <div className="p-5 overflow-y-auto">
+
+            <MenuUpload
+
+              onboardingMode={false}
+
+              restaurantType={restaurant?.restaurantType}
+
+              existingCategories={dbCategories.map(c => c.name)}
+
+              sessionId={crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36)}
+
+              targetVenueId={activeVenueId}
+
+              onImported={() => { fetchAdminItems(); refreshMenu(); setShowUploadModal(false); }}
+
+            />
 
           </div>
 
@@ -14526,6 +14584,8 @@ export function BarMenuPage() {
 
   const { menuItems: legacyMenuItems, loading: legacyLoading, error: legacyError, refreshMenu: legacyRefreshMenu } = useBarMenuSync();
 
+  const { restaurant } = useAuth();
+
   const [unifiedMenu, setUnifiedMenu] = useState(null);
 
   const [unifiedLoading, setUnifiedLoading] = useState(true);
@@ -14535,6 +14595,8 @@ export function BarMenuPage() {
   const [activeVenueId, setActiveVenueId] = useState(null);
 
   const [filter, setFilter] = useState('');
+
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
 
 
@@ -15233,6 +15295,18 @@ export function BarMenuPage() {
 
           </button>
 
+          <button
+
+            onClick={() => setShowUploadModal(true)}
+
+            className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-[12px] font-bold rounded-xl hover:bg-gray-50 transition flex items-center gap-1.5"
+
+          >
+
+            <Upload size={14} className="text-gray-500" /> Upload Menu
+
+          </button>
+
         </div>
 
       </div>
@@ -15892,6 +15966,46 @@ export function BarMenuPage() {
                 {deleteWorking ? 'Deleting...' : 'Delete'}
 
               </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {showUploadModal && (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 animate-in fade-in">
+
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col">
+
+            <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+
+              <h3 className="font-black text-lg text-gray-900 tracking-tight">Upload Bar Menu (PDF / Excel / CSV)</h3>
+
+              <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+
+            </div>
+
+            <div className="p-5 overflow-y-auto">
+
+              <MenuUpload
+
+                onboardingMode={false}
+
+                restaurantType={restaurant?.restaurantType}
+
+                existingCategories={dbCategories.map(c => c.name)}
+
+                sessionId={crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36)}
+
+                targetVenueId={activeVenueId}
+
+                onImported={() => { refreshMenu(); setShowUploadModal(false); }}
+
+              />
 
             </div>
 
