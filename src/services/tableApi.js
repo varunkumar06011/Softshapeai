@@ -141,6 +141,14 @@ export async function deleteTable(tableId) {
   return parseResponse(res);
 }
 
+export async function deleteAllTables() {
+  const res = await fetch(apiUrl("/api/tables/all"), {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
 // ── Venue CRUD ──────────────────────────────────────────────────────────────
 
 export async function createVenue({ name, venueType, kotEnabled, sortOrder }) {

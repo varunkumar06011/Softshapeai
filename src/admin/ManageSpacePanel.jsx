@@ -8,7 +8,7 @@ import {
 import {
   fetchVenues, createVenue, updateVenue, deleteVenue,
   createSection, updateSection, deleteSection,
-  createTable, bulkCreateTables, updateTable, deleteTable,
+  createTable, bulkCreateTables, updateTable, deleteTable, deleteAllTables,
 } from '../services/tableApi';
 
 const cls = {
@@ -28,6 +28,52 @@ const VENUE_TYPES = [
 
 function venueTypeColor(v) { return VENUE_TYPES.find(t => t.value === v)?.color || 'bg-gray-100 text-gray-600'; }
 function venueTypeLabel(v) { return VENUE_TYPES.find(t => t.value === v)?.label || v; }
+
+function DeleteAllTablesModal({ tableCount, onConfirm, onCancel }) {
+  const [confirmText, setConfirmText] = useState('');
+  const canConfirm = confirmText.trim().toUpperCase() === 'DELETE';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <Trash2 size={20} className="text-red-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-gray-900">Delete all {tableCount} tables?</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              This will permanently remove all tables across every venue and section. Tables with active orders will be skipped.
+            </p>
+          </div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 space-y-1">
+          <p className="font-bold">This action cannot be undone.</p>
+          <p>· All tables without active orders will be deleted</p>
+          <p>· You will need to recreate tables manually</p>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-gray-600">Type <span className="text-red-600 font-mono">DELETE</span> to confirm</label>
+          <input
+            autoFocus
+            value={confirmText}
+            onChange={e => setConfirmText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && canConfirm) onConfirm(); }}
+            placeholder="DELETE"
+            className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100"
+          />
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCancel} className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 transition">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            className={`flex-1 px-4 py-2.5 text-white text-sm font-bold rounded-xl transition ${canConfirm ? 'bg-[#E53935] hover:bg-[#B71C1C]' : 'bg-gray-300 cursor-not-allowed'}`}
+          >Delete All</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function WarningModal({ onConfirm, onCancel }) {
   return (
@@ -74,6 +120,12 @@ function SpaceEditor({ onBack }) {
   const [expandedVenues, setExpandedVenues] = useState(new Set());
   const [expandedSections, setExpandedSections] = useState(new Set());
   const [successMsg, setSuccessMsg] = useState('');
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+
+  const totalTables = venues.reduce((acc, v) => {
+    const secs = [...(v.sections || []), ...((v.floors || []).flatMap(f => f.sections || []))];
+    return acc + secs.reduce((a, s) => a + (s.tables?.length || 0), 0);
+  }, 0);
 
   const showSuccess = (msg) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 2500); };
 
@@ -148,6 +200,18 @@ function SpaceEditor({ onBack }) {
     try { await deleteTable(id); await loadVenues(); showSuccess(`Table ${num} deleted`); }
     catch (err) { setError(err.message); }
   };
+  const handleDeleteAllTables = async () => {
+    try {
+      const res = await deleteAllTables();
+      await loadVenues();
+      setShowDeleteAllModal(false);
+      if (res.skipped > 0) {
+        showSuccess(`${res.deleted} tables deleted, ${res.skipped} skipped (active orders)`);
+      } else {
+        showSuccess(`${res.deleted} table${res.deleted !== 1 ? 's' : ''} deleted`);
+      }
+    } catch (err) { setError(err.message); }
+  };
 
   return (
     <div className="space-y-5 font-sans">
@@ -199,6 +263,14 @@ function SpaceEditor({ onBack }) {
               }, 0)} tables
             </span>
             <div className="flex-1" />
+            {totalTables > 0 && (
+              <button
+                onClick={() => setShowDeleteAllModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition"
+              >
+                <Trash2 size={13} /> Delete All Tables
+              </button>
+            )}
             <AddVenueInline onAdd={handleAddVenue} />
           </div>
 
@@ -234,6 +306,14 @@ function SpaceEditor({ onBack }) {
             ))}
           </div>
         </>
+      )}
+
+      {showDeleteAllModal && (
+        <DeleteAllTablesModal
+          tableCount={totalTables}
+          onConfirm={handleDeleteAllTables}
+          onCancel={() => setShowDeleteAllModal(false)}
+        />
       )}
     </div>
   );
