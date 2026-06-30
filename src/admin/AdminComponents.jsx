@@ -16045,7 +16045,7 @@ export function StaffManagement() {
 
   const [editing, setEditing] = useState(null);
 
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '', permissions: {} });
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', permissions: {} });
 
   const [saving, setSaving] = useState(false);
 
@@ -16085,7 +16085,7 @@ export function StaffManagement() {
 
   const resetForm = () => {
 
-    setForm({ name: '', role: 'CAPTAIN', pin: '', permissions: {} });
+    setForm({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', permissions: {} });
 
     setEditing(null);
 
@@ -16097,7 +16097,12 @@ export function StaffManagement() {
 
   const handleSave = async () => {
 
-    if (!form.name.trim() || !form.pin || form.pin.length !== 4) return;
+    if (!form.name.trim()) return;
+    if (form.role === 'OWNER') {
+      if (!editing && (!form.email?.trim() || !form.password?.trim())) return;
+    } else {
+      if (!form.pin || form.pin.length !== 4) return;
+    }
 
     setSaving(true);
 
@@ -16110,6 +16115,10 @@ export function StaffManagement() {
       const body = editing
 
         ? { name: form.name, pin: form.pin, permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
+
+        : form.role === 'OWNER'
+
+        ? { name: form.name, role: form.role, email: form.email, password: form.password }
 
         : { name: form.name, role: form.role, pin: form.pin };
 
@@ -16229,7 +16238,7 @@ export function StaffManagement() {
 
                 <td className="px-4 py-3 text-gray-600">
 
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
 
                     {member.role}
 
@@ -16337,12 +16346,40 @@ export function StaffManagement() {
 
                   <option value="CASHIER">Cashier</option>
 
+                  <option value="OWNER">Owner</option>
+
                 </select>
 
               </div>
 
             )}
 
+            {!editing && form.role === 'OWNER' && (
+              <>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                    placeholder="owner@restaurant.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Password</label>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                    placeholder="Password"
+                  />
+                </div>
+              </>
+            )}
+
+            {(!editing ? form.role !== 'OWNER' : true) && (
             <div>
 
               <label className="text-[10px] font-bold text-gray-500 uppercase">{editing ? 'New PIN (4 digits)' : 'PIN (4 digits)'}</label>
@@ -16362,6 +16399,7 @@ export function StaffManagement() {
               />
 
             </div>
+            )}
 
             {editing && editing.role === 'CASHIER' && (
 
@@ -16395,7 +16433,7 @@ export function StaffManagement() {
 
                 onClick={handleSave}
 
-                disabled={saving || !form.name.trim() || form.pin.length !== 4}
+                disabled={saving || !form.name.trim() || (!editing ? (form.role === 'OWNER' ? (!form.email?.trim() || !form.password?.trim()) : form.pin.length !== 4) : false)}
 
                 className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition"
 

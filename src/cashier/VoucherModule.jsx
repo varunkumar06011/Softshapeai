@@ -16,7 +16,7 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 export default function VoucherModule() {
   const restaurantId = getCurrentRestaurantId();
 
-  const [paidToOptions, setPaidToOptions] = useState({ staff: [], fixed: [] });
+  const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [approvers, setApprovers] = useState([]);
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
 
@@ -60,7 +60,7 @@ export default function VoucherModule() {
         apiFetch('/api/vouchers/today-summary'),
         apiFetch('/api/vouchers?limit=10'),
       ]);
-      setPaidToOptions(opts || { staff: [], fixed: [] });
+      setPaidToOptions(opts || { staff: [] });
       setApprovers(approverList || []);
       setNarrationSuggestions(narrations || []);
       setTodaySummary(summary || null);
@@ -109,8 +109,8 @@ export default function VoucherModule() {
       setPaidToType('STAFF');
     } else {
       setSelectedEmployee(null);
-      setPaidToType(item.type);
-      setPaidToName('');
+      setPaidToType('OTHER');
+      setPaidToName(item.name || '');
     }
     setPaidToSearch(item.name || item.label || '');
     setShowPaidToDropdown(false);
@@ -252,7 +252,7 @@ export default function VoucherModule() {
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search staff or select type..."
+                placeholder="Search staff..."
                 value={paidToSearch}
                 onChange={(e) => {
                   setPaidToSearch(e.target.value);
@@ -284,33 +284,22 @@ export default function VoucherModule() {
                     ))}
                   </div>
                 )}
-                <div className="p-1 border-t border-gray-100">
-                  <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Other Types</p>
-                  {paidToOptions.fixed?.map((f) => (
+                {paidToSearch.trim() && filteredStaff.length === 0 && (
+                  <div className="p-1 border-t border-gray-100">
                     <button
-                      key={f.type}
-                      onClick={() => handlePaidToSelect({ ...f, name: f.label })}
-                      className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg"
+                      onClick={() => handlePaidToSelect({ name: paidToSearch.trim() })}
+                      className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
                     >
-                      {f.label}
+                      + Use "{paidToSearch.trim()}" as a new name
                     </button>
-                  ))}
-                </div>
-                {filteredStaff.length === 0 && (!paidToOptions.fixed || paidToOptions.fixed.length === 0) && (
-                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No matches found</p>
+                  </div>
+                )}
+                {filteredStaff.length === 0 && !paidToSearch.trim() && (
+                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No staff found</p>
                 )}
               </div>
             )}
           </div>
-          {paidToType !== 'STAFF' && (
-            <input
-              type="text"
-              placeholder="Enter name / description..."
-              value={paidToName}
-              onChange={(e) => setPaidToName(e.target.value)}
-              className="w-full mt-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-            />
-          )}
         </div>
 
         {/* Voucher Date */}
@@ -343,6 +332,7 @@ export default function VoucherModule() {
             placeholder="0.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            onWheel={(e) => e.target.blur()}
             className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-lg font-black outline-none focus:border-[#E53935]"
           />
         </div>
