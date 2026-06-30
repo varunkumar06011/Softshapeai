@@ -8,7 +8,7 @@ on:
 env:
   NODE_VERSION: 22
   RUST_VERSION: 1.88
-  VITE_API_URL: https://softshape-backend.onrender.com
+  VITE_API_URL: https://softshape-backend-production.up.railway.app
   VITE_FIREBASE_API_KEY: AIzaSyD7OBT4VOtniMIGWSkpCVHV6wPsdJZKqy4
   VITE_FIREBASE_AUTH_DOMAIN: softshapeai-14324.firebaseapp.com
   VITE_FIREBASE_PROJECT_ID: softshapeai-14324
