@@ -405,7 +405,7 @@ function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTab
               <button onClick={startAddTable} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Add Table</button>
               <button onClick={startBulkAdd} className={cls.btnGhost + ' text-[11px]'}><Plus size={11} /> Quick Add Tables</button>
             </div>
-          )
+          )}
         </div>
       )}
     </div>
