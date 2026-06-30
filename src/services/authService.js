@@ -52,6 +52,9 @@ export const authService = {
       if (data.restaurant) {
         localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
       }
+      if (data.accessibleOutlets) {
+        localStorage.setItem('ss_accessible_outlets', JSON.stringify(data.accessibleOutlets));
+      }
       if (import.meta.env.DEV) console.log('[AuthService] login stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
       purgeLegacyCaches();
     }
@@ -121,6 +124,7 @@ export const authService = {
     localStorage.removeItem('ss_preauth_token');
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
+    localStorage.removeItem('ss_accessible_outlets');
     clearTenantCaches(restaurantId);
   },
 
@@ -147,6 +151,15 @@ export const authService = {
       return raw ? JSON.parse(raw).id : null;
     } catch {
       return null;
+    }
+  },
+
+  getAccessibleOutlets() {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
     }
   },
 

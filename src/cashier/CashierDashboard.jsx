@@ -1191,6 +1191,12 @@ const CashierDashboard = ({ onLogout }) => {
       // Add back any existing items NOT present in incoming (additive — never drop items)
       const localOnlyItems = existingItems.filter(i => !incomingMap.has(i.id) && i.id);
 
+      // ── DIAGNOSTIC: trace localOnlyItems in mergeOrder ──
+      if (localOnlyItems.length > 0) {
+        console.log('[DIAG mergeOrder] localOnlyItems (in existing, NOT in incoming):', localOnlyItems.map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
+      }
+      // ── END DIAGNOSTIC ──
+
       // Remove id:null placeholders whose name matches a real-id item (server confirmed them)
       const realItemNames = new Set(
         mergedByIncoming.filter(i => i.id).map(i => (i.name ?? i.n ?? '').toLowerCase().trim())
@@ -1218,6 +1224,9 @@ const CashierDashboard = ({ onLogout }) => {
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs2 = recentlyTerminatedRef.current[order.tableId];
       if (termTs2 && Date.now() - termTs2 < 5000) return;
+      // ── DIAGNOSTIC: trace socket order:updated ──
+      console.log('[DIAG order:updated] incoming items:', (order.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
+      // ── END DIAGNOSTIC ──
       // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
@@ -1254,6 +1263,10 @@ const CashierDashboard = ({ onLogout }) => {
       // No click cooldown — real-time updates must always be processed
       if (shouldBlockTableUpdate(table.id, table.status)) return;
       if (terminatedTableIdsRef.current.has(table.id)) return;
+      // ── DIAGNOSTIC: trace socket table:updated ──
+      const _tblOrdersItems = (table.orders?.[0]?.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill }));
+      console.log('[DIAG table:updated] table.id:', table.id, 'orders[0].items:', _tblOrdersItems, 'workflowStatus:', table.workflowStatus);
+      // ── END DIAGNOSTIC ──
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
 
@@ -2075,6 +2088,16 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // ── DIAGNOSTIC: trace cancelled-item display bug ──
+    const _allItems = getAllOrderItems(selectedTable);
+    const _billable = getBillableItems(selectedTable);
+    const _activeItems = selectedTable?.activeOrder?.items || [];
+    console.log('[DIAG finalBill] selectedTable.activeOrder.items (raw):', _activeItems.map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
+    console.log('[DIAG finalBill] getAllOrderItems:', _allItems.map(i => ({ id: i.id, name: i.n ?? i.name, qty: i.q ?? i.quantity, removedFromBill: i.removedFromBill })));
+    console.log('[DIAG finalBill] getBillableItems:', _billable.map(i => ({ id: i.id, name: i.n ?? i.name, qty: i.q ?? i.quantity, removedFromBill: i.removedFromBill })));
+    console.log('[DIAG finalBill] kotHistory items:', (selectedTable?.kotHistory || []).flatMap(k => (k.items || []).map(i => ({ kotId: k.id, name: i.n, q: i.q, s: i.s, removedFromBill: i.removedFromBill }))));
+    // ── END DIAGNOSTIC ──
+
     // Ref guard - synchronous check to prevent race condition
     if (isPrintingBillRef.current) return;
     isPrintingBillRef.current = true;
@@ -2185,6 +2208,11 @@ const CashierDashboard = ({ onLogout }) => {
                 sgst: billCalc.sgst,
                 grandTotal: billCalc.grandTotal,
                 billNumber: response.billNumber,
+                restaurant: {
+                  name: restaurant?.name || undefined,
+                  receiptHeader: restaurant?.receiptHeader || undefined,
+                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                },
               },
             });
             if (result.printed) {
@@ -6666,6 +6694,8 @@ const CashierDashboard = ({ onLogout }) => {
                 return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
               };
               setSelectedTable(applyCancelOptimistic);
+              // ── DIAGNOSTIC: confirm optimistic cancel landed ──
+              console.log('[DIAG cancel] optimistic update applied, cancelledIds:', [...cancelledIdSet]);
 
               const setTargetTables = setActiveTables;
               setTargetTables(prev => prev.map(t => {

@@ -41,7 +41,10 @@ import {
   Users,
   QrCode,
   Tag,
-  Store
+  Store,
+  ChevronDown,
+  CheckCircle,
+  ArrowRight
 } from 'lucide-react';
 import {
   Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement, Attendance
@@ -60,6 +63,8 @@ import { getTenantScopedKey } from '../utils/cacheKeys';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 import { useTableSync } from '../services/tableSyncService';
 import { fetchTransactions } from '../services/orderApi';
+import { authService } from '../services/authService';
+import { reconnectSocket } from '../hooks/useSocket';
 
 import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard';
 import PrinterSettingsPage from './printers/PrinterSettingsPage';
@@ -108,6 +113,8 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [spireOpen, setSpireOpen] = useState(false);
   const [dishModalOpen, setDishModalOpen] = useState(false);
+  const [showOutletSwitcher, setShowOutletSwitcher] = useState(false);
+  const accessibleOutlets = authService.getAccessibleOutlets();
 
   // Marketing AI State
   const [mUpload, setMUpload] = useState(null);
@@ -123,7 +130,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
 
   const { setTables } = useTableSync();
-  const { restaurant, setRestaurant } = useAuth();
+  const { restaurant, setRestaurant, setAuth } = useAuth();
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
@@ -278,6 +285,19 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   const title = displayNavItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
 
+  const handleQuickSwitch = async (outletId) => {
+    setShowOutletSwitcher(false);
+    try {
+      const { token, user, restaurant: newRestaurant } = await authService.switchOutlet(outletId);
+      setAuth({ token, user, restaurant: newRestaurant });
+      reconnectSocket(token);
+      // Refresh current tab data after switch
+      if (page === 'dashboard') loadStats();
+    } catch (err) {
+      alert(err.message || 'Failed to switch outlet');
+    }
+  };
+
   const trialDaysLeft = restaurant?.trialEndsAt
     ? Math.max(0, Math.ceil((new Date(restaurant.trialEndsAt) - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
@@ -379,6 +399,46 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
           <div className="flex items-center gap-3">
+            {/* Outlet Switcher Dropdown */}
+            {accessibleOutlets.length > 1 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowOutletSwitcher(!showOutletSwitcher)}
+                  className="flex items-center gap-2 rounded-lg border border-[#FFCDD2] bg-[#FFEBEE] px-3 py-1.5 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] transition-colors"
+                >
+                  <Store size={14} />
+                  <span className="hidden sm:inline max-w-[120px] truncate">{restaurant?.name}</span>
+                  <ChevronDown size={14} />
+                </button>
+                {showOutletSwitcher && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowOutletSwitcher(false)} />
+                    <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-[#FFCDD2] bg-white shadow-xl z-50 py-1">
+                      {accessibleOutlets.map((o) => (
+                        <button
+                          key={o.id}
+                          onClick={() => handleQuickSwitch(o.id)}
+                          className={`flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[#FFF5F5] ${
+                            o.id === restaurant?.id ? 'font-bold text-[#B71C1C]' : 'text-gray-700'
+                          }`}
+                        >
+                          {o.id === restaurant?.id && <CheckCircle size={14} className="text-[#B71C1C]" />}
+                          <span className="truncate">{o.name}</span>
+                        </button>
+                      ))}
+                      <div className="border-t border-gray-100 mt-1 pt-1">
+                        <button
+                          onClick={() => { setShowOutletSwitcher(false); setPage('outlets-overview'); }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-[#B71C1C]"
+                        >
+                          <ArrowRight size={14} /> Manage all outlets
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <div className="h-8 w-8 rounded-full bg-[#B71C1C] text-white flex items-center justify-center text-sm font-black">
               {(restaurant?.name?.[0] || 'A').toUpperCase()}
             </div>
