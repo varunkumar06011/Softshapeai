@@ -5550,6 +5550,8 @@ export function KitchenInventory() {
 
   const [addError, setAddError] = useState(null);
 
+  const [adding, setAdding] = useState(false);
+
   const [editingImageItem, setEditingImageItem] = useState(null);
 
   const [imageEditPreview, setImageEditPreview] = useState(null);
@@ -5596,9 +5598,11 @@ export function KitchenInventory() {
 
   const handleAddItem = async () => {
 
-    if (!newItem.name || !newItem.unit) return;
+    if (!newItem.name || !newItem.unit || adding) return;
 
     setAddError(null);
+
+    setAdding(true);
 
     try {
 
@@ -5653,6 +5657,10 @@ export function KitchenInventory() {
       console.error('[KitchenInventory] Add item failed:', err);
 
       setAddError(err.message || 'Failed to add ingredient');
+
+    } finally {
+
+      setAdding(false);
 
     }
 
