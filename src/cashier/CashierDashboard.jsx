@@ -33,7 +33,9 @@ import {
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber } from '../services/orderApi';
+import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
+import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
@@ -433,6 +435,7 @@ const CashierDashboard = ({ onLogout }) => {
   const isSubmittingKotRef = useRef(false);
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const kotRequestIdRef = useRef(null);
+  const lastKotCartSignatureRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
   const loadTxnsGenerationRef = useRef(0);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
@@ -3358,6 +3361,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const addToCart = (item) => {
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
     if (!selectedTable) {
       addNotification('Select Table', 'Please assign a table before adding items.', 'warning');
       setActiveTab('tables');
@@ -3380,6 +3385,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const updateQty = (id, delta) => {
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
     setCart(prev => {
       const updated = prev.map(item => {
         if (item.id === id) {
@@ -3392,6 +3399,8 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const updateItemNote = (itemId, note) => {
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
     setCart(prev =>
       prev.map(i => i.id === itemId ? { ...i, notes: note.trim() || null } : i)
     );
@@ -3403,11 +3412,19 @@ const CashierDashboard = ({ onLogout }) => {
     setIsKotSending(true);
     setIsKotSuccess(false);
 
-    // Generate requestId for idempotency; do not update UI until the API confirms.
-    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2) + Date.now().toString(36));
-    kotRequestIdRef.current = requestId;
+    // Generate requestId for idempotency; reuse on retry if cart hasn't changed.
+    const cartSignature = cart.map(i => `${i.id || i.menuItemId}:${i.q ?? i.quantity ?? 1}:${i.notes ?? ''}`).sort().join('|');
+    let requestId;
+    if (kotRequestIdRef.current && lastKotCartSignatureRef.current === cartSignature) {
+      // Retry with same cart contents — reuse the same requestId so backend idempotency short-circuits
+      requestId = kotRequestIdRef.current;
+    } else {
+      requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36));
+      kotRequestIdRef.current = requestId;
+      lastKotCartSignatureRef.current = cartSignature;
+    }
     // Register this requestId so socket echoes from our own KOT submission are skipped
     processedSocketRequestIds.current.add(requestId);
     // Clean up after 30s to prevent unbounded growth
@@ -3430,54 +3447,184 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       let orderResponse = null;
 
-      if (selectedTable?.backendId || selectedTable?.isExtra) {
-        if (selectedTable.isExtra) {
-          const orderId = selectedTable.activeOrder?.id;
-          if (orderId) {
-            // Subsequent KOT for extra table — append to existing order
-            console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-            orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 10000);
-          } else {
-            // First KOT for extra table — create order tied to the parent DB table
-            orderResponse = await createOrder({
-              tableId: selectedTable.backendId,
-              tableNumber: selectedTable.number,
-              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-              items: apiItems,
-              requestId,
-              captainName: undefined,
-              isExtraTable: true,
-              sectionTag: selectedTable.sectionTag || undefined,
-              platform: selectedOrderPlatform,
-              timeoutMs: 10000,
-            });
-          }
-        } else if (selectedTable.activeOrder?.id) {
-          // Regular table: Subsequent KOT — append new items to existing order
-          orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 10000);
-        } else {
-          // Regular table: First KOT — create a brand-new order row
-          try {
-            orderResponse = await createOrder({
-              tableId: selectedTable.backendId,
-              tableNumber: selectedTable.number || selectedTable.id,
-              restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-              items: apiItems,
-              requestId,
-              captainName: undefined,
-              sectionTag: selectedTable.sectionTag || undefined,
-              platform: selectedOrderPlatform,
-              timeoutMs: 10000,
-            });
-          } catch (createErr) {
-            // 409 means another device already created an order for this table — retry as update
-            if (createErr.statusCode === 409 && createErr.existingOrderId) {
-              console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
-              orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 10000);
-              // Update selectedTable with the existing order ID so future KOTs use update path
-              setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+      // 1. Reserve KOT number first (for local printing with real number)
+      let preReservedKotNumber = null;
+      let localPrinted = false;
+      try {
+        const reserved = await reserveKotNumber();
+        preReservedKotNumber = reserved?.kotNumber ?? null;
+      } catch (reserveErr) {
+        console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);
+      }
+
+      // 2. If we have a reserved KOT number, generate ESC/POS and fire local print
+      //    in parallel with the cloud API call.
+      if (preReservedKotNumber != null && (selectedTable?.backendId || selectedTable?.isExtra)) {
+        const kotOrderData = {
+          tableNumber: selectedTable?.number ?? selectedTable?.id,
+          orderId: selectedTable?.activeOrder?.id || 'pending',
+          items: cart.map(i => ({
+            name: i.n || i.name,
+            quantity: i.q ?? i.quantity ?? 1,
+            price: Number(i.p ?? i.price ?? 0),
+            notes: i.notes || null,
+            type: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'liquor' : 'food',
+          })),
+          kotId: String(preReservedKotNumber),
+          sectionName: selectedTable?.section?.name || 'Main Hall',
+          captainName: 'Cashier',
+          sectionTag: selectedTable?.sectionTag || undefined,
+          restaurantName: restaurant?.name || undefined,
+        };
+
+        const foodEscpos = buildFoodKOT(kotOrderData);
+        const liquorEscpos = buildLiquorKOT(kotOrderData);
+
+        const localPrintPromises = [];
+        if (foodEscpos.length > 0) {
+          localPrintPromises.push(
+            printLocal({
+              type: 'KOT',
+              escposData: foodEscpos,
+              eventId: `${requestId}-food`,
+              data: kotOrderData,
+            }).catch(err => console.warn('[KOT] Local food print failed:', err.message))
+          );
+        }
+        if (liquorEscpos.length > 0) {
+          localPrintPromises.push(
+            printLocal({
+              type: 'BAR_KOT',
+              escposData: liquorEscpos,
+              eventId: `${requestId}-liquor`,
+              data: kotOrderData,
+            }).catch(err => console.warn('[KOT] Local liquor print failed:', err.message))
+          );
+        }
+
+        // Fire local print and API call in parallel.
+        // Use allSettled so a local print success is not masked by an API failure
+        // — otherwise the printer prints the KOT but the UI shows "not sent".
+        const [localPrintSettled, apiSettled] = await Promise.allSettled([
+          Promise.all(localPrintPromises),
+          (async () => {
+            if (selectedTable.isExtra) {
+              const orderId = selectedTable.activeOrder?.id;
+              if (orderId) {
+                return await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, true, preReservedKotNumber);
+              } else {
+                return await createOrder({
+                  tableId: selectedTable.backendId,
+                  tableNumber: selectedTable.number,
+                  restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                  items: apiItems,
+                  requestId,
+                  captainName: undefined,
+                  isExtraTable: true,
+                  sectionTag: selectedTable.sectionTag || undefined,
+                  platform: selectedOrderPlatform,
+                  timeoutMs: 45000,
+                  localPrinted: true,
+                  preReservedKotNumber,
+                });
+              }
+            } else if (selectedTable.activeOrder?.id) {
+              return await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, true, preReservedKotNumber);
             } else {
-              throw createErr;
+              try {
+                return await createOrder({
+                  tableId: selectedTable.backendId,
+                  tableNumber: selectedTable.number || selectedTable.id,
+                  restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                  items: apiItems,
+                  requestId,
+                  captainName: undefined,
+                  sectionTag: selectedTable.sectionTag || undefined,
+                  platform: selectedOrderPlatform,
+                  timeoutMs: 45000,
+                  localPrinted: true,
+                  preReservedKotNumber,
+                });
+              } catch (createErr) {
+                if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                  console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                  setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, true, preReservedKotNumber);
+                } else {
+                  throw createErr;
+                }
+              }
+            }
+          })(),
+        ]);
+
+        const localPrintResults = localPrintSettled.status === 'fulfilled' ? localPrintSettled.value : [];
+        localPrinted = localPrintResults.some(r => r?.printed);
+
+        // If the API call failed but local print succeeded, warn the user
+        // that the KOT was printed but server sync failed — don't show "not sent".
+        if (apiSettled.status === 'rejected' && localPrinted) {
+          console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
+          addNotification(
+            `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
+            'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
+            'warning'
+          );
+          return;
+        }
+
+        // If both API and local print failed, throw the API error to hit the catch block
+        if (apiSettled.status === 'rejected') {
+          throw apiSettled.reason;
+        }
+
+        orderResponse = apiSettled.value;
+
+      } else {
+        // Fallback: cloud-only flow (reserve failed or no table)
+        if (selectedTable?.backendId || selectedTable?.isExtra) {
+          if (selectedTable.isExtra) {
+            const orderId = selectedTable.activeOrder?.id;
+            if (orderId) {
+              console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000);
+            } else {
+              orderResponse = await createOrder({
+                tableId: selectedTable.backendId,
+                tableNumber: selectedTable.number,
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: undefined,
+                isExtraTable: true,
+                sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
+                timeoutMs: 45000,
+              });
+            }
+          } else if (selectedTable.activeOrder?.id) {
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000);
+          } else {
+            try {
+              orderResponse = await createOrder({
+                tableId: selectedTable.backendId,
+                tableNumber: selectedTable.number || selectedTable.id,
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: undefined,
+                sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
+                timeoutMs: 45000,
+              });
+            } catch (createErr) {
+              if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000);
+                setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+              } else {
+                throw createErr;
+              }
             }
           }
         }
@@ -3589,6 +3736,8 @@ const CashierDashboard = ({ onLogout }) => {
 
       if (orderResponse || !selectedTable?.backendId) {
         setCart([]);
+        kotRequestIdRef.current = null;
+        lastKotCartSignatureRef.current = null;
         lastAnyItemAddedRef.current = 0;
         setExpandedNoteItemId(null);
         setIsKotSuccess(true);
@@ -3597,12 +3746,87 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } catch (err) {
       console.error('[KOT] API failed:', err.message);
-      // Cart is retained so the cashier can retry immediately or add more items.
-      addNotification(
-        'KOT Not Sent to Kitchen',
-        `${err.message || 'Network error'}. Cart kept — tap KOT again to retry.`,
-        'error'
-      );
+      const isTimeout = err.message?.includes('timed out') || err.name === 'AbortError';
+      // Network-level errors (no HTTP status code) are ambiguous — the backend
+      // may have processed the request and emitted the print job, but the response
+      // was lost in transit.  HTTP errors (400, 401, 409, etc.) have a status code
+      // and are definitive — the backend rejected the request, no print happened.
+      const isNetworkError = !err.status && !err.statusCode;
+      const needsVerification = (isTimeout || isNetworkError) && selectedTable?.backendId;
+
+      if (needsVerification) {
+        // Timeout or network error = unknown outcome. Check if the server actually committed the items.
+        try {
+          const verifyController = new AbortController();
+          const verifyTimeout = setTimeout(() => verifyController.abort(), 5000);
+          const verifyRes = await fetch(`${API_BASE}/api/orders/table/${selectedTable.backendId}`, {
+            headers: getAuthHeaders(),
+            signal: verifyController.signal,
+          });
+          clearTimeout(verifyTimeout);
+          if (verifyRes.ok) {
+            const freshOrder = await verifyRes.json();
+            const serverItems = freshOrder?.items || [];
+            // Check if all cart items are present in the server order
+            const serverItemMap = new Map();
+            for (const si of serverItems) {
+              if (!si.removedFromBill) {
+                const key = `${si.menuItemId}::${si.notes ?? ''}`;
+                serverItemMap.set(key, (serverItemMap.get(key) || 0) + Number(si.quantity ?? si.q ?? 0));
+              }
+            }
+            const allPresent = apiItems.every(ai => {
+              const key = `${ai.menuItemId}::${ai.notes ?? ''}`;
+              return (serverItemMap.get(key) || 0) >= ai.quantity;
+            });
+
+            if (allPresent) {
+              // Items were actually committed — treat as success
+              const serverKotHistory = freshOrder?.kotHistory?.length > 0 ? freshOrder.kotHistory : [];
+              if (selectedTable.isExtra) {
+                setExtraTables(prev => prev.map(et => {
+                  if (et.id !== selectedTable.id) return et;
+                  return { ...et, kotHistory: serverKotHistory, activeOrder: { ...et.activeOrder, id: freshOrder.id, items: serverItems } };
+                }));
+              } else {
+                setActiveTables(prev => prev.map(t => {
+                  if (t.backendId !== selectedTable.backendId) return t;
+                  return { ...t, kotHistory: serverKotHistory, activeOrder: { ...t.activeOrder, id: freshOrder.id, items: serverItems } };
+                }));
+              }
+              setSelectedTable(prev => prev ? {
+                ...prev,
+                kotHistory: serverKotHistory,
+                activeOrder: { ...prev.activeOrder, id: freshOrder.id, items: serverItems },
+              } : prev);
+
+              setCart([]);
+              kotRequestIdRef.current = null;
+              lastKotCartSignatureRef.current = null;
+              lastAnyItemAddedRef.current = 0;
+              setIsKotSuccess(true);
+              addNotification('KOT Sent', 'Server confirmed items were committed.', 'success');
+              setTimeout(() => setIsKotSuccess(false), 2000);
+              return;
+            }
+          }
+        } catch (verifyErr) {
+          console.warn('[KOT] Verification fetch failed:', verifyErr.message);
+        }
+        // Verification failed or items not found — show uncertain message
+        addNotification(
+          'KOT Submission Uncertain',
+          'Request failed and server state could not be verified. Please check the order before retrying.',
+          'warning'
+        );
+      } else {
+        // Definitive HTTP error (400, 401, 409, etc.) — keep cart for retry
+        addNotification(
+          'KOT Not Sent to Kitchen',
+          `${err.message || 'Network error'}. Cart kept — tap KOT again to retry.`,
+          'error'
+        );
+      }
     } finally {
       isSubmittingKotRef.current = false;
       setIsKotSending(false);
@@ -5286,13 +5510,8 @@ const CashierDashboard = ({ onLogout }) => {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setShowCancelModal(true);
-                                    if (item.originalIds.length === 1) {
-                                      setCancelSelected({ [item.originalIds[0]]: { item, quantity: 1 } });
-                                    } else {
-                                      const selection = {};
-                                      item.originalIds.forEach((id) => { selection[id] = { item, quantity: 1 }; });
-                                      setCancelSelected(selection);
-                                    }
+                                    const gKey = `${item.n}::${item.p}`;
+                                    setCancelSelected({ [gKey]: { item, quantity: 1 } });
                                   }}
                                   className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
                                   title="Cancel Item"
@@ -6347,6 +6566,25 @@ const CashierDashboard = ({ onLogout }) => {
                 }
                 if (remaining <= 0) break;
               }
+            }
+
+            // Clamp safeguard: ensure total batch quantity never exceeds what the cashier selected
+            const totalBatchQty = batchItems.reduce((sum, b) => sum + b.cancelQuantity, 0);
+            const totalSelectedQty = Object.values(cancelSelected).reduce(
+              (sum, e) => sum + Math.max(1, Math.round(Number(e.quantity ?? 1))), 0
+            );
+            if (totalBatchQty > totalSelectedQty) {
+              console.error('[CancelBatch] Clamp violation: batch qty > selected qty', { totalBatchQty, totalSelectedQty });
+              const clamped = [];
+              let clampRemaining = totalSelectedQty;
+              for (const b of batchItems) {
+                if (clampRemaining <= 0) break;
+                const q = Math.min(b.cancelQuantity, clampRemaining);
+                clamped.push({ ...b, cancelQuantity: q });
+                clampRemaining -= q;
+              }
+              batchItems.length = 0;
+              batchItems.push(...clamped);
             }
 
             if (batchItems.length === 0) {
