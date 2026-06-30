@@ -2330,6 +2330,8 @@ export function MenuPage({ onAddDish }) {
 
         method: 'DELETE',
 
+        headers: getAuthHeaders(),
+
       });
 
       if (res.ok) {
@@ -15091,7 +15093,7 @@ export function BarMenuPage() {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/bar/menu/items/${deleteTarget.id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/bar/menu/items/${deleteTarget.id}`, { method: 'DELETE', headers: getAuthHeaders() });
 
       if (res.ok) { showToast('Item deleted'); refreshMenu(); }
 
