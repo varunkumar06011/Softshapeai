@@ -2480,7 +2480,9 @@ export default function CaptainApp({ onLogout }) {
 
     kotRequestIdRef.current = requestId;
 
-
+    // Snapshot items before the API call — needed for retry in the catch block.
+    // Must be declared outside the try block so it's accessible in catch.
+    const retrySnapshot = [...currentSessionItems];
 
     try {
 
@@ -2513,8 +2515,6 @@ export default function CaptainApp({ onLogout }) {
       // Snapshot items before clearing — needed for print and retry
 
       const itemsForPrint = [...currentSessionItems];
-
-      const retrySnapshot = [...currentSessionItems]; // preserved for Retry button
 
       const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).grandTotal;
 
