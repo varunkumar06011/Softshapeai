@@ -2213,6 +2213,8 @@ const CashierDashboard = ({ onLogout }) => {
                   name: restaurant?.name || undefined,
                   receiptHeader: restaurant?.receiptHeader || undefined,
                   receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                  address: restaurant?.address || undefined,
+                  phone: restaurant?.phone || undefined,
                 },
               },
             });

@@ -78,7 +78,7 @@ function textToEscpos(text) {
   return encoder.encode(text);
 }
 
-function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, grandTotal, billNumber, restaurantName }) {
+function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, grandTotal, billNumber, restaurantName, restaurant }) {
   const lines = [];
   const W = 32; // 32 chars wide for 58mm paper (48 for 80mm)
   const center = (s) => {
@@ -87,7 +87,11 @@ function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, gra
   };
   const line = '-'.repeat(W);
 
-  if (restaurantName) lines.push(center(restaurantName));
+  const headerName = restaurantName || restaurant?.receiptHeader || restaurant?.name;
+  if (headerName) lines.push(center(headerName));
+  if (restaurant?.receiptSubHeader) lines.push(center(restaurant.receiptSubHeader));
+  if (restaurant?.address) lines.push(center(restaurant.address));
+  if (restaurant?.phone) lines.push(center(`Phone: ${restaurant.phone}`));
   lines.push(center('*** TAX INVOICE ***'));
   lines.push(line);
   if (billNumber) lines.push(`Bill: ${billNumber}`);

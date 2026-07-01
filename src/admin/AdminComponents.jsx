@@ -1628,6 +1628,20 @@ export function MenuPage({ onAddDish }) {
 
   const configuredPrinters = restaurant?.printerConfig?.printers || [];
 
+  const getPrinterNameForTarget = (target) => {
+    if (!configuredPrinters || configuredPrinters.length === 0) return null;
+    const targetUpper = (target || '').toUpperCase();
+    const typeMap = {
+      'KOT_PRINTER': ['KOT', 'KITCHEN'],
+      'BAR_PRINTER': ['BAR'],
+      'FOOD': ['KOT', 'KITCHEN'],
+      'LIQUOR': ['BAR'],
+    };
+    const types = typeMap[targetUpper] || [targetUpper];
+    const printer = configuredPrinters.find(p => types.includes((p.type || '').toUpperCase()));
+    return printer?.name || null;
+  };
+
   const [filter, setFilter] = useState("");
 
   const [activeVenueId, setActiveVenueId] = useState(null);
@@ -1865,6 +1879,8 @@ export function MenuPage({ onAddDish }) {
       const res = await fetch(endpoint, {
 
         method: 'PATCH',
+
+        headers: { ...getAuthHeaders() },
 
       });
 
@@ -2410,6 +2426,12 @@ export function MenuPage({ onAddDish }) {
 
           : {}),
 
+        ...(editingItem.categoryPrinterTarget !== undefined
+
+          ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
+
+          : {}),
+
         ...(imageUrl !== undefined ? { imageUrl } : {}),
 
       };
@@ -2426,7 +2448,7 @@ export function MenuPage({ onAddDish }) {
 
         method: 'PATCH',
 
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
         body: JSON.stringify(body),
 
@@ -3766,9 +3788,9 @@ export function MenuPage({ onAddDish }) {
 
                   ? [
 
-                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'Prints to KOT Family' },
+                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
 
-                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Prints to Dine in Bill' },
+                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
 
                     ].map(opt => (
 
@@ -3806,9 +3828,9 @@ export function MenuPage({ onAddDish }) {
 
                   : [
 
-                      { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
+                      { value: 'FOOD', label: '🍽 Food', sub: getPrinterNameForTarget('FOOD') || 'Kitchen KOT' },
 
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: getPrinterNameForTarget('LIQUOR') || 'Bar KOT' },
 
                     ].map(opt => (
 
@@ -3862,9 +3884,9 @@ export function MenuPage({ onAddDish }) {
 
                     { value: null, label: 'Default', sub: 'Use category' },
 
-                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'KOT printer' },
+                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
 
-                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Bill/Counter printer' },
+                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
 
                   ].map(opt => (
 
@@ -4270,9 +4292,9 @@ export function MenuPage({ onAddDish }) {
 
                   ? [
 
-                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'Prints to KOT Family' },
+                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
 
-                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Prints to Dine in Bill' },
+                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
 
                     ].map(opt => (
 
@@ -4310,9 +4332,9 @@ export function MenuPage({ onAddDish }) {
 
                   : [
 
-                      { value: 'FOOD', label: '🍽 Food', sub: 'Prints to Kitchen KOT' },
+                      { value: 'FOOD', label: '🍽 Food', sub: getPrinterNameForTarget('FOOD') || 'Kitchen KOT' },
 
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: 'Prints to Bar KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: getPrinterNameForTarget('LIQUOR') || 'Bar KOT' },
 
                     ].map(opt => (
 
@@ -4364,9 +4386,9 @@ export function MenuPage({ onAddDish }) {
 
                     { value: null, label: 'Default', sub: 'Use category' },
 
-                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: 'KOT printer' },
+                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
 
-                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: 'Bill/Counter printer' },
+                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
 
                   ].map(opt => (
 
@@ -14730,6 +14752,8 @@ export function BarMenuPage() {
 
   const [showUploadModal, setShowUploadModal] = useState(false);
 
+  const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
+
 
 
   // ── Dynamic categories for bar menu ────────────────────────────────────
@@ -14962,7 +14986,9 @@ export function BarMenuPage() {
 
             unit: item.unit,
 
-            mlPerUnit: item.mlPerUnit
+            mlPerUnit: item.mlPerUnit,
+
+            venuePrices: item.venuePrices || {}
 
           });
 
@@ -14999,6 +15025,8 @@ export function BarMenuPage() {
   const [editImg, setEditImg] = useState(null);
 
   const [editSaving, setEditSaving] = useState(false);
+
+  const [editVenuePrices, setEditVenuePrices] = useState({});
 
 
 
@@ -15058,11 +15086,13 @@ export function BarMenuPage() {
 
         item.menuType === typeFilter &&
 
-        (!filter || item.n.toLowerCase().includes(filter.toLowerCase()))
+        (!filter || item.n.toLowerCase().includes(filter.toLowerCase())) &&
+
+        (venueColumns.length <= 1 || showHiddenVenueItems || Number(item.venuePrices?.[activeVenueId] || 0) > 0)
 
     );
 
-  }, [menuItems, barMenuTab, filter]);
+  }, [menuItems, barMenuTab, filter, venueColumns, activeVenueId, showHiddenVenueItems]);
 
 
 
@@ -15118,6 +15148,8 @@ export function BarMenuPage() {
 
     setEditImg(item.img || null);
 
+    setEditVenuePrices({ ...(item.venuePrices || {}) });
+
   };
 
 
@@ -15167,7 +15199,11 @@ export function BarMenuPage() {
 
     if (imageUrl !== undefined) patch.img = imageUrl;
 
-    patch.venuePrices = editItem.venuePrices || {};   // updateBarMenuItem maps patch.img → body.imageUrl
+    patch.venuePrices = Object.fromEntries(
+
+      venueColumns.map((venue) => [venue.id, Number(editVenuePrices[venue.id] || 0)])
+
+    );
 
 
 
@@ -15321,7 +15357,7 @@ export function BarMenuPage() {
 
         method: 'POST',
 
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
         body: JSON.stringify(body),
 
@@ -15483,6 +15519,24 @@ export function BarMenuPage() {
 
           </div>
 
+          <label className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+
+            <input
+
+              type="checkbox"
+
+              checked={showHiddenVenueItems}
+
+              onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
+
+              className="accent-[#E53935]"
+
+            />
+
+            Show items hidden from {venueColumns.find(v => v.id === activeVenueId)?.label || 'this venue'}
+
+          </label>
+
         </div>
 
       )}
@@ -15555,7 +15609,15 @@ export function BarMenuPage() {
 
               {item.variants.length === 1 ? (
 
-                <p className="text-[13px] font-black text-gray-900">₹{item.variants[0].price}</p>
+                <p className="text-[13px] font-black text-gray-900">
+
+                  {venueColumns.length > 1 && Number(item.venuePrices?.[activeVenueId] || 0) > 0
+
+                    ? `₹${item.venuePrices[activeVenueId]}`
+
+                    : `₹${item.variants[0].price}`}
+
+                </p>
 
               ) : (
 
@@ -15763,7 +15825,7 @@ export function BarMenuPage() {
 
               <div>
 
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Price (₹)</label>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Base Price (₹)</label>
 
                 <input
 
@@ -15785,7 +15847,51 @@ export function BarMenuPage() {
 
             {editItem.variants.length > 1 && (
 
-              <p className="text-[11px] text-gray-400 font-bold">Multi-variant pricing — edit from backend</p>
+              <p className="text-[11px] text-gray-400 font-bold">Multi-variant base pricing — edit from backend. Venue prices below still apply.</p>
+
+            )}
+
+
+
+            {/* Venue-specific prices */}
+
+            {venueColumns.length > 1 && (
+
+              <div>
+
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Venue Prices (₹)</label>
+
+                <div className="grid grid-cols-2 gap-2 mt-1">
+
+                  {venueColumns.map((venue) => (
+
+                    <div key={venue.id}>
+
+                      <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">{venue.label}</label>
+
+                      <input
+
+                        type="number"
+
+                        placeholder="0"
+
+                        value={editVenuePrices[venue.id] ?? ''}
+
+                        onChange={(e) => setEditVenuePrices(prev => ({ ...prev, [venue.id]: e.target.value }))}
+
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] font-bold focus:outline-none focus:border-[#E53935]"
+
+                      />
+
+                    </div>
+
+                  ))}
+
+                </div>
+
+                <p className="text-[10px] text-gray-400 mt-1">Set 0 to hide item from a venue.</p>
+
+              </div>
 
             )}
 

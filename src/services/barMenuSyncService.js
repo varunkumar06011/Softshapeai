@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from "react";
-import { API_BASE } from "./apiConfig";
+import { API_BASE, getAuthHeaders } from "./apiConfig";
 import {
   fetchBarMenuFromBackend,
   readBarMenuCache,
@@ -185,7 +185,7 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
 
   fetch(`${apiBase}/api/bar/menu/items/${itemId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
   })
     .then(async (res) => {
@@ -218,7 +218,7 @@ export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError) {
   writeBarMenuCache(barGlobalMenu);
   notifySubscribers();
 
-  fetch(`${apiBase}/api/bar/menu/items/${itemId}/availability`, { method: "PATCH" })
+  fetch(`${apiBase}/api/bar/menu/items/${itemId}/availability`, { method: "PATCH", headers: { ...getAuthHeaders() } })
     .then((res) => {
       if (res.ok) {
         onDone?.();
