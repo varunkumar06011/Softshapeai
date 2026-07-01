@@ -2240,6 +2240,7 @@ export default function CaptainApp({ onLogout }) {
     addItemCooldownRef.current[itemKey] = now;
 
     const finalPrice = variant ? Number(variant.price) : item.p;
+    const finalName = variant ? `${item.n} (${variant.name})` : item.n;
 
 
 
@@ -2247,17 +2248,17 @@ export default function CaptainApp({ onLogout }) {
 
       const currentCart = prev[activeTableId] ?? [];
 
-      const existing = currentCart.find(i => i.n === item.n);
+      const existing = currentCart.find(i => i.n === finalName);
 
       let updatedCart;
 
       if (existing) {
 
-        updatedCart = currentCart.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
+        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
 
       } else {
 
-        updatedCart = [...currentCart, { ...item, n: item.n, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
+        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
 
       }
 
@@ -2265,7 +2266,7 @@ export default function CaptainApp({ onLogout }) {
 
     });
 
-    addNotification(`${item.n} added`, 'success');
+    addNotification(`${finalName} added`, 'success');
 
     setSearchQuery('');
 
@@ -2594,6 +2595,9 @@ export default function CaptainApp({ onLogout }) {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
+        // Local print is best-effort. If the captain is on a different network
+        // (e.g. conference hall) and the local printer / Print Agent is unreachable,
+        // the backend cloud print agent will still print the KOT after the API call succeeds.
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
@@ -5070,6 +5074,10 @@ export default function CaptainApp({ onLogout }) {
 
                                 <div className="flex items-center gap-2">
 
+                                  <span className={`text-[10px] font-bold ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
+
+                                  <span className={`text-sm font-black ${isCancelled ? 'line-through text-red-400' : 'text-gray-900'}`}>₹{Number(item.p * item.q).toFixed(0)}</span>
+
                                   {isLoading ? (
 
                                     <Loader2 size={13} className="animate-spin text-red-400 shrink-0" />
@@ -5192,7 +5200,10 @@ export default function CaptainApp({ onLogout }) {
 
                               </div>
 
-                              <span className="text-sm font-black text-gray-900">₹{item.p * item.q}</span>
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-gray-400">₹{item.p} × {item.q}</span>
+                                <span className="text-sm font-black text-gray-900 block">₹{item.p * item.q}</span>
+                              </div>
 
                             </div>
 

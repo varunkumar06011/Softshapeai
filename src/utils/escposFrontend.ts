@@ -110,13 +110,13 @@ export function buildFoodKOT(orderData: OrderData): object[] {
     cmds.push(`${sectionName}\n`);
   }
 
-  cmds.push(LEFT, separator("-"), BOLD_ON);
+  cmds.push(LEFT, separator("-"), BOLD_ON, SIZE_2X);
 
   const tableLabel = `Table : ${tableDisplay}`;
   const kotLabel = `KOT No : ${displayKotId}`;
-  const kotTableGap = Math.max(1, LINE_NORMAL - tableLabel.length - kotLabel.length);
+  const kotTableGap = Math.max(1, LINE_2X - tableLabel.length - kotLabel.length);
   cmds.push(`${tableLabel}${' '.repeat(kotTableGap)}${kotLabel}\n`);
-  cmds.push(BOLD_OFF);
+  cmds.push(SIZE_NORMAL, BOLD_OFF);
 
   cmds.push(
     `${roleLabel} : ${captainName && captainName !== 'N/A' ? captainName : roleLabel}\n`,
@@ -144,7 +144,9 @@ export function buildFoodKOT(orderData: OrderData): object[] {
   cmds.push(
     separator("-"),
     BOLD_ON,
+    SIZE_2X,
     `Hall Name : ${sectionName || 'Family Restaurant'}\n`,
+    SIZE_NORMAL,
     BOLD_OFF,
     CENTER,
     "--- Kitchen Order Ticket ---\n",
@@ -196,13 +198,13 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
     cmds.push(`${sectionLabel}\n`);
   }
 
-  cmds.push(LEFT, separator("-"), BOLD_ON);
+  cmds.push(LEFT, separator("-"), BOLD_ON, SIZE_2X);
 
   const tableLabel = `Table : ${tableDisplay}`;
   const kotLabel = `KOT No : ${displayKotId}`;
-  const kotTableGap = Math.max(1, LINE_NORMAL - tableLabel.length - kotLabel.length);
+  const kotTableGap = Math.max(1, LINE_2X - tableLabel.length - kotLabel.length);
   cmds.push(`${tableLabel}${' '.repeat(kotTableGap)}${kotLabel}\n`);
-  cmds.push(BOLD_OFF);
+  cmds.push(SIZE_NORMAL, BOLD_OFF);
 
   cmds.push(
     separator("-"),
@@ -231,7 +233,9 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
   cmds.push(
     separator("-"),
     BOLD_ON,
+    SIZE_2X,
     `Hall Name : ${sectionName || 'N/A'}\n`,
+    SIZE_NORMAL,
     BOLD_OFF,
     CENTER,
     "--- Bar Order Ticket ---\n",

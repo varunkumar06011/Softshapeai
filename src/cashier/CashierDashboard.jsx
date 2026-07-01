@@ -2203,7 +2203,7 @@ const CashierDashboard = ({ onLogout }) => {
               data: {
                 tableNumber: selectedTable.number,
                 items: billItems,
-                subtotal: billCalc.subtotal,
+                subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
                 discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
                 cgst: billCalc.cgst,
                 sgst: billCalc.sgst,
@@ -3325,11 +3325,10 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (item) => {
-    const itemKey = String(item.id || item.n || '');
     const now = Date.now();
-    const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 500) return; // 500ms cooldown per item — prevents accidental double-clicks only
-    addItemCooldownRef.current[itemKey] = now;
+    const lastAdd = addItemCooldownRef.current['__global__'] || 0;
+    if (now - lastAdd < 2000) return; // 2s global cooldown — must wait 2 seconds between any item additions
+    addItemCooldownRef.current['__global__'] = now;
 
     // Beer items should be added directly
     if ((activeOutlet === 'bar' || activeOutlet === 'both') && isBeerItem(item)) {
@@ -3352,9 +3351,11 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleVariantSelect = (item, variant) => {
+    addItemCooldownRef.current['__global__'] = Date.now();
+    const finalName = `${item.n} (${variant.name})`;
     addToCart({
       ...item,
-      n: item.n,
+      n: finalName,
       p: Number(variant.price),
       notes: item.notes || null
     });
@@ -3419,11 +3420,12 @@ const CashierDashboard = ({ onLogout }) => {
     setCart(prev => {
       const itemId = String(item.id || item.menuItemId || '');
       const existing = prev.find(i => {
-        if (itemId && String(i.id || i.menuItemId || '') === itemId) return true;
-        return i.n === item.n;
+        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n) return true;
+        if (!itemId && i.n === item.n) return true;
+        return false;
       });
       if (existing) return prev.map(i => {
-        if (itemId && String(i.id || i.menuItemId || '') === itemId) return { ...i, q: i.q + 1 };
+        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n) return { ...i, q: i.q + 1 };
         if (!itemId && i.n === item.n) return { ...i, q: i.q + 1 };
         return i;
       });
@@ -5335,7 +5337,10 @@ const CashierDashboard = ({ onLogout }) => {
                                     {item.isKotSent && <span className="text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 px-2 py-1 rounded-lg border border-green-150 ml-2">KOT Sent</span>}
                                   </p>
                                 </div>
-                                <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
+                                <div className="text-right">
+                                  <span className="text-[10px] font-bold text-gray-400">₹{item.p} × {item.q}</span>
+                                  <p className="text-sm md:text-base font-black text-gray-900">₹{item.p * item.q}</p>
+                                </div>
                               </div>
                               <div className="flex items-center justify-between gap-2.5">
                                 {item.isKotSent ? (
@@ -5566,6 +5571,7 @@ const CashierDashboard = ({ onLogout }) => {
                               <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
                             </div>
                             <div className="flex items-center gap-2 sm:gap-3">
+                              <span className={`text-[10px] font-bold whitespace-nowrap ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
                               <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                                 ₹{Number(item.p * item.q).toFixed(0)}
                               </span>
@@ -5985,6 +5991,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 </button>
                               </div>
                             )}
+                            <span className={`text-[10px] font-bold ${isMarked ? 'text-red-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
                             <span className={`text-sm sm:text-base font-black ${isMarked ? 'text-red-550' : 'text-gray-900'}`}>
                               {isMarked ? '−' : ''}₹{Number(item.p * item.q).toFixed(0)}
                             </span>
