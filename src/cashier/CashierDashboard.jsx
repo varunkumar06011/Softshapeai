@@ -542,9 +542,18 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Moved up: these must be declared before activeTablesRef ──
   const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
-  const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync();
 
-  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync();
+  // FREEZE: skip table updates when bill is printed (not yet settled) or during KOT submission
+  const shouldSkipSyncUpdate = useCallback((t) => {
+    if (!t?.backendId) return false;
+    if (isSubmittingKotRef.current) return true;
+    if (billPrintedTableIdsRef.current.has(t.backendId) && !settledTableIdsRef.current.has(t.backendId)) return true;
+    return false;
+  }, []);
+
+  const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync({ shouldSkipTableUpdate: shouldSkipSyncUpdate });
+
+  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync({ shouldSkipTableUpdate: shouldSkipSyncUpdate });
   const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
   const menuLoading = activeOutlet === 'bar' || activeOutlet === 'both' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
@@ -1112,6 +1121,8 @@ const CashierDashboard = ({ onLogout }) => {
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs1 = recentlyTerminatedRef.current[order.tableId];
       if (termTs1 && Date.now() - termTs1 < 5000) return;
+      // FREEZE: once bill is printed, hold items steady until settlement
+      if (billPrintedTableIdsRef.current.has(order.tableId) && !settledTableIdsRef.current.has(order.tableId)) return;
       // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
       if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
@@ -1225,6 +1236,8 @@ const CashierDashboard = ({ onLogout }) => {
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs2 = recentlyTerminatedRef.current[order.tableId];
       if (termTs2 && Date.now() - termTs2 < 5000) return;
+      // FREEZE: once bill is printed, hold items steady until settlement
+      if (billPrintedTableIdsRef.current.has(order.tableId) && !settledTableIdsRef.current.has(order.tableId)) return;
       // ── DIAGNOSTIC: trace socket order:updated ──
       console.log('[DIAG order:updated] incoming items:', (order.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
       // ── END DIAGNOSTIC ──
@@ -1304,13 +1317,15 @@ const CashierDashboard = ({ onLogout }) => {
         const incomingBillAmt = table.currentBill ?? table.orders?.[0]?.totalAmount ?? t.currentBill;
         const isIncomingFree = (table.workflowStatus === 'Free' || table.status === 'AVAILABLE' || table.status === 'Free');
         const resolvedBill = isIncomingFree ? 0 : Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0));
+        // FREEZE: once bill is printed, hold items steady until settlement
+        const isFrozenGrid = isBillPrintedGrid && !isSettledGrid;
         return {
           ...t,
           kotHistory: mergedKotHistory,
           currentBill: resolvedBill,
           status: protectedStatus,
           workflowStatus: protectedStatus,
-          activeOrder: incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder,
+          activeOrder: isFrozenGrid ? t.activeOrder : (incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder),
         };
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
@@ -1350,6 +1365,8 @@ const CashierDashboard = ({ onLogout }) => {
             && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
             ? 'Waiting Bill'
             : incomingStatusSel;
+          // FREEZE: once bill is printed, hold items steady until settlement
+          const isFrozenSel = isBillPrinted && !isTableSettled;
           const nextVal = {
             ...prev,
             kotHistory: shouldClearKotHistory ? [] : mergedKotHistory,
@@ -1358,7 +1375,7 @@ const CashierDashboard = ({ onLogout }) => {
             workflowStatus: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
             activeOrder: (effectiveIsTableFree && isTableSettled)
               ? null
-              : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder),  // merge, never replace
+              : (isFrozenSel ? prev.activeOrder : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder)),
           };
           validateTableIntegrity('CashierDashboard.onTableUpdated', prev, nextVal);
           if (shallowEqualSelectedTable(prev, nextVal)) return prev; // bail out if nothing changed
@@ -2809,12 +2826,14 @@ const CashierDashboard = ({ onLogout }) => {
               cgst: Number(activeCgst),
               sgst: Number(activeSgst),
               restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-              items: getBillableItems(selectedTable).map(i => ({
-                name: i.name ?? i.n,
-                quantity: Number(i.quantity ?? i.q ?? 1),
-                price: Number(i.price ?? i.p ?? 0),
-                menuType: i.menuType || 'FOOD',
-              })),
+              items: getBillableItems(selectedTable)
+                .filter(i => Number(i.quantity ?? i.q ?? 1) > 0)
+                .map(i => ({
+                  name: i.name ?? i.n,
+                  quantity: Number(i.quantity ?? i.q ?? 1),
+                  price: Number(i.price ?? i.p ?? 0),
+                  menuType: i.menuType || 'FOOD',
+                })),
             }
           );
 
@@ -6704,35 +6723,45 @@ const CashierDashboard = ({ onLogout }) => {
               );
               clearTimeout(cancelTimeout);
 
-              const cancelledIdSet = new Set(resolvedIds);
+              const cancelQtyMap = new Map(batchItems.map(b => [b.orderItemId, b.cancelQuantity]));
+              const applyCancelToItems = (items) => items.map(i => {
+                if (!cancelQtyMap.has(i.id)) return i;
+                const cancelQty = cancelQtyMap.get(i.id);
+                const currentQty = Number(i.quantity ?? i.q ?? 0);
+                const newQty = Math.max(0, currentQty - cancelQty);
+                if (newQty <= 0) return { ...i, removedFromBill: true, quantity: 0, q: 0 };
+                return { ...i, quantity: newQty, q: newQty };
+              });
+              const applyCancelToKotHistory = (kh) => (kh || []).map(kot => ({
+                ...kot,
+                items: (kot.items || []).map(kotItem => {
+                  const itemId = kotItem.orderItemId || kotItem.id;
+                  if (!cancelQtyMap.has(itemId)) return kotItem;
+                  const cancelQty = cancelQtyMap.get(itemId);
+                  const currentQty = Number(kotItem.q ?? kotItem.quantity ?? 0);
+                  const newQty = Math.max(0, currentQty - cancelQty);
+                  if (newQty <= 0) return { ...kotItem, s: 'Cancelled', q: 0 };
+                  return { ...kotItem, q: newQty, quantity: newQty };
+                }),
+              }));
               const applyCancelOptimistic = (prev) => {
                 if (!prev) return prev;
                 const updatedOrder = prev.activeOrder ? {
                   ...prev.activeOrder,
-                  items: (prev.activeOrder.items || []).map(i =>
-                    cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
-                  ),
+                  items: applyCancelToItems(prev.activeOrder.items || []),
                 } : prev.activeOrder;
-                const updatedKotHistory = (prev.kotHistory || []).map(kot => ({
-                  ...kot,
-                  items: (kot.items || []).map(kotItem =>
-                    (kotItem.orderItemId && cancelledIdSet.has(kotItem.orderItemId)) ||
-                    (kotItem.id && cancelledIdSet.has(kotItem.id))
-                      ? { ...kotItem, s: 'Cancelled', q: 0 }
-                      : kotItem
-                  ),
-                }));
+                const updatedKotHistory = applyCancelToKotHistory(prev.kotHistory);
                 return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
               };
               setSelectedTable(applyCancelOptimistic);
               // ── DIAGNOSTIC: confirm optimistic cancel landed ──
-              console.log('[DIAG cancel] optimistic update applied, cancelledIds:', [...cancelledIdSet]);
+              console.log('[DIAG cancel] optimistic update applied, cancelQtyMap:', [...cancelQtyMap.entries()]);
 
               const setTargetTables = setActiveTables;
               setTargetTables(prev => prev.map(t => {
                 if (t.backendId !== selectedTable.backendId) return t;
                 const updatedOrder = t.activeOrder
-                  ? { ...t.activeOrder, items: (t.activeOrder.items || []).map(i => cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i) }
+                  ? { ...t.activeOrder, items: applyCancelToItems(t.activeOrder.items || []) }
                   : t.activeOrder;
                 return { ...t, activeOrder: updatedOrder };
               }));
@@ -6748,24 +6777,34 @@ const CashierDashboard = ({ onLogout }) => {
               const isAlreadyCancelled = err.message?.toLowerCase().includes('already') || err.status === 409 || err.code === 409;
               if (isAlreadyCancelled) {
                 // 409 or "already cancelled" — treat as success and apply optimistic update anyway
-                const cancelledIdSet = new Set(resolvedIds);
+                const cancelQtyMap = new Map(batchItems.map(b => [b.orderItemId, b.cancelQuantity]));
+                const applyCancelToItems = (items) => items.map(i => {
+                  if (!cancelQtyMap.has(i.id)) return i;
+                  const cancelQty = cancelQtyMap.get(i.id);
+                  const currentQty = Number(i.quantity ?? i.q ?? 0);
+                  const newQty = Math.max(0, currentQty - cancelQty);
+                  if (newQty <= 0) return { ...i, removedFromBill: true, quantity: 0, q: 0 };
+                  return { ...i, quantity: newQty, q: newQty };
+                });
+                const applyCancelToKotHistory = (kh) => (kh || []).map(kot => ({
+                  ...kot,
+                  items: (kot.items || []).map(kotItem => {
+                    const itemId = kotItem.orderItemId || kotItem.id;
+                    if (!cancelQtyMap.has(itemId)) return kotItem;
+                    const cancelQty = cancelQtyMap.get(itemId);
+                    const currentQty = Number(kotItem.q ?? kotItem.quantity ?? 0);
+                    const newQty = Math.max(0, currentQty - cancelQty);
+                    if (newQty <= 0) return { ...kotItem, s: 'Cancelled', q: 0 };
+                    return { ...kotItem, q: newQty, quantity: newQty };
+                  }),
+                }));
                 setSelectedTable(prev => {
                   if (!prev) return prev;
                   const updatedOrder = prev.activeOrder ? {
                     ...prev.activeOrder,
-                    items: (prev.activeOrder.items || []).map(i =>
-                      cancelledIdSet.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i
-                    ),
+                    items: applyCancelToItems(prev.activeOrder.items || []),
                   } : prev.activeOrder;
-                  const updatedKotHistory = (prev.kotHistory || []).map(kot => ({
-                    ...kot,
-                    items: (kot.items || []).map(kotItem =>
-                      (kotItem.orderItemId && cancelledIdSet.has(kotItem.orderItemId)) ||
-                      (kotItem.id && cancelledIdSet.has(kotItem.id))
-                        ? { ...kotItem, s: 'Cancelled', q: 0 }
-                        : kotItem
-                    ),
-                  }));
+                  const updatedKotHistory = applyCancelToKotHistory(prev.kotHistory);
                   return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
                 });
                 addNotification('Items already cancelled', 'success');

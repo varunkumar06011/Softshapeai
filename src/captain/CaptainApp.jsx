@@ -2940,7 +2940,8 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    // Optimistic UI — mark item as CANCELLED immediately
+    // Optimistic UI — decrement or remove item based on cancel quantity
+    const cancelQty = Number(kotItem.q ?? 1);
     setActiveTables(prev => prev.map(t => {
       if (t.backendId !== activeTable?.backendId) return t;
 
@@ -2956,11 +2957,13 @@ export default function CaptainApp({ onLogout }) {
 
             ...kot,
 
-            items: kot.items.map(i =>
-
-              i.orderItemId === kotItem.orderItemId ? { ...i, s: 'Cancelled', removedFromBill: true } : i
-
-            ),
+            items: kot.items.map(i => {
+              if (i.orderItemId !== kotItem.orderItemId) return i;
+              const currentQty = Number(i.q ?? i.quantity ?? 0);
+              const newQty = Math.max(0, currentQty - cancelQty);
+              if (newQty <= 0) return { ...i, s: 'Cancelled', removedFromBill: true, q: 0 };
+              return { ...i, q: newQty, quantity: newQty };
+            }),
 
           };
 
@@ -2968,12 +2971,16 @@ export default function CaptainApp({ onLogout }) {
 
         activeOrder: t.activeOrder ? {
           ...t.activeOrder,
-          items: (t.activeOrder.items || []).map(i =>
-            i.id === kotItem.orderItemId ? { ...i, removedFromBill: true } : i
-          ),
+          items: (t.activeOrder.items || []).map(i => {
+            if (i.id !== kotItem.orderItemId) return i;
+            const currentQty = Number(i.quantity ?? i.q ?? 0);
+            const newQty = Math.max(0, currentQty - cancelQty);
+            if (newQty <= 0) return { ...i, removedFromBill: true, quantity: 0, q: 0 };
+            return { ...i, quantity: newQty, q: newQty };
+          }),
         } : t.activeOrder,
 
-        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * (kotItem?.q ?? 1)),
+        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * cancelQty),
 
       };
 

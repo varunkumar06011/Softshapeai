@@ -133,9 +133,20 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
       const missingFromIncoming = existingItems.filter(
         i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
       );
+      // Preserve local cancellations: if an item was locally cancelled but the
+      // incoming payload hasn't confirmed the cancel yet, keep it cancelled
+      const existingCancelledIds = new Set(
+        existingItems.filter(i => i.removedFromBill && i.id).map(i => i.id)
+      );
+      const preservedIncomingItems = incomingItems.map(incomingItem => {
+        if (existingCancelledIds.has(incomingItem.id) && !incomingItem.removedFromBill) {
+          return { ...incomingItem, removedFromBill: true, quantity: 0 };
+        }
+        return incomingItem;
+      });
       activeOrder = {
         ...incomingOrder,
-        items: [...incomingItems, ...missingFromIncoming],
+        items: [...preservedIncomingItems, ...missingFromIncoming],
       };
     }
   }
