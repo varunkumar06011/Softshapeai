@@ -277,7 +277,7 @@ export function useGlobalMenuSync() {
                 n: updated.name ?? item.n,
                 p: updated.price ?? item.p,
                 t: updated.isVeg != null ? (updated.isVeg ? 'veg' : 'non') : item.t,
-                c: updated.category ?? item.c,
+                c: updated.category != null ? String(updated.category) : item.c,
                 imageUrl: updated.imageUrl ?? item.imageUrl,
                 available: updated.isAvailable ?? item.available,
                 menuType: updated.menuType ?? item.menuType,

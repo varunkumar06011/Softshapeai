@@ -57,7 +57,7 @@ import ItemAnalytics from './ItemAnalytics';
 import VoucherModule from './VoucherModule';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
-import { isBeerItem } from '../utils/itemHelpers';
+import { isBeerItem, getItemCategory } from '../utils/itemHelpers';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -141,7 +141,7 @@ const isSubsequence = (q, text) => {
 
 const getSearchRank = (item, query) => {
   const name = (item.n || item.name || '').toLowerCase();
-  const category = (item.c || item.category || '').toLowerCase();
+  const category = getItemCategory(item);
   const desc = (item.desc || item.description || '').toLowerCase();
 
   const q = query.trim().toLowerCase();
@@ -3181,7 +3181,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedMenuType === 'FOOD' && item.menuType === 'LIQUOR') return false;
       if (selectedMenuType === 'LIQUOR' && item.menuType !== 'LIQUOR') return false;
       if (selectedMenuType === 'DESSERTS') {
-        const cat = (item.c || item.category || '').toLowerCase();
+        const cat = getItemCategory(item);
         return cat.includes('dessert');
       }
 

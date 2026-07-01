@@ -12,6 +12,18 @@
  */
 
 /**
+ * Gets an item's category as a lowercase string, tolerating non-string values.
+ * Menu categories can arrive as numbers or objects (e.g. from live socket
+ * updates), so coerce to a string before any string operations.
+ * @param {Object} item - Menu item with c (category) or category property
+ * @returns {string} Lowercase category string ('' if missing)
+ */
+export function getItemCategory(item) {
+  if (!item) return '';
+  return String(item.c || item.category || '').toLowerCase();
+}
+
+/**
  * Checks if an item is a beer item based on category or name
  * @param {Object} item - Menu item with properties: n (name), c (category), name, category
  * @returns {boolean} True if item is beer

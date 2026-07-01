@@ -53,7 +53,7 @@ import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { getTenantScopedKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext.jsx';
 
-import { isBeerItem } from '../utils/itemHelpers';
+import { isBeerItem, getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 
@@ -4505,7 +4505,7 @@ export default function CaptainApp({ onLogout }) {
 
         const name = (item.n || item.name || '').toLowerCase();
 
-        const cat = (item.c || item.category || '').toLowerCase();
+        const cat = getItemCategory(item);
 
         return words.some(w => name.includes(w) || cat.includes(w) ||
 
