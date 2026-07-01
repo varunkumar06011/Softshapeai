@@ -457,7 +457,7 @@ const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
 
   const formData = new FormData();
   formData.append('file', blob, 'image.jpg');
-  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-menu');
   if (itemName?.trim()) {
     formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
   }
@@ -1627,20 +1627,22 @@ export function MenuPage({ onAddDish }) {
   const { restaurant } = useAuth();
 
   const configuredPrinters = restaurant?.printerConfig?.printers || [];
+  const agentAvailablePrinters = restaurant?.printerConfig?.availablePrinters || [];
 
-  const getPrinterNameForTarget = (target) => {
-    if (!configuredPrinters || configuredPrinters.length === 0) return null;
-    const targetUpper = (target || '').toUpperCase();
-    const typeMap = {
-      'KOT_PRINTER': ['KOT', 'KITCHEN'],
-      'BAR_PRINTER': ['BAR'],
-      'FOOD': ['KOT', 'KITCHEN'],
-      'LIQUOR': ['BAR'],
-    };
-    const types = typeMap[targetUpper] || [targetUpper];
-    const printer = configuredPrinters.find(p => types.includes((p.type || '').toUpperCase()));
-    return printer?.name || null;
-  };
+  // Build a deduplicated list of all known printers from both configured printers
+  // (set in Printer Settings page) and system printers reported by the print agent.
+  const allPrinterOptions = useMemo(() => {
+    const map = new Map();
+    configuredPrinters.forEach(p => {
+      if (p.name) map.set(p.name, { name: p.name, type: p.type || '', source: 'configured' });
+    });
+    agentAvailablePrinters.forEach(name => {
+      if (typeof name === 'string' && !map.has(name)) {
+        map.set(name, { name, type: '', source: 'agent' });
+      }
+    });
+    return Array.from(map.values());
+  }, [configuredPrinters, agentAvailablePrinters]);
 
   const [filter, setFilter] = useState("");
 
@@ -1700,7 +1702,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: { ...getAuthHeaders() } });
 
       if (!res.ok) throw new Error('Admin fetch failed');
 
@@ -1708,7 +1710,7 @@ export function MenuPage({ onAddDish }) {
 
       // Map to POS shape, preserving isAvailable
 
-      const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+      const DEFAULT_IMG = '/placeholder.svg';
 
       setAdminItems(data.map(item => ({
 
@@ -1737,6 +1739,8 @@ export function MenuPage({ onAddDish }) {
         printerTarget: item.printerTarget,
 
         printerName: item.printerName,
+
+        gstEnabled: item.gstEnabled !== false,
 
       })));
 
@@ -2346,15 +2350,16 @@ export function MenuPage({ onAddDish }) {
 
         method: 'DELETE',
 
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
       });
 
       if (res.ok) {
 
         // Optimistic update: remove item from local state immediately
-
-        setGlobalMenu(prev => prev.filter(i => i.id !== deletingItem.id));
+        const deletedId = deletingItem.id;
+        setGlobalMenu(prev => prev.filter(i => i.id !== deletedId));
+        setAdminItems(prev => prev.filter(i => i.id !== deletedId));
 
         setDeletingItem(null);
 
@@ -2420,6 +2425,8 @@ export function MenuPage({ onAddDish }) {
 
         },
 
+        gstEnabled: editingItem.gstEnabled !== false,
+
         ...(editingItem.printerName !== undefined
 
           ? { printerName: editingItem.printerName || null }
@@ -2429,6 +2436,12 @@ export function MenuPage({ onAddDish }) {
         ...(editingItem.categoryPrinterTarget !== undefined
 
           ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
+
+          : {}),
+
+        ...(editingItem.printerTarget !== undefined
+
+          ? { printerTarget: editingItem.printerTarget || null }
 
           : {}),
 
@@ -2462,7 +2475,7 @@ export function MenuPage({ onAddDish }) {
 
         // Build optimistic POS-shaped item from backend response
 
-        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+        const DEFAULT_IMG = '/placeholder.svg';
 
         const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? (serverItem?.variants?.length > 0 ? serverItem.variants[0] : null);
 
@@ -2485,6 +2498,8 @@ export function MenuPage({ onAddDish }) {
           menuType: editingItem.menuType || 'FOOD',
 
           venuePrices: body.venuePrices,
+
+          gstEnabled: body.gstEnabled,
 
         };
 
@@ -2670,6 +2685,20 @@ export function MenuPage({ onAddDish }) {
 
           ),
 
+          gstEnabled: addingItem.gstEnabled !== false,
+
+          ...(addingItem.categoryPrinterTarget !== undefined
+
+            ? { categoryPrinterTarget: addingItem.categoryPrinterTarget || null }
+
+            : {}),
+
+          ...(addingItem.printerTarget !== undefined
+
+            ? { printerTarget: addingItem.printerTarget || null }
+
+            : {}),
+
           ...(addingItem.printerName !== undefined
 
             ? { printerName: addingItem.printerName || null }
@@ -2690,7 +2719,7 @@ export function MenuPage({ onAddDish }) {
 
         // Map backend item to POS shape for optimistic insert
 
-        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+        const DEFAULT_IMG = '/placeholder.svg';
 
         const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? (serverItem?.variants?.length > 0 ? serverItem.variants[0] : null);
 
@@ -2717,6 +2746,8 @@ export function MenuPage({ onAddDish }) {
             currentVenueColumns.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
 
           ),
+
+          gstEnabled: addingItem.gstEnabled !== false,
 
         };
 
@@ -2834,17 +2865,7 @@ export function MenuPage({ onAddDish }) {
 
             const firstCat = dbCategories[0];
 
-            const defaultPrinterTarget = firstCat?.printerTarget || (
-
-              activeOutlet === 'restaurant' &&
-
-              /water|drinks|beverages|soft drinks|soda|juice|liquor|beer/i.test(firstCat?.name || '')
-
-                ? 'BAR_PRINTER'
-
-                : 'KOT_PRINTER'
-
-            );
+            const defaultPrinterTarget = firstCat?.printerTarget || configuredPrinters[0]?.name || null;
 
             setAddingItem({
 
@@ -2863,6 +2884,8 @@ export function MenuPage({ onAddDish }) {
               categoryPrinterTarget: activeOutlet === 'restaurant' ? defaultPrinterTarget : undefined,
 
               menuType: 'FOOD',
+
+              gstEnabled: true,
 
             });
 
@@ -3098,6 +3121,108 @@ export function MenuPage({ onAddDish }) {
 
     )}
 
+    {/* Outlet Selector — only when tenant has more than one outlet type */}
+
+    {outlets.length > 1 && (
+
+      <div className="mb-4 flex gap-2">
+
+        {outlets.map((outlet) => (
+
+          <button
+
+            key={outlet}
+
+            onClick={() => setActiveOutlet(outlet)}
+
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+
+              activeOutlet === outlet
+
+                ? outlet === 'bar'
+
+                  ? 'bg-purple-500 text-white'
+
+                  : 'bg-blue-500 text-white'
+
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+
+            }`}
+
+          >
+
+            {outlet === 'bar' ? '🍺 Bar' : '🍽️ Restaurant'}
+
+          </button>
+
+        ))}
+
+      </div>
+
+    )}
+
+
+
+    {/* Venue-specific tabs — only when more than one section exists */}
+
+    {currentVenueColumns.length > 1 && (
+
+      <div className="mb-3 flex flex-col gap-2">
+
+        <div className="flex flex-wrap gap-2">
+
+          {currentVenueColumns.map((venue) => (
+
+            <button
+
+              key={venue.id}
+
+              type="button"
+
+              onClick={() => setActiveVenueId(venue.id)}
+
+              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
+
+                activeVenueId === venue.id
+
+                  ? 'border-[#E53935] bg-[#E53935] text-white'
+
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+
+              }`}
+
+            >
+
+              {venue.label}
+
+            </button>
+
+          ))}
+
+        </div>
+
+        <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
+
+          <input
+
+            type="checkbox"
+
+            checked={showHiddenVenueItems}
+
+            onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
+
+            className="accent-[#E53935]"
+
+          />
+
+          Show items hidden from {activeVenue.label}
+
+        </label>
+
+      </div>
+
+    )}
+
     <p className="text-xs text-[#6B6B6B] mb-3">
 
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
@@ -3293,110 +3418,6 @@ export function MenuPage({ onAddDish }) {
       )}
 
     </div>
-
-
-
-    {/* Outlet Selector — only when tenant has more than one outlet type */}
-
-    {outlets.length > 1 && (
-
-      <div className="mb-4 flex gap-2">
-
-        {outlets.map((outlet) => (
-
-          <button
-
-            key={outlet}
-
-            onClick={() => setActiveOutlet(outlet)}
-
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-
-              activeOutlet === outlet
-
-                ? outlet === 'bar'
-
-                  ? 'bg-purple-500 text-white'
-
-                  : 'bg-blue-500 text-white'
-
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-
-            }`}
-
-          >
-
-            {outlet === 'bar' ? '🍺 Bar' : '🍽️ Restaurant'}
-
-          </button>
-
-        ))}
-
-      </div>
-
-    )}
-
-
-
-    {/* Venue-specific tabs — only when more than one section exists */}
-
-    {currentVenueColumns.length > 1 && (
-
-      <div className="mb-3 flex flex-col gap-2">
-
-        <div className="flex flex-wrap gap-2">
-
-          {currentVenueColumns.map((venue) => (
-
-            <button
-
-              key={venue.id}
-
-              type="button"
-
-              onClick={() => setActiveVenueId(venue.id)}
-
-              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
-
-                activeVenueId === venue.id
-
-                  ? 'border-[#E53935] bg-[#E53935] text-white'
-
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-
-              }`}
-
-            >
-
-              {venue.label}
-
-            </button>
-
-          ))}
-
-        </div>
-
-        <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
-
-          <input
-
-            type="checkbox"
-
-            checked={showHiddenVenueItems}
-
-            onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
-
-            className="accent-[#E53935]"
-
-          />
-
-          Show items hidden from {activeVenue.label}
-
-        </label>
-
-      </div>
-
-    )}
 
 
 
@@ -3626,6 +3647,20 @@ export function MenuPage({ onAddDish }) {
 
           <div className="p-5 space-y-4 overflow-y-auto">
 
+            {/* ── Section 1: Basic Info ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Basic Info
+
+              </summary>
+
+              <div className="space-y-4">
+
             <div>
 
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Image</label>
@@ -3656,9 +3691,7 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-
-               <div>
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
 
@@ -3700,7 +3733,51 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-               <div>
+            <div>
+
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
+
+               <div className="flex gap-4 mt-2">
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="diet" value="veg" checked={editingItem.t === 'veg'} onChange={() => setEditingItem({...editingItem, t: 'veg'})} className="accent-green-600" />
+
+                     <span className="text-green-700">Vegetarian</span>
+
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="diet" value="non" checked={editingItem.t === 'non'} onChange={() => setEditingItem({...editingItem, t: 'non'})} className="accent-red-600" />
+
+                     <span className="text-red-700">Non-Veg</span>
+
+                  </label>
+
+               </div>
+
+            </div>
+
+              </div>
+
+            </details>
+
+            {/* ── Section 2: Pricing ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Pricing
+
+              </summary>
+
+              <div className="space-y-4">
+
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">{activeVenue.label} Price (₹)</label>
 
@@ -3708,7 +3785,7 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-            </div>
+            {currentVenueColumns.length > 1 && (
 
             <div>
 
@@ -3752,85 +3829,70 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div>
+            )}
 
-               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
-
-               <div className="flex gap-4 mt-2">
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="diet" value="veg" checked={editingItem.t === 'veg'} onChange={() => setEditingItem({...editingItem, t: 'veg'})} className="accent-green-600" />
-
-                     <span className="text-green-700">Vegetarian</span>
-
-                  </label>
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="diet" value="non" checked={editingItem.t === 'non'} onChange={() => setEditingItem({...editingItem, t: 'non'})} className="accent-red-600" />
-
-                     <span className="text-red-700">Non-Veg</span>
-
-                  </label>
-
-               </div>
-
+            <div className="flex items-center gap-3 pt-2">
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingItem.gstEnabled !== false}
+                  onChange={e => setEditingItem({...editingItem, gstEnabled: e.target.checked})}
+                  className="accent-[#E53935] w-4 h-4"
+                />
+                <span className="text-gray-700">GST Applicable</span>
+              </label>
+              <span className="text-[10px] text-gray-400 font-medium">If off, no GST is charged on this item in bills</span>
             </div>
 
-            <div>
+              </div>
+
+            </details>
+
+            {/* ── Section 3: Printer Settings ── */}
+
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Printer Settings
+
+              </summary>
+
+              <div className="space-y-4">
 
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
 
-              <div className="flex gap-2">
+              {activeOutlet === 'restaurant'
 
-                {activeOutlet === 'restaurant'
+                ? <select
 
-                  ? [
+                    value={editingItem.categoryPrinterTarget || ''}
 
-                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                    onChange={(e) => setEditingItem({ ...editingItem, categoryPrinterTarget: e.target.value || null })}
 
-                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                    className={input + ' w-full bg-gray-50'}
 
-                    ].map(opt => (
+                  >
 
-                      <button
+                    <option value="">Default (no specific printer)</option>
 
-                        key={opt.value}
+                    {allPrinterOptions.map(opt => (
 
-                        type="button"
+                      <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                        onClick={() => setEditingItem({ ...editingItem, categoryPrinterTarget: opt.value })}
+                    ))}
 
-                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                  </select>
 
-                          (editingItem.categoryPrinterTarget || 'KOT_PRINTER') === opt.value
+                : <div className="flex gap-2">
 
-                            ? opt.value === 'KOT_PRINTER'
+                    {[
 
-                              ? 'border-green-500 bg-green-50 text-green-700'
+                      { value: 'FOOD', label: '🍽 Food' },
 
-                              : 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                        }`}
-
-                      >
-
-                        <div>{opt.label}</div>
-
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                      </button>
-
-                    ))
-
-                  : [
-
-                      { value: 'FOOD', label: '🍽 Food', sub: getPrinterNameForTarget('FOOD') || 'Kitchen KOT' },
-
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: getPrinterNameForTarget('LIQUOR') || 'Bar KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks' },
 
                     ].map(opt => (
 
@@ -3860,15 +3922,11 @@ export function MenuPage({ onAddDish }) {
 
                         <div>{opt.label}</div>
 
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
                       </button>
 
                     ))}
 
-              </div>
-
-            </div>
+                  </div>}
 
 
 
@@ -3878,97 +3936,71 @@ export function MenuPage({ onAddDish }) {
 
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
 
-                <div className="flex gap-2 mb-2">
+                <select
 
-                  {[
+                  value={editingItem.printerTarget || ''}
 
-                    { value: null, label: 'Default', sub: 'Use category' },
+                  onChange={(e) => setEditingItem({ ...editingItem, printerTarget: e.target.value || null })}
 
-                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                  className={input + ' w-full bg-gray-50'}
 
-                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                >
 
-                  ].map(opt => (
+                  <option value="">Default (use category)</option>
 
-                    <button
+                  {allPrinterOptions.map(opt => (
 
-                      key={opt.value ?? 'default'}
-
-                      type="button"
-
-                      onClick={() => setEditingItem({ ...editingItem, printerTarget: opt.value })}
-
-                      className={`flex-1 py-2 px-2 rounded-xl border-2 text-xs font-black transition-all text-left ${
-
-                        (editingItem.printerTarget || null) === opt.value
-
-                          ? opt.value === 'BAR_PRINTER'
-
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-green-500 bg-green-50 text-green-700'
-
-                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                      }`}
-
-                    >
-
-                      <div>{opt.label}</div>
-
-                      <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                    </button>
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
                   ))}
 
-                </div>
+                </select>
 
-                {configuredPrinters.length > 0 && (
+                <select
 
-                  <div>
+                  value={editingItem.printerName || ''}
 
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Physical Printer</label>
+                  onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
 
-                    <select
+                  className={input + ' w-full bg-gray-50 mt-2'}
 
-                      value={editingItem.printerName || ''}
+                >
 
-                      onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
+                  <option value="">Auto (from KOT destination)</option>
 
-                      className={input + ' w-full bg-gray-50'}
+                  {allPrinterOptions.map(opt => (
 
-                    >
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                      <option value="">Auto (from role above)</option>
+                  ))}
 
-                      {configuredPrinters.map((p) => (
-
-                        <option key={p.name} value={p.name}>{p.name}{p.type ? ` (${p.type})` : ''}</option>
-
-                      ))}
-
-                    </select>
-
-                  </div>
-
-                )}
+                </select>
 
               </div>
 
             )}
 
+              </div>
 
+            </details>
 
-            {/* Recipe Editor (Phase 5) — only for FOOD items */}
+            {/* ── Section 4: Recipe ── */}
 
             {editingItem.menuType !== 'LIQUOR' && (
 
-              <div className="border-t border-gray-100 pt-4">
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Recipe (Kitchen Ingredients)
+
+              </summary>
+
+              <div className="space-y-3">
 
                 <div className="flex items-center justify-between mb-2">
-
-                  <label className="block text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Ingredients)</label>
 
                   <div className="flex items-center gap-3">
 
@@ -4070,6 +4102,8 @@ export function MenuPage({ onAddDish }) {
 
               </div>
 
+            </details>
+
             )}
 
           </div>
@@ -4108,6 +4142,20 @@ export function MenuPage({ onAddDish }) {
 
           <div className="p-5 space-y-4 overflow-y-auto min-h-0">
 
+            {/* ── Section 1: Basic Info ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Basic Info
+
+              </summary>
+
+              <div className="space-y-4">
+
             <div>
 
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Image</label>
@@ -4138,9 +4186,7 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-
-               <div>
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
 
@@ -4156,15 +4202,7 @@ export function MenuPage({ onAddDish }) {
 
                       const derivedTarget = activeOutlet === 'restaurant'
 
-                        ? (cat?.printerTarget || (
-
-                            /water|drinks|beverages|soft drinks|soda|juice|liquor|beer/i.test(newCatName || '')
-
-                              ? 'BAR_PRINTER'
-
-                              : 'KOT_PRINTER'
-
-                          ))
+                        ? (cat?.printerTarget || configuredPrinters[0]?.name || null)
 
                         : addingItem.categoryPrinterTarget;
 
@@ -4204,7 +4242,51 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-               <div>
+            <div>
+
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
+
+               <div className="flex gap-4 mt-2">
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="add_diet" value="veg" checked={addingItem.t === 'veg'} onChange={() => setAddingItem({...addingItem, t: 'veg'})} className="accent-green-600" />
+
+                     <span className="text-green-700">Vegetarian</span>
+
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="add_diet" value="non" checked={addingItem.t === 'non'} onChange={() => setAddingItem({...addingItem, t: 'non'})} className="accent-red-600" />
+
+                     <span className="text-red-700">Non-Veg</span>
+
+                  </label>
+
+               </div>
+
+            </div>
+
+              </div>
+
+            </details>
+
+            {/* ── Section 2: Pricing ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Pricing
+
+              </summary>
+
+              <div className="space-y-4">
+
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Base Price (₹)</label>
 
@@ -4212,7 +4294,7 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-            </div>
+            {currentVenueColumns.length > 1 && (
 
             <div>
 
@@ -4256,85 +4338,72 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div>
+            )}
 
-               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
-
-               <div className="flex gap-4 mt-2">
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="add_diet" value="veg" checked={addingItem.t === 'veg'} onChange={() => setAddingItem({...addingItem, t: 'veg'})} className="accent-green-600" />
-
-                     <span className="text-green-700">Vegetarian</span>
-
-                  </label>
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="add_diet" value="non" checked={addingItem.t === 'non'} onChange={() => setAddingItem({...addingItem, t: 'non'})} className="accent-red-600" />
-
-                     <span className="text-red-700">Non-Veg</span>
-
-                  </label>
-
-               </div>
-
+            <div className="flex items-center gap-3 pt-2">
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addingItem.gstEnabled !== false}
+                  onChange={e => setAddingItem({...addingItem, gstEnabled: e.target.checked})}
+                  className="accent-[#E53935] w-4 h-4"
+                />
+                <span className="text-gray-700">GST Applicable</span>
+              </label>
+              <span className="text-[10px] text-gray-400 font-medium">If off, no GST is charged on this item in bills</span>
             </div>
+
+              </div>
+
+            </details>
+
+            {/* ── Section 3: Printer Settings ── */}
+
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Printer Settings
+
+              </summary>
+
+              <div className="space-y-4">
 
             <div>
 
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
 
-              <div className="flex gap-2">
+              {activeOutlet === 'restaurant'
 
-                {activeOutlet === 'restaurant'
+                ? <select
 
-                  ? [
+                    value={addingItem.categoryPrinterTarget || ''}
 
-                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                    onChange={(e) => setAddingItem({ ...addingItem, categoryPrinterTarget: e.target.value || null })}
 
-                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                    className={input + ' w-full bg-gray-50'}
 
-                    ].map(opt => (
+                  >
 
-                      <button
+                    <option value="">Default (no specific printer)</option>
 
-                        key={opt.value}
+                    {allPrinterOptions.map(opt => (
 
-                        type="button"
+                      <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                        onClick={() => setAddingItem({ ...addingItem, categoryPrinterTarget: opt.value })}
+                    ))}
 
-                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                  </select>
 
-                          (addingItem.categoryPrinterTarget || 'KOT_PRINTER') === opt.value
+                : <div className="flex gap-2">
 
-                            ? opt.value === 'KOT_PRINTER'
+                    {[
 
-                              ? 'border-green-500 bg-green-50 text-green-700'
+                      { value: 'FOOD', label: '🍽 Food' },
 
-                              : 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                        }`}
-
-                      >
-
-                        <div>{opt.label}</div>
-
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                      </button>
-
-                    ))
-
-                  : [
-
-                      { value: 'FOOD', label: '🍽 Food', sub: getPrinterNameForTarget('FOOD') || 'Kitchen KOT' },
-
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: getPrinterNameForTarget('LIQUOR') || 'Bar KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks' },
 
                     ].map(opt => (
 
@@ -4364,13 +4433,11 @@ export function MenuPage({ onAddDish }) {
 
                         <div>{opt.label}</div>
 
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
                       </button>
 
                     ))}
 
-              </div>
+                  </div>}
 
             </div>
 
@@ -4380,93 +4447,70 @@ export function MenuPage({ onAddDish }) {
 
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
 
-                <div className="flex gap-2 mb-2">
+                <select
 
-                  {[
+                  value={addingItem.printerTarget || ''}
 
-                    { value: null, label: 'Default', sub: 'Use category' },
+                  onChange={(e) => setAddingItem({ ...addingItem, printerTarget: e.target.value || null })}
 
-                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                  className={input + ' w-full bg-gray-50'}
 
-                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                >
 
-                  ].map(opt => (
+                  <option value="">Default (use category)</option>
 
-                    <button
+                  {allPrinterOptions.map(opt => (
 
-                      key={opt.value ?? 'default'}
-
-                      type="button"
-
-                      onClick={() => setAddingItem({ ...addingItem, printerTarget: opt.value })}
-
-                      className={`flex-1 py-2 px-2 rounded-xl border-2 text-xs font-black transition-all text-left ${
-
-                        (addingItem.printerTarget || null) === opt.value
-
-                          ? opt.value === 'BAR_PRINTER'
-
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-green-500 bg-green-50 text-green-700'
-
-                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                      }`}
-
-                    >
-
-                      <div>{opt.label}</div>
-
-                      <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                    </button>
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
                   ))}
 
-                </div>
+                </select>
 
-                {configuredPrinters.length > 0 && (
+                <select
 
-                  <div>
+                  value={addingItem.printerName || ''}
 
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Physical Printer</label>
+                  onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
 
-                    <select
+                  className={input + ' w-full bg-gray-50 mt-2'}
 
-                      value={addingItem.printerName || ''}
+                >
 
-                      onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
+                  <option value="">Auto (from KOT destination)</option>
 
-                      className={input + ' w-full bg-gray-50'}
+                  {allPrinterOptions.map(opt => (
 
-                    >
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                      <option value="">Auto (from role above)</option>
+                  ))}
 
-                      {configuredPrinters.map((p) => (
-
-                        <option key={p.name} value={p.name}>{p.name}{p.type ? ` (${p.type})` : ''}</option>
-
-                      ))}
-
-                    </select>
-
-                  </div>
-
-                )}
+                </select>
 
               </div>
 
             )}
 
-            {/* Recipe Editor for Add Modal */}
+              </div>
+
+            </details>
+
+            {/* ── Section 4: Recipe ── */}
+
             {activeOutlet === 'restaurant' && (
-              <div className="border-t border-dashed border-gray-200 pt-4 mt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Inventory)</label>
-                  <span className="text-[9px] font-bold text-gray-400">{recipeRows.length} ingredient{recipeRows.length !== 1 ? 's' : ''}</span>
-                </div>
+
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Recipe (Kitchen Inventory)
+
+              </summary>
+
+              <div className="space-y-3">
+
                 {recipeRows.map((row, idx) => (
                   <div key={idx} className="flex items-center gap-2 mb-2">
                     <select
@@ -4504,6 +4548,7 @@ export function MenuPage({ onAddDish }) {
                   <Plus size={14} /> Add Ingredient
                 </button>
               </div>
+            </details>
             )}
 
           </div>
@@ -13775,7 +13820,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
   const [selectedConfig, setSelectedConfig] = useState(null);
 
-  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#VGrand #SoftshapeAI #GourmetExperience #FoodArt");
+  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#SoftshapeAI #GourmetExperience #FoodArt");
 
   const [scheduling, setScheduling] = useState('now');
 
@@ -14041,9 +14086,9 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
                        <div className="flex flex-col">
 
-                          <p className="text-[9px] font-black">vgrand_restaurants</p>
+                          <p className="text-[9px] font-black">{upload?.restaurantName || 'Your Restaurant'}</p>
 
-                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest">Ongole, India</p>
+                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest">Your City, India</p>
 
                        </div>
 
@@ -14972,7 +15017,7 @@ export function BarMenuPage() {
 
             t: item.isVeg ? 'veg' : 'non',
 
-            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            img: item.image || '/placeholder.svg',
 
             desc: item.description || '',
 

@@ -16,11 +16,9 @@ import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
 
 // Default placeholder images for items without uploaded images
-export const DEFAULT_FOOD_IMG =
-  "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
+export const DEFAULT_FOOD_IMG = "/placeholder.svg";
 
-export const DEFAULT_LIQUOR_IMG =
-  "https://images.unsplash.com/photo-1597290282695-edc43d0e7129?w=600&h=450&fit=crop";
+export const DEFAULT_LIQUOR_IMG = "/placeholder.svg";
 
 // localStorage key for tracking Cloudinary URL repair completion (per version)
 const REPAIR_STORAGE_KEY = "softshape_bar_menu_cloudinary_repair_v3";
@@ -201,7 +199,7 @@ export function getLiquorImage(name = "") {
     lower.includes("kf ") ||
     lower.includes("draught")
   ) {
-    return "https://images.unsplash.com/photo-1567696911980-2eed69a4604e?w=600&h=450&fit=crop";
+    return "/placeholder.svg";
   }
   if (
     lower.includes("whiskey") ||
@@ -212,14 +210,14 @@ export function getLiquorImage(name = "") {
     lower.includes("stag") ||
     lower.includes("label")
   ) {
-    return "https://images.unsplash.com/photo-1527061011665-3652c757a4d4?w=600&h=450&fit=crop";
+    return "/placeholder.svg";
   }
   if (
     lower.includes("vodka") ||
     lower.includes("absolut") ||
     lower.includes("smirnoff")
   ) {
-    return "https://images.unsplash.com/photo-1550985543-f47f38aeee65?w=600&h=450&fit=crop";
+    return "/placeholder.svg";
   }
   if (
     lower.includes("wine") ||
@@ -228,7 +226,7 @@ export function getLiquorImage(name = "") {
     lower.includes("rum") ||
     lower.includes("monk")
   ) {
-    return "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&h=450&fit=crop";
+    return "/placeholder.svg";
   }
   if (
     lower.includes("cocktail") ||
@@ -236,7 +234,7 @@ export function getLiquorImage(name = "") {
     lower.includes("tequila") ||
     lower.includes("martini")
   ) {
-    return "https://images.unsplash.com/photo-1536935338788-846bb9981813?w=600&h=450&fit=crop";
+    return "/placeholder.svg";
   }
   return DEFAULT_LIQUOR_IMG;
 }
@@ -299,7 +297,7 @@ export function mapBarMenuItems(items, restaurantItems = []) {
       fullBottleQty: item.fullBottleQty,
       fullBottlePrice: item.fullBottlePrice,
       isBottleItem: item.isBottleItem,
-      printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+      printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       venuePrices: item.venuePrices || {},
     };
   });
@@ -311,6 +309,10 @@ async function fetchWithRetry(url, options, { retries = 3, timeoutMs = 60000 } =
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
+    if (res.status === 429) {
+      console.warn(`[fetchWithRetry] ${url} returned 429 — not retrying to avoid rate limit cascade`);
+      return res;
+    }
     return res;
   } catch (err) {
     clearTimeout(timeoutId);
@@ -384,47 +386,13 @@ export async function repairBarMenuCloudinaryUrls(apiBase, { force = false } = {
         source: "backend",
       };
     }
-    console.warn("[BarMenu] Backend restore unavailable, using client fallback");
+    console.warn("[BarMenu] Backend restore unavailable — skipping client-side repair to avoid 429 rate limits");
   } catch (err) {
-    console.warn("[BarMenu] Backend restore failed, using client fallback:", err);
-  }
-
-  const [barItems, restaurantItems] = await Promise.all([
-    fetch(apiUrl("/api/bar/menu/items"), { cache: "no-store", headers: getAuthHeaders() }).then((r) =>
-      r.ok ? r.json() : []
-    ),
-    fetchRestaurantItemsRaw(),
-  ]);
-
-  const index = buildRestaurantImageIndex(restaurantItems);
-  const toRepair = [];
-
-  for (const item of barItems) {
-    if (isCloudinaryUrl(item.imageUrl)) continue;
-    const url = findRestaurantImageUrl(item.name, index, restaurantItems);
-    if (url) toRepair.push({ id: item.id, imageUrl: url });
-  }
-
-  let repaired = 0;
-  const batchSize = 5;
-  for (let i = 0; i < toRepair.length; i += batchSize) {
-    const batch = toRepair.slice(i, i + batchSize);
-    await Promise.allSettled(
-      batch.map(({ id, imageUrl }) =>
-        fetch(`${apiBase}/api/bar/menu/items/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({ imageUrl }),
-        }).then((res) => {
-          if (res.ok) repaired += 1;
-        })
-      )
-    );
+    console.warn("[BarMenu] Backend restore failed — skipping client-side repair to avoid 429 rate limits:", err);
   }
 
   localStorage.setItem(REPAIR_STORAGE_KEY, "done");
-  console.log(`[BarMenu] Client Cloudinary repair: ${repaired}/${toRepair.length} items updated`);
-  return { repaired, total: toRepair.length, skipped: false, source: "client" };
+  return { repaired: 0, total: 0, skipped: true, source: "skipped" };
 }
 
 export function readBarMenuCache(barId) {
@@ -459,7 +427,7 @@ export function readBarMenuCache(barId) {
         ),
         unit: item.unit ?? (isLiquor ? "ml" : null),
         mlPerUnit: item.mlPerUnit ?? (isLiquor ? 30 : null),
-        printerTarget: item.printerTarget ?? (isLiquor ? "BAR_PRINTER" : "KOT_PRINTER"),
+        printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       };
     });
   } catch {

@@ -3168,9 +3168,8 @@ const CashierDashboard = ({ onLogout }) => {
       if (isBarVenueContext) {
         return Number(item.p) > 0;
       }
-      if (selectedTable?.section?.restaurantId === getCurrentRestaurantId()) {
-        return Number(item.p || 0) > 0;
-      }
+      // In restaurant context, show all items (even with p=0, which may be a newly
+      // added item without venue price yet). The price will be resolved from variant.
       return true;
     });
 

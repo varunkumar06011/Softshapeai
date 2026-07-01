@@ -96,9 +96,7 @@ export function buildFoodKOT(orderData: OrderData): object[] {
 
   const headerName = (orderData.restaurantName && orderData.restaurantName.trim())
     ? orderData.restaurantName.toUpperCase()
-    : (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
-        ? 'FAMILY RESTAURANT'
-        : 'RESTAURANT');
+    : 'RESTAURANT';
 
   const cmds: string[] = [
     INIT,
@@ -182,13 +180,9 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
 
   const headerName = (orderData.restaurantName && orderData.restaurantName.trim())
     ? orderData.restaurantName.toUpperCase()
-    : (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
-        ? 'FAMILY RESTAURANT'
-        : 'RESTAURANT');
+    : 'RESTAURANT';
 
-  const sectionLabel = sectionName || (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
-    ? 'COUNTER ORDER'
-    : 'BAR ORDER');
+  const sectionLabel = sectionName || 'ORDER';
 
   const cmds: string[] = [
     INIT,

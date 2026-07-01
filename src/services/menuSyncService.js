@@ -270,25 +270,46 @@ export function useGlobalMenuSync() {
       // Optimistic update: if payload has itemId + updatedItem, patch in memory immediately
       if (payload && payload.itemId && payload.updatedItem && globalMenu) {
         const updated = payload.updatedItem;
-        const patched = globalMenu.map(item =>
-          item.id === payload.itemId
-            ? {
-                ...item,
-                n: updated.name ?? item.n,
-                p: updated.price ?? item.p,
-                t: updated.isVeg != null ? (updated.isVeg ? 'veg' : 'non') : item.t,
-                c: updated.category ?? item.c,
-                imageUrl: updated.imageUrl ?? item.imageUrl,
-                available: updated.isAvailable ?? item.available,
-                menuType: updated.menuType ?? item.menuType,
-              }
-            : item
-        );
-        globalMenu = patched;
-        localStorage.setItem(getStorageKey(), JSON.stringify(patched));
+        const action = payload.action;
+        if (action === 'created' && !globalMenu.some(i => i.id === payload.itemId)) {
+          // New item: add to globalMenu immediately
+          const defaultVariant = updated.variants?.find(v => v.isDefault) ?? updated.variants?.[0];
+          const newItem = {
+            id: updated.id,
+            n: updated.name,
+            p: Math.round(Number(defaultVariant?.price ?? updated.price ?? 0)),
+            c: updated.category?.name ?? updated.category ?? '',
+            t: updated.isVeg ? 'veg' : 'non',
+            img: updated.imageUrl || '',
+            desc: updated.description || '',
+            menuType: (updated.menuType || 'FOOD').toUpperCase(),
+            isAvailable: updated.isAvailable !== false,
+            variants: updated.variants || [],
+            venuePrices: updated.venuePrices || {},
+          };
+          globalMenu = [...globalMenu, newItem];
+        } else {
+          const patched = globalMenu.map(item =>
+            item.id === payload.itemId
+              ? {
+                  ...item,
+                  n: updated.name ?? item.n,
+                  p: updated.price ?? item.p,
+                  t: updated.isVeg != null ? (updated.isVeg ? 'veg' : 'non') : item.t,
+                  c: updated.category?.name ?? updated.category ?? item.c,
+                  imageUrl: updated.imageUrl ?? item.imageUrl,
+                  available: updated.isAvailable ?? item.available,
+                  menuType: updated.menuType ?? item.menuType,
+                  gstEnabled: updated.gstEnabled !== undefined ? updated.gstEnabled : item.gstEnabled,
+                }
+              : item
+          );
+          globalMenu = patched;
+        }
+        localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
         recordMenuCacheTimestamp();
         notifySubscribers();
-        dispatchMenuEvent(patched);
+        dispatchMenuEvent(globalMenu);
       }
       // Then debounced full refresh for correctness
       if (debounceTimer) clearTimeout(debounceTimer);

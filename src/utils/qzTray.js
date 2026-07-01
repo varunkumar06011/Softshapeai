@@ -38,6 +38,7 @@
 import { QZ_CERT } from '../services/certificate.js';
 import { getCurrentRestaurantId } from './getCurrentRestaurantId';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
+import { getRestaurantConfig } from './getRestaurantConfig';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -144,36 +145,36 @@ function setupSecurity(qz) {
 }
 
 // ── Printer routing ──────────────────────────────────────────────────────────
+// Env var fallbacks — used only when printerConfig.agentMapping is not set
 const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PRINTER';
 const BAR_PRINTER = import.meta.env.VITE_BAR_PRINTER_NAME || 'BAR_PRINTER';
 const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
-const RESTAURANT_KITCHEN_PRINTER = import.meta.env.VITE_RESTAURANT_KITCHEN_PRINTER_NAME || KITCHEN_PRINTER;
-const KOT_FAMILY_PRINTER = import.meta.env.VITE_KOT_FAMILY_PRINTER_NAME || 'KOT FAMILY';
-const DINE_IN_BILL_PRINTER = import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || 'Dine in Bill';
-const KOT_PRINTER = import.meta.env.VITE_KOT_PRINTER_NAME || 'KOT PRINTER';
 
 export function getPrinterForJob(type, restaurantId, sectionTag) {
+  const config = getRestaurantConfig();
+  const mapping = config?.printerConfig?.agentMapping || {};
+  const printers = config?.printerConfig?.printers || [];
+
+  const findPrinter = (types) => {
+    const p = printers.find(p => types.includes((p.type || '').toUpperCase()));
+    return p?.name || null;
+  };
+
   if (type === 'KOT') {
-    if (restaurantId === getCurrentRestaurantId()) return KOT_FAMILY_PRINTER;
-    // TODO Phase 3: replace with per-restaurant printer config once Restaurant model has a printer field — currently all restaurants share one generic printer mapping.
-    return restaurantId === getCurrentRestaurantId() ? RESTAURANT_KITCHEN_PRINTER : KITCHEN_PRINTER;
+    return mapping.kitchen || findPrinter(['KITCHEN', 'KOT']) || KITCHEN_PRINTER;
   }
-  if (type === 'BAR_KOT') return BAR_PRINTER;
+  if (type === 'BAR_KOT') {
+    return mapping.bar || findPrinter(['BAR']) || BAR_PRINTER;
+  }
   if (type === 'BILL' || type === 'FINAL_BILL') {
-    if (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel') {
-      return DINE_IN_BILL_PRINTER;
-    }
-    return BILLING_PRINTER;
+    return mapping.bill || findPrinter(['BILL']) || BILLING_PRINTER;
   }
   if (type === 'CANCEL_KOT') {
-    if (restaurantId === getCurrentRestaurantId()) return KOT_FAMILY_PRINTER;
-    if (sectionTag === 'venue-family-restaurant') return KOT_FAMILY_PRINTER;
-    if (sectionTag === 'venue-restaurant-parcel') return KOT_PRINTER;
-    return KITCHEN_PRINTER;
+    return mapping.kitchen || findPrinter(['KITCHEN', 'KOT']) || KITCHEN_PRINTER;
   }
-  if (type === 'CANCEL_ORDER') return KITCHEN_PRINTER;
-  if (type === 'TABLE_SWAP') return KITCHEN_PRINTER;
-  return BILLING_PRINTER;
+  if (type === 'CANCEL_ORDER') return mapping.kitchen || KITCHEN_PRINTER;
+  if (type === 'TABLE_SWAP') return mapping.kitchen || KITCHEN_PRINTER;
+  return mapping.bill || BILLING_PRINTER;
 }
 
 // ── Setup (eager pre-warm) ─────────────────────────────────────────────────
