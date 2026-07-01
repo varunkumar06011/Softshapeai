@@ -2597,16 +2597,28 @@ export default function CaptainApp({ onLogout }) {
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
               return await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, false, preReservedKotNumber);
             } else {
-              return await createOrder({
-                tableId: activeTable?.backendId,
-                tableNumber: activeTable?.number ?? activeTable?.id,
-                restaurantId: orderRestaurantId,
-                items: apiItems,
-                requestId,
-                captainName: currentCaptain?.name || undefined,
-                sectionTag: activeTable?.sectionTag || undefined,
-                preReservedKotNumber,
-              });
+              try {
+                return await createOrder({
+                  tableId: activeTable?.backendId,
+                  tableNumber: activeTable?.number ?? activeTable?.id,
+                  restaurantId: orderRestaurantId,
+                  items: apiItems,
+                  requestId,
+                  captainName: currentCaptain?.name || undefined,
+                  sectionTag: activeTable?.sectionTag || undefined,
+                  preReservedKotNumber,
+                });
+              } catch (createErr) {
+                if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                  console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                  activeOrderIdRef.current = createErr.existingOrderId;
+                  const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+                  const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
+                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, false, preReservedKotNumber);
+                } else {
+                  throw createErr;
+                }
+              }
             }
           })(),
         ]);
@@ -2666,15 +2678,32 @@ export default function CaptainApp({ onLogout }) {
             ? _kotHistory[_kotHistory.length - 1].id
             : null;
         } else {
-          savedOrder = await createOrder({
-            tableId: activeTable?.backendId,
-            tableNumber: activeTable?.number ?? activeTable?.id,
-            restaurantId: orderRestaurantId,
-            items: apiItems,
-            requestId,
-            captainName: currentCaptain?.name || undefined,
-            sectionTag: activeTable?.sectionTag || undefined,
-          });
+          try {
+            savedOrder = await createOrder({
+              tableId: activeTable?.backendId,
+              tableNumber: activeTable?.number ?? activeTable?.id,
+              restaurantId: orderRestaurantId,
+              items: apiItems,
+              requestId,
+              captainName: currentCaptain?.name || undefined,
+              sectionTag: activeTable?.sectionTag || undefined,
+            });
+          } catch (createErr) {
+            if (createErr.statusCode === 409 && createErr.existingOrderId) {
+              console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+              activeOrderIdRef.current = createErr.existingOrderId;
+              const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+              const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt);
+              savedOrder = response?.order || response;
+              const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
+              realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
+                ? _kotHistory[_kotHistory.length - 1].id
+                : null;
+            } else {
+              throw createErr;
+            }
+          }
           if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
           const _savedKotHistory = savedOrder?.kotHistory;
           realKotId = Array.isArray(_savedKotHistory) && _savedKotHistory.length > 0
