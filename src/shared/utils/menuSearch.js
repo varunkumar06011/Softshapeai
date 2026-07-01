@@ -14,6 +14,8 @@
 // Item shape: { n: name, c: category, p: price, t: type, id, desc, alias, ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getItemCategory } from "../../utils/itemHelpers";
+
 /** Build searchable text for a POS menu item ({ n, c, p, t, id, desc, ... }). */
 export function getMenuSearchText(item) {
   if (!item) return "";
