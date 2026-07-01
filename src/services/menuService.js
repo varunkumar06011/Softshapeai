@@ -28,8 +28,7 @@ export function getMenuStorageKey(restaurantId) {
 }
 
 // Default placeholder image for items without uploaded images
-const DEFAULT_MENU_IMAGE =
-  "https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop";
+const DEFAULT_MENU_IMAGE = "/placeholder.svg";
 
 // 60-second timeout for menu fetch requests (large menus may take time)
 const FETCH_TIMEOUT_MS = 60000;
@@ -107,8 +106,9 @@ export function mapFlatMenuItems(items) {
       variants: item.variants || [],
       unit: item.unit ?? (isLiquor ? "ml" : null),
       mlPerUnit: isLiquor ? 30 : null,
-      printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+      printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       venuePrices: item.venuePrices || {},
+      gstEnabled: item.gstEnabled !== false,
     };
   });
 }
@@ -137,7 +137,7 @@ export function mapPosViewToMenuItems(categories) {
         variants: item.variants || [],
         unit: item.unit ?? (isLiquor ? "ml" : null),
         mlPerUnit: isLiquor ? 30 : null,
-        printerTarget: isLiquor ? "BAR_PRINTER" : "KOT_PRINTER",
+        printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       });
     }
   }
