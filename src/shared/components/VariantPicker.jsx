@@ -153,57 +153,32 @@ export default function VariantPicker({ item, onSelect, onClose }) {
         </div>
 
         <div className="space-y-3">
-          {item.menuType === 'LIQUOR' ? (
-            <>
-              <button
-                onClick={() => {
-                  const variant = item.variants?.[0];
-                  if (!variant) {
-                    console.error('No variant found for liquor item:', item);
-                    return;
-                  }
-                  onSelect(item, {
-                    id: variant.id,
-                    name: variant.name || '30ml',
-                    price: Number(variant.price || 0)
-                  });
-                }}
-                className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
-              >
-                <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
-                  {item.variants?.[0]?.name || '30ml'}
-                </span>
-                <span className="text-sm sm:text-base font-black text-[#E53935]">
-                  ₹{item.variants?.[0]?.price || 0}
-                </span>
-              </button>
-              <button
-                onClick={() => onSelect(item, { id: 'full_bottle', name: 'Full Bottle', price: Number(item.fullBottlePrice) })}
-                className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
-              >
-                <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
-                  Full Bottle ({FULL_BOTTLE_ML}ml)
-                </span>
-                <span className="text-sm sm:text-base font-black text-[#E53935]">
-                  ₹{item.fullBottlePrice}
-                </span>
-              </button>
-            </>
-          ) : (
-            item.variants.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => onSelect(item, v)}
-                className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
-              >
-                <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
-                  {v.name}
-                </span>
-                <span className="text-sm sm:text-base font-black text-[#E53935]">
-                  ₹{v.price}
-                </span>
-              </button>
-            ))
+          {item.variants.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => onSelect(item, v)}
+              className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
+            >
+              <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
+                {v.name}
+              </span>
+              <span className="text-sm sm:text-base font-black text-[#E53935]">
+                ₹{v.price}
+              </span>
+            </button>
+          ))}
+          {item.menuType === 'LIQUOR' && (
+            <button
+              onClick={() => onSelect(item, { id: 'full_bottle', name: 'Full Bottle', price: Number(item.fullBottlePrice) })}
+              className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-gray-105 bg-white hover:border-[#E53935] hover:bg-[#FFF5F5] transition-all group"
+            >
+              <span className="text-sm sm:text-base font-black text-gray-800 group-hover:text-[#B71C1C]">
+                Full Bottle ({FULL_BOTTLE_ML}ml)
+              </span>
+              <span className="text-sm sm:text-base font-black text-[#E53935]">
+                ₹{item.fullBottlePrice}
+              </span>
+            </button>
           )}
         </div>
       </motion.div>

@@ -28,12 +28,15 @@ let _loadError = null;
 const subscribers = new Set();
 // Promise that resolves when the initial load completes (prevents duplicate fetches)
 let loadPromise = null;
+// Track whether Cloudinary URL repair has already run this session.
+// The repair sends batch PATCH requests which can trigger 429s if run repeatedly.
+let _repairDoneThisSession = false;
 
 function notifySubscribers() {
   subscribers.forEach((cb) => cb({ menu: barGlobalMenu ?? [], loading: _isLoading, error: _loadError }));
 }
 
-async function loadBarMenu() {
+async function loadBarMenu({ skipRepair = false } = {}) {
   if (loadPromise) return loadPromise;
 
   // Skip authenticated fetch if no token is available (e.g. during onboarding).
@@ -56,7 +59,11 @@ async function loadBarMenu() {
       writeBarMenuCache(barGlobalMenu);
       console.log(`[BarMenuSync] Loaded ${barGlobalMenu.length} items`);
 
-      // Restore Cloudinary URLs on bar DB records (lost imageUrl on backend)
+      // Restore Cloudinary URLs on bar DB records (lost imageUrl on backend).
+      // Only run once per page session — the repair sends batch PATCH requests
+      // that can cause 429 rate-limit errors if triggered on every menu refresh.
+      if (!skipRepair && !_repairDoneThisSession) {
+        _repairDoneThisSession = true;
       try {
         const { repaired, skipped, source, stillMissing } = await repairBarMenuCloudinaryUrls(API_BASE, { force: false });
         if (!skipped && repaired > 0) {
@@ -69,6 +76,7 @@ async function loadBarMenu() {
       } catch (err) {
         console.warn("[BarMenuSync] Image repair failed:", err);
       }
+      } // end if (!skipRepair && !_repairDoneThisSession)
     } catch (err) {
       console.error("[BarMenuSync] Failed:", err);
       _loadError = err?.message || "Could not reach backend.";
@@ -116,7 +124,7 @@ export function useBarMenuSync() {
   const refreshMenu = () => {
     loadPromise = null;
     barGlobalMenu = null;
-    loadBarMenu();
+    loadBarMenu({ skipRepair: true });
   };
 
   // Listen for socket menu update events from admin panel
