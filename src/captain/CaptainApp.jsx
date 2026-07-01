@@ -2507,7 +2507,7 @@ export default function CaptainApp({ onLogout }) {
 
     // Snapshot items before the API call — needed for retry in the catch block.
     // Must be declared outside the try block so it's accessible in catch.
-    const retrySnapshot = [...currentSessionItems];
+    var retrySnapshot = [...currentSessionItems];
 
     try {
 
