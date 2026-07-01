@@ -4503,9 +4503,9 @@ export default function CaptainApp({ onLogout }) {
 
     ? outletFilteredMenuItems.filter(item => {
 
-        const name = (item.n || item.name || '').toLowerCase();
+        const name = String(item.n || item.name || '').toLowerCase();
 
-        const cat = (item.c || item.category || '').toLowerCase();
+        const cat = String(item.c || item.category || '').toLowerCase();
 
         return words.some(w => name.includes(w) || cat.includes(w) ||
 

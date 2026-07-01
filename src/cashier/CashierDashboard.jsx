@@ -140,9 +140,9 @@ const isSubsequence = (q, text) => {
 };
 
 const getSearchRank = (item, query) => {
-  const name = (item.n || item.name || '').toLowerCase();
-  const category = (item.c || item.category || '').toLowerCase();
-  const desc = (item.desc || item.description || '').toLowerCase();
+  const name = String(item.n || item.name || '').toLowerCase();
+  const category = String(item.c || item.category || '').toLowerCase();
+  const desc = String(item.desc || item.description || '').toLowerCase();
 
   const q = query.trim().toLowerCase();
   if (!q) return 0;
@@ -3181,7 +3181,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (selectedMenuType === 'FOOD' && item.menuType === 'LIQUOR') return false;
       if (selectedMenuType === 'LIQUOR' && item.menuType !== 'LIQUOR') return false;
       if (selectedMenuType === 'DESSERTS') {
-        const cat = (item.c || item.category || '').toLowerCase();
+        const cat = String(item.c || item.category || '').toLowerCase();
         return cat.includes('dessert');
       }
 
