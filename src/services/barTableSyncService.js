@@ -100,8 +100,8 @@ function unwrapTableEvent(payload) {
 //     1. If existing has removedFromBill=true, keep it cancelled — a stale
 //        order:created must never revive a cancelled item.
 //     2. If incoming has removedFromBill=true, use it (cancel confirmed by backend).
-//     3. Otherwise prefer the HIGHER quantity — protects captain additions
-//        from being overwritten by a stale order:created with the old qty.
+//     3. Otherwise prefer INCOMING quantity (backend is authoritative) — this
+//        prevents quantity inflation from stale local state or duplicate KOTs.
 // - Items only in existing (not in incoming) are preserved so KOTs never vanish.
 function mergeOrderItems(existing = [], incoming = []) {
   const map = new Map();
@@ -130,15 +130,9 @@ function mergeOrderItems(existing = [], incoming = []) {
       map.set(i.id, { ...existingItem, ...i });
       return;
     }
-    // Neither is cancelled — prefer the higher quantity to protect additions
-    const existingQty = Number(existingItem.quantity ?? existingItem.q ?? 0);
-    const incomingQty = Number(i.quantity ?? i.q ?? 0);
-    if (incomingQty > existingQty) {
-      map.set(i.id, { ...existingItem, ...i });
-    } else {
-      // Keep existing (higher or equal qty) but merge in any new metadata from incoming
-      map.set(i.id, { ...i, ...existingItem });
-    }
+    // Neither is cancelled — prefer INCOMING quantity (backend is authoritative)
+    // This prevents quantity inflation from stale local state or duplicate KOTs
+    map.set(i.id, { ...existingItem, ...i });
   });
   return Array.from(map.values());
 }
@@ -186,9 +180,20 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
       const missingFromIncoming = existingItems.filter(
         i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
       );
+      // Preserve local cancellations: if an item was locally cancelled but the
+      // incoming payload hasn't confirmed the cancel yet, keep it cancelled
+      const existingCancelledIds = new Set(
+        existingItems.filter(i => i.removedFromBill && i.id).map(i => i.id)
+      );
+      const preservedIncomingItems = incomingItems.map(incomingItem => {
+        if (existingCancelledIds.has(incomingItem.id) && !incomingItem.removedFromBill) {
+          return { ...incomingItem, removedFromBill: true, quantity: 0 };
+        }
+        return incomingItem;
+      });
       activeOrder = {
         ...incomingOrder,
-        items: [...incomingItems, ...missingFromIncoming],
+        items: [...preservedIncomingItems, ...missingFromIncoming],
       };
     }
   }

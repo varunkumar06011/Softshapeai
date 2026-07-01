@@ -220,17 +220,17 @@ function DownloadButtons({ onPDF, onExcel }) {
 }
 
 // ── Placeholder reports (to be replaced in chunks) ───────────────────────
-function ExecutiveSummary({ dateFilter, onDownloadRef }) {
+function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportDailySales(dateFilter.startDate, dateFilter.endDate); setData(res); }
+    try { const res = await fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -336,17 +336,17 @@ function ExecutiveSummary({ dateFilter, onDownloadRef }) {
   );
 }
 
-function DailySalesReport({ dateFilter, onDownloadRef }) {
+function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportDailySales(dateFilter.startDate, dateFilter.endDate); setData(res); }
+    try { const res = await fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -486,7 +486,7 @@ function DailySalesReport({ dateFilter, onDownloadRef }) {
     </div>
   );
 }
-function ItemwiseSalesReport({ dateFilter, onDownloadRef }) {
+function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -497,10 +497,10 @@ function ItemwiseSalesReport({ dateFilter, onDownloadRef }) {
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportItemwise(dateFilter.startDate, dateFilter.endDate, outletType); setData(res); }
+    try { const res = await fetchReportItemwise(dateFilter.startDate, dateFilter.endDate, outletType, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter, outletType]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletType, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -623,17 +623,17 @@ function ItemwiseSalesReport({ dateFilter, onDownloadRef }) {
   );
 }
 
-function CategorywiseSalesReport({ dateFilter, onDownloadRef }) {
+function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate); setData(res); }
+    try { const res = await fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -725,17 +725,17 @@ function CategorywiseSalesReport({ dateFilter, onDownloadRef }) {
     </div>
   );
 }
-function PaymentMethodsReport({ dateFilter, onDownloadRef }) {
+function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate); setData(res); }
+    try { const res = await fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -858,17 +858,17 @@ function PaymentMethodsReport({ dateFilter, onDownloadRef }) {
   );
 }
 
-function DiscountReport({ dateFilter, onDownloadRef }) {
+function DiscountReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportDiscounts(dateFilter.startDate, dateFilter.endDate); setData(res); }
+    try { const res = await fetchReportDiscounts(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -963,17 +963,17 @@ function DiscountReport({ dateFilter, onDownloadRef }) {
     </div>
   );
 }
-function GSTReport({ dateFilter, onDownloadRef }) {
+function GSTReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportGST(dateFilter.startDate, dateFilter.endDate); setData(res); }
+    try { const res = await fetchReportGST(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
@@ -1119,11 +1119,24 @@ export default function AdminReports() {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState({ type: 'today', startDate: getKolkataDateString(), endDate: getKolkataDateString() });
   const [exportOpen, setExportOpen] = useState(false);
+  const [outletId, setOutletId] = useState('all');
+  const [outlets, setOutlets] = useState([]);
   const downloadRef = useRef({ pdf: () => {}, excel: () => {} });
 
   const { restaurant } = useAuth();
   const enabledModules = restaurant?.enabledModules || {};
   const restaurantType = restaurant?.restaurantType || '';
+
+  // Fetch outlets list for the dropdown
+  useEffect(() => {
+    apiFetch('/api/restaurant/outlets-overview')
+      .then(data => {
+        if (data?.outlets && Array.isArray(data.outlets)) {
+          setOutlets(data.outlets.map(o => ({ id: o.id, name: o.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Fallback: refresh enabledModules for existing sessions
   useEffect(() => {
@@ -1196,6 +1209,18 @@ export default function AdminReports() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {outlets.length > 1 && (
+              <select
+                value={outletId}
+                onChange={(e) => setOutletId(e.target.value)}
+                className="px-3 py-2 text-xs font-bold border border-[#FFCDD2] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#B71C1C] bg-white cursor-pointer"
+              >
+                <option value="all">All Outlets</option>
+                {outlets.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            )}
             <ReportDateFilter value={dateFilter} onChange={setDateFilter} />
             <div className="relative">
               <button
@@ -1261,14 +1286,14 @@ export default function AdminReports() {
         {/* Content Area */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto">
           <div className="mb-4">
-            {activeReport === 'overview' && <ExecutiveSummary dateFilter={dateFilter} onDownloadRef={downloadRef} />}
-            {activeReport === 'daily-sales' && <DailySalesReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
-            {activeReport === 'itemwise-sales' && <ItemwiseSalesReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
-            {activeReport === 'categorywise-sales' && <CategorywiseSalesReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
-            {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
+            {activeReport === 'overview' && <ExecutiveSummary dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'daily-sales' && <DailySalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'itemwise-sales' && <ItemwiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'categorywise-sales' && <CategorywiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'operations-dashboard' && <OperationsDashboard dateFilter={dateFilter} onDownloadRef={downloadRef} />}
-            {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
-            {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
+            {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
           </div>
         </main>

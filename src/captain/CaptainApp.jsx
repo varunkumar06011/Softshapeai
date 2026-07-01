@@ -1095,11 +1095,16 @@ export default function CaptainApp({ onLogout }) {
           ? Number(overridePrice)
           : Number(item.p || item.price || 0);
       }
-      const remappedVariants = item.variants?.map(v => {
+      const remappedVariants = item.variants?.map((v, idx) => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
-        return variantOverride !== undefined
-          ? { ...v, price: Number(variantOverride) }
-          : v;
+        if (variantOverride !== undefined) {
+          return { ...v, price: Number(variantOverride) };
+        }
+        // Apply item-level venue price override to the default (or first) variant
+        if (overridePrice !== undefined && (v.isDefault || (idx === 0 && !item.variants.some(vv => vv.isDefault)))) {
+          return { ...v, price: Number(overridePrice) };
+        }
+        return v;
       }) ?? item.variants;
 
       return { ...item, p: finalPrice, variants: remappedVariants };
@@ -2231,10 +2236,11 @@ export default function CaptainApp({ onLogout }) {
     const itemKey = String(item.id || item.n || '');
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 2000) return; // 2-second cooldown per item
+    if (now - lastAdd < 900) return; // 900ms cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
     const finalPrice = variant ? Number(variant.price) : item.p;
+    const finalName = variant ? `${item.n} (${variant.name})` : item.n;
 
 
 
@@ -2242,17 +2248,17 @@ export default function CaptainApp({ onLogout }) {
 
       const currentCart = prev[activeTableId] ?? [];
 
-      const existing = currentCart.find(i => i.n === item.n);
+      const existing = currentCart.find(i => i.n === finalName);
 
       let updatedCart;
 
       if (existing) {
 
-        updatedCart = currentCart.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
+        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
 
       } else {
 
-        updatedCart = [...currentCart, { ...item, n: item.n, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
+        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
 
       }
 
@@ -2260,7 +2266,7 @@ export default function CaptainApp({ onLogout }) {
 
     });
 
-    addNotification(`${item.n} added`, 'success');
+    addNotification(`${finalName} added`, 'success');
 
     setSearchQuery('');
 
@@ -2507,7 +2513,7 @@ export default function CaptainApp({ onLogout }) {
 
     // Snapshot items before the API call — needed for retry in the catch block.
     // Must be declared outside the try block so it's accessible in catch.
-    const retrySnapshot = [...currentSessionItems];
+    var retrySnapshot = [...currentSessionItems];
 
     try {
 
@@ -2589,6 +2595,9 @@ export default function CaptainApp({ onLogout }) {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
+        // Local print is best-effort. If the captain is on a different network
+        // (e.g. conference hall) and the local printer / Print Agent is unreachable,
+        // the backend cloud print agent will still print the KOT after the API call succeeds.
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
@@ -2931,7 +2940,8 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    // Optimistic UI — mark item as CANCELLED immediately
+    // Optimistic UI — decrement or remove item based on cancel quantity
+    const cancelQty = Number(kotItem.q ?? 1);
     setActiveTables(prev => prev.map(t => {
       if (t.backendId !== activeTable?.backendId) return t;
 
@@ -2947,11 +2957,13 @@ export default function CaptainApp({ onLogout }) {
 
             ...kot,
 
-            items: kot.items.map(i =>
-
-              i.orderItemId === kotItem.orderItemId ? { ...i, s: 'Cancelled', removedFromBill: true } : i
-
-            ),
+            items: kot.items.map(i => {
+              if (i.orderItemId !== kotItem.orderItemId) return i;
+              const currentQty = Number(i.q ?? i.quantity ?? 0);
+              const newQty = Math.max(0, currentQty - cancelQty);
+              if (newQty <= 0) return { ...i, s: 'Cancelled', removedFromBill: true, q: 0 };
+              return { ...i, q: newQty, quantity: newQty };
+            }),
 
           };
 
@@ -2959,12 +2971,16 @@ export default function CaptainApp({ onLogout }) {
 
         activeOrder: t.activeOrder ? {
           ...t.activeOrder,
-          items: (t.activeOrder.items || []).map(i =>
-            i.id === kotItem.orderItemId ? { ...i, removedFromBill: true } : i
-          ),
+          items: (t.activeOrder.items || []).map(i => {
+            if (i.id !== kotItem.orderItemId) return i;
+            const currentQty = Number(i.quantity ?? i.q ?? 0);
+            const newQty = Math.max(0, currentQty - cancelQty);
+            if (newQty <= 0) return { ...i, removedFromBill: true, quantity: 0, q: 0 };
+            return { ...i, quantity: newQty, q: newQty };
+          }),
         } : t.activeOrder,
 
-        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * (kotItem?.q ?? 1)),
+        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * cancelQty),
 
       };
 
@@ -4503,9 +4519,9 @@ export default function CaptainApp({ onLogout }) {
 
     ? outletFilteredMenuItems.filter(item => {
 
-        const name = (item.n || item.name || '').toLowerCase();
+        const name = String(item.n || item.name || '').toLowerCase();
 
-        const cat = getItemCategory(item);
+        const cat = String(item.c || item.category || '').toLowerCase();
 
         return words.some(w => name.includes(w) || cat.includes(w) ||
 
@@ -5065,6 +5081,10 @@ export default function CaptainApp({ onLogout }) {
 
                                 <div className="flex items-center gap-2">
 
+                                  <span className={`text-[10px] font-bold ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
+
+                                  <span className={`text-sm font-black ${isCancelled ? 'line-through text-red-400' : 'text-gray-900'}`}>₹{Number(item.p * item.q).toFixed(0)}</span>
+
                                   {isLoading ? (
 
                                     <Loader2 size={13} className="animate-spin text-red-400 shrink-0" />
@@ -5187,7 +5207,10 @@ export default function CaptainApp({ onLogout }) {
 
                               </div>
 
-                              <span className="text-sm font-black text-gray-900">₹{item.p * item.q}</span>
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-gray-400">₹{item.p} × {item.q}</span>
+                                <span className="text-sm font-black text-gray-900 block">₹{item.p * item.q}</span>
+                              </div>
 
                             </div>
 

@@ -457,7 +457,7 @@ const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
 
   const formData = new FormData();
   formData.append('file', blob, 'image.jpg');
-  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-vgrand-menu');
+  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'softshape-menu');
   if (itemName?.trim()) {
     formData.append('context', `alt=${encodeURIComponent(itemName.trim())}`);
   }
@@ -1627,20 +1627,22 @@ export function MenuPage({ onAddDish }) {
   const { restaurant } = useAuth();
 
   const configuredPrinters = restaurant?.printerConfig?.printers || [];
+  const agentAvailablePrinters = restaurant?.printerConfig?.availablePrinters || [];
 
-  const getPrinterNameForTarget = (target) => {
-    if (!configuredPrinters || configuredPrinters.length === 0) return null;
-    const targetUpper = (target || '').toUpperCase();
-    const typeMap = {
-      'KOT_PRINTER': ['KOT', 'KITCHEN'],
-      'BAR_PRINTER': ['BAR'],
-      'FOOD': ['KOT', 'KITCHEN'],
-      'LIQUOR': ['BAR'],
-    };
-    const types = typeMap[targetUpper] || [targetUpper];
-    const printer = configuredPrinters.find(p => types.includes((p.type || '').toUpperCase()));
-    return printer?.name || null;
-  };
+  // Build a deduplicated list of all known printers from both configured printers
+  // (set in Printer Settings page) and system printers reported by the print agent.
+  const allPrinterOptions = useMemo(() => {
+    const map = new Map();
+    configuredPrinters.forEach(p => {
+      if (p.name) map.set(p.name, { name: p.name, type: p.type || '', source: 'configured' });
+    });
+    agentAvailablePrinters.forEach(name => {
+      if (typeof name === 'string' && !map.has(name)) {
+        map.set(name, { name, type: '', source: 'agent' });
+      }
+    });
+    return Array.from(map.values());
+  }, [configuredPrinters, agentAvailablePrinters]);
 
   const [filter, setFilter] = useState("");
 
@@ -1700,7 +1702,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: { ...getAuthHeaders() } });
 
       if (!res.ok) throw new Error('Admin fetch failed');
 
@@ -1708,7 +1710,7 @@ export function MenuPage({ onAddDish }) {
 
       // Map to POS shape, preserving isAvailable
 
-      const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+      const DEFAULT_IMG = '/placeholder.svg';
 
       setAdminItems(data.map(item => ({
 
@@ -1737,6 +1739,8 @@ export function MenuPage({ onAddDish }) {
         printerTarget: item.printerTarget,
 
         printerName: item.printerName,
+
+        gstEnabled: item.gstEnabled !== false,
 
       })));
 
@@ -2346,15 +2350,16 @@ export function MenuPage({ onAddDish }) {
 
         method: 'DELETE',
 
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
       });
 
       if (res.ok) {
 
         // Optimistic update: remove item from local state immediately
-
-        setGlobalMenu(prev => prev.filter(i => i.id !== deletingItem.id));
+        const deletedId = deletingItem.id;
+        setGlobalMenu(prev => prev.filter(i => i.id !== deletedId));
+        setAdminItems(prev => prev.filter(i => i.id !== deletedId));
 
         setDeletingItem(null);
 
@@ -2420,6 +2425,8 @@ export function MenuPage({ onAddDish }) {
 
         },
 
+        gstEnabled: editingItem.gstEnabled !== false,
+
         ...(editingItem.printerName !== undefined
 
           ? { printerName: editingItem.printerName || null }
@@ -2429,6 +2436,12 @@ export function MenuPage({ onAddDish }) {
         ...(editingItem.categoryPrinterTarget !== undefined
 
           ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
+
+          : {}),
+
+        ...(editingItem.printerTarget !== undefined
+
+          ? { printerTarget: editingItem.printerTarget || null }
 
           : {}),
 
@@ -2462,7 +2475,7 @@ export function MenuPage({ onAddDish }) {
 
         // Build optimistic POS-shaped item from backend response
 
-        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+        const DEFAULT_IMG = '/placeholder.svg';
 
         const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? (serverItem?.variants?.length > 0 ? serverItem.variants[0] : null);
 
@@ -2485,6 +2498,8 @@ export function MenuPage({ onAddDish }) {
           menuType: editingItem.menuType || 'FOOD',
 
           venuePrices: body.venuePrices,
+
+          gstEnabled: body.gstEnabled,
 
         };
 
@@ -2670,6 +2685,20 @@ export function MenuPage({ onAddDish }) {
 
           ),
 
+          gstEnabled: addingItem.gstEnabled !== false,
+
+          ...(addingItem.categoryPrinterTarget !== undefined
+
+            ? { categoryPrinterTarget: addingItem.categoryPrinterTarget || null }
+
+            : {}),
+
+          ...(addingItem.printerTarget !== undefined
+
+            ? { printerTarget: addingItem.printerTarget || null }
+
+            : {}),
+
           ...(addingItem.printerName !== undefined
 
             ? { printerName: addingItem.printerName || null }
@@ -2690,7 +2719,7 @@ export function MenuPage({ onAddDish }) {
 
         // Map backend item to POS shape for optimistic insert
 
-        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop';
+        const DEFAULT_IMG = '/placeholder.svg';
 
         const defaultVariant = serverItem?.variants?.find(v => v.isDefault) ?? (serverItem?.variants?.length > 0 ? serverItem.variants[0] : null);
 
@@ -2717,6 +2746,8 @@ export function MenuPage({ onAddDish }) {
             currentVenueColumns.map((venue) => [venue.id, Number(addingItem.venuePrices?.[venue.id] || 0)])
 
           ),
+
+          gstEnabled: addingItem.gstEnabled !== false,
 
         };
 
@@ -2834,17 +2865,7 @@ export function MenuPage({ onAddDish }) {
 
             const firstCat = dbCategories[0];
 
-            const defaultPrinterTarget = firstCat?.printerTarget || (
-
-              activeOutlet === 'restaurant' &&
-
-              /water|drinks|beverages|soft drinks|soda|juice|liquor|beer/i.test(firstCat?.name || '')
-
-                ? 'BAR_PRINTER'
-
-                : 'KOT_PRINTER'
-
-            );
+            const defaultPrinterTarget = firstCat?.printerTarget || configuredPrinters[0]?.name || null;
 
             setAddingItem({
 
@@ -2863,6 +2884,8 @@ export function MenuPage({ onAddDish }) {
               categoryPrinterTarget: activeOutlet === 'restaurant' ? defaultPrinterTarget : undefined,
 
               menuType: 'FOOD',
+
+              gstEnabled: true,
 
             });
 
@@ -3098,6 +3121,108 @@ export function MenuPage({ onAddDish }) {
 
     )}
 
+    {/* Outlet Selector — only when tenant has more than one outlet type */}
+
+    {outlets.length > 1 && (
+
+      <div className="mb-4 flex gap-2">
+
+        {outlets.map((outlet) => (
+
+          <button
+
+            key={outlet}
+
+            onClick={() => setActiveOutlet(outlet)}
+
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+
+              activeOutlet === outlet
+
+                ? outlet === 'bar'
+
+                  ? 'bg-purple-500 text-white'
+
+                  : 'bg-blue-500 text-white'
+
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+
+            }`}
+
+          >
+
+            {outlet === 'bar' ? '🍺 Bar' : '🍽️ Restaurant'}
+
+          </button>
+
+        ))}
+
+      </div>
+
+    )}
+
+
+
+    {/* Venue-specific tabs — only when more than one section exists */}
+
+    {currentVenueColumns.length > 1 && (
+
+      <div className="mb-3 flex flex-col gap-2">
+
+        <div className="flex flex-wrap gap-2">
+
+          {currentVenueColumns.map((venue) => (
+
+            <button
+
+              key={venue.id}
+
+              type="button"
+
+              onClick={() => setActiveVenueId(venue.id)}
+
+              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
+
+                activeVenueId === venue.id
+
+                  ? 'border-[#E53935] bg-[#E53935] text-white'
+
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+
+              }`}
+
+            >
+
+              {venue.label}
+
+            </button>
+
+          ))}
+
+        </div>
+
+        <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
+
+          <input
+
+            type="checkbox"
+
+            checked={showHiddenVenueItems}
+
+            onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
+
+            className="accent-[#E53935]"
+
+          />
+
+          Show items hidden from {activeVenue.label}
+
+        </label>
+
+      </div>
+
+    )}
+
     <p className="text-xs text-[#6B6B6B] mb-3">
 
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
@@ -3293,110 +3418,6 @@ export function MenuPage({ onAddDish }) {
       )}
 
     </div>
-
-
-
-    {/* Outlet Selector — only when tenant has more than one outlet type */}
-
-    {outlets.length > 1 && (
-
-      <div className="mb-4 flex gap-2">
-
-        {outlets.map((outlet) => (
-
-          <button
-
-            key={outlet}
-
-            onClick={() => setActiveOutlet(outlet)}
-
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-
-              activeOutlet === outlet
-
-                ? outlet === 'bar'
-
-                  ? 'bg-purple-500 text-white'
-
-                  : 'bg-blue-500 text-white'
-
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-
-            }`}
-
-          >
-
-            {outlet === 'bar' ? '🍺 Bar' : '🍽️ Restaurant'}
-
-          </button>
-
-        ))}
-
-      </div>
-
-    )}
-
-
-
-    {/* Venue-specific tabs — only when more than one section exists */}
-
-    {currentVenueColumns.length > 1 && (
-
-      <div className="mb-3 flex flex-col gap-2">
-
-        <div className="flex flex-wrap gap-2">
-
-          {currentVenueColumns.map((venue) => (
-
-            <button
-
-              key={venue.id}
-
-              type="button"
-
-              onClick={() => setActiveVenueId(venue.id)}
-
-              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase transition ${
-
-                activeVenueId === venue.id
-
-                  ? 'border-[#E53935] bg-[#E53935] text-white'
-
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-
-              }`}
-
-            >
-
-              {venue.label}
-
-            </button>
-
-          ))}
-
-        </div>
-
-        <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
-
-          <input
-
-            type="checkbox"
-
-            checked={showHiddenVenueItems}
-
-            onChange={(e) => setShowHiddenVenueItems(e.target.checked)}
-
-            className="accent-[#E53935]"
-
-          />
-
-          Show items hidden from {activeVenue.label}
-
-        </label>
-
-      </div>
-
-    )}
 
 
 
@@ -3626,6 +3647,20 @@ export function MenuPage({ onAddDish }) {
 
           <div className="p-5 space-y-4 overflow-y-auto">
 
+            {/* ── Section 1: Basic Info ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Basic Info
+
+              </summary>
+
+              <div className="space-y-4">
+
             <div>
 
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Image</label>
@@ -3656,9 +3691,7 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-
-               <div>
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
 
@@ -3700,7 +3733,51 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-               <div>
+            <div>
+
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
+
+               <div className="flex gap-4 mt-2">
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="diet" value="veg" checked={editingItem.t === 'veg'} onChange={() => setEditingItem({...editingItem, t: 'veg'})} className="accent-green-600" />
+
+                     <span className="text-green-700">Vegetarian</span>
+
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="diet" value="non" checked={editingItem.t === 'non'} onChange={() => setEditingItem({...editingItem, t: 'non'})} className="accent-red-600" />
+
+                     <span className="text-red-700">Non-Veg</span>
+
+                  </label>
+
+               </div>
+
+            </div>
+
+              </div>
+
+            </details>
+
+            {/* ── Section 2: Pricing ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Pricing
+
+              </summary>
+
+              <div className="space-y-4">
+
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">{activeVenue.label} Price (₹)</label>
 
@@ -3708,7 +3785,7 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-            </div>
+            {currentVenueColumns.length > 1 && (
 
             <div>
 
@@ -3752,85 +3829,70 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div>
+            )}
 
-               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
-
-               <div className="flex gap-4 mt-2">
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="diet" value="veg" checked={editingItem.t === 'veg'} onChange={() => setEditingItem({...editingItem, t: 'veg'})} className="accent-green-600" />
-
-                     <span className="text-green-700">Vegetarian</span>
-
-                  </label>
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="diet" value="non" checked={editingItem.t === 'non'} onChange={() => setEditingItem({...editingItem, t: 'non'})} className="accent-red-600" />
-
-                     <span className="text-red-700">Non-Veg</span>
-
-                  </label>
-
-               </div>
-
+            <div className="flex items-center gap-3 pt-2">
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingItem.gstEnabled !== false}
+                  onChange={e => setEditingItem({...editingItem, gstEnabled: e.target.checked})}
+                  className="accent-[#E53935] w-4 h-4"
+                />
+                <span className="text-gray-700">GST Applicable</span>
+              </label>
+              <span className="text-[10px] text-gray-400 font-medium">If off, no GST is charged on this item in bills</span>
             </div>
 
-            <div>
+              </div>
+
+            </details>
+
+            {/* ── Section 3: Printer Settings ── */}
+
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Printer Settings
+
+              </summary>
+
+              <div className="space-y-4">
 
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
 
-              <div className="flex gap-2">
+              {activeOutlet === 'restaurant'
 
-                {activeOutlet === 'restaurant'
+                ? <select
 
-                  ? [
+                    value={editingItem.categoryPrinterTarget || ''}
 
-                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                    onChange={(e) => setEditingItem({ ...editingItem, categoryPrinterTarget: e.target.value || null })}
 
-                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                    className={input + ' w-full bg-gray-50'}
 
-                    ].map(opt => (
+                  >
 
-                      <button
+                    <option value="">Default (no specific printer)</option>
 
-                        key={opt.value}
+                    {allPrinterOptions.map(opt => (
 
-                        type="button"
+                      <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                        onClick={() => setEditingItem({ ...editingItem, categoryPrinterTarget: opt.value })}
+                    ))}
 
-                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                  </select>
 
-                          (editingItem.categoryPrinterTarget || 'KOT_PRINTER') === opt.value
+                : <div className="flex gap-2">
 
-                            ? opt.value === 'KOT_PRINTER'
+                    {[
 
-                              ? 'border-green-500 bg-green-50 text-green-700'
+                      { value: 'FOOD', label: '🍽 Food' },
 
-                              : 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                        }`}
-
-                      >
-
-                        <div>{opt.label}</div>
-
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                      </button>
-
-                    ))
-
-                  : [
-
-                      { value: 'FOOD', label: '🍽 Food', sub: getPrinterNameForTarget('FOOD') || 'Kitchen KOT' },
-
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: getPrinterNameForTarget('LIQUOR') || 'Bar KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks' },
 
                     ].map(opt => (
 
@@ -3860,15 +3922,11 @@ export function MenuPage({ onAddDish }) {
 
                         <div>{opt.label}</div>
 
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
                       </button>
 
                     ))}
 
-              </div>
-
-            </div>
+                  </div>}
 
 
 
@@ -3878,97 +3936,71 @@ export function MenuPage({ onAddDish }) {
 
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
 
-                <div className="flex gap-2 mb-2">
+                <select
 
-                  {[
+                  value={editingItem.printerTarget || ''}
 
-                    { value: null, label: 'Default', sub: 'Use category' },
+                  onChange={(e) => setEditingItem({ ...editingItem, printerTarget: e.target.value || null })}
 
-                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                  className={input + ' w-full bg-gray-50'}
 
-                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                >
 
-                  ].map(opt => (
+                  <option value="">Default (use category)</option>
 
-                    <button
+                  {allPrinterOptions.map(opt => (
 
-                      key={opt.value ?? 'default'}
-
-                      type="button"
-
-                      onClick={() => setEditingItem({ ...editingItem, printerTarget: opt.value })}
-
-                      className={`flex-1 py-2 px-2 rounded-xl border-2 text-xs font-black transition-all text-left ${
-
-                        (editingItem.printerTarget || null) === opt.value
-
-                          ? opt.value === 'BAR_PRINTER'
-
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-green-500 bg-green-50 text-green-700'
-
-                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                      }`}
-
-                    >
-
-                      <div>{opt.label}</div>
-
-                      <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                    </button>
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
                   ))}
 
-                </div>
+                </select>
 
-                {configuredPrinters.length > 0 && (
+                <select
 
-                  <div>
+                  value={editingItem.printerName || ''}
 
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Physical Printer</label>
+                  onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
 
-                    <select
+                  className={input + ' w-full bg-gray-50 mt-2'}
 
-                      value={editingItem.printerName || ''}
+                >
 
-                      onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
+                  <option value="">Auto (from KOT destination)</option>
 
-                      className={input + ' w-full bg-gray-50'}
+                  {allPrinterOptions.map(opt => (
 
-                    >
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                      <option value="">Auto (from role above)</option>
+                  ))}
 
-                      {configuredPrinters.map((p) => (
-
-                        <option key={p.name} value={p.name}>{p.name}{p.type ? ` (${p.type})` : ''}</option>
-
-                      ))}
-
-                    </select>
-
-                  </div>
-
-                )}
+                </select>
 
               </div>
 
             )}
 
+              </div>
 
+            </details>
 
-            {/* Recipe Editor (Phase 5) — only for FOOD items */}
+            {/* ── Section 4: Recipe ── */}
 
             {editingItem.menuType !== 'LIQUOR' && (
 
-              <div className="border-t border-gray-100 pt-4">
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Recipe (Kitchen Ingredients)
+
+              </summary>
+
+              <div className="space-y-3">
 
                 <div className="flex items-center justify-between mb-2">
-
-                  <label className="block text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Ingredients)</label>
 
                   <div className="flex items-center gap-3">
 
@@ -4070,6 +4102,8 @@ export function MenuPage({ onAddDish }) {
 
               </div>
 
+            </details>
+
             )}
 
           </div>
@@ -4108,6 +4142,20 @@ export function MenuPage({ onAddDish }) {
 
           <div className="p-5 space-y-4 overflow-y-auto min-h-0">
 
+            {/* ── Section 1: Basic Info ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Basic Info
+
+              </summary>
+
+              <div className="space-y-4">
+
             <div>
 
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Item Image</label>
@@ -4138,9 +4186,7 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-
-               <div>
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
 
@@ -4156,15 +4202,7 @@ export function MenuPage({ onAddDish }) {
 
                       const derivedTarget = activeOutlet === 'restaurant'
 
-                        ? (cat?.printerTarget || (
-
-                            /water|drinks|beverages|soft drinks|soda|juice|liquor|beer/i.test(newCatName || '')
-
-                              ? 'BAR_PRINTER'
-
-                              : 'KOT_PRINTER'
-
-                          ))
+                        ? (cat?.printerTarget || configuredPrinters[0]?.name || null)
 
                         : addingItem.categoryPrinterTarget;
 
@@ -4204,7 +4242,51 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-               <div>
+            <div>
+
+               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
+
+               <div className="flex gap-4 mt-2">
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="add_diet" value="veg" checked={addingItem.t === 'veg'} onChange={() => setAddingItem({...addingItem, t: 'veg'})} className="accent-green-600" />
+
+                     <span className="text-green-700">Vegetarian</span>
+
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+
+                     <input type="radio" name="add_diet" value="non" checked={addingItem.t === 'non'} onChange={() => setAddingItem({...addingItem, t: 'non'})} className="accent-red-600" />
+
+                     <span className="text-red-700">Non-Veg</span>
+
+                  </label>
+
+               </div>
+
+            </div>
+
+              </div>
+
+            </details>
+
+            {/* ── Section 2: Pricing ── */}
+
+            <details open className="group">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Pricing
+
+              </summary>
+
+              <div className="space-y-4">
+
+            <div>
 
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Base Price (₹)</label>
 
@@ -4212,7 +4294,7 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
-            </div>
+            {currentVenueColumns.length > 1 && (
 
             <div>
 
@@ -4256,85 +4338,72 @@ export function MenuPage({ onAddDish }) {
 
             </div>
 
-            <div>
+            )}
 
-               <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
-
-               <div className="flex gap-4 mt-2">
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="add_diet" value="veg" checked={addingItem.t === 'veg'} onChange={() => setAddingItem({...addingItem, t: 'veg'})} className="accent-green-600" />
-
-                     <span className="text-green-700">Vegetarian</span>
-
-                  </label>
-
-                  <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-
-                     <input type="radio" name="add_diet" value="non" checked={addingItem.t === 'non'} onChange={() => setAddingItem({...addingItem, t: 'non'})} className="accent-red-600" />
-
-                     <span className="text-red-700">Non-Veg</span>
-
-                  </label>
-
-               </div>
-
+            <div className="flex items-center gap-3 pt-2">
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addingItem.gstEnabled !== false}
+                  onChange={e => setAddingItem({...addingItem, gstEnabled: e.target.checked})}
+                  className="accent-[#E53935] w-4 h-4"
+                />
+                <span className="text-gray-700">GST Applicable</span>
+              </label>
+              <span className="text-[10px] text-gray-400 font-medium">If off, no GST is charged on this item in bills</span>
             </div>
+
+              </div>
+
+            </details>
+
+            {/* ── Section 3: Printer Settings ── */}
+
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Printer Settings
+
+              </summary>
+
+              <div className="space-y-4">
 
             <div>
 
               <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
 
-              <div className="flex gap-2">
+              {activeOutlet === 'restaurant'
 
-                {activeOutlet === 'restaurant'
+                ? <select
 
-                  ? [
+                    value={addingItem.categoryPrinterTarget || ''}
 
-                      { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                    onChange={(e) => setAddingItem({ ...addingItem, categoryPrinterTarget: e.target.value || null })}
 
-                      { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                    className={input + ' w-full bg-gray-50'}
 
-                    ].map(opt => (
+                  >
 
-                      <button
+                    <option value="">Default (no specific printer)</option>
 
-                        key={opt.value}
+                    {allPrinterOptions.map(opt => (
 
-                        type="button"
+                      <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                        onClick={() => setAddingItem({ ...addingItem, categoryPrinterTarget: opt.value })}
+                    ))}
 
-                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                  </select>
 
-                          (addingItem.categoryPrinterTarget || 'KOT_PRINTER') === opt.value
+                : <div className="flex gap-2">
 
-                            ? opt.value === 'KOT_PRINTER'
+                    {[
 
-                              ? 'border-green-500 bg-green-50 text-green-700'
+                      { value: 'FOOD', label: '🍽 Food' },
 
-                              : 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                        }`}
-
-                      >
-
-                        <div>{opt.label}</div>
-
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                      </button>
-
-                    ))
-
-                  : [
-
-                      { value: 'FOOD', label: '🍽 Food', sub: getPrinterNameForTarget('FOOD') || 'Kitchen KOT' },
-
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks', sub: getPrinterNameForTarget('LIQUOR') || 'Bar KOT' },
+                      { value: 'LIQUOR', label: '🥃 Bar / Drinks' },
 
                     ].map(opt => (
 
@@ -4364,13 +4433,11 @@ export function MenuPage({ onAddDish }) {
 
                         <div>{opt.label}</div>
 
-                        <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
                       </button>
 
                     ))}
 
-              </div>
+                  </div>}
 
             </div>
 
@@ -4380,93 +4447,70 @@ export function MenuPage({ onAddDish }) {
 
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
 
-                <div className="flex gap-2 mb-2">
+                <select
 
-                  {[
+                  value={addingItem.printerTarget || ''}
 
-                    { value: null, label: 'Default', sub: 'Use category' },
+                  onChange={(e) => setAddingItem({ ...addingItem, printerTarget: e.target.value || null })}
 
-                    { value: 'KOT_PRINTER', label: '🍽 Food', sub: getPrinterNameForTarget('KOT_PRINTER') || 'KOT printer' },
+                  className={input + ' w-full bg-gray-50'}
 
-                    { value: 'BAR_PRINTER', label: '🥤 Drinks', sub: getPrinterNameForTarget('BAR_PRINTER') || 'Bar printer' },
+                >
 
-                  ].map(opt => (
+                  <option value="">Default (use category)</option>
 
-                    <button
+                  {allPrinterOptions.map(opt => (
 
-                      key={opt.value ?? 'default'}
-
-                      type="button"
-
-                      onClick={() => setAddingItem({ ...addingItem, printerTarget: opt.value })}
-
-                      className={`flex-1 py-2 px-2 rounded-xl border-2 text-xs font-black transition-all text-left ${
-
-                        (addingItem.printerTarget || null) === opt.value
-
-                          ? opt.value === 'BAR_PRINTER'
-
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-green-500 bg-green-50 text-green-700'
-
-                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                      }`}
-
-                    >
-
-                      <div>{opt.label}</div>
-
-                      <div className="text-[9px] font-bold mt-0.5 opacity-60">{opt.sub}</div>
-
-                    </button>
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
                   ))}
 
-                </div>
+                </select>
 
-                {configuredPrinters.length > 0 && (
+                <select
 
-                  <div>
+                  value={addingItem.printerName || ''}
 
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Physical Printer</label>
+                  onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
 
-                    <select
+                  className={input + ' w-full bg-gray-50 mt-2'}
 
-                      value={addingItem.printerName || ''}
+                >
 
-                      onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
+                  <option value="">Auto (from KOT destination)</option>
 
-                      className={input + ' w-full bg-gray-50'}
+                  {allPrinterOptions.map(opt => (
 
-                    >
+                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
 
-                      <option value="">Auto (from role above)</option>
+                  ))}
 
-                      {configuredPrinters.map((p) => (
-
-                        <option key={p.name} value={p.name}>{p.name}{p.type ? ` (${p.type})` : ''}</option>
-
-                      ))}
-
-                    </select>
-
-                  </div>
-
-                )}
+                </select>
 
               </div>
 
             )}
 
-            {/* Recipe Editor for Add Modal */}
+              </div>
+
+            </details>
+
+            {/* ── Section 4: Recipe ── */}
+
             {activeOutlet === 'restaurant' && (
-              <div className="border-t border-dashed border-gray-200 pt-4 mt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Recipe (Kitchen Inventory)</label>
-                  <span className="text-[9px] font-bold text-gray-400">{recipeRows.length} ingredient{recipeRows.length !== 1 ? 's' : ''}</span>
-                </div>
+
+            <details className="group border-t border-gray-100 pt-3">
+
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+
+                Recipe (Kitchen Inventory)
+
+              </summary>
+
+              <div className="space-y-3">
+
                 {recipeRows.map((row, idx) => (
                   <div key={idx} className="flex items-center gap-2 mb-2">
                     <select
@@ -4504,6 +4548,7 @@ export function MenuPage({ onAddDish }) {
                   <Plus size={14} /> Add Ingredient
                 </button>
               </div>
+            </details>
             )}
 
           </div>
@@ -4834,6 +4879,18 @@ export function Payroll() {
 
   });
 
+  const [dateMode, setDateMode] = useState('month'); // 'month' | 'range'
+  const [startDate, setStartDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const now = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  });
+  const [periodWarning, setPeriodWarning] = useState(null);
+
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newEmp, setNewEmp] = useState({ name: '', age: '', role: '', baseSalary: '' });
@@ -4848,7 +4905,13 @@ export function Payroll() {
 
   const [payAmount, setPayAmount] = useState('');
 
+  const [advanceModal, setAdvanceModal] = useState(null);
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  const [advanceReason, setAdvanceReason] = useState('');
+  const [advanceHistory, setAdvanceHistory] = useState([]);
+
   const [editValues, setEditValues] = useState({});
+  const [autoCountMap, setAutoCountMap] = useState({}); // employeeId -> boolean
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -4870,17 +4933,36 @@ export function Payroll() {
 
     try {
 
+      let recordsUrl = `/api/payroll/records?restaurantId=${restaurantId}`;
+      if (dateMode === 'range') {
+        recordsUrl += `&startDate=${startDate}&endDate=${endDate}`;
+      } else {
+        recordsUrl += `&monthYear=${monthYear}`;
+      }
+
       const [employees, records] = await Promise.all([
 
         apiFetch(`/api/payroll/employees?restaurantId=${restaurantId}`),
 
-        apiFetch(`/api/payroll/records?restaurantId=${restaurantId}&monthYear=${monthYear}`),
+        apiFetch(recordsUrl),
 
       ]);
 
       setEmployees(employees || []);
 
       setRecords(records || []);
+
+      // Warn if the loaded records were computed for a different period
+      const first = (records || [])[0];
+      if (dateMode === 'range' && first?.periodStart && first?.periodEnd) {
+        if (first.periodStart !== startDate || first.periodEnd !== endDate) {
+          setPeriodWarning({ savedStart: first.periodStart, savedEnd: first.periodEnd });
+        } else {
+          setPeriodWarning(null);
+        }
+      } else {
+        setPeriodWarning(null);
+      }
 
     } catch (err) {
 
@@ -4892,7 +4974,7 @@ export function Payroll() {
 
     }
 
-  }, [monthYear, restaurantId]);
+  }, [monthYear, startDate, endDate, dateMode, restaurantId]);
 
 
 
@@ -4980,9 +5062,9 @@ export function Payroll() {
         });
       }
 
-      // Save absentDays/otDays on PayrollRecord. advanceAmount is read-only and
-      // derived from vouchers, so we do not send it to the backend.
-      if (vals.absentDays !== undefined || vals.otDays !== undefined) {
+      // Save presentDays/otDays on PayrollRecord. advanceAmount is read-only and
+      // derived from vouchers + manual advances, so we do not send it to the backend.
+      if (vals.presentDays !== undefined || vals.otDays !== undefined || dateMode === 'range' || autoCountMap[employeeId]) {
         await apiFetch('/api/payroll/records', {
 
           method: 'POST',
@@ -4993,18 +5075,29 @@ export function Payroll() {
 
             employeeId,
 
-            monthYear,
+            monthYear: dateMode === 'range' ? startDate.slice(0, 7) : monthYear,
 
-            absentDays: vals.absentDays ?? rec?.absentDays ?? 0,
+            startDate: dateMode === 'range' ? startDate : undefined,
+            endDate: dateMode === 'range' ? endDate : undefined,
+
+            presentDays: vals.presentDays ?? rec?.presentDays ?? 0,
 
             otDays: vals.otDays ?? rec?.otDays ?? 0,
+
+            autoCount: !!autoCountMap[employeeId],
 
           }),
 
         });
       }
 
-      loadData();
+      await loadData();
+
+      setEditValues((prev) => {
+        const next = { ...prev };
+        delete next[employeeId];
+        return next;
+      });
 
     } catch (err) {
 
@@ -5071,6 +5164,43 @@ export function Payroll() {
 
   };
 
+  const handleAddManualAdvance = async () => {
+    if (!advanceModal || !advanceAmount) return;
+    try {
+      await apiFetch(`/api/payroll/records/${advanceModal.id}/advance`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: parseFloat(advanceAmount),
+          reason: advanceReason.trim(),
+        }),
+      });
+      setAdvanceAmount('');
+      setAdvanceReason('');
+      loadAdvanceHistory(advanceModal.id);
+      loadData();
+    } catch (err) {
+      console.error('[Payroll] Add manual advance failed:', err);
+      alert(err.message || 'Failed to add manual advance');
+    }
+  };
+
+  const loadAdvanceHistory = async (recordId) => {
+    try {
+      const history = await apiFetch(`/api/payroll/records/${recordId}/advance-history`);
+      setAdvanceHistory(history || []);
+    } catch (err) {
+      console.error('[Payroll] Load advance history failed:', err);
+    }
+  };
+
+  const openAdvanceModal = (rec) => {
+    setAdvanceModal(rec);
+    setAdvanceHistory([]);
+    setAdvanceAmount('');
+    setAdvanceReason('');
+    loadAdvanceHistory(rec.id);
+  };
+
 
 
   const getRecord = (empId) => records.find((r) => r.employeeId === empId);
@@ -5080,26 +5210,13 @@ export function Payroll() {
     return sum + (Number(vals.baseSalary ?? emp.baseSalary) || 0);
   }, 0);
 
-  const totalAdvance = employees.reduce((sum, emp) => {
-    const rec = getRecord(emp.id);
-    return sum + (Number(rec?.advanceAmount) || 0);
-  }, 0);
+  const totalAdvance = records.reduce((sum, r) => sum + (Number(r.totalAdvance) || 0), 0);
 
-  const totalPayable = employees.reduce((sum, emp) => {
-    const rec = getRecord(emp.id);
-    const vals = editValues[emp.id] || {};
-    const baseSalary = Number(vals.baseSalary ?? emp.baseSalary) || 0;
-    const absentDays = vals.absentDays ?? rec?.absentDays ?? 0;
-    const otDays = vals.otDays ?? rec?.otDays ?? 0;
-    const advanceAmount = rec?.advanceAmount ?? 0;
-    const perDaySalary = baseSalary / 30;
-    const netPayable = baseSalary - (perDaySalary * absentDays) + (perDaySalary * 0.5 * otDays) - Number(advanceAmount);
-    return sum + Math.round(netPayable * 100) / 100;
-  }, 0);
+  const totalPayable = records.reduce((sum, r) => sum + (Number(r.finalSalary) || 0), 0);
 
   const totalPaid = records.reduce((s, r) => s + Number(r.paidAmount), 0);
 
-  const totalOutstanding = totalPayable - totalPaid;
+  const totalOutstanding = records.reduce((sum, r) => sum + (Number(r.balanceSalary) || 0), 0);
 
 
 
@@ -5121,19 +5238,73 @@ export function Payroll() {
 
           <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Staff Payroll & Attendance</h2>
 
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
 
-            <input
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => {
+                  setDateMode('month');
+                  // keep monthYear aligned with the selected range
+                  if (startDate) setMonthYear(startDate.slice(0, 7));
+                }}
+                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => {
+                  setDateMode('range');
+                  // seed the range from the currently selected month
+                  const [y, m] = monthYear.split('-').map(Number);
+                  const lastDay = new Date(y, m, 0).getDate();
+                  setStartDate(`${monthYear}-01`);
+                  setEndDate(`${monthYear}-${String(lastDay).padStart(2, '0')}`);
+                }}
+                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+              >
+                Date Range
+              </button>
+            </div>
 
-              type="month"
-
-              value={monthYear}
-
-              onChange={(e) => setMonthYear(e.target.value)}
-
-              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
-
-            />
+            {dateMode === 'month' ? (
+              <input
+                type="month"
+                value={monthYear}
+                onChange={(e) => setMonthYear(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStartDate(val);
+                    const [y, m] = val.split('-').map(Number);
+                    const lastDay = new Date(y, m, 0).getDate();
+                    const max = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                    if (!endDate || endDate < val || endDate > max) {
+                      setEndDate(max);
+                    }
+                  }}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                />
+                <span className="text-xs font-bold text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate}
+                  max={(() => {
+                    const [y, m] = startDate.split('-').map(Number);
+                    const lastDay = new Date(y, m, 0).getDate();
+                    return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                  })()}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                />
+              </div>
+            )}
 
             <button
 
@@ -5141,7 +5312,7 @@ export function Payroll() {
 
                 if (records.length === 0) return;
 
-                const headers = ['Employee Name', 'Base Salary', 'Absent Days', 'OT Days', 'OT Amount', 'Advance', 'Net Payable', 'Paid Amount', 'Status', 'Month'];
+                const headers = ['Employee Name', 'Base Salary', 'Present Days', 'OT Days', '4 Days', 'Total Days', 'Actual Salary', 'Advance', 'Final Salary', 'Salary Paid', 'Balance Salary', 'Status', 'Month'];
 
                 const rows = records.map(r => [
 
@@ -5149,21 +5320,27 @@ export function Payroll() {
 
                   Number(r.baseSalary),
 
-                  r.absentDays || 0,
+                  r.presentDays || 0,
 
                   r.otDays || 0,
 
-                  Number(r.otAmount || 0),
+                  r.leaveDays || 0,
 
-                  Number(r.advanceAmount || 0),
+                  r.totalDays || 0,
 
-                  Number(r.netPayable),
+                  Number(r.actualSalary || 0),
+
+                  Number(r.totalAdvance || 0),
+
+                  Number(r.finalSalary || 0),
 
                   Number(r.paidAmount),
 
+                  Number(r.balanceSalary || 0),
+
                   r.status || 'PENDING',
 
-                  monthYear,
+                  dateMode === 'range' ? `${startDate}_${endDate}` : monthYear,
 
                 ].join(','));
 
@@ -5177,7 +5354,7 @@ export function Payroll() {
 
                 a.href = url;
 
-                a.download = `payroll-${monthYear}.csv`;
+                a.download = `payroll-${dateMode === 'range' ? `${startDate}_to_${endDate}` : monthYear}.csv`;
 
                 a.click();
 
@@ -5198,6 +5375,12 @@ export function Payroll() {
             </button>
 
           </div>
+
+          {periodWarning && dateMode === 'range' && (
+            <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700">
+              Saved records were last computed for {periodWarning.savedStart} to {periodWarning.savedEnd}. Saving again will overwrite with {startDate} to {endDate}.
+            </div>
+          )}
 
         </div>
 
@@ -5286,15 +5469,23 @@ export function Payroll() {
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Base Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Absent</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Present Days</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">OT Days</th>
 
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">4 Days</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Days</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Actual Salary</th>
+
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Advance</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Net Payable</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Final Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Paid</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Salary Paid</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Balance Salary</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
 
@@ -5313,10 +5504,13 @@ export function Payroll() {
                 const rec = getRecord(emp.id);
 
                 const vals = editValues[emp.id] || {};
+                const isAutoCount = !!autoCountMap[emp.id];
+                const presentDaysVal = vals.presentDays ?? rec?.presentDays ?? 0;
+                const otDaysVal = vals.otDays ?? rec?.otDays ?? 0;
 
                 return (
 
-                  <tr key={`${emp.id}-${monthYear}`} className="hover:bg-gray-50 transition-colors">
+                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
 
                     <td className="px-4 py-4">
 
@@ -5334,6 +5528,10 @@ export function Payroll() {
 
                           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
 
+                          {rec?.needsReview && (
+                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Advance recorded, present days not set</p>
+                          )}
+
                         </div>
 
                       </div>
@@ -5345,7 +5543,7 @@ export function Payroll() {
                         type="number"
                         min="0"
                         step="0.01"
-                        defaultValue={Number(emp.baseSalary) || 0}
+                        value={vals.baseSalary ?? (Number(emp.baseSalary) || 0)}
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
                           debouncedSave(emp.id);
@@ -5355,26 +5553,33 @@ export function Payroll() {
                     </td>
 
                     <td className="px-4 py-4 text-center">
-
-                      <input
-
-                        type="number"
-
-                        min="0"
-
-                        max="30"
-
-                        defaultValue={rec?.absentDays || 0}
-
-                        onChange={(e) => {
-                          setEditValues({ ...editValues, [emp.id]: { ...vals, absentDays: parseInt(e.target.value) || 0 } });
-                          debouncedSave(emp.id);
-                        }}
-
-                        className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
-
-                      />
-
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="31"
+                            step="0.5"
+                            value={presentDaysVal}
+                            disabled={isAutoCount}
+                            onChange={(e) => {
+                              setEditValues({ ...editValues, [emp.id]: { ...vals, presentDays: parseFloat(e.target.value) || 0 } });
+                              debouncedSave(emp.id);
+                            }}
+                            className={`w-14 text-center border border-gray-200 rounded-lg py-1 text-sm ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
+                          />
+                          <button
+                            onClick={() => {
+                              const next = !isAutoCount;
+                              setAutoCountMap({ ...autoCountMap, [emp.id]: next });
+                              if (next) debouncedSave(emp.id);
+                            }}
+                            className={`text-[10px] font-bold px-2 py-1 rounded-md ${isAutoCount ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
+                          >
+                            {isAutoCount ? 'Auto' : 'Manual'}
+                          </button>
+                        </div>
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -5385,7 +5590,7 @@ export function Payroll() {
 
                         min="0"
 
-                        defaultValue={rec?.otDays || 0}
+                        value={otDaysVal}
 
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } });
@@ -5398,28 +5603,44 @@ export function Payroll() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-right font-bold text-amber-600">
-                      ₹{Number(rec?.advanceAmount || 0).toLocaleString()}
+                    <td className="px-4 py-4 text-center font-bold text-gray-700">
+                      {rec?.leaveDays ?? 0}
+                    </td>
+
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">
+                      {rec?.totalDays ?? 0}
+                    </td>
+
+                    <td className="px-4 py-4 text-right font-bold text-gray-700">
+                      ₹{Number(rec?.actualSalary || 0).toLocaleString()}
+                    </td>
+
+                    <td className="px-4 py-4 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-bold text-amber-600">₹{Number(rec?.totalAdvance || 0).toLocaleString()}</span>
+                        {rec && (
+                          <button
+                            onClick={() => openAdvanceModal(rec)}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                          >
+                            History
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-right font-black text-gray-900">
-
-                      {(() => {
-                        const baseSalary = Number(vals.baseSalary ?? emp.baseSalary) || 0;
-                        const absentDays = vals.absentDays ?? rec?.absentDays ?? 0;
-                        const otDays = vals.otDays ?? rec?.otDays ?? 0;
-                        const advanceAmount = rec?.advanceAmount ?? 0;
-                        const perDaySalary = baseSalary / 30;
-                        const netPayable = baseSalary - (perDaySalary * absentDays) + (perDaySalary * 0.5 * otDays) - Number(advanceAmount);
-                        return '₹' + (Math.round(netPayable * 100) / 100).toLocaleString();
-                      })()}
-
+                      ₹{Number(rec?.finalSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-right font-bold text-gray-600">
 
                       ₹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
 
+                    </td>
+
+                    <td className="px-4 py-4 text-right font-bold text-[#B71C1C]">
+                      ₹{Number(rec?.balanceSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -5471,6 +5692,14 @@ export function Payroll() {
                           </button>
 
                         )}
+
+                        <button
+                          onClick={() => openAdvanceModal(rec)}
+                          disabled={!rec}
+                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          Advance
+                        </button>
 
                         <button
                           onClick={() => handleDeleteEmployee(emp.id)}
@@ -5602,11 +5831,11 @@ export function Payroll() {
 
             <div className="text-sm text-gray-500 space-y-1">
 
-              <p>Net Payable: <span className="font-bold text-gray-900">₹{Number(payModal.netPayable).toLocaleString()}</span></p>
+              <p>Final Salary: <span className="font-bold text-gray-900">₹{Number(payModal.finalSalary || payModal.netPayable).toLocaleString()}</span></p>
 
               <p>Already Paid: <span className="font-bold text-gray-700">₹{Number(payModal.paidAmount).toLocaleString()}</span></p>
 
-              <p>Remaining: <span className="font-bold text-[#B71C1C]">₹{(Number(payModal.netPayable) - Number(payModal.paidAmount)).toLocaleString()}</span></p>
+              <p>Balance Salary: <span className="font-bold text-[#B71C1C]">₹{Number(payModal.balanceSalary || 0).toLocaleString()}</span></p>
 
             </div>
 
@@ -5620,6 +5849,72 @@ export function Payroll() {
 
               <button onClick={handlePayment} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Pay</button>
 
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+
+
+      {/* Manual Advance Modal */}
+
+      {advanceModal && (
+
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setAdvanceModal(null)}>
+
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+
+            <h3 className="text-lg font-black text-gray-900">Advance History — {advanceModal.employee?.name}</h3>
+
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Total Advance: <span className="font-bold text-amber-600">₹{Number(advanceModal.totalAdvance || 0).toLocaleString()}</span></p>
+            </div>
+
+            {advanceHistory.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No advance history for this record.</p>
+            ) : (
+              <div className="space-y-2">
+                {advanceHistory.map((h) => (
+                  <div key={h.id} className="border border-gray-100 rounded-lg p-3 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-gray-900">₹{Number(h.amount).toLocaleString()}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${h.type === 'VOUCHER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {h.type === 'VOUCHER' ? 'Voucher' : 'Manual'}
+                        </span>
+                        <span className="text-xs text-gray-400">{h.date}</span>
+                      </div>
+                    </div>
+                    {h.reason && <p className="text-xs text-gray-500 mt-1">{h.reason}</p>}
+                    <p className="text-[10px] text-gray-400 mt-1">By {h.createdBy?.name || 'Admin'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <p className="text-sm font-bold text-gray-900">Add Manual Advance</p>
+              <input
+                type="number"
+                placeholder="Amount (₹)"
+                value={advanceAmount}
+                onChange={(e) => setAdvanceAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Reason (required for non-cashier advances)"
+                value={advanceReason}
+                onChange={(e) => setAdvanceReason(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setAdvanceModal(null)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Close</button>
+                <button onClick={handleAddManualAdvance} disabled={!advanceAmount} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-50">Add Advance</button>
+              </div>
             </div>
 
           </div>
@@ -13775,7 +14070,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
   const [selectedConfig, setSelectedConfig] = useState(null);
 
-  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#VGrand #SoftshapeAI #GourmetExperience #FoodArt");
+  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#SoftshapeAI #GourmetExperience #FoodArt");
 
   const [scheduling, setScheduling] = useState('now');
 
@@ -14041,9 +14336,9 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
                        <div className="flex flex-col">
 
-                          <p className="text-[9px] font-black">vgrand_restaurants</p>
+                          <p className="text-[9px] font-black">{upload?.restaurantName || 'Your Restaurant'}</p>
 
-                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest">Ongole, India</p>
+                          <p className="text-[7px] text-gray-400 font-bold uppercase tracking-widest">Your City, India</p>
 
                        </div>
 
@@ -14972,7 +15267,7 @@ export function BarMenuPage() {
 
             t: item.isVeg ? 'veg' : 'non',
 
-            img: item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a1e2c2?w=600&h=450&fit=crop',
+            img: item.image || '/placeholder.svg',
 
             desc: item.description || '',
 

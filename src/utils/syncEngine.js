@@ -277,12 +277,13 @@ export async function syncPendingActions() {
       } else if (result.status === 'conflict') {
         // Conflict — use conflictResolver to determine policy
         const resolution = resolveConflict(action, result);
+        const autoResolved = resolution.resolution === 'skip' || resolution.resolution === 'adopt_server';
         await updatePendingAction(action.id, {
-          status: resolution.resolution === 'skip' ? 'synced' : 'conflict',
+          status: autoResolved ? 'synced' : 'conflict',
           lastError: resolution.message,
           attempts: (action.attempts || 0) + 1,
         });
-        if (resolution.resolution === 'skip') {
+        if (autoResolved) {
           await removePendingAction(action.id);
           clearConflict(action.id);
           if (action.actionType === 'settle') {

@@ -107,12 +107,14 @@ function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, gra
   }
 
   lines.push(line);
-  lines.push(`Subtotal:        Rs.${Number(subtotal || 0).toFixed(0)}`);
-  if (discount && Number(discount.amount || 0) > 0) {
-    lines.push(`Discount (${discount.percent || 0}%): -Rs.${Number(discount.amount || 0).toFixed(0)}`);
-  }
+  const rawSub = Number(subtotal || 0);
+  lines.push(`Subtotal:        Rs.${rawSub.toFixed(0)}`);
   if (cgst) lines.push(`CGST:            Rs.${Number(cgst).toFixed(0)}`);
   if (sgst) lines.push(`SGST:            Rs.${Number(sgst).toFixed(0)}`);
+  if (discount && Number(discount.amount || 0) > 0) {
+    const discAmt = Number(discount.amount || 0);
+    lines.push(`Discount (${discount.percent || 0}%): -Rs.${discAmt.toFixed(0)}`);
+  }
   lines.push(line);
   lines.push(`GRAND TOTAL:     Rs.${Number(grandTotal || 0).toFixed(0)}`);
   lines.push(line);
