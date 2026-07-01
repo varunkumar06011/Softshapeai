@@ -2867,6 +2867,15 @@ const CashierDashboard = ({ onLogout }) => {
             });
           }
 
+          // Warn if any kitchen inventory deductions failed (non-blocking)
+          if (Array.isArray(settleData?.kitchenDeductionErrors) && settleData.kitchenDeductionErrors.length > 0) {
+            addNotification(
+              'Kitchen Inventory Warning',
+              `Settlement succeeded but ${settleData.kitchenDeductionErrors.length} ingredient(s) could not be deducted. Check Kitchen Inventory → Deduction Check.`,
+              'warning'
+            );
+          }
+
           // Mark as settled locally to prevent retries
           setSettledOrderIds(prev => new Set([...prev, orderId]));
 
