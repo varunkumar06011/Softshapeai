@@ -471,7 +471,7 @@ export default function CaptainApp({ onLogout }) {
   const isSubmittingKotRef = useRef(false);
   const activeTableIdRef = useRef(null);
 
-  const { tables: barTables, setTables: setBarTables } = useBarTableSync({
+  const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync({
     shouldSkipTableUpdate: (t) => isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current),
   });
 
@@ -1414,6 +1414,31 @@ export default function CaptainApp({ onLogout }) {
   }, [todaySpecials, suggestedSpecials, currentSessionItems]);
 
 
+
+  // ── Visibility/Focus resync ──────────────────────────────────────────────────
+  // On mobile Chrome, backgrounded tabs get their socket silently suspended and
+  // miss table:updated / order:created events. When the tab returns to foreground,
+  // force a full table refetch and socket reconnect to recover missed state before
+  // the captain can send a KOT (which would otherwise hit a stale activeOrderIdRef).
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      console.log('[CaptainApp] Tab foregrounded — forcing table resync');
+      const socket = getSocket();
+      if (socket && !socket.connected) {
+        console.log('[CaptainApp] Socket stale — reconnecting');
+        socket.connect();
+      }
+      refetchRestaurantTables();
+      refetchBarTables();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [refetchRestaurantTables, refetchBarTables]);
 
   useEffect(() => {
     // Show the Live Sync indicator whenever the global menu broadcasts an update
