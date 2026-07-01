@@ -4879,6 +4879,18 @@ export function Payroll() {
 
   });
 
+  const [dateMode, setDateMode] = useState('month'); // 'month' | 'range'
+  const [startDate, setStartDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const now = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  });
+  const [periodWarning, setPeriodWarning] = useState(null);
+
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newEmp, setNewEmp] = useState({ name: '', age: '', role: '', baseSalary: '' });
@@ -4893,7 +4905,13 @@ export function Payroll() {
 
   const [payAmount, setPayAmount] = useState('');
 
+  const [advanceModal, setAdvanceModal] = useState(null);
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  const [advanceReason, setAdvanceReason] = useState('');
+  const [advanceHistory, setAdvanceHistory] = useState([]);
+
   const [editValues, setEditValues] = useState({});
+  const [autoCountMap, setAutoCountMap] = useState({}); // employeeId -> boolean
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -4915,17 +4933,36 @@ export function Payroll() {
 
     try {
 
+      let recordsUrl = `/api/payroll/records?restaurantId=${restaurantId}`;
+      if (dateMode === 'range') {
+        recordsUrl += `&startDate=${startDate}&endDate=${endDate}`;
+      } else {
+        recordsUrl += `&monthYear=${monthYear}`;
+      }
+
       const [employees, records] = await Promise.all([
 
         apiFetch(`/api/payroll/employees?restaurantId=${restaurantId}`),
 
-        apiFetch(`/api/payroll/records?restaurantId=${restaurantId}&monthYear=${monthYear}`),
+        apiFetch(recordsUrl),
 
       ]);
 
       setEmployees(employees || []);
 
       setRecords(records || []);
+
+      // Warn if the loaded records were computed for a different period
+      const first = (records || [])[0];
+      if (dateMode === 'range' && first?.periodStart && first?.periodEnd) {
+        if (first.periodStart !== startDate || first.periodEnd !== endDate) {
+          setPeriodWarning({ savedStart: first.periodStart, savedEnd: first.periodEnd });
+        } else {
+          setPeriodWarning(null);
+        }
+      } else {
+        setPeriodWarning(null);
+      }
 
     } catch (err) {
 
@@ -4937,7 +4974,7 @@ export function Payroll() {
 
     }
 
-  }, [monthYear, restaurantId]);
+  }, [monthYear, startDate, endDate, dateMode, restaurantId]);
 
 
 
@@ -5025,9 +5062,9 @@ export function Payroll() {
         });
       }
 
-      // Save absentDays/otDays on PayrollRecord. advanceAmount is read-only and
-      // derived from vouchers, so we do not send it to the backend.
-      if (vals.absentDays !== undefined || vals.otDays !== undefined) {
+      // Save presentDays/otDays on PayrollRecord. advanceAmount is read-only and
+      // derived from vouchers + manual advances, so we do not send it to the backend.
+      if (vals.presentDays !== undefined || vals.otDays !== undefined || dateMode === 'range' || autoCountMap[employeeId]) {
         await apiFetch('/api/payroll/records', {
 
           method: 'POST',
@@ -5038,18 +5075,29 @@ export function Payroll() {
 
             employeeId,
 
-            monthYear,
+            monthYear: dateMode === 'range' ? startDate.slice(0, 7) : monthYear,
 
-            absentDays: vals.absentDays ?? rec?.absentDays ?? 0,
+            startDate: dateMode === 'range' ? startDate : undefined,
+            endDate: dateMode === 'range' ? endDate : undefined,
+
+            presentDays: vals.presentDays ?? rec?.presentDays ?? 0,
 
             otDays: vals.otDays ?? rec?.otDays ?? 0,
+
+            autoCount: !!autoCountMap[employeeId],
 
           }),
 
         });
       }
 
-      loadData();
+      await loadData();
+
+      setEditValues((prev) => {
+        const next = { ...prev };
+        delete next[employeeId];
+        return next;
+      });
 
     } catch (err) {
 
@@ -5116,6 +5164,43 @@ export function Payroll() {
 
   };
 
+  const handleAddManualAdvance = async () => {
+    if (!advanceModal || !advanceAmount) return;
+    try {
+      await apiFetch(`/api/payroll/records/${advanceModal.id}/advance`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: parseFloat(advanceAmount),
+          reason: advanceReason.trim(),
+        }),
+      });
+      setAdvanceAmount('');
+      setAdvanceReason('');
+      loadAdvanceHistory(advanceModal.id);
+      loadData();
+    } catch (err) {
+      console.error('[Payroll] Add manual advance failed:', err);
+      alert(err.message || 'Failed to add manual advance');
+    }
+  };
+
+  const loadAdvanceHistory = async (recordId) => {
+    try {
+      const history = await apiFetch(`/api/payroll/records/${recordId}/advance-history`);
+      setAdvanceHistory(history || []);
+    } catch (err) {
+      console.error('[Payroll] Load advance history failed:', err);
+    }
+  };
+
+  const openAdvanceModal = (rec) => {
+    setAdvanceModal(rec);
+    setAdvanceHistory([]);
+    setAdvanceAmount('');
+    setAdvanceReason('');
+    loadAdvanceHistory(rec.id);
+  };
+
 
 
   const getRecord = (empId) => records.find((r) => r.employeeId === empId);
@@ -5125,26 +5210,13 @@ export function Payroll() {
     return sum + (Number(vals.baseSalary ?? emp.baseSalary) || 0);
   }, 0);
 
-  const totalAdvance = employees.reduce((sum, emp) => {
-    const rec = getRecord(emp.id);
-    return sum + (Number(rec?.advanceAmount) || 0);
-  }, 0);
+  const totalAdvance = records.reduce((sum, r) => sum + (Number(r.totalAdvance) || 0), 0);
 
-  const totalPayable = employees.reduce((sum, emp) => {
-    const rec = getRecord(emp.id);
-    const vals = editValues[emp.id] || {};
-    const baseSalary = Number(vals.baseSalary ?? emp.baseSalary) || 0;
-    const absentDays = vals.absentDays ?? rec?.absentDays ?? 0;
-    const otDays = vals.otDays ?? rec?.otDays ?? 0;
-    const advanceAmount = rec?.advanceAmount ?? 0;
-    const perDaySalary = baseSalary / 30;
-    const netPayable = baseSalary - (perDaySalary * absentDays) + (perDaySalary * 0.5 * otDays) - Number(advanceAmount);
-    return sum + Math.round(netPayable * 100) / 100;
-  }, 0);
+  const totalPayable = records.reduce((sum, r) => sum + (Number(r.finalSalary) || 0), 0);
 
   const totalPaid = records.reduce((s, r) => s + Number(r.paidAmount), 0);
 
-  const totalOutstanding = totalPayable - totalPaid;
+  const totalOutstanding = records.reduce((sum, r) => sum + (Number(r.balanceSalary) || 0), 0);
 
 
 
@@ -5166,19 +5238,73 @@ export function Payroll() {
 
           <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Staff Payroll & Attendance</h2>
 
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
 
-            <input
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => {
+                  setDateMode('month');
+                  // keep monthYear aligned with the selected range
+                  if (startDate) setMonthYear(startDate.slice(0, 7));
+                }}
+                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => {
+                  setDateMode('range');
+                  // seed the range from the currently selected month
+                  const [y, m] = monthYear.split('-').map(Number);
+                  const lastDay = new Date(y, m, 0).getDate();
+                  setStartDate(`${monthYear}-01`);
+                  setEndDate(`${monthYear}-${String(lastDay).padStart(2, '0')}`);
+                }}
+                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+              >
+                Date Range
+              </button>
+            </div>
 
-              type="month"
-
-              value={monthYear}
-
-              onChange={(e) => setMonthYear(e.target.value)}
-
-              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
-
-            />
+            {dateMode === 'month' ? (
+              <input
+                type="month"
+                value={monthYear}
+                onChange={(e) => setMonthYear(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStartDate(val);
+                    const [y, m] = val.split('-').map(Number);
+                    const lastDay = new Date(y, m, 0).getDate();
+                    const max = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                    if (!endDate || endDate < val || endDate > max) {
+                      setEndDate(max);
+                    }
+                  }}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                />
+                <span className="text-xs font-bold text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate}
+                  max={(() => {
+                    const [y, m] = startDate.split('-').map(Number);
+                    const lastDay = new Date(y, m, 0).getDate();
+                    return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                  })()}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                />
+              </div>
+            )}
 
             <button
 
@@ -5186,7 +5312,7 @@ export function Payroll() {
 
                 if (records.length === 0) return;
 
-                const headers = ['Employee Name', 'Base Salary', 'Absent Days', 'OT Days', 'OT Amount', 'Advance', 'Net Payable', 'Paid Amount', 'Status', 'Month'];
+                const headers = ['Employee Name', 'Base Salary', 'Present Days', 'OT Days', '4 Days', 'Total Days', 'Actual Salary', 'Advance', 'Final Salary', 'Salary Paid', 'Balance Salary', 'Status', 'Month'];
 
                 const rows = records.map(r => [
 
@@ -5194,21 +5320,27 @@ export function Payroll() {
 
                   Number(r.baseSalary),
 
-                  r.absentDays || 0,
+                  r.presentDays || 0,
 
                   r.otDays || 0,
 
-                  Number(r.otAmount || 0),
+                  r.leaveDays || 0,
 
-                  Number(r.advanceAmount || 0),
+                  r.totalDays || 0,
 
-                  Number(r.netPayable),
+                  Number(r.actualSalary || 0),
+
+                  Number(r.totalAdvance || 0),
+
+                  Number(r.finalSalary || 0),
 
                   Number(r.paidAmount),
 
+                  Number(r.balanceSalary || 0),
+
                   r.status || 'PENDING',
 
-                  monthYear,
+                  dateMode === 'range' ? `${startDate}_${endDate}` : monthYear,
 
                 ].join(','));
 
@@ -5222,7 +5354,7 @@ export function Payroll() {
 
                 a.href = url;
 
-                a.download = `payroll-${monthYear}.csv`;
+                a.download = `payroll-${dateMode === 'range' ? `${startDate}_to_${endDate}` : monthYear}.csv`;
 
                 a.click();
 
@@ -5243,6 +5375,12 @@ export function Payroll() {
             </button>
 
           </div>
+
+          {periodWarning && dateMode === 'range' && (
+            <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700">
+              Saved records were last computed for {periodWarning.savedStart} to {periodWarning.savedEnd}. Saving again will overwrite with {startDate} to {endDate}.
+            </div>
+          )}
 
         </div>
 
@@ -5331,15 +5469,23 @@ export function Payroll() {
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Base Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Absent</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Present Days</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">OT Days</th>
 
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">4 Days</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Days</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Actual Salary</th>
+
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Advance</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Net Payable</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Final Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Paid</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Salary Paid</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Balance Salary</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
 
@@ -5358,10 +5504,13 @@ export function Payroll() {
                 const rec = getRecord(emp.id);
 
                 const vals = editValues[emp.id] || {};
+                const isAutoCount = !!autoCountMap[emp.id];
+                const presentDaysVal = vals.presentDays ?? rec?.presentDays ?? 0;
+                const otDaysVal = vals.otDays ?? rec?.otDays ?? 0;
 
                 return (
 
-                  <tr key={`${emp.id}-${monthYear}`} className="hover:bg-gray-50 transition-colors">
+                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
 
                     <td className="px-4 py-4">
 
@@ -5379,6 +5528,10 @@ export function Payroll() {
 
                           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
 
+                          {rec?.needsReview && (
+                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Advance recorded, present days not set</p>
+                          )}
+
                         </div>
 
                       </div>
@@ -5390,7 +5543,7 @@ export function Payroll() {
                         type="number"
                         min="0"
                         step="0.01"
-                        defaultValue={Number(emp.baseSalary) || 0}
+                        value={vals.baseSalary ?? (Number(emp.baseSalary) || 0)}
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
                           debouncedSave(emp.id);
@@ -5400,26 +5553,33 @@ export function Payroll() {
                     </td>
 
                     <td className="px-4 py-4 text-center">
-
-                      <input
-
-                        type="number"
-
-                        min="0"
-
-                        max="30"
-
-                        defaultValue={rec?.absentDays || 0}
-
-                        onChange={(e) => {
-                          setEditValues({ ...editValues, [emp.id]: { ...vals, absentDays: parseInt(e.target.value) || 0 } });
-                          debouncedSave(emp.id);
-                        }}
-
-                        className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
-
-                      />
-
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="31"
+                            step="0.5"
+                            value={presentDaysVal}
+                            disabled={isAutoCount}
+                            onChange={(e) => {
+                              setEditValues({ ...editValues, [emp.id]: { ...vals, presentDays: parseFloat(e.target.value) || 0 } });
+                              debouncedSave(emp.id);
+                            }}
+                            className={`w-14 text-center border border-gray-200 rounded-lg py-1 text-sm ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
+                          />
+                          <button
+                            onClick={() => {
+                              const next = !isAutoCount;
+                              setAutoCountMap({ ...autoCountMap, [emp.id]: next });
+                              if (next) debouncedSave(emp.id);
+                            }}
+                            className={`text-[10px] font-bold px-2 py-1 rounded-md ${isAutoCount ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
+                          >
+                            {isAutoCount ? 'Auto' : 'Manual'}
+                          </button>
+                        </div>
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -5430,7 +5590,7 @@ export function Payroll() {
 
                         min="0"
 
-                        defaultValue={rec?.otDays || 0}
+                        value={otDaysVal}
 
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } });
@@ -5443,28 +5603,44 @@ export function Payroll() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-right font-bold text-amber-600">
-                      ₹{Number(rec?.advanceAmount || 0).toLocaleString()}
+                    <td className="px-4 py-4 text-center font-bold text-gray-700">
+                      {rec?.leaveDays ?? 0}
+                    </td>
+
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">
+                      {rec?.totalDays ?? 0}
+                    </td>
+
+                    <td className="px-4 py-4 text-right font-bold text-gray-700">
+                      ₹{Number(rec?.actualSalary || 0).toLocaleString()}
+                    </td>
+
+                    <td className="px-4 py-4 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-bold text-amber-600">₹{Number(rec?.totalAdvance || 0).toLocaleString()}</span>
+                        {rec && (
+                          <button
+                            onClick={() => openAdvanceModal(rec)}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                          >
+                            History
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-right font-black text-gray-900">
-
-                      {(() => {
-                        const baseSalary = Number(vals.baseSalary ?? emp.baseSalary) || 0;
-                        const absentDays = vals.absentDays ?? rec?.absentDays ?? 0;
-                        const otDays = vals.otDays ?? rec?.otDays ?? 0;
-                        const advanceAmount = rec?.advanceAmount ?? 0;
-                        const perDaySalary = baseSalary / 30;
-                        const netPayable = baseSalary - (perDaySalary * absentDays) + (perDaySalary * 0.5 * otDays) - Number(advanceAmount);
-                        return '₹' + (Math.round(netPayable * 100) / 100).toLocaleString();
-                      })()}
-
+                      ₹{Number(rec?.finalSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-right font-bold text-gray-600">
 
                       ₹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
 
+                    </td>
+
+                    <td className="px-4 py-4 text-right font-bold text-[#B71C1C]">
+                      ₹{Number(rec?.balanceSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -5516,6 +5692,14 @@ export function Payroll() {
                           </button>
 
                         )}
+
+                        <button
+                          onClick={() => openAdvanceModal(rec)}
+                          disabled={!rec}
+                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          Advance
+                        </button>
 
                         <button
                           onClick={() => handleDeleteEmployee(emp.id)}
@@ -5647,11 +5831,11 @@ export function Payroll() {
 
             <div className="text-sm text-gray-500 space-y-1">
 
-              <p>Net Payable: <span className="font-bold text-gray-900">₹{Number(payModal.netPayable).toLocaleString()}</span></p>
+              <p>Final Salary: <span className="font-bold text-gray-900">₹{Number(payModal.finalSalary || payModal.netPayable).toLocaleString()}</span></p>
 
               <p>Already Paid: <span className="font-bold text-gray-700">₹{Number(payModal.paidAmount).toLocaleString()}</span></p>
 
-              <p>Remaining: <span className="font-bold text-[#B71C1C]">₹{(Number(payModal.netPayable) - Number(payModal.paidAmount)).toLocaleString()}</span></p>
+              <p>Balance Salary: <span className="font-bold text-[#B71C1C]">₹{Number(payModal.balanceSalary || 0).toLocaleString()}</span></p>
 
             </div>
 
@@ -5665,6 +5849,72 @@ export function Payroll() {
 
               <button onClick={handlePayment} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414]">Pay</button>
 
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+
+
+      {/* Manual Advance Modal */}
+
+      {advanceModal && (
+
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setAdvanceModal(null)}>
+
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+
+            <h3 className="text-lg font-black text-gray-900">Advance History — {advanceModal.employee?.name}</h3>
+
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Total Advance: <span className="font-bold text-amber-600">₹{Number(advanceModal.totalAdvance || 0).toLocaleString()}</span></p>
+            </div>
+
+            {advanceHistory.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No advance history for this record.</p>
+            ) : (
+              <div className="space-y-2">
+                {advanceHistory.map((h) => (
+                  <div key={h.id} className="border border-gray-100 rounded-lg p-3 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-gray-900">₹{Number(h.amount).toLocaleString()}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${h.type === 'VOUCHER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {h.type === 'VOUCHER' ? 'Voucher' : 'Manual'}
+                        </span>
+                        <span className="text-xs text-gray-400">{h.date}</span>
+                      </div>
+                    </div>
+                    {h.reason && <p className="text-xs text-gray-500 mt-1">{h.reason}</p>}
+                    <p className="text-[10px] text-gray-400 mt-1">By {h.createdBy?.name || 'Admin'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <p className="text-sm font-bold text-gray-900">Add Manual Advance</p>
+              <input
+                type="number"
+                placeholder="Amount (₹)"
+                value={advanceAmount}
+                onChange={(e) => setAdvanceAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Reason (required for non-cashier advances)"
+                value={advanceReason}
+                onChange={(e) => setAdvanceReason(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setAdvanceModal(null)} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm">Close</button>
+                <button onClick={handleAddManualAdvance} disabled={!advanceAmount} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-50">Add Advance</button>
+              </div>
             </div>
 
           </div>
