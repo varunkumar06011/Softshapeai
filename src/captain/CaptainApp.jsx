@@ -2236,7 +2236,7 @@ export default function CaptainApp({ onLogout }) {
     const itemKey = String(item.id || item.n || '');
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 2000) return; // 2-second cooldown per item
+    if (now - lastAdd < 900) return; // 900ms cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
     const finalPrice = variant ? Number(variant.price) : item.p;

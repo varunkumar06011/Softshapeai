@@ -504,7 +504,7 @@ const CashierDashboard = ({ onLogout }) => {
   const lastKnownBillRef = useRef(0); // monotonically increasing — never go backwards
   const billItemsSnapshotRef = useRef([]); // snapshot of billable items before print-bill
   const cancelInProgressRef = useRef(false); // blocks print-bill while cancel API is in flight
-  const lastAnyItemAddedRef = useRef(0); // global 2s cooldown across all item adds
+  const lastAnyItemAddedRef = useRef(0); // global 900ms cooldown across all item adds
   const lsWriteTimerRef = useRef(null);
   const lastFetchUpdateRef = useRef({ backendId: null, ts: 0 }); // guards selectedTable against stale activeTables sync
 
@@ -2577,23 +2577,43 @@ const CashierDashboard = ({ onLogout }) => {
     // Run reprint in background without blocking UI
     (async () => {
       try {
-        // Apply discount update if one is entered before reprinting
-        if (discountPercent > 0) {
+        // Apply discount update before reprinting (always send, even 0, to reflect current input)
+        if (!selectedTable.isExtra && selectedTable.backendId) {
           await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ discount: discountPercent }),
           });
+          // Persist discount so it survives modal close/reopen until settlement
+          localStorage.setItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`), JSON.stringify({
+            value: String(discountPercent),
+            mode: 'percent'
+          }));
+        } else if (selectedTable.isExtra) {
+          setExtraTables(prev => prev.map(et =>
+            et.id === selectedTable.id ? { ...et, discountPercent } : et
+          ));
         }
 
-        // Call the same print-bill endpoint — backend recalculates and re-emits to printer
-        const response = await fetch(
-          `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${selectedTable.section?.restaurantId || activeRestaurantId}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          }
-        );
+        // Call the same print-bill endpoint — backend recalculates with new discount and re-emits to printer
+        // Backend reuses the same bill number if one already exists
+        const printBillRestaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
+        const extraDiscountPercent = selectedTable.isExtra
+          ? (discountPercent || selectedTable.discountPercent || 0)
+          : 0;
+        const extraKotIds = (selectedTable.kotHistory || [])
+          .map(k => k.id)
+          .filter(Boolean)
+          .join(',');
+        const response = selectedTable.isExtra
+          ? await fetch(
+              `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${selectedTable.number}&discountPercent=${extraDiscountPercent}&kotNumbers=${extraKotIds}`,
+              { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
+            )
+          : await fetch(
+              `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}`,
+              { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
+            );
 
         // Backend returns 409 if PAID — handle gracefully
         if (!response.ok) {
@@ -3327,7 +3347,7 @@ const CashierDashboard = ({ onLogout }) => {
   const handleAddItem = (item) => {
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current['__global__'] || 0;
-    if (now - lastAdd < 2000) return; // 2s global cooldown — must wait 2 seconds between any item additions
+    if (now - lastAdd < 900) return; // 900ms global cooldown between item additions
     addItemCooldownRef.current['__global__'] = now;
 
     // Beer items should be added directly
@@ -5605,7 +5625,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {/* ── Discount & Totals (Ultra Compact) ──────────────── */}
                 <div className="flex gap-2 sm:gap-3 mb-2">
                   {(() => {
-                    const isBillFinalised = selectedTable?.status === 'Waiting Bill' || selectedTable?.status === 'BILLING_REQUESTED';
+                    const isOrderSettled = selectedTable?.activeOrder?.status === 'PAID';
                     return (
                       <>
                   {/* Discount */}
@@ -5614,7 +5634,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <label className="block text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">
                         Discount
                       </label>
-                      <div className={`flex bg-gray-100 rounded-lg p-1 ml-2 ${isBillFinalised ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
+                      <div className={`flex bg-gray-100 rounded-lg p-1 ml-2 ${isOrderSettled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
                         <button 
                           onClick={() => { setDiscountMode('percent'); setRawDiscountInput(''); }}
                           className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#E53935]' : 'text-gray-400 hover:text-gray-600'}`}
@@ -5631,15 +5651,10 @@ const CashierDashboard = ({ onLogout }) => {
                       step={discountMode === 'percent' ? "0.01" : "1"}
                       value={rawDiscountInput}
                       onChange={(e) => setRawDiscountInput(e.target.value)}
-                      disabled={isBillFinalised}
+                      disabled={isOrderSettled}
                       className="w-full px-3 py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-sm font-bold text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
                       placeholder="0"
                     />
-                    {isBillFinalised && (
-                      <p className="text-[9px] text-gray-400 text-center mt-1 flex items-center justify-center gap-1">
-                        🔒 Bill printed — discount locked
-                      </p>
-                    )}
                   </div>
 
                   {/* Totals */}
