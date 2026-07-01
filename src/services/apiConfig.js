@@ -18,9 +18,27 @@ export function normalizeApiBase(url) {
   return url.trim().replace(/\/+$/, "");
 }
 
-export const API_BASE = normalizeApiBase(
-  import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "http://localhost:3000"
-);
+const _rawApiBase =
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
+
+// If the baked-in URL is localhost but we're running on a different origin
+// (e.g. Android Capacitor app loading from https://www.softshape.in), use the
+// current origin as the API base. This prevents "failed to fetch backend"
+// errors on mobile when the build was done with a dev .env.
+function resolveApiBase(raw) {
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(raw);
+  if (
+    isLocalhost &&
+    typeof window !== "undefined" &&
+    window.location &&
+    !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(window.location.origin)
+  ) {
+    return window.location.origin;
+  }
+  return raw;
+}
+
+export const API_BASE = normalizeApiBase(resolveApiBase(_rawApiBase));
 
 /** Build API URL: base + path (path must start with /) */
 export function apiUrl(path) {
