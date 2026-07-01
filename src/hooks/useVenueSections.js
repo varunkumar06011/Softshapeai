@@ -113,9 +113,18 @@ export function useVenueSections(outlet) {
   }, [filteredVenues]);
 
   const venueColumns = useMemo(() => {
-    const cols = sections.map((s) => ({ id: s.id || s.name, label: s.name || 'Price' }));
+    // Key by venueId (not section id) — the backend PriceProfile system
+    // stores and looks up prices by venue ID.  Using section ids here would
+    // silently break venue-price saves and lookups.
+    const seen = new Map();
+    for (const v of filteredVenues) {
+      if (!seen.has(v.id)) {
+        seen.set(v.id, { id: v.id, label: v.name || 'Price' });
+      }
+    }
+    const cols = Array.from(seen.values());
     return cols.length > 0 ? cols : [{ id: 'default', label: 'Price' }];
-  }, [sections]);
+  }, [filteredVenues]);
 
   return { venues, outlets, sections, venueColumns, loading, error };
 }

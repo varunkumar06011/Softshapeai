@@ -2595,7 +2595,7 @@ export default function CaptainApp({ onLogout }) {
             if (existingOrderId) {
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              return await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, true, preReservedKotNumber);
+              return await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, false, preReservedKotNumber);
             } else {
               return await createOrder({
                 tableId: activeTable?.backendId,
@@ -2605,7 +2605,6 @@ export default function CaptainApp({ onLogout }) {
                 requestId,
                 captainName: currentCaptain?.name || undefined,
                 sectionTag: activeTable?.sectionTag || undefined,
-                localPrinted: true,
                 preReservedKotNumber,
               });
             }

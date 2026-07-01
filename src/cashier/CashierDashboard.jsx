@@ -3555,7 +3555,7 @@ const CashierDashboard = ({ onLogout }) => {
             if (selectedTable.isExtra) {
               const orderId = selectedTable.activeOrder?.id;
               if (orderId) {
-                return await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, true, preReservedKotNumber);
+                return await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, preReservedKotNumber);
               } else {
                 return await createOrder({
                   tableId: selectedTable.backendId,
@@ -3568,12 +3568,11 @@ const CashierDashboard = ({ onLogout }) => {
                   sectionTag: selectedTable.sectionTag || undefined,
                   platform: selectedOrderPlatform,
                   timeoutMs: 45000,
-                  localPrinted: true,
                   preReservedKotNumber,
                 });
               }
             } else if (selectedTable.activeOrder?.id) {
-              return await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, true, preReservedKotNumber);
+              return await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, false, preReservedKotNumber);
             } else {
               try {
                 return await createOrder({
@@ -3586,14 +3585,13 @@ const CashierDashboard = ({ onLogout }) => {
                   sectionTag: selectedTable.sectionTag || undefined,
                   platform: selectedOrderPlatform,
                   timeoutMs: 45000,
-                  localPrinted: true,
                   preReservedKotNumber,
                 });
               } catch (createErr) {
                 if (createErr.statusCode === 409 && createErr.existingOrderId) {
                   console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                   setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
-                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, true, preReservedKotNumber);
+                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, false, preReservedKotNumber);
                 } else {
                   throw createErr;
                 }

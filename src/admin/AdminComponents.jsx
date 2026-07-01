@@ -15052,6 +15052,8 @@ export function BarMenuPage() {
 
   const [addSaving, setAddSaving] = useState(false);
 
+  const [addVenuePrices, setAddVenuePrices] = useState({});
+
 
 
   // Delete state
@@ -15283,6 +15285,8 @@ export function BarMenuPage() {
 
     setAddImgPreview('');
 
+    setAddVenuePrices({});
+
   };
 
 
@@ -15350,6 +15354,12 @@ export function BarMenuPage() {
         menuType: addMenuType,
 
         ...(imageUrl ? { imageUrl } : {}),
+
+        venuePrices: Object.fromEntries(
+
+          venueColumns.map((venue) => [venue.id, Number(addVenuePrices[venue.id] || 0)])
+
+        ),
 
       };
 
@@ -16154,6 +16164,50 @@ export function BarMenuPage() {
                 placeholder="0" />
 
             </div>
+
+
+
+            {/* Venue-specific prices */}
+
+            {venueColumns.length > 1 && (
+
+              <div>
+
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Venue Prices (₹)</label>
+
+                <div className="grid grid-cols-2 gap-2 mt-1">
+
+                  {venueColumns.map((venue) => (
+
+                    <div key={venue.id}>
+
+                      <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">{venue.label}</label>
+
+                      <input
+
+                        type="number"
+
+                        placeholder="0"
+
+                        value={addVenuePrices[venue.id] ?? ''}
+
+                        onChange={(e) => setAddVenuePrices(prev => ({ ...prev, [venue.id]: e.target.value }))}
+
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] font-bold focus:outline-none focus:border-[#E53935]"
+
+                      />
+
+                    </div>
+
+                  ))}
+
+                </div>
+
+                <p className="text-[10px] text-gray-400 mt-1">Set 0 to hide item from a venue.</p>
+
+              </div>
+
+            )}
 
 
 
