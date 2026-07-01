@@ -3146,10 +3146,14 @@ const CashierDashboard = ({ onLogout }) => {
           : Number(item.p || item.price || 0);
       }
 
-      const remappedVariants = item.variants?.map(v => {
+      const remappedVariants = item.variants?.map((v, idx) => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
         if (variantOverride !== undefined) {
           return { ...v, price: Number(variantOverride) };
+        }
+        // Apply item-level venue price override to the default (or first) variant
+        if (overridePrice != null && Number(overridePrice) > 0 && (v.isDefault || (idx === 0 && !item.variants.some(vv => vv.isDefault)))) {
+          return { ...v, price: Number(overridePrice) };
         }
         // If no variant-specific override but variant has no price, use item's venue price
         const variantBasePrice = v.price || v.p || 0;

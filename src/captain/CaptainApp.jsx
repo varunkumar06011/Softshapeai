@@ -1095,11 +1095,16 @@ export default function CaptainApp({ onLogout }) {
           ? Number(overridePrice)
           : Number(item.p || item.price || 0);
       }
-      const remappedVariants = item.variants?.map(v => {
+      const remappedVariants = item.variants?.map((v, idx) => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
-        return variantOverride !== undefined
-          ? { ...v, price: Number(variantOverride) }
-          : v;
+        if (variantOverride !== undefined) {
+          return { ...v, price: Number(variantOverride) };
+        }
+        // Apply item-level venue price override to the default (or first) variant
+        if (overridePrice !== undefined && (v.isDefault || (idx === 0 && !item.variants.some(vv => vv.isDefault)))) {
+          return { ...v, price: Number(overridePrice) };
+        }
+        return v;
       }) ?? item.variants;
 
       return { ...item, p: finalPrice, variants: remappedVariants };
