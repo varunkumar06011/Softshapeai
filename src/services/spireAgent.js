@@ -1,14 +1,13 @@
 // Frontend service for the Spire AI assistant.
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { API_BASE, getAuthHeaders } from './apiConfig';
 
 export async function sendSpireMessage(message, options = {}) {
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
   const res = await fetch(`${API_BASE}/api/spire/ask`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...getAuthHeaders(),
     },
     body: JSON.stringify({ message, language: options.language }),
   });
