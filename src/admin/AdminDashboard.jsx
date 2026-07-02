@@ -78,6 +78,9 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
 
   // Shared State
   const [revenue, setRevenue] = useState(0);
+  const [totalSales, setTotalSales] = useState(0);
+  const [netSales, setNetSales] = useState(0);
+  const [totalDiscount, setTotalDiscount] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
@@ -119,10 +122,14 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
 
   const loadStats = useCallback(async () => {
     try {
-      const todayISO = new Date().toISOString().slice(0, 10);
-      const res = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}`);
-      const data = await res.json();
+      const now = new Date();
+      const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+      const todayISO = istDate.toISOString().slice(0, 10);
+      const data = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}`);
       setRevenue(Math.round(data.summary?.totalRevenue ?? 0));
+      setTotalSales(Math.round(data.summary?.totalSales ?? data.summary?.totalSubtotal ?? 0));
+      setNetSales(Math.round(data.summary?.netSales ?? 0));
+      setTotalDiscount(Math.round(data.summary?.totalDiscount ?? 0));
       setOrdersCount(data.summary?.totalTransactions ?? 0);
     } catch (err) {
       console.warn('[AdminStats] Failed to load stats:', err.message);
@@ -228,12 +235,12 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   // Context object for passing props to route elements via cloneElement.
   // Built once per render, consumed by routes that declare a props function.
   const routeCtx = useMemo(() => ({
-    revenue, ordersCount, activityLog, statsLoading,
+    revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading,
     activeOutlet, loadStats,
     onAddDish: () => setDishModalOpen(true),
     goToSection,
     mUpload, setMUpload, mUploadRef, mGenerated, setMGenerated, mPosted, setMPosted,
-  }), [revenue, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
+  }), [revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
        goToSection, mUpload, mGenerated, mPosted]);
 
   const handleQuickSwitch = async (outletId) => {

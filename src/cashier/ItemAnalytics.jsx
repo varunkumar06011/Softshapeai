@@ -17,10 +17,11 @@
 // Used as a tab within the CashierDashboard for quick item performance review.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getKolkataDateString, shiftKolkataDate, getKolkataMonthString } from '../shared/utils/dateFormat';
 
 // Standard bar unit sizes in milliliters
 const BAR_UNIT_ML = 30;
@@ -89,6 +90,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
   const [sortDirection, setSortDirection] = useState('desc');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const fetchGenerationRef = useRef(0);
 
   useEffect(() => {
     setSource('all');
@@ -125,43 +127,41 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
     return () => window.removeEventListener('softshape_order_updated', handler);
   }, [timeFilter, customDate, effectiveSource, outletSections]);
 
-  const getDateRange = () => {
-    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-    const now = new Date(Date.now() + IST_OFFSET_MS);
-    const todayParts = now.toISOString().slice(0, 10); // safe: this is already IST-shifted, .slice gives correct YYYY-MM-DD
-    const today = todayParts;
+  const getDateRange = useCallback(() => {
+    const today = getKolkataDateString();
 
     if (timeFilter === 'custom' && customDate) {
       return { startDate: customDate, endDate: customDate };
     } else if (timeFilter === 'today') {
       return { startDate: today, endDate: today };
     } else if (timeFilter === 'yesterday') {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const y = yesterday.toISOString().slice(0, 10);
-      return { startDate: y, endDate: y };
+      const yesterday = shiftKolkataDate(new Date(), -1);
+      return { startDate: yesterday, endDate: yesterday };
     } else if (timeFilter === 'month') {
-      const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      return { startDate: firstDay, endDate: today };
+      const monthStr = getKolkataMonthString();
+      return { startDate: `${monthStr}-01`, endDate: today };
     } else if (timeFilter === 'all') {
       return { startDate: '2000-01-01', endDate: today };
     }
     return { startDate: today, endDate: today };
-  };
+  }, [timeFilter, customDate]);
 
   const fetchAnalytics = async () => {
+    const myGeneration = ++fetchGenerationRef.current;
     setLoading(true);
     try {
       const { startDate, endDate } = getDateRange();
       const outletType = outlet === 'bar' ? 'bar' : outlet === 'restaurant' ? 'restaurant' : null;
 
       const outletParam = outletType ? `&outletType=${outletType}` : '';
+      const fetchOpts = { headers: getAuthHeaders(), cache: 'no-store' };
 
       if (effectiveSource === 'all') {
         if (outletSections.length === 0) {
           const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
-          const response = await fetch(url, { headers: getAuthHeaders() });
+          const response = await fetch(url, fetchOpts);
           const data = await response.json();
+          if (myGeneration !== fetchGenerationRef.current) return;
           if (data.items) { setItemsData(data.items); setSummary(data.summary); }
           return;
         }
@@ -170,9 +170,10 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
           outletSections.map(section => {
             let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
             url += `&sectionName=${encodeURIComponent(section.name)}`;
-            return fetch(url, { headers: getAuthHeaders() }).then(r => r.json()).catch(() => ({ items: [], summary: null }));
+            return fetch(url, fetchOpts).then(r => r.json()).catch(() => ({ items: [], summary: null }));
           })
         );
+        if (myGeneration !== fetchGenerationRef.current) return;
 
         const mergedMap = new Map();
         for (const result of results) {
@@ -181,7 +182,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
             if (mergedMap.has(key)) {
               const existing = mergedMap.get(key);
               existing.quantity += item.quantity || 0;
-              existing.orders += item.orders || 0;
+              existing.orderCount = (existing.orderCount || 0) + (item.orderCount || 0);
               existing.revenue += item.revenue || 0;
             } else {
               mergedMap.set(key, { ...item });
@@ -209,16 +210,20 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
       if (outletType) {
         url += `&outletType=${outletType}`;
       }
-      const response = await fetch(url, { headers: getAuthHeaders() });
+      const response = await fetch(url, fetchOpts);
       const data = await response.json();
+      if (myGeneration !== fetchGenerationRef.current) return;
       if (data.items) {
         setItemsData(data.items);
         setSummary(data.summary);
       }
     } catch (error) {
+      if (myGeneration !== fetchGenerationRef.current) return;
       console.error('[ItemAnalytics] Failed to fetch:', error);
     } finally {
-      setLoading(false);
+      if (myGeneration === fetchGenerationRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -356,7 +361,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
           <input
             type="date"
             value={customDate}
-            max={new Date().toISOString().slice(0, 10)}
+            max={getKolkataDateString()}
             onChange={e => {
               const val = e.target.value;
               setCustomDate(val);

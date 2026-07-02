@@ -507,7 +507,7 @@ function IngredientAvatar({ name }) {
 
 
 
-export function Dashboard({ revenue, ordersCount, activityLog }) {
+export function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog }) {
 
   const { tables } = useTableSync();
 
@@ -539,9 +539,11 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
 
       try {
 
-        const today = new Date();
+        const now = new Date();
 
-        const sevenDaysAgo = new Date(today);
+        const istNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+
+        const sevenDaysAgo = new Date(istNow);
 
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
@@ -549,7 +551,7 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
 
         const startISO = sevenDaysAgo.toISOString().slice(0, 10);
 
-        const endISO = today.toISOString().slice(0, 10);
+        const endISO = istNow.toISOString().slice(0, 10);
 
 
 
@@ -693,27 +695,17 @@ export function Dashboard({ revenue, ordersCount, activityLog }) {
 
   return <div className="space-y-4 font-sans">
 
-    <div className="rounded-[10px] border border-[#EF9A9A] bg-[#FFEBEE] p-4 text-sm md:text-base animate-fade-in flex items-center gap-3">
-
-      <span className="text-xl">✨</span>
-
-      <p className="font-medium">Live Operational Insight: <span className="font-bold text-[#B71C1C]">Chicken Dum Biryani</span> is moving 15% faster than usual. Average prep time is 12 mins.</p>
-
-    </div>
-
-
-
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
 
       {[
 
-        { label: "Today's Revenue", value: `₹${revenue.toLocaleString()}`, sub: "↑12%", color: "text-[#2E7D32]" },
+        { label: "Total Sales", value: `₹${(totalSales ?? 0).toLocaleString()}`, sub: "With GST, after discount", color: "text-[#2E7D32]" },
 
-        { label: "Total Orders", value: liveOrdersCount || ordersCount, sub: "live", color: "text-[#1A1A1A]" },
+        { label: "Net Sales", value: `₹${(netSales ?? 0).toLocaleString()}`, sub: "Excl. GST, after discount", color: "text-[#1565C0]" },
+
+        { label: "Discount", value: `₹${(totalDiscount ?? 0).toLocaleString()}`, sub: `${ordersCount || 0} txns`, color: "text-[#C62828]" },
 
         { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
-
-        { label: "Staff Present", value: `${staffPresent}/${staffTotal}`, sub: "today", color: "text-[#1A1A1A]" },
 
       ].map((x) => (
 

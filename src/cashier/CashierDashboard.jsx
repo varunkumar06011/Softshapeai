@@ -341,7 +341,12 @@ const CashierDashboard = ({ onLogout }) => {
         return r.json();
       })
       .then(data => {
-        const sections = Array.isArray(data) ? data : data.sections || [];
+        const rawSections = Array.isArray(data) ? data : data.sections || [];
+        // Enrich sections with sectionTag derived from their tables (Section model has no sectionTag field)
+        const sections = rawSections.map(s => ({
+          ...s,
+          sectionTag: s.sectionTag || s.tables?.[0]?.sectionTag || null,
+        }));
         setFetchedSections(sections);
         try {
           localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
@@ -837,6 +842,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnDateFilter, setTxnDateFilter] = useState('today'); // 'today' | 'yesterday' | 'month' | 'all'
   const [txnCustomDate, setTxnCustomDate] = useState('');
   const txnDateFilterRef = useRef('today'); // Keeps latest filter accessible inside closures without re-subscribing
+  const txnCustomDateRef = useRef('');
   const lastReconnectRefetchRef = useRef(0); // Debounce reconnect-triggered refetches
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
@@ -1465,10 +1471,12 @@ const CashierDashboard = ({ onLogout }) => {
           restaurantId: activeRestaurantId,
           _optimistic: true,
         };
-        setPastTransactions(prev => {
-          if (prev.some(t => t.id === mappedTxn.id)) return prev;
-          return [mappedTxn, ...prev];
-        });
+        if (isTxnInDateFilter(socketTxn.paidAt)) {
+          setPastTransactions(prev => {
+            if (prev.some(t => t.id === mappedTxn.id)) return prev;
+            return [mappedTxn, ...prev];
+          });
+        }
       }
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
@@ -1619,10 +1627,26 @@ const CashierDashboard = ({ onLogout }) => {
     return () => clearInterval(interval);
   }, [activeOutlet, refetchBarTables, refetchRestaurantTables, socket?.connected]);
 
-  // Keep ref in sync so socket handlers and payment callbacks can read latest filter
+  // Keep refs in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
     txnDateFilterRef.current = txnDateFilter;
-  }, [txnDateFilter]);
+    txnCustomDateRef.current = txnCustomDate;
+  }, [txnDateFilter, txnCustomDate]);
+
+  // Check if a transaction's paidAt falls within the current date filter
+  // Prevents out-of-date transactions from being injected by socket/settlement handlers
+  const isTxnInDateFilter = useCallback((paidAt) => {
+    const filter = txnDateFilterRef.current;
+    if (filter === 'all') return true;
+    const d = new Date(paidAt);
+    if (isNaN(d.getTime())) return true; // keep if we can't parse the date
+    const txnDateStr = getKolkataDateString(d);
+    if (filter === 'today') return txnDateStr === getKolkataDateString();
+    if (filter === 'yesterday') return txnDateStr === shiftKolkataDate(new Date(), -1);
+    if (filter === 'month') return txnDateStr.slice(0, 7) === getKolkataMonthString();
+    if (filter === 'custom') return txnDateStr === txnCustomDateRef.current;
+    return true;
+  }, []);
 
   // ── Fetch fresh order data from backend ───
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
@@ -1937,12 +1961,22 @@ const CashierDashboard = ({ onLogout }) => {
     );
   }, [activeTableOrders]);
 
-  // Revenue (Gross) = sum of subtotal (pre-discount, pre-tax)
-  // Net = Revenue - Discount = subtotal - discountAmount
+  // Net total for a transaction (excl. GST, after discount): use subtotal - discount if valid,
+  // otherwise back out tax from grandTotal (grandTotal is already post-discount, post-tax)
+  const netTotal = (t) => {
+    const sub = Number(t.subtotal);
+    const disc = Number(t.discountAmount ?? 0);
+    if (sub > 0) return sub - disc;
+    // Fallback: grandTotal is post-discount, post-tax. Just remove tax.
+    return Number(t.grandTotal ?? t.amount ?? 0) - Number(t.cgst ?? 0) - Number(t.sgst ?? 0);
+  };
+
+  // Total Sales = sum of grandTotal (with GST, after discount — the final bill amount)
+  // Net Sales = sum of (subtotal - discount) (excl. GST, after discount)
   // These use filteredTransactions so they respect the active date/source/method filters
-  const dashboardRevenue = useMemo(() => {
+  const dashboardTotalSales = useMemo(() => {
     return filteredTransactions
-      .reduce((sum, txn) => sum + Number(txn.subtotal ?? txn.grandTotal ?? txn.amount ?? 0), 0);
+      .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [filteredTransactions]);
 
   const dashboardDiscount = useMemo(() => {
@@ -1950,9 +1984,9 @@ const CashierDashboard = ({ onLogout }) => {
       .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
   }, [filteredTransactions]);
 
-  const dashboardNet = useMemo(() => {
-    return dashboardRevenue - dashboardDiscount;
-  }, [dashboardRevenue, dashboardDiscount]);
+  const dashboardNetSales = useMemo(() => {
+    return filteredTransactions.reduce((sum, txn) => sum + netTotal(txn), 0);
+  }, [filteredTransactions]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -2959,10 +2993,12 @@ const CashierDashboard = ({ onLogout }) => {
               source: sectionTagToSourceRef.current[txn.sectionTag] || activeOutlet,
               restaurantId: activeRestaurantId,
             };
-            setPastTransactions(prev => {
-              if (prev.some(t => t.id === mappedTxn.id)) return prev;
-              return [mappedTxn, ...prev];
-            });
+            if (isTxnInDateFilter(txn.paidAt)) {
+              setPastTransactions(prev => {
+                if (prev.some(t => t.id === mappedTxn.id)) return prev;
+                return [mappedTxn, ...prev];
+              });
+            }
           }
 
           // Mark as settled locally to prevent retries
@@ -2974,6 +3010,9 @@ const CashierDashboard = ({ onLogout }) => {
             syncPauseUntilRef.current = Date.now() + 2000;
           }
         }
+
+        // Notify ItemAnalytics and other listeners to refresh
+        window.dispatchEvent(new Event('softshape_order_updated'));
 
         // Immediate refresh (silent to avoid loading flicker)
         loadTransactions(txnDateFilterRef.current, null, { silent: true });
@@ -3960,9 +3999,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Revenue", value: `₹${Number(dashboardRevenue).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Discount", value: `₹${Number(dashboardDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
-    { label: "Net", value: `₹${Number(dashboardNet).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Net Sales", value: `₹${Number(dashboardNetSales).toFixed(0)}`, change: "Excl. GST, after discount", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
@@ -4564,7 +4603,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.subtotal ?? t.grandTotal ?? 0), 0).toFixed(0)}
+                              ₹{filteredTransactions.reduce((sum, t) => sum + preTaxTotal(t), 0).toFixed(0)}
                             </span>
                             <span className="text-[10px] font-bold text-red-100">
                               {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(0)}
@@ -4581,7 +4620,7 @@ const CashierDashboard = ({ onLogout }) => {
                           ].map(({ label, method, color, bg, border }) => {
                             const total = filteredTransactions
                               .filter(t => t.method === method)
-                              .reduce((sum, t) => sum + Number(t.subtotal ?? t.grandTotal ?? 0), 0);
+                              .reduce((sum, t) => sum + preTaxTotal(t), 0);
                             const count = filteredTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
@@ -4591,34 +4630,6 @@ const CashierDashboard = ({ onLogout }) => {
                               </div>
                             );
                           })}
-                        </div>
-                        {/* Source filter */}
-                        <div className="flex items-center gap-1.5 px-3 pt-3 pb-0 flex-wrap">
-                          {[
-                            { key: 'all', label: 'All' },
-                            ...fetchedSections
-                              .filter(section => {
-                                const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
-                                if (activeOutlet === 'both') return true;
-                                return sectionOutlet === activeOutlet;
-                              })
-                              .map(section => ({
-                                key: sectionTagToSource[section.sectionTag] || section.name,
-                                label: section.name,
-                              })),
-                          ].map(f => (
-                            <button
-                              key={f.key}
-                              onClick={() => setTxnSourceFilter(f.key)}
-                              disabled={activeVenueFilter !== 'all'}
-                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key && activeVenueFilter === 'all'
-                                ? 'bg-[#E53935] text-white shadow-sm'
-                                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                                } ${activeVenueFilter !== 'all' ? 'opacity-40 cursor-not-allowed' : ''}`}
-                            >
-                              {f.label}
-                            </button>
-                          ))}
                         </div>
                         {/* Date filter tabs */}
                         <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
@@ -4642,7 +4653,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <input
                             type="date"
                             value={txnCustomDate}
-                            max={new Date().toISOString().slice(0, 10)}
+                            max={getKolkataDateString()}
                             onChange={e => {
                               const val = e.target.value;
                               setTxnCustomDate(val);

@@ -237,7 +237,8 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
     if (!data) return;
     const headers = [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }];
     const rows = [
-      { metric: 'Total Revenue', value: data.summary.totalRevenue },
+      { metric: 'Total Sales', value: data.summary.totalSales ?? data.summary.totalSubtotal },
+      { metric: 'Net Sales', value: data.summary.netSales },
       { metric: 'Total Transactions', value: data.summary.totalTransactions },
       { metric: 'Average Bill Value', value: data.summary.averageBillValue },
       { metric: 'Total Discount', value: data.summary.totalDiscount },
@@ -249,7 +250,8 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
     downloadExcel({ title: 'Executive Summary', dateRange: dateRangeText, filename: 'Executive-Summary',
       sheets: [{ name: 'Summary', headers: [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }],
         rows: [
-          { metric: 'Total Revenue', value: data.summary.totalRevenue },
+          { metric: 'Total Sales', value: data.summary.totalSales ?? data.summary.totalSubtotal },
+          { metric: 'Net Sales', value: data.summary.netSales },
           { metric: 'Total Transactions', value: data.summary.totalTransactions },
           { metric: 'Average Bill Value', value: data.summary.averageBillValue },
           { metric: 'Total Discount', value: data.summary.totalDiscount },
@@ -265,7 +267,7 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
 
   const trend = data.byDay.map((d) => ({ time: d.date, rev: d.revenue }));
   const methods = data.byMethod ? Object.entries(data.byMethod).map(([name, v]) => ({
-    name, value: Math.round((v.amount / (data.summary.totalRevenue || 1)) * 100),
+    name, value: Math.round((v.amount / (data.summary.totalSales ?? data.summary.totalSubtotal ?? 1)) * 100),
   })) : [];
 
   return (
@@ -274,9 +276,9 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
         <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
       </ReportHeader>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Revenue" value={<Money value={data.summary.totalRevenue} />} sub="Dynamic Sales Summary" icon={DollarSign} color="text-green-600" />
-        <StatCard label="Transactions" value={data.summary.totalTransactions} sub="Real-time Order Volume" icon={Package} color="text-blue-600" />
-        <StatCard label="Avg Bill Value" value={<Money value={data.summary.averageBillValue} />} sub="Revenue / Total Orders" icon={TrendingUp} color="text-amber-600" />
+        <StatCard label="Total Sales" value={<Money value={data.summary.totalSales ?? data.summary.totalSubtotal} />} sub="With GST, after discount" icon={DollarSign} color="text-green-600" />
+        <StatCard label="Net Sales" value={<Money value={data.summary.netSales} />} sub="Excl. GST, after discount" icon={TrendingUp} color="text-blue-600" />
+        <StatCard label="Transactions" value={data.summary.totalTransactions} sub="Real-time Order Volume" icon={Package} color="text-amber-600" />
         <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts in this period" icon={Star} color="text-purple-600" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -353,20 +355,20 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
     if (!data) return;
     const headers = [
       { key: 'outlet', label: 'Outlet' }, { key: 'transactions', label: 'Transactions' },
-      { key: 'revenue', label: 'Revenue', format: 'money' }, { key: 'avgBill', label: 'Avg Bill', format: 'money' },
+      { key: 'revenue', label: 'Total Sales', format: 'money' }, { key: 'avgBill', label: 'Avg Bill', format: 'money' },
     ];
     const rows = Object.entries(data.byOutlet || {}).map(([outlet, v]) => ({
       outlet: outlet.charAt(0).toUpperCase() + outlet.slice(1), transactions: v.count,
       revenue: v.amount, avgBill: v.count > 0 ? Math.round(v.amount / v.count) : 0,
     }));
-    rows.push({ outlet: 'Total', transactions: data.summary.totalTransactions, revenue: data.summary.totalRevenue, avgBill: data.summary.averageBillValue });
+    rows.push({ outlet: 'Total', transactions: data.summary.totalTransactions, revenue: data.summary.totalSales ?? data.summary.totalSubtotal, avgBill: data.summary.averageBillValue });
     downloadPDF({ title: 'Daily Sales Summary', dateRange: dateRangeText, headers, rows, filename: 'Daily-Sales' });
   };
   const doExcel = () => {
     if (!data) return;
     const outletHeaders = [
       { key: 'outlet', label: 'Outlet' }, { key: 'transactions', label: 'Transactions' },
-      { key: 'revenue', label: 'Revenue', format: 'money' }, { key: 'avgBill', label: 'Avg Bill', format: 'money' },
+      { key: 'revenue', label: 'Total Sales', format: 'money' }, { key: 'avgBill', label: 'Avg Bill', format: 'money' },
     ];
     const outletRows = Object.entries(data.byOutlet || {}).map(([outlet, v]) => ({
       outlet: outlet.charAt(0).toUpperCase() + outlet.slice(1), transactions: v.count,
@@ -398,9 +400,9 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
         <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
       </ReportHeader>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Revenue" value={<Money value={data.summary.totalRevenue} />} sub="Grand total" icon={DollarSign} color="text-green-600" />
-        <StatCard label="Transactions" value={data.summary.totalTransactions} sub="Bills settled" icon={Package} color="text-blue-600" />
-        <StatCard label="Avg Bill Value" value={<Money value={data.summary.averageBillValue} />} sub="Per transaction" icon={TrendingUp} color="text-amber-600" />
+        <StatCard label="Total Sales" value={<Money value={data.summary.totalSales ?? data.summary.totalSubtotal} />} sub="With GST, after discount" icon={DollarSign} color="text-green-600" />
+        <StatCard label="Net Sales" value={<Money value={data.summary.netSales} />} sub="Excl. GST, after discount" icon={TrendingUp} color="text-blue-600" />
+        <StatCard label="Transactions" value={data.summary.totalTransactions} sub="Bills settled" icon={Package} color="text-amber-600" />
         <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts given" icon={Star} color="text-purple-600" />
       </div>
       <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
@@ -411,7 +413,7 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
               <tr>
                 <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Outlet</th>
                 <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Transactions</th>
-                <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
+                <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Total Sales</th>
                 <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Avg Bill</th>
               </tr>
             </thead>
