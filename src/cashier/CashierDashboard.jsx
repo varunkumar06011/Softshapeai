@@ -388,6 +388,17 @@ const CashierDashboard = ({ onLogout }) => {
     return set;
   }, [fetchedSections, sectionTagToSource]);
 
+  // Refs to keep section mappings current inside loadTransactions (stale closure fix)
+  const sectionTagToSourceRef = useRef(sectionTagToSource);
+  const fetchedSectionsRef = useRef(fetchedSections);
+  const barSourcesRef = useRef(barSources);
+  const restaurantSourcesRef = useRef(restaurantSources);
+
+  useEffect(() => { sectionTagToSourceRef.current = sectionTagToSource; }, [sectionTagToSource]);
+  useEffect(() => { fetchedSectionsRef.current = fetchedSections; }, [fetchedSections]);
+  useEffect(() => { barSourcesRef.current = barSources; }, [barSources]);
+  useEffect(() => { restaurantSourcesRef.current = restaurantSources; }, [restaurantSources]);
+
   // Set initial tableSubCategory from first fetched section once loaded
   useEffect(() => {
     if (!tableSubCategory && fetchedSections.length > 0) {
@@ -911,7 +922,7 @@ const CashierDashboard = ({ onLogout }) => {
           : subtotal && discountAmount > 0
             ? Math.round((discountAmount / subtotal) * 10000) / 100
             : 0;
-        const source = sectionTagToSource[txn.sectionTag]
+        const source = sectionTagToSourceRef.current[txn.sectionTag]
           || (txn.sectionTag && txn.sectionTag.startsWith('venue-bar') ? 'bar'
             : txn.sectionTag && txn.sectionTag.startsWith('venue-restaurant') ? 'restaurant'
             : txn.sectionTag || activeOutlet);
@@ -951,7 +962,7 @@ const CashierDashboard = ({ onLogout }) => {
             const num = txn.tableNumber;
             if (!num) return '—';
             // Look up section from fetchedSections to determine venue type
-            const section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
+            const section = fetchedSectionsRef.current.find(s => s.sectionTag === txn.sectionTag);
             const venueType = section?.venue?.venueType;
             if (isBarLikeVenue(venueType)) return `B${num}`;
             return `T${num}`;
@@ -963,8 +974,8 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Filter by active outlet: bar sees bar sources, restaurant sees restaurant sources, both sees all
       const isolated = mapped.filter(txn => {
-        if (activeOutlet === 'bar') return barSources.has(txn.source);
-        if (activeOutlet === 'restaurant') return restaurantSources.has(txn.source);
+        if (activeOutlet === 'bar') return barSourcesRef.current.has(txn.source);
+        if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(txn.source);
         return true; // 'both' sees everything
       });
 
@@ -1450,7 +1461,7 @@ const CashierDashboard = ({ onLogout }) => {
           method: socketTxn.method || 'UPI',
           tableNumber: socketTxn.tableNumber || null,
           tableDisplayName: socketTxn.tableLabel || (socketTxn.tableNumber ? `T${socketTxn.tableNumber}` : '—'),
-          source: sectionTagToSource[socketTxn.sectionTag] || activeOutlet,
+          source: sectionTagToSourceRef.current[socketTxn.sectionTag] || activeOutlet,
           restaurantId: activeRestaurantId,
           _optimistic: true,
         };
@@ -2945,7 +2956,7 @@ const CashierDashboard = ({ onLogout }) => {
               method: txn.method || method,
               tableNumber: txn.tableNumber || null,
               tableDisplayName: txn.tableLabel || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
-              source: sectionTagToSource[txn.sectionTag] || activeOutlet,
+              source: sectionTagToSourceRef.current[txn.sectionTag] || activeOutlet,
               restaurantId: activeRestaurantId,
             };
             setPastTransactions(prev => {
