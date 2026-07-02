@@ -90,6 +90,13 @@ import { hapticSuccess } from '../shared/hooks/useHaptics';
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 
+// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+function isBarLikeVenue(venueType) {
+  if (!venueType) return false;
+  return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());
+}
+
 
 
 const TABLE_STATUS = {
@@ -1756,7 +1763,7 @@ export default function CaptainApp({ onLogout }) {
   // Reset tableSubCategory when switching outlets — use first fetched section
   useEffect(() => {
     const matchingSection = fetchedSections.find(s => {
-      const sectionOutlet = s.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      const sectionOutlet = isBarLikeVenue(s.venue?.venueType) ? 'bar' : 'restaurant';
       if (activeOutlet === 'both') return true;
       return sectionOutlet === activeOutlet;
     }) || fetchedSections[0];
@@ -3898,7 +3905,7 @@ export default function CaptainApp({ onLogout }) {
                   {fetchedSections.length > 0
                     ? fetchedSections
                         .filter(section => {
-                          const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                          const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
                           if (activeOutlet === 'both') return true;
                           return sectionOutlet === activeOutlet;
                         })

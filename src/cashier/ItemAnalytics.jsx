@@ -26,6 +26,13 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 
+// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+function isBarLikeVenue(venueType) {
+  if (!venueType) return false;
+  return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());
+}
+
 // Calculate liquor volume poured based on item name and quantity
 function getLiquorMlPoured(itemName, quantity) {
   if (itemName.endsWith('Full Bottle')) return FULL_BOTTLE_ML * quantity;
@@ -89,7 +96,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
 
   const outletSections = useMemo(() => {
     return sections.filter(section => {
-      const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
       return outlet === 'both' || sectionOutlet === outlet;
     });
   }, [sections, outlet]);

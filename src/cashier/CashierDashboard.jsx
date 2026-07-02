@@ -127,6 +127,13 @@ const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
 // Source sets and sectionTag→source mapping are now built dynamically from fetchedSections
 // (see sectionTagToSource, barSources, restaurantSources memos inside the component)
 
+// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+function isBarLikeVenue(venueType) {
+  if (!venueType) return false;
+  return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());
+}
+
 const isSubsequence = (q, text) => {
   let i = 0;
   for (let j = 0; j < text.length; j++) {
@@ -352,7 +359,7 @@ const CashierDashboard = ({ onLogout }) => {
   const barSources = useMemo(() => {
     const set = new Set();
     for (const section of fetchedSections) {
-      if (section.venue?.venueType === 'BAR') {
+      if (isBarLikeVenue(section.venue?.venueType)) {
         set.add(sectionTagToSource[section.sectionTag] || section.name);
       }
     }
@@ -362,7 +369,7 @@ const CashierDashboard = ({ onLogout }) => {
   const restaurantSources = useMemo(() => {
     const set = new Set();
     for (const section of fetchedSections) {
-      if (section.venue?.venueType !== 'BAR') {
+      if (!isBarLikeVenue(section.venue?.venueType)) {
         set.add(sectionTagToSource[section.sectionTag] || section.name);
       }
     }
@@ -373,7 +380,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     if (!tableSubCategory && fetchedSections.length > 0) {
       const firstSection = fetchedSections.find(s => {
-        const sectionOutlet = s.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+        const sectionOutlet = isBarLikeVenue(s.venue?.venueType) ? 'bar' : 'restaurant';
         if (activeOutlet === 'both') return true;
         return sectionOutlet === activeOutlet;
       }) || fetchedSections[0];
@@ -934,7 +941,7 @@ const CashierDashboard = ({ onLogout }) => {
             // Look up section from fetchedSections to determine venue type
             const section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
             const venueType = section?.venue?.venueType;
-            if (venueType === 'BAR') return `B${num}`;
+            if (isBarLikeVenue(venueType)) return `B${num}`;
             return `T${num}`;
           })(),
           source,
@@ -999,7 +1006,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Venue filter sections — sections filtered by current outlet, for venue filter pills
   const venueFilterSections = useMemo(() => {
     return fetchedSections.filter(section => {
-      const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
       if (activeOutlet === 'both') return true;
       return sectionOutlet === activeOutlet;
     });
@@ -4271,7 +4278,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {fetchedSections.length > 0
                             ? fetchedSections
                                 .filter(section => {
-                                  const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                                  const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
                                   if (activeOutlet === 'both') return true;
                                   return sectionOutlet === activeOutlet;
                                 })
@@ -4471,7 +4478,7 @@ const CashierDashboard = ({ onLogout }) => {
                             if (section.venue?.venueType === 'BAR' && section.name === firstBarIdentifier && firstBarIdentifier) return false;
                             // Skip KOT-off sections — they show walk-in tables instead of regular tables
                             if (section.venue?.kotEnabled === false) return false;
-                            const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                            const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
                             if (activeOutlet === 'both') return true;
                             return sectionOutlet === activeOutlet;
                           })
@@ -4568,7 +4575,7 @@ const CashierDashboard = ({ onLogout }) => {
                             { key: 'all', label: 'All' },
                             ...fetchedSections
                               .filter(section => {
-                                const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                                const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
                                 if (activeOutlet === 'both') return true;
                                 return sectionOutlet === activeOutlet;
                               })
@@ -5806,7 +5813,7 @@ const CashierDashboard = ({ onLogout }) => {
                         const isParcelSection = tableSection
                           ? tableSection.venue?.kotEnabled === false
                           : (selectedTable?.section?.venue?.kotEnabled === false);
-                        const isRestaurantSection = activeOutlet === 'restaurant' || (tableSection && tableSection.venue?.venueType !== 'BAR');
+                        const isRestaurantSection = activeOutlet === 'restaurant' || (tableSection && !isBarLikeVenue(tableSection.venue?.venueType));
                         const isFamilyRestaurant = isRestaurantSection && !isParcelSection;
 
                         return isRestaurantSection ? (
