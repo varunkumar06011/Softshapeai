@@ -1969,9 +1969,9 @@ const CashierDashboard = ({ onLogout }) => {
         if (billFinderBillNo.trim()) {
           const search = billFinderBillNo.trim().toLowerCase();
           matches = matches && (
-            String(txn.billNumber || '').toLowerCase().includes(search) ||
-            String(txn.displayId || '').toLowerCase().includes(search) ||
-            String(txn.txnNumber || '').toLowerCase().includes(search)
+            String(txn.billNumber || '').toLowerCase() === search ||
+            String(txn.displayId || '').toLowerCase() === search ||
+            String(txn.txnNumber || '').toLowerCase() === search
           );
         }
         if (billFinderTableNo.trim()) {
@@ -3934,7 +3934,7 @@ const CashierDashboard = ({ onLogout }) => {
   const stats = [
     { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
-    { label: "Net", value: `₹${Number(todaysSales - todaysDiscount).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Net", value: `₹${Number(todaysSales).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 

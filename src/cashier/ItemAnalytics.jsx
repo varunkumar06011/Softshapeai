@@ -349,41 +349,6 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [] }) 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-              <Package size={20} className="text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Unique Items</p>
-              <p className="text-2xl font-black text-gray-900">{summary.totalItems}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center">
-              <TrendingUp size={20} className="text-orange-600" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Total Quantity</p>
-              <p className="text-2xl font-black text-gray-900">{summary.totalQuantity}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-              <DollarSign size={20} className="text-green-600" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Total Revenue</p>
-              <p className="text-2xl font-black text-gray-900">Rs{summary.totalRevenue.toFixed(0)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
         <div className="flex items-center gap-3">
