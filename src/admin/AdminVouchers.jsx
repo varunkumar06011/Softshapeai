@@ -12,16 +12,23 @@ import {
 import { apiFetch } from '../services/apiConfig';
 
 export default function AdminVouchers() {
+  const today = new Date().toISOString().split('T')[0];
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ date: '', status: '', paidToType: '' });
+  const [filters, setFilters] = useState({
+    startDate: today,
+    endDate: today,
+    status: '',
+    paidToType: '',
+  });
   const [actionLoading, setActionLoading] = useState({});
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (filters.date) params.set('date', filters.date);
+      params.set('startDate', filters.startDate || today);
+      params.set('endDate', filters.endDate || today);
       if (filters.status) params.set('status', filters.status);
       if (filters.paidToType) params.set('paidToType', filters.paidToType);
       params.set('limit', '500');
@@ -32,7 +39,7 @@ export default function AdminVouchers() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, today]);
 
   useEffect(() => {
     loadVouchers();
@@ -67,7 +74,7 @@ export default function AdminVouchers() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vouchers_${filters.date || 'all'}.csv`;
+    a.download = `vouchers_${filters.startDate || 'all'}_to_${filters.endDate || 'all'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -112,12 +119,23 @@ export default function AdminVouchers() {
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3 flex-wrap">
         <Filter size={16} className="text-gray-400" />
-        <input
-          type="date"
-          value={filters.date}
-          onChange={(e) => setFilters((f) => ({ ...f, date: e.target.value }))}
-          className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
-        />
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-gray-500">From</span>
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
+            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+          />
+          <span className="text-xs font-bold text-gray-500">to</span>
+          <input
+            type="date"
+            value={filters.endDate}
+            min={filters.startDate}
+            onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
+            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+          />
+        </div>
         <select
           value={filters.status}
           onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
@@ -138,9 +156,9 @@ export default function AdminVouchers() {
           <option value="MAINTENANCE">Maintenance</option>
           <option value="OTHER">Other</option>
         </select>
-        {(filters.date || filters.status || filters.paidToType) && (
+        {(filters.startDate !== today || filters.endDate !== today || filters.status || filters.paidToType) && (
           <button
-            onClick={() => setFilters({ date: '', status: '', paidToType: '' })}
+            onClick={() => setFilters({ startDate: today, endDate: today, status: '', paidToType: '' })}
             className="text-xs font-bold text-gray-400 hover:text-gray-700"
           >
             Clear

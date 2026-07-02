@@ -180,7 +180,7 @@ import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
 import { fetchTransactions } from '../services/orderApi';
 
-import { getTodayAttendanceSummary, getAttendance, markAttendance, markAttendanceBulk, checkIn, checkOut } from '../services/attendanceService';
+import { getTodayAttendanceSummary, getAttendance, getAttendanceRange, markAttendance, markAttendanceBulk, checkIn, checkOut } from '../services/attendanceService';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
@@ -17037,7 +17037,11 @@ export function StaffManagement() {
 
 export function Attendance() {
 
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const today = new Date().toISOString().split("T")[0];
+  const [viewMode, setViewMode] = useState('day'); // 'day' | 'range'
+  const [date, setDate] = useState(today);
+  const [rangeStart, setRangeStart] = useState(today);
+  const [rangeEnd, setRangeEnd] = useState(today);
 
   const [employees, setEmployees] = useState([]);
 
@@ -17060,13 +17064,11 @@ export function Attendance() {
     setError('');
 
     try {
-
       const [empData, attData] = await Promise.all([
-
         apiFetch('/api/payroll/employees'),
-
-        getAttendance(date),
-
+        viewMode === 'range'
+          ? getAttendanceRange(rangeStart, rangeEnd)
+          : getAttendance(date),
       ]);
 
       setEmployees(empData || []);
@@ -17083,7 +17085,7 @@ export function Attendance() {
 
     }
 
-  }, [date]);
+  }, [date, rangeStart, rangeEnd, viewMode]);
 
 
 
@@ -17287,21 +17289,56 @@ export function Attendance() {
 
           <h3 className="font-semibold">Staff Attendance</h3>
 
-          <p className="text-[12px] text-gray-500">Present today: {presentCount}/{totalCount}</p>
+          <p className="text-[12px] text-gray-500">
+            {viewMode === 'range'
+              ? `Showing ${attendance.length} record(s) from ${rangeStart} to ${rangeEnd}`
+              : `Present today: ${presentCount}/${totalCount}`}
+          </p>
 
         </div>
 
-        <input
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('day')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold ${viewMode === 'day' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+            >
+              Day
+            </button>
+            <button
+              onClick={() => setViewMode('range')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold ${viewMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+            >
+              Range
+            </button>
+          </div>
 
-          type="date"
-
-          value={date}
-
-          onChange={(e) => setDate(e.target.value)}
-
-          className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-
-        />
+          {viewMode === 'day' ? (
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+            />
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={rangeStart}
+                onChange={(e) => setRangeStart(e.target.value)}
+                className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+              />
+              <span className="text-xs font-bold text-gray-500">to</span>
+              <input
+                type="date"
+                value={rangeEnd}
+                min={rangeStart}
+                onChange={(e) => setRangeEnd(e.target.value)}
+                className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+              />
+            </div>
+          )}
+        </div>
 
       </div>
 
@@ -17329,7 +17366,55 @@ export function Attendance() {
 
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
 
-        <table className="w-full text-[12px]">
+        {viewMode === 'range' ? (
+          <table className="w-full text-[12px]">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-2 text-left font-bold text-gray-500">Date</th>
+                <th className="px-4 py-2 text-left font-bold text-gray-500">Employee</th>
+                <th className="px-4 py-2 text-left font-bold text-gray-500">Role</th>
+                <th className="px-4 py-2 text-left font-bold text-gray-500">Status</th>
+                <th className="px-4 py-2 text-left font-bold text-gray-500">Check In</th>
+                <th className="px-4 py-2 text-left font-bold text-gray-500">Check Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendance.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
+                    No attendance records found for this range.
+                  </td>
+                </tr>
+              ) : (
+                attendance.map((record) => (
+                  <tr key={record.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-3 font-bold text-gray-900">{record.date}</td>
+                    <td className="px-4 py-3 font-bold text-gray-900">{record.employee?.name || '-'}</td>
+                    <td className="px-4 py-3 text-gray-600">{record.employee?.role || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                        record.status === 'PRESENT' ? 'bg-green-100 text-green-700' :
+                        record.status === 'HALF_DAY' ? 'bg-yellow-100 text-yellow-700' :
+                        record.status === 'ABSENT' ? 'bg-red-100 text-red-700' :
+                        record.status === 'LEAVE' ? 'bg-gray-100 text-gray-700' :
+                        'bg-blue-50 text-blue-700'
+                      }`}>
+                        {record.status === 'NOT_MARKED' ? 'Not Marked' : record.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full text-[12px]">
 
           <thead className="bg-gray-50">
 
@@ -17471,6 +17556,7 @@ export function Attendance() {
           </tbody>
 
         </table>
+        )}
 
       </div>
 

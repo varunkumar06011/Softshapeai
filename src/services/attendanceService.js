@@ -12,6 +12,13 @@ export async function getAttendance(date) {
   return apiFetch(`/api/attendance${query}`);
 }
 
+export async function getAttendanceRange(startDate, endDate) {
+  const params = new URLSearchParams();
+  if (startDate) params.set('startDate', startDate);
+  if (endDate) params.set('endDate', endDate);
+  return apiFetch(`/api/attendance?${params.toString()}`);
+}
+
 export async function markAttendance({ employeeId, date, status, notes }) {
   return apiFetch('/api/attendance', {
     method: 'POST',

@@ -20,7 +20,7 @@
 // Uses Framer Motion for page transitions and Sentry for error tracking.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import AnimatedPage from "./shared/components/AnimatedPage";
@@ -35,7 +35,7 @@ import OnboardingWizard from "./onboarding/OnboardingWizard";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
-import TableQRCodes from "./admin/TableQRCodes";
+const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { SyncStatusProvider } from "./context/SyncStatusContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
@@ -278,7 +278,7 @@ function AnimatedRoutes() {
   const location = useLocation();
   return (
     <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
+      <Routes location={location} key={location.pathname.split('/').slice(0, 3).join('/')}>
         <Route path="/" element={<AnimatedPage><PortalSelectionWrapper /></AnimatedPage>} />
         <Route path="/onboarding" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
         <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
@@ -330,7 +330,7 @@ function AdminDashboardWrapper() {
 function TableQRCodesWrapper() {
   const { user, token } = useAuth();
   if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
-  return <TableQRCodes />;
+  return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><TableQRCodes /></Suspense>;
 }
 
 function CashierLoginWrapper() {
