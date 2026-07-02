@@ -13,9 +13,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Store, MapPin, Users, Hash, ArrowRight, Loader2, CheckCircle, XCircle, Building2, Calendar, Plus, X, Copy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
+import { authService } from '../services/authService';
+import { reconnectSocket } from '../hooks/useSocket';
 
 // Human-readable labels for restaurant types
 const RESTAURANT_TYPE_LABELS = {
@@ -35,6 +38,7 @@ const VENUE_ICONS = {
 };
 
 const OutletsOverview = () => {
+  const navigate = useNavigate();
   const { restaurant, setAuth } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,14 +71,10 @@ const OutletsOverview = () => {
   const handleSwitch = async (outletId) => {
     setSwitching(outletId);
     try {
-      const res = await apiFetch('/api/auth/switch-outlet', {
-        method: 'POST',
-        body: JSON.stringify({ outletId }),
-      });
-      if (res.token) {
-        setAuth({ token: res.token, user: res.user, restaurant: res.restaurant });
-        window.location.reload();
-      }
+      const { token, user, restaurant: newRestaurant } = await authService.switchOutlet(outletId);
+      setAuth({ token, user, restaurant: newRestaurant });
+      reconnectSocket(token);
+      navigate('/admin/dashboard');
     } catch (err) {
       setError(err.message || 'Failed to switch outlet');
     } finally {
