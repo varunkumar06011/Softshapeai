@@ -5816,7 +5816,7 @@ export function KitchenInventory() {
         return;
       }
 
-      setNewItem({ name: '', unit: 'kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
+      setNewItem({ name: '', unit: 'Kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
 
       setShowAddModal(false);
 
