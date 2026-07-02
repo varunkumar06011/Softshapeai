@@ -57,6 +57,7 @@ import VoucherModule from './VoucherModule';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { isBeerItem, getItemCategory } from '../utils/itemHelpers';
+import LiquorQtyPicker from '../shared/components/LiquorQtyPicker';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -484,6 +485,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
+  const [liquorQtyItem, setLiquorQtyItem] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
@@ -928,7 +931,9 @@ const CashierDashboard = ({ onLogout }) => {
           : subtotal && discountAmount > 0
             ? Math.round((discountAmount / subtotal) * 10000) / 100
             : 0;
+        const sectionById = fetchedSectionsRef.current.find(s => s.id === txn.sectionId);
         const source = sectionTagToSourceRef.current[txn.sectionTag]
+          || (sectionById && (sectionTagToSourceRef.current[sectionById.sectionTag] || sectionById.name))
           || (txn.sectionTag && txn.sectionTag.startsWith('venue-bar') ? 'bar'
             : txn.sectionTag && txn.sectionTag.startsWith('venue-restaurant') ? 'restaurant'
             : txn.sectionTag || activeOutlet);
@@ -960,7 +965,7 @@ const CashierDashboard = ({ onLogout }) => {
           // Prefer backend captainName, then captainId, then fallback
           captainName: txn.captainName
             || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
-          method: txn.method || 'UPI',
+          method: txn.method || 'OTHER',
           tableNumber: txn.tableNumber || null,
           // Derive display label: B=bar, C=conference, R=rooms, PDR=pdr, P=GoBox, BP=bar-parcel, F=family, T=restaurant
           tableDisplayName: (() => {
@@ -1464,7 +1469,7 @@ const CashierDashboard = ({ onLogout }) => {
           itemsList: socketTxn.items || [],
           captainId: socketTxn.captainId || 'CASHIER',
           captainName: socketTxn.captainName || (socketTxn.captainId && socketTxn.captainId !== 'CASHIER' ? socketTxn.captainId : 'Head Cashier'),
-          method: socketTxn.method || 'UPI',
+          method: socketTxn.method || 'OTHER',
           tableNumber: socketTxn.tableNumber || null,
           tableDisplayName: socketTxn.tableLabel || (socketTxn.tableNumber ? `T${socketTxn.tableNumber}` : '—'),
           source: sectionTagToSourceRef.current[socketTxn.sectionTag] || activeOutlet,
@@ -3009,6 +3014,90 @@ const CashierDashboard = ({ onLogout }) => {
             setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
             syncPauseUntilRef.current = Date.now() + 2000;
           }
+        } else if (isWalkinMode) {
+          // Walk-in settlement: no orderId exists, create transaction directly
+          const walkinItems = cart
+            .filter(i => Number(i.quantity ?? i.q ?? 1) > 0)
+            .map(i => ({
+              name: i.name ?? i.n,
+              quantity: Number(i.quantity ?? i.q ?? 1),
+              price: Number(i.price ?? i.p ?? 0),
+              menuType: i.menuType || 'FOOD',
+            }));
+
+          const walkinSectionTag = (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel';
+          const walkinSectionId = fetchedSections.find(s => s.venue?.kotEnabled === false)?.id || null;
+
+          const walkinRequestId = generateRequestId();
+          const txnData = await saveTransaction({
+            restaurantId: activeRestaurantId,
+            orderId: null,
+            tableNumber: null,
+            captainId: 'CASHIER',
+            amount: Number(activeGrandTotal),
+            method,
+            itemCount: walkinItems.length,
+            items: walkinItems,
+            subtotal: Number(activeSubtotal),
+            discountPercent: discountPercent || 0,
+            discountAmount: Number(activeDiscountAmount),
+            cgst: Number(activeCgst),
+            sgst: Number(activeSgst),
+            grandTotal: Number(activeGrandTotal),
+            sectionId: walkinSectionId,
+            sectionTag: walkinSectionTag,
+            billNumber: null,
+            platform: 'CASHIER',
+          });
+
+          recordSettlementAudit({
+            requestId: walkinRequestId,
+            orderId: null,
+            tableId: null,
+            method,
+            amount: txnAmount,
+            offline: false,
+            status: 'success',
+            syncedAt: Date.now(),
+          });
+
+          // Merge returned transaction into pastTransactions
+          if (txnData) {
+            const txn = txnData.transaction || txnData;
+            const mappedTxn = {
+              id: txn.id,
+              orderId: txn.orderId || null,
+              txnNumber: txn.txnNumber || null,
+              billNumber: txn.billNumber || null,
+              displayId: txn.billNumber ? `B${txn.billNumber}` : (txn.txnNumber ? `T${txn.txnNumber}` : '—'),
+              kot: '—',
+              amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+              grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+              subtotal: Number(txn.subtotal ?? 0),
+              discountPercent: Number(txn.discountPercent ?? 0),
+              discountAmount: Number(txn.discountAmount ?? 0),
+              cgst: Number(txn.cgst ?? 0),
+              sgst: Number(txn.sgst ?? 0),
+              time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+              date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+              timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
+              items: txn.itemCount || (Array.isArray(txn.items) ? txn.items.length : 0),
+              itemsList: txn.items || [],
+              captainId: txn.captainId || 'CASHIER',
+              captainName: 'Head Cashier',
+              method: txn.method || method,
+              tableNumber: null,
+              tableDisplayName: 'Walk-in',
+              source: sectionTagToSourceRef.current[txn.sectionTag] || activeOutlet,
+              restaurantId: activeRestaurantId,
+            };
+            if (isTxnInDateFilter(txn.paidAt)) {
+              setPastTransactions(prev => {
+                if (prev.some(t => t.id === mappedTxn.id)) return prev;
+                return [mappedTxn, ...prev];
+              });
+            }
+          }
         }
 
         // Notify ItemAnalytics and other listeners to refresh
@@ -3256,6 +3345,11 @@ const CashierDashboard = ({ onLogout }) => {
       }
     }
 
+    // Filter out items disabled for this venue
+    if (currentVenueId) {
+      itemsToFilter = itemsToFilter.filter(item => item.venueAvailabilities?.[currentVenueId] !== false);
+    }
+
     // Build venue price map from item.venuePrices keyed by venue ID
     const venueSpecificPrices = {};
     if (currentVenueId) {
@@ -3476,6 +3570,13 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // Non-beer liquor items show quantity picker
+    if (item.menuType === 'LIQUOR') {
+      setLiquorQtyItem(item);
+      setShowLiquorQtyPicker(true);
+      return;
+    }
+
     addToCart(item);
     setSearchQuery('');
     setSelectedCategory('All');
@@ -3484,6 +3585,16 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
+
+  const handleLiquorQtySelect = (qty) => {
+    if (!liquorQtyItem) return;
+    addToCart(liquorQtyItem, qty);
+    setShowLiquorQtyPicker(false);
+    setLiquorQtyItem(null);
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setActiveDiet('All');
+  };
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
     setActiveTables(prev => prev.map(t => {
@@ -3526,7 +3637,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  const addToCart = (item) => {
+  const addToCart = (item, quantity = 1) => {
     kotRequestIdRef.current = null;
     lastKotCartSignatureRef.current = null;
     if (!selectedTable) {
@@ -3543,11 +3654,11 @@ const CashierDashboard = ({ onLogout }) => {
         return false;
       });
       if (existing) return prev.map(i => {
-        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n) return { ...i, q: i.q + 1 };
-        if (!itemId && i.n === item.n) return { ...i, q: i.q + 1 };
+        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n) return { ...i, q: i.q + quantity };
+        if (!itemId && i.n === item.n) return { ...i, q: i.q + quantity };
         return i;
       });
-      return [...prev, { ...item, q: 1 }];
+      return [...prev, { ...item, q: quantity }];
     });
   };
 
@@ -4611,12 +4722,13 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                         </div>
 
-                        {/* Cash / UPI / Card summary */}
-                        <div className="grid grid-cols-3 gap-2 m-3 mt-0 mb-0">
+                        {/* Cash / UPI / Card / Other summary */}
+                        <div className="grid grid-cols-4 gap-2 m-3 mt-0 mb-0">
                           {[
                             { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
                             { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
                             { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
+                            { label: 'Other', method: 'OTHER', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
                           ].map(({ label, method, color, bg, border }) => {
                             const total = filteredTransactions
                               .filter(t => t.method === method)
@@ -4682,6 +4794,7 @@ const CashierDashboard = ({ onLogout }) => {
                             { key: 'CASH', label: 'Cash' },
                             { key: 'UPI', label: 'UPI' },
                             { key: 'CARD', label: 'Card' },
+                            { key: 'OTHER', label: 'Other' },
                           ].map(f => (
                             <button
                               key={f.key}
@@ -4769,7 +4882,8 @@ const CashierDashboard = ({ onLogout }) => {
                                       <td className="p-4">
                                         <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
                                           txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
-                                            'bg-purple-100 text-purple-700'
+                                            txn.method === 'CARD' ? 'bg-purple-100 text-purple-700' :
+                                              'bg-orange-100 text-orange-700'
                                           }`}>{txn.method}</span>
                                       </td>
                                       <td className="p-4 text-right">
@@ -7179,6 +7293,13 @@ const CashierDashboard = ({ onLogout }) => {
       )}
 
 
+
+      <LiquorQtyPicker
+        isOpen={showLiquorQtyPicker}
+        itemName={liquorQtyItem?.n || ''}
+        onSelect={handleLiquorQtySelect}
+        onClose={() => { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); }}
+      />
     </div>
   );
 };

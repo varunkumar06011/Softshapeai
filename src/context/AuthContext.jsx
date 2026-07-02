@@ -44,6 +44,8 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('ss_token');
       localStorage.removeItem('ss_user');
       localStorage.removeItem('ss_restaurant');
+      localStorage.removeItem('ss_preauth_token');
+      localStorage.removeItem('ss_accessible_outlets');
       return null;
     }
     return saved;
@@ -86,8 +88,10 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setRestaurantState(null);
     localStorage.removeItem('ss_token');
+    localStorage.removeItem('ss_preauth_token');
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
+    localStorage.removeItem('ss_accessible_outlets');
   };
 
   return (

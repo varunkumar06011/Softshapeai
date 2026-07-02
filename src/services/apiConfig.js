@@ -80,25 +80,42 @@ export async function apiFetch(path, options = {}) {
     });
 
     if (response.status === 401 && !options._isRetry) {
+      // If no token was used for this request, don't attempt refresh or
+      // redirect — the caller is likely a background service running before
+      // login completes. Just surface the 401 error.
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      // If a newer token was stored since this request started (e.g. user
+      // just logged in), retry with the new token instead of wiping session.
+      const currentToken = localStorage.getItem('ss_token');
+      if (currentToken && currentToken !== token) {
+        return apiFetch(path, { ...options, _isRetry: true });
+      }
+
       try {
         const refreshRes = await fetch(apiUrl('/api/auth/refresh'), {
           method: 'POST',
           headers: getAuthHeaders(),
         });
         if (refreshRes.ok) {
-          const { token } = await refreshRes.json();
-          localStorage.setItem('ss_token', token);
+          const { token: newToken } = await refreshRes.json();
+          localStorage.setItem('ss_token', newToken);
           return apiFetch(path, { ...options, _isRetry: true });
         }
       } catch {
         // refresh failed — fall through to error
       }
-      // Token refresh failed or not possible — clear session
-      localStorage.removeItem('ss_token');
-      localStorage.removeItem('ss_user');
-      localStorage.removeItem('ss_restaurant');
-      if (typeof window !== 'undefined') {
-        window.location.href = '/';
+      // Only clear+redirect if the failed token is still the current one
+      // (otherwise a newer login already replaced it — don't wipe that)
+      if (localStorage.getItem('ss_token') === token) {
+        localStorage.removeItem('ss_token');
+        localStorage.removeItem('ss_user');
+        localStorage.removeItem('ss_restaurant');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/';
+        }
       }
       throw new Error('Session expired. Please log in again.');
     }

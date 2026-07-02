@@ -209,24 +209,39 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
 
 /**
  * Toggle a bar menu item's availability optimistically.
+ * Supports both global and venue-scoped toggling.
  *
  * @param {string} itemId  - The item's DB id
  * @param {string} apiBase - API base URL
  * @param {function} onDone - Optional callback on success (e.g. refreshMenu)
  * @param {function} onError - Optional callback on failure
+ * @param {string|null} venueId - Optional venue ID for scoped toggle
  */
-export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError) {
+export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError, venueId = null) {
   if (!barGlobalMenu) return;
+
+  const isVenueScope = venueId !== null;
 
   // Optimistic toggle
   barGlobalMenu = barGlobalMenu.map((item) => {
     if (item.id !== itemId) return item;
+    if (isVenueScope) {
+      return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
+    }
     return { ...item, isAvailable: !(item.isAvailable ?? true) };
   });
   writeBarMenuCache(barGlobalMenu);
   notifySubscribers();
 
-  fetch(`${apiBase}/api/bar/menu/items/${itemId}/availability`, { method: "PATCH", headers: { ...getAuthHeaders() } })
+  const endpoint = isVenueScope
+    ? `${apiBase}/api/bar/menu/items/${itemId}/venue-availability`
+    : `${apiBase}/api/bar/menu/items/${itemId}/availability`;
+
+  const fetchOptions = isVenueScope
+    ? { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify({ venueId }) }
+    : { method: "PATCH", headers: { ...getAuthHeaders() } };
+
+  fetch(endpoint, fetchOptions)
     .then((res) => {
       if (res.ok) {
         onDone?.();
@@ -234,6 +249,9 @@ export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError) {
         // Revert on failure
         barGlobalMenu = barGlobalMenu.map((item) => {
           if (item.id !== itemId) return item;
+          if (isVenueScope) {
+            return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
+          }
           return { ...item, isAvailable: !(item.isAvailable ?? true) };
         });
         writeBarMenuCache(barGlobalMenu);
@@ -244,6 +262,9 @@ export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError) {
     .catch(() => {
       barGlobalMenu = barGlobalMenu.map((item) => {
         if (item.id !== itemId) return item;
+        if (isVenueScope) {
+          return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
+        }
         return { ...item, isAvailable: !(item.isAvailable ?? true) };
       });
       writeBarMenuCache(barGlobalMenu);

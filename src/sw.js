@@ -32,6 +32,7 @@ registerRoute(
 registerRoute(
   ({ url, request }) =>
     url.pathname.startsWith('/api/') &&
+    !url.pathname.startsWith('/api/auth/') &&
     request.method === 'GET',
   new NetworkFirst({
     cacheName: 'softshape-api',
@@ -94,5 +95,17 @@ self.addEventListener('message', (event) => {
 
 // ── Activate: claim clients immediately ─────────────────────────────────────
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Clean up any old caches from previous SW versions
+      caches.keys().then((cacheNames) =>
+        Promise.all(
+          cacheNames
+            .filter((name) => name.startsWith('softshape-'))
+            .map((name) => caches.delete(name))
+        )
+      ),
+    ])
+  );
 });

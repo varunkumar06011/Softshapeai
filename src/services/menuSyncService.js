@@ -286,6 +286,7 @@ export function useGlobalMenuSync() {
             isAvailable: updated.isAvailable !== false,
             variants: updated.variants || [],
             venuePrices: updated.venuePrices || {},
+            venueAvailabilities: updated.venueAvailabilities || {},
           };
           globalMenu = [...globalMenu, newItem];
         } else {
@@ -298,9 +299,12 @@ export function useGlobalMenuSync() {
                   t: updated.isVeg != null ? (updated.isVeg ? 'veg' : 'non') : item.t,
                   c: updated.category?.name ?? updated.category ?? item.c,
                   imageUrl: updated.imageUrl ?? item.imageUrl,
-                  available: updated.isAvailable ?? item.available,
+                  isAvailable: updated.isAvailable !== undefined ? updated.isAvailable : item.isAvailable,
                   menuType: updated.menuType ?? item.menuType,
                   gstEnabled: updated.gstEnabled !== undefined ? updated.gstEnabled : item.gstEnabled,
+                  venueAvailabilities: updated.venueAvailabilities
+                    ? { ...(item.venueAvailabilities || {}), ...updated.venueAvailabilities }
+                    : item.venueAvailabilities,
                 }
               : item
           );

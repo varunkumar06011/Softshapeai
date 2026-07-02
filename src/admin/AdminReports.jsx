@@ -1293,10 +1293,10 @@ export default function AdminReports() {
             {activeReport === 'itemwise-sales' && <ItemwiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'categorywise-sales' && <CategorywiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
-            {activeReport === 'operations-dashboard' && <OperationsDashboard dateFilter={dateFilter} onDownloadRef={downloadRef} />}
+            {activeReport === 'operations-dashboard' && <OperationsDashboard dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
-            {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} onDownloadRef={downloadRef} />}
+            {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
           </div>
         </main>
       </div>
@@ -1304,7 +1304,7 @@ export default function AdminReports() {
   );
 }
 
-function DeliveryPlatformsReport({ dateFilter }) {
+function DeliveryPlatformsReport({ dateFilter, outletId }) {
   const [data, setData] = useState({ platforms: [], totalRevenue: 0 });
   const [loading, setLoading] = useState(false);
 

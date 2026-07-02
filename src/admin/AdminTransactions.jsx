@@ -25,7 +25,6 @@ function formatBillNumber(txnDate, txnNumber) {
 }
 
 function resolveSource(txn) {
-  if (txn.restaurantId === getCurrentRestaurantId()) return 'restaurant';
   const tag = (txn.sectionTag || '').toLowerCase();
   if (tag === 'venue-bar-ac-hall') return 'bar';
   if (tag === 'venue-bar-conference') return 'conference';
@@ -67,7 +66,10 @@ export default function AdminTransactions({ onStatsRefresh }) {
     fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
-        const sections = Array.isArray(data) ? data : data.sections || [];
+        const sections = (Array.isArray(data) ? data : data.sections || []).map(s => ({
+          ...s,
+          sectionTag: s.sectionTag || s.tables?.[0]?.sectionTag || null,
+        }));
         setFetchedSections(sections);
       })
       .catch(() => setFetchedSections([]));
@@ -77,8 +79,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
     const pills = [{ key: 'all', label: 'All' }];
     const seen = new Set(['all']);
     for (const section of fetchedSections) {
-      const fakeTxn = { sectionTag: section.sectionTag, restaurantId: getCurrentRestaurantId() };
-      const sourceKey = resolveSource(fakeTxn);
+      const sourceKey = resolveSource({ sectionTag: section.sectionTag });
       if (!seen.has(sourceKey)) {
         seen.add(sourceKey);
         const label = section.name?.length > 8 ? section.name.slice(0, 6) : section.name || sourceKey;
@@ -141,9 +142,14 @@ export default function AdminTransactions({ onStatsRefresh }) {
         itemsList: txn.items || [],
         captainId: txn.captainId || 'CASHIER',
         captainName: txn.captainName || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
-        method: txn.method || 'UPI',
+        method: txn.method || 'OTHER',
         tableNumber: txn.tableNumber ? formatTxnTableLabel(txn.tableNumber, txn.sectionTag) : null,
-        source: resolveSource(txn),
+        source: (() => {
+          const direct = resolveSource(txn);
+          if (direct !== 'venue') return direct;
+          const section = fetchedSections.find(s => s.id === txn.sectionId);
+          return section ? resolveSource({ sectionTag: section.sectionTag }) || section.name : 'venue';
+        })(),
         restaurantId: txn.restaurantId,
       }));
 
@@ -213,11 +219,12 @@ export default function AdminTransactions({ onStatsRefresh }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 mx-3 mb-3">
+          <div className="grid grid-cols-4 gap-2 mx-3 mb-3">
             {[
               { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
               { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
               { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
+              { label: 'Other', method: 'OTHER', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
             ].map(({ label, method, color, bg, border }) => {
               const total = filtered.filter(t => t.method === method).reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
               const count = filtered.filter(t => t.method === method).length;
@@ -282,6 +289,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
               { key: 'CASH', label: 'Cash' },
               { key: 'UPI', label: 'UPI' },
               { key: 'CARD', label: 'Card' },
+              { key: 'OTHER', label: 'Other' },
             ].map(f => (
               <button
                 key={f.key}
@@ -352,7 +360,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                           <span className="text-xs font-bold text-gray-500 uppercase">{txn.captainName}</span>
                         </td>
                         <td className="p-4">
-                          <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' : txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                          <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' : txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' : txn.method === 'CARD' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
                             {txn.method}
                           </span>
                         </td>

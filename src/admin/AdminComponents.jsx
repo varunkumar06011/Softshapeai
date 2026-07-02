@@ -1621,20 +1621,53 @@ export function MenuPage({ onAddDish }) {
   const configuredPrinters = restaurant?.printerConfig?.printers || [];
   const agentAvailablePrinters = restaurant?.printerConfig?.availablePrinters || [];
 
-  // Build a deduplicated list of all known printers from both configured printers
-  // (set in Printer Settings page) and system printers reported by the print agent.
+  // Live agent data polled from cashier desktop
+  const [liveAgentData, setLiveAgentData] = useState(null);
+
+  useEffect(() => {
+    const fetchLivePrinters = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/print/agent-status`, {
+          headers: getAuthHeaders(),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLiveAgentData(data);
+        }
+      } catch (e) {
+        console.error('[Admin] Failed to fetch live printer config:', e);
+      }
+    };
+    fetchLivePrinters();
+    const id = setInterval(fetchLivePrinters, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Build a deduplicated list of all known printers from:
+  // 1. Manually configured printers (admin settings)
+  // 2. Live printers from print agent on cashier desktop (prioritized)
+  // 3. Cached availablePrinters from restaurant object
   const allPrinterOptions = useMemo(() => {
     const map = new Map();
+    // Configured printers first
     configuredPrinters.forEach(p => {
       if (p.name) map.set(p.name, { name: p.name, type: p.type || '', source: 'configured' });
     });
+    // Live agent printers (highest priority — these are what's actually connected)
+    const liveAgentPrinters = liveAgentData?.availablePrinters || [];
+    liveAgentPrinters.forEach(name => {
+      if (typeof name === 'string') {
+        map.set(name, { name, type: '', source: 'agent-live' });
+      }
+    });
+    // Legacy cached fallback from restaurant object
     agentAvailablePrinters.forEach(name => {
       if (typeof name === 'string' && !map.has(name)) {
-        map.set(name, { name, type: '', source: 'agent' });
+        map.set(name, { name, type: '', source: 'agent-cached' });
       }
     });
     return Array.from(map.values());
-  }, [configuredPrinters, agentAvailablePrinters]);
+  }, [configuredPrinters, agentAvailablePrinters, liveAgentData]);
 
   const [filter, setFilter] = useState("");
 
@@ -1848,7 +1881,13 @@ export function MenuPage({ onAddDish }) {
 
     if (togglingId) return;
 
-    const newValue = !item.isAvailable;
+    const hasMultiVenue = currentVenueColumns.length > 1 && activeVenueId;
+
+    const venueAvail = item.venueAvailabilities?.[activeVenueId] !== false;
+
+    const isVenueScope = hasMultiVenue && item.isAvailable !== false;
+
+    const newValue = isVenueScope ? !venueAvail : !item.isAvailable;
 
     setTogglingId(item.id);
 
@@ -1858,7 +1897,18 @@ export function MenuPage({ onAddDish }) {
 
     setAdminItems(prev =>
 
-      prev.map(i => i.id === item.id ? { ...i, isAvailable: newValue } : i)
+      prev.map(i => {
+
+        if (i.id !== item.id) return i;
+
+        if (isVenueScope) {
+          return { ...i, venueAvailabilities: { ...i.venueAvailabilities, [activeVenueId]: newValue } };
+
+        }
+
+        return { ...i, isAvailable: newValue };
+
+      })
 
     );
 
@@ -1866,17 +1916,37 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const endpoint = activeOutlet === 'bar'
+      let endpoint;
 
-        ? `${API_BASE}/api/bar/menu/items/${item.id}/availability`
+      let body = undefined;
 
-        : `${API_BASE}/api/menu/items/${item.id}/availability`;
+      if (isVenueScope) {
+
+        endpoint = activeOutlet === 'bar'
+
+          ? `${API_BASE}/api/bar/menu/items/${item.id}/venue-availability`
+
+          : `${API_BASE}/api/menu/items/${item.id}/venue-availability`;
+
+        body = JSON.stringify({ venueId: activeVenueId });
+
+      } else {
+
+        endpoint = activeOutlet === 'bar'
+
+          ? `${API_BASE}/api/bar/menu/items/${item.id}/availability`
+
+          : `${API_BASE}/api/menu/items/${item.id}/availability`;
+
+      }
 
       const res = await fetch(endpoint, {
 
         method: 'PATCH',
 
-        headers: { ...getAuthHeaders() },
+        headers: body ? { 'Content-Type': 'application/json', ...getAuthHeaders() } : { ...getAuthHeaders() },
+
+        ...(body && { body }),
 
       });
 
@@ -1894,7 +1964,18 @@ export function MenuPage({ onAddDish }) {
 
       setAdminItems(prev =>
 
-        prev.map(i => i.id === item.id ? { ...i, isAvailable: !newValue } : i)
+        prev.map(i => {
+
+          if (i.id !== item.id) return i;
+
+          if (isVenueScope) {
+            return { ...i, venueAvailabilities: { ...i.venueAvailabilities, [activeVenueId]: !newValue } };
+
+          }
+
+          return { ...i, isAvailable: !newValue };
+
+        })
 
       );
 
@@ -1906,77 +1987,55 @@ export function MenuPage({ onAddDish }) {
 
     }
 
-  }, [togglingId, refreshMenu]);
+  }, [togglingId, refreshMenu, activeVenueId, currentVenueColumns, activeOutlet]);
 
 
 
   const handleToggleMenuType = useCallback(async (item) => {
-
     if (togglingMenuTypeId) return;
-
     const newType = item.menuType === 'LIQUOR' ? 'FOOD' : 'LIQUOR';
+
+    // Determine default printer for the new type
+    const defaultPrinter = newType === 'LIQUOR'
+      ? allPrinterOptions.find(p => (p.type === 'BAR' || p.name.toLowerCase().includes('bar')))?.name || ''
+      : allPrinterOptions.find(p => (p.type === 'KITCHEN' || p.type === 'KOT' || p.name.toLowerCase().includes('kitchen')))?.name || '';
+
+    const newPrinterTarget = defaultPrinter || item.printerTarget || item.categoryPrinterTarget || '';
 
     setTogglingMenuTypeId(item.id);
 
-
-
-    // Optimistic update
-
+    // Optimistic update: flip menuType AND set printerTarget
     setAdminItems(prev =>
-
-      prev.map(i => i.id === item.id ? { ...i, menuType: newType } : i)
-
+      prev.map(i => i.id === item.id ? { ...i, menuType: newType, printerTarget: newPrinterTarget || null } : i)
     );
 
-
-
     try {
-
       const endpoint = activeOutlet === 'bar'
-
         ? `${API_BASE}/api/bar/menu/items/${item.id}`
-
         : `${API_BASE}/api/menu/items/${item.id}/menu-type`;
 
-
-
       const res = await fetch(endpoint, {
-
         method: 'PATCH',
-
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-        ...(activeOutlet === 'bar' ? { body: JSON.stringify({ menuType: newType }) } : {}),
-
+        body: JSON.stringify({
+          menuType: newType,
+          ...(newPrinterTarget ? { printerTarget: newPrinterTarget } : {}),
+        }),
       });
 
-
-
       if (!res.ok) throw new Error('Toggle failed');
-
       refreshMenu().catch(() => {});
-
     } catch (err) {
-
       console.error('[MenuPage] Menu type toggle failed:', err);
-
       // Revert on error
-
       setAdminItems(prev =>
-
-        prev.map(i => i.id === item.id ? { ...i, menuType: item.menuType } : i)
-
+        prev.map(i => i.id === item.id ? { ...i, menuType: item.menuType, printerTarget: item.printerTarget } : i)
       );
-
       alert('Could not update menu type. Please try again.');
-
     } finally {
-
       setTogglingMenuTypeId(null);
-
     }
-
-  }, [togglingMenuTypeId, refreshMenu, activeOutlet]);
+  }, [togglingMenuTypeId, refreshMenu, activeOutlet, allPrinterOptions]);
 
 
 
@@ -2230,7 +2289,7 @@ export function MenuPage({ onAddDish }) {
 
       basePrice: item.p,
 
-      venuePrice: Number(item.venuePrices?.[activeVenueId] || 0),
+      venuePrice: item.venuePrices?.[activeVenueId] ?? item.p,
 
       categoryPrinterTarget: item.categoryPrinterTarget,
 
@@ -3537,70 +3596,94 @@ export function MenuPage({ onAddDish }) {
 
               <td className="px-4 py-2">
 
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                {(() => {
 
-                  item.isAvailable
+                  const venueAvail = currentVenueColumns.length > 1
 
-                    ? 'bg-green-100 text-green-800'
+                    ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
 
-                    : 'bg-red-100 text-red-700'
+                    : item.isAvailable;
 
-                }`}>
+                  return (
 
-                  {item.isAvailable ? 'Available' : 'Unavailable'}
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
 
-                </span>
+                      venueAvail
+
+                        ? 'bg-green-100 text-green-800'
+
+                        : 'bg-red-100 text-red-700'
+
+                    }`}>
+
+                      {venueAvail ? 'Available' : 'Unavailable'}
+
+                    </span>
+
+                  );
+
+                })()}
 
               </td>
 
               <td className="px-4 py-2 flex items-center gap-2">
 
+                {(() => {
+
+                  const venueAvail = currentVenueColumns.length > 1
+
+                    ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
+
+                    : item.isAvailable;
+
+                  return (
+
+                    <button
+
+                      onClick={() => handleToggleAvailability(item)}
+
+                      disabled={togglingId === item.id}
+
+                      title={venueAvail ? 'Mark Unavailable' : 'Mark Available'}
+
+                      className={`text-xs font-bold px-2 py-1 rounded-md border transition-all ${
+
+                        venueAvail
+
+                          ? 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
+
+                          : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+
+                    >
+
+                      {togglingId === item.id ? '…' : venueAvail ? 'Disable' : 'Enable'}
+
+                    </button>
+
+                  );
+
+                })()}
+
                 <button
-
-                  onClick={() => handleToggleAvailability(item)}
-
-                  disabled={togglingId === item.id}
-
-                  title={item.isAvailable ? 'Mark Unavailable' : 'Mark Available'}
-
-                  className={`text-xs font-bold px-2 py-1 rounded-md border transition-all ${
-
-                    item.isAvailable
-
-                      ? 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
-
-                      : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
-
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
-
-                >
-
-                  {togglingId === item.id ? '…' : item.isAvailable ? 'Disable' : 'Enable'}
-
-                </button>
-
-                <button
-
                   onClick={() => handleToggleMenuType(item)}
-
                   disabled={togglingMenuTypeId === item.id}
-
                   title={item.menuType === 'LIQUOR' ? 'Switch to Food (Kitchen KOT)' : 'Switch to Bar (Liquor KOT)'}
-
-                  className={`text-xs font-bold px-2 py-1 rounded-md border transition-all ${
-
+                  className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-all ${
                     item.menuType === 'LIQUOR'
-
                       ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
-
                       : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
-
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
-
                 >
-
-                  {togglingMenuTypeId === item.id ? '…' : item.menuType === 'LIQUOR' ? '🥃→🍽' : '🍽→🥃'}
-
+                  {togglingMenuTypeId === item.id ? '…' : (
+                    <span className="whitespace-nowrap">
+                      {item.menuType === 'LIQUOR'
+                        ? `Bar → Kitchen`
+                        : `Kitchen → Bar`
+                      }
+                    </span>
+                  )}
                 </button>
 
                 <button onClick={() => handleEdit(item)} className="text-blue-600 hover:scale-110 transition-transform">✏️</button>
@@ -3854,123 +3937,72 @@ export function MenuPage({ onAddDish }) {
 
               <div className="space-y-4">
 
-              <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
+                {/* Print To: merged KOT Destination + Item Printer Override */}
+                <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
 
-              {activeOutlet === 'restaurant'
+                {activeOutlet === 'restaurant'
+                  ? <select
+                      value={editingItem.printerTarget || editingItem.categoryPrinterTarget || ''}
+                      onChange={(e) => {
+                        const val = e.target.value || null;
+                        setEditingItem({
+                          ...editingItem,
+                          printerTarget: val,
+                          categoryPrinterTarget: val,
+                        });
+                      }}
+                      className={input + ' w-full bg-gray-50'}
+                    >
+                      <option value="">Default (auto-resolve)</option>
+                      {allPrinterOptions.map(opt => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name}
+                          {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  : <div className="flex gap-2">
+                      {[
+                        { value: 'FOOD', label: 'Food' },
+                        { value: 'LIQUOR', label: 'Bar / Drinks' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
+                          className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                            (editingItem.menuType || 'FOOD') === opt.value
+                              ? opt.value === 'FOOD'
+                                ? 'border-green-500 bg-green-50 text-green-700'
+                                : 'border-purple-500 bg-purple-50 text-purple-700'
+                              : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          <div>{opt.label}</div>
+                        </button>
+                      ))}
+                    </div>}
 
-                ? <select
-
-                    value={editingItem.categoryPrinterTarget || ''}
-
-                    onChange={(e) => setEditingItem({ ...editingItem, categoryPrinterTarget: e.target.value || null })}
-
-                    className={input + ' w-full bg-gray-50'}
-
-                  >
-
-                    <option value="">Default (no specific printer)</option>
-
-                    {allPrinterOptions.map(opt => (
-
-                      <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
-
-                    ))}
-
-                  </select>
-
-                : <div className="flex gap-2">
-
-                    {[
-
-                      { value: 'FOOD', label: '🍽 Food' },
-
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks' },
-
-                    ].map(opt => (
-
-                      <button
-
-                        key={opt.value}
-
-                        type="button"
-
-                        onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
-
-                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
-
-                          (editingItem.menuType || 'FOOD') === opt.value
-
-                            ? opt.value === 'FOOD'
-
-                              ? 'border-green-500 bg-green-50 text-green-700'
-
-                              : 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                        }`}
-
-                      >
-
-                        <div>{opt.label}</div>
-
-                      </button>
-
-                    ))}
-
-                  </div>}
-
-
-
-            {activeOutlet === 'restaurant' && (
-
-              <div>
-
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
-
-                <select
-
-                  value={editingItem.printerTarget || ''}
-
-                  onChange={(e) => setEditingItem({ ...editingItem, printerTarget: e.target.value || null })}
-
-                  className={input + ' w-full bg-gray-50'}
-
-                >
-
-                  <option value="">Default (use category)</option>
-
-                  {allPrinterOptions.map(opt => (
-
-                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
-
-                  ))}
-
-                </select>
-
-                <select
-
-                  value={editingItem.printerName || ''}
-
-                  onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
-
-                  className={input + ' w-full bg-gray-50 mt-2'}
-
-                >
-
-                  <option value="">Auto (from KOT destination)</option>
-
-                  {allPrinterOptions.map(opt => (
-
-                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
-
-                  ))}
-
-                </select>
-
-              </div>
-
-            )}
+                {/* Physical Printer override (optional) */}
+                {activeOutlet === 'restaurant' && (
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Physical Printer Override (optional)</label>
+                    <select
+                      value={editingItem.printerName || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, printerName: e.target.value || null })}
+                      className={input + ' w-full bg-gray-50'}
+                    >
+                      <option value="">Auto-resolve from Print To</option>
+                      {allPrinterOptions.map(opt => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name}
+                          {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-gray-400 mt-1">Only change if the Windows printer name differs from the logical destination above.</p>
+                  </div>
+                )}
 
               </div>
 
@@ -4363,125 +4395,74 @@ export function MenuPage({ onAddDish }) {
 
               <div className="space-y-4">
 
-            <div>
+                {/* Print To: merged KOT Destination + Item Printer Override */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
 
-              <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">KOT Destination</label>
-
-              {activeOutlet === 'restaurant'
-
-                ? <select
-
-                    value={addingItem.categoryPrinterTarget || ''}
-
-                    onChange={(e) => setAddingItem({ ...addingItem, categoryPrinterTarget: e.target.value || null })}
-
-                    className={input + ' w-full bg-gray-50'}
-
-                  >
-
-                    <option value="">Default (no specific printer)</option>
-
-                    {allPrinterOptions.map(opt => (
-
-                      <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
-
-                    ))}
-
-                  </select>
-
-                : <div className="flex gap-2">
-
-                    {[
-
-                      { value: 'FOOD', label: '🍽 Food' },
-
-                      { value: 'LIQUOR', label: '🥃 Bar / Drinks' },
-
-                    ].map(opt => (
-
-                      <button
-
-                        key={opt.value}
-
-                        type="button"
-
-                        onClick={() => setAddingItem({ ...addingItem, menuType: opt.value })}
-
-                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
-
-                          (addingItem.menuType || 'FOOD') === opt.value
-
-                            ? opt.value === 'FOOD'
-
-                              ? 'border-green-500 bg-green-50 text-green-700'
-
-                              : 'border-purple-500 bg-purple-50 text-purple-700'
-
-                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-
-                        }`}
-
+                  {activeOutlet === 'restaurant'
+                    ? <select
+                        value={addingItem.printerTarget || addingItem.categoryPrinterTarget || ''}
+                        onChange={(e) => {
+                          const val = e.target.value || null;
+                          setAddingItem({
+                            ...addingItem,
+                            printerTarget: val,
+                            categoryPrinterTarget: val,
+                          });
+                        }}
+                        className={input + ' w-full bg-gray-50'}
                       >
+                        <option value="">Default (auto-resolve)</option>
+                        {allPrinterOptions.map(opt => (
+                          <option key={opt.name} value={opt.name}>
+                            {opt.name}
+                            {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    : <div className="flex gap-2">
+                        {[
+                          { value: 'FOOD', label: 'Food' },
+                          { value: 'LIQUOR', label: 'Bar / Drinks' },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setAddingItem({ ...addingItem, menuType: opt.value })}
+                            className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                              (addingItem.menuType || 'FOOD') === opt.value
+                                ? opt.value === 'FOOD'
+                                  ? 'border-green-500 bg-green-50 text-green-700'
+                                  : 'border-purple-500 bg-purple-50 text-purple-700'
+                                : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                            }`}
+                          >
+                            <div>{opt.label}</div>
+                          </button>
+                        ))}
+                      </div>}
+                </div>
 
-                        <div>{opt.label}</div>
-
-                      </button>
-
-                    ))}
-
-                  </div>}
-
-            </div>
-
-            {activeOutlet === 'restaurant' && (
-
-              <div>
-
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Item Printer Override</label>
-
-                <select
-
-                  value={addingItem.printerTarget || ''}
-
-                  onChange={(e) => setAddingItem({ ...addingItem, printerTarget: e.target.value || null })}
-
-                  className={input + ' w-full bg-gray-50'}
-
-                >
-
-                  <option value="">Default (use category)</option>
-
-                  {allPrinterOptions.map(opt => (
-
-                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
-
-                  ))}
-
-                </select>
-
-                <select
-
-                  value={addingItem.printerName || ''}
-
-                  onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
-
-                  className={input + ' w-full bg-gray-50 mt-2'}
-
-                >
-
-                  <option value="">Auto (from KOT destination)</option>
-
-                  {allPrinterOptions.map(opt => (
-
-                    <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
-
-                  ))}
-
-                </select>
-
-              </div>
-
-            )}
+                {/* Physical Printer override (optional) */}
+                {activeOutlet === 'restaurant' && (
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Physical Printer Override (optional)</label>
+                    <select
+                      value={addingItem.printerName || ''}
+                      onChange={(e) => setAddingItem({ ...addingItem, printerName: e.target.value || null })}
+                      className={input + ' w-full bg-gray-50'}
+                    >
+                      <option value="">Auto-resolve from Print To</option>
+                      {allPrinterOptions.map(opt => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name}
+                          {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-gray-400 mt-1">Only change if the Windows printer name differs from the logical destination above.</p>
+                  </div>
+                )}
 
               </div>
 
@@ -10448,13 +10429,13 @@ function TopPerformersReport({ inventory }) {
 
   const [limit, setLimit] = useState(10);
 
-  const [dateRange, setDateRange] = useState({
+  const [dateRange, setDateRange] = useState(() => ({
 
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
 
     endDate: new Date().toISOString().slice(0, 10),
 
-  });
+  }));
 
 
 
@@ -10491,8 +10472,6 @@ function TopPerformersReport({ inventory }) {
           const quantity = item.quantity || 0;
 
           const revenue = item.revenue || 0;
-
-          const sellingPrice = quantity > 0 ? revenue / quantity : 0;
 
 
 
@@ -10910,13 +10889,13 @@ function WasteReport({ inventory }) {
 
   const [loading, setLoading] = useState(true);
 
-  const [dateRange, setDateRange] = useState({
+  const [dateRange, setDateRange] = useState(() => ({
 
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
 
     endDate: new Date().toISOString().slice(0, 10),
 
-  });
+  }));
 
   const [groupBy, setGroupBy] = useState('item');
 
@@ -11136,7 +11115,7 @@ function WasteReport({ inventory }) {
 
 
 
-  const setPresetDateRange = (preset) => {
+  const setPresetDateRange = useCallback((preset) => {
 
     const today = new Date().toISOString().slice(0, 10);
 
@@ -11170,7 +11149,7 @@ function WasteReport({ inventory }) {
 
     setDateRange({ startDate: presets[preset].start, endDate: presets[preset].end });
 
-  };
+  }, []);
 
 
 
@@ -11634,6 +11613,84 @@ export function Inventory() {
 
 
 
+  const loadBarMenu = useCallback(async () => {
+
+    try {
+
+      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getCurrentRestaurantId()}`), {
+
+        headers: authService.getAuthHeader()
+
+      });
+
+      const data = await res.json();
+
+      const liquorItems = Array.isArray(data)
+
+        ? data.filter(item => item && item.id && item.menuType === 'LIQUOR')
+
+        : [];
+
+      setMenuItems(liquorItems);
+
+    } catch (err) {
+
+      console.error('[Inventory] Menu load failed:', err);
+
+      setMenuItems([]);
+
+    }
+
+  }, []);
+
+
+
+  const loadInventory = useCallback(async () => {
+
+    try {
+
+      const data = await fetchBarInventory();
+
+      setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
+
+    } catch (err) {
+
+      console.error('[Inventory] Load failed:', err);
+
+      showNotification('Failed to load inventory', 'error');
+
+      setInventory([]);
+
+    } finally {
+
+      setLoading(false);
+
+    }
+
+  }, []);
+
+
+
+  const loadLowStockItems = useCallback(async () => {
+
+    try {
+
+      const data = await fetchLowStockItems();
+
+      setLowStockItems(Array.isArray(data) ? data.filter(item => item && item.id) : []);
+
+    } catch (err) {
+
+      console.error('[Inventory] Low stock check failed:', err);
+
+      setLowStockItems([]);
+
+    }
+
+  }, []);
+
+
+
   useEffect(() => {
 
     if (activeOutlet === 'bar' || activeOutlet === 'both') {
@@ -11646,11 +11703,11 @@ export function Inventory() {
 
     } else {
 
-      setLoading(false);
+      Promise.resolve().then(() => setLoading(false));
 
     }
 
-  }, [activeOutlet]);
+  }, [activeOutlet, loadInventory, loadLowStockItems, loadBarMenu]);
 
 
 
@@ -11743,84 +11800,6 @@ export function Inventory() {
     };
 
   }, [socket]);
-
-
-
-  const loadBarMenu = async () => {
-
-    try {
-
-      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${getCurrentRestaurantId()}`), {
-
-        headers: authService.getAuthHeader()
-
-      });
-
-      const data = await res.json();
-
-      const liquorItems = Array.isArray(data)
-
-        ? data.filter(item => item && item.id && item.menuType === 'LIQUOR')
-
-        : [];
-
-      setMenuItems(liquorItems);
-
-    } catch (err) {
-
-      console.error('[Inventory] Menu load failed:', err);
-
-      setMenuItems([]);
-
-    }
-
-  };
-
-
-
-  const loadInventory = async () => {
-
-    try {
-
-      const data = await fetchBarInventory();
-
-      setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
-
-    } catch (err) {
-
-      console.error('[Inventory] Load failed:', err);
-
-      showNotification('Failed to load inventory', 'error');
-
-      setInventory([]);
-
-    } finally {
-
-      setLoading(false);
-
-    }
-
-  };
-
-
-
-  const loadLowStockItems = async () => {
-
-    try {
-
-      const data = await fetchLowStockItems();
-
-      setLowStockItems(Array.isArray(data) ? data.filter(item => item && item.id) : []);
-
-    } catch (err) {
-
-      console.error('[Inventory] Low stock check failed:', err);
-
-      setLowStockItems([]);
-
-    }
-
-  };
 
 
 
@@ -12067,10 +12046,6 @@ export function Inventory() {
     const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
 
     const reorderLevel = parseFloat(item.reorderLevel) || 0;
-
-    const bottles = Math.floor(currentStock / bottleSize);
-
-    const reorderBottles = Math.ceil(reorderLevel / bottleSize);
 
 
 
@@ -15041,6 +15016,8 @@ export function BarMenuPage() {
 
   const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
 
+  const [uploadSessionId] = useState(() => crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36));
+
 
 
   // ── Dynamic categories for bar menu ────────────────────────────────────
@@ -15085,7 +15062,7 @@ export function BarMenuPage() {
 
   useEffect(() => {
 
-    fetchBarCategories();
+    Promise.resolve().then(() => fetchBarCategories());
 
   }, [fetchBarCategories]);
 
@@ -15147,7 +15124,7 @@ export function BarMenuPage() {
 
     const exists = venueColumns.some((c) => c.id === activeVenueId);
 
-    if (!exists) setActiveVenueId(venueColumns[0].id);
+    if (!exists) Promise.resolve().then(() => setActiveVenueId(venueColumns[0].id));
 
   }, [venueColumns, activeVenueId]);
 
@@ -15157,7 +15134,7 @@ export function BarMenuPage() {
 
   useEffect(() => {
 
-    setUnifiedLoading(true);
+    Promise.resolve().then(() => setUnifiedLoading(true));
 
     fetchUnifiedMenu('bar')
 
@@ -15181,7 +15158,7 @@ export function BarMenuPage() {
 
 
 
-  const refreshMenu = () => {
+  const refreshMenu = useCallback(() => {
 
     setUnifiedLoading(true);
 
@@ -15205,7 +15182,7 @@ export function BarMenuPage() {
 
       });
 
-  };
+  }, [legacyRefreshMenu]);
 
 
 
@@ -15213,7 +15190,7 @@ export function BarMenuPage() {
 
   useEffect(() => {
 
-    const handleMenuUpdate = (event) => {
+    const handleMenuUpdate = () => {
 
       console.log('[BarMenuPage] Received menu-item-updated, refreshing...');
 
@@ -15514,15 +15491,23 @@ export function BarMenuPage() {
 
   const toggleAvailability = (item) => {
 
+    const hasMultiVenue = venueColumns.length > 1 && activeVenueId;
+
+    const venueAvail = item.venueAvailabilities?.[activeVenueId] !== false;
+
+    const isVenueScope = hasMultiVenue && item.isAvailable !== false;
+
     toggleBarMenuAvailability(
 
       item.id,
 
       API_BASE,
 
-      () => showToast(item.isAvailable === false ? 'Item enabled' : 'Item disabled'),
+      () => showToast((isVenueScope ? !venueAvail : item.isAvailable === false) ? 'Item enabled' : 'Item disabled'),
 
-      () => showToast('Toggle failed', 'error')
+      () => showToast('Toggle failed', 'error'),
+
+      isVenueScope ? activeVenueId : null
 
     );
 
@@ -15598,7 +15583,7 @@ export function BarMenuPage() {
 
           // Compress to base64 first (reuse existing helper)
 
-          const base64 = await new Promise((resolve, reject) => {
+          const base64 = await new Promise((resolve) => {
 
             compressImage(addImg, (b64) => resolve(b64));
 
@@ -15862,7 +15847,12 @@ export function BarMenuPage() {
 
             key={item.id}
 
-            className={`flex items-center justify-between p-3 bg-white rounded-xl border transition ${item.isAvailable === false ? 'border-gray-200 opacity-60' : 'border-gray-100'}`}
+            className={`flex items-center justify-between p-3 bg-white rounded-xl border transition ${(() => {
+              const venueAvail = venueColumns.length > 1
+                ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
+                : item.isAvailable !== false;
+              return venueAvail ? 'border-gray-100' : 'border-gray-200 opacity-60';
+            })()}`}
 
           >
 
@@ -15938,19 +15928,33 @@ export function BarMenuPage() {
 
               {/* Availability toggle */}
 
-              <button
+              {(() => {
 
-                onClick={() => toggleAvailability(item)}
+                const venueAvail = venueColumns.length > 1
 
-                title={item.isAvailable === false ? 'Mark available' : 'Mark unavailable'}
+                  ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
 
-                className={`text-[11px] px-2 py-0.5 rounded-full font-bold border transition ${item.isAvailable === false ? 'border-gray-300 text-gray-400 bg-gray-50' : 'border-green-300 text-green-700 bg-green-50'}`}
+                  : item.isAvailable !== false;
 
-              >
+                return (
 
-                {item.isAvailable === false ? 'Off' : 'On'}
+                  <button
 
-              </button>
+                    onClick={() => toggleAvailability(item)}
+
+                    title={venueAvail ? 'Mark unavailable' : 'Mark available'}
+
+                    className={`text-[11px] px-2 py-0.5 rounded-full font-bold border transition ${venueAvail ? 'border-green-300 text-green-700 bg-green-50' : 'border-gray-300 text-gray-400 bg-gray-50'}`}
+
+                  >
+
+                    {venueAvail ? 'On' : 'Off'}
+
+                  </button>
+
+                );
+
+              })()}
 
 
 
@@ -16578,7 +16582,7 @@ export function BarMenuPage() {
 
                 existingCategories={dbCategories.map(c => c.name)}
 
-                sessionId={crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36)}
+                sessionId={uploadSessionId}
 
                 targetVenueId={activeVenueId}
 
@@ -16603,8 +16607,6 @@ export function BarMenuPage() {
 
 
 export function StaffManagement() {
-
-  const { token } = useAuth();
 
   const [staff, setStaff] = useState([]);
 
@@ -16642,13 +16644,13 @@ export function StaffManagement() {
 
     }
 
-  }, [token]);
+  }, []);
 
 
 
   useEffect(() => {
 
-    fetchStaff();
+    Promise.resolve().then(() => fetchStaff());
 
   }, [fetchStaff]);
 
@@ -17083,7 +17085,7 @@ export function Attendance() {
 
   useEffect(() => {
 
-    loadData();
+    Promise.resolve().then(() => loadData());
 
   }, [loadData]);
 

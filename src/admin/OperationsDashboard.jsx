@@ -120,12 +120,12 @@ async function fetchPayrollSummary() {
   }
 }
 
-async function loadDashboardData(dateFilter) {
+async function loadDashboardData(dateFilter, outletId) {
   const rid = getCurrentRestaurantId();
   const [sales, payments, categories, barInventory, lowStock, kitchenInventory, payrollRecords] = await Promise.allSettled([
-    fetchReportDailySales(dateFilter.startDate, dateFilter.endDate),
-    fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate),
-    fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate),
+    fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId),
+    fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate, outletId),
+    fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchBarInventory(),
     fetchLowStockItems(),
     fetchKitchenInventory(),
@@ -143,7 +143,7 @@ async function loadDashboardData(dateFilter) {
   };
 }
 
-export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
+export default function OperationsDashboard({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -152,7 +152,7 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await loadDashboardData(dateFilter);
+      const res = await loadDashboardData(dateFilter, outletId);
       setData(res);
     } catch (e) {
       setError(e.message);
@@ -161,7 +161,7 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
     }
   };
 
-  useEffect(() => { fetchData(); }, [dateFilter]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const summary = useMemo(() => {
     if (!data) return null;

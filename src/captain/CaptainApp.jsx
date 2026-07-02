@@ -41,6 +41,7 @@ import { useSocket, getSocket } from '../hooks/useSocket';
 import { useTableSync } from '../services/tableSyncService';
 import { useLongPress } from '../hooks/useLongPress';
 import KotConfirmModal from '../shared/components/KotConfirmModal';
+import LiquorQtyPicker from '../shared/components/LiquorQtyPicker';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable, reserveKotNumber } from '../services/orderApi';
 
@@ -848,6 +849,8 @@ export default function CaptainApp({ onLogout }) {
   const [sendingKOT, setSendingKOT] = useState(false);
 
   const [showKotConfirm, setShowKotConfirm] = useState(false);
+  const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
+  const [liquorQtyItem, setLiquorQtyItem] = useState(null);
 
 
 
@@ -1050,7 +1053,7 @@ export default function CaptainApp({ onLogout }) {
   }, [activeOutlet, tableSubCategory]);
 
   const outletFilteredMenuItems = useMemo(() => {
-    const base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
+    let base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
 
     // Resolve currentVenueId from the active table's section → venue relationship
     let currentVenueId = activeTable?.section?.venueId || activeTable?.section?.venue?.id || null;
@@ -1076,6 +1079,11 @@ export default function CaptainApp({ onLogout }) {
           }
         }
       }
+    }
+
+    // Filter out items disabled for this venue
+    if (currentVenueId) {
+      base = base.filter(item => item.venueAvailabilities?.[currentVenueId] !== false);
     }
 
     // Build venue price map from item.venuePrices keyed by venue ID
@@ -2232,7 +2240,7 @@ export default function CaptainApp({ onLogout }) {
 
   // This prevents the cashier from seeing a table as occupied before any order is confirmed.
 
-  const addItemToSession = (item) => {
+  const addItemToSession = (item, quantity = 1) => {
     if (!activeTableId) {
       console.warn('[CaptainApp] addItemToSession blocked: no activeTableId. Item:', item?.n, 'view:', view);
       return; // no active table, do nothing
@@ -2258,11 +2266,11 @@ export default function CaptainApp({ onLogout }) {
 
       if (existing) {
 
-        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
+        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + quantity } : i);
 
       } else {
 
-        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
+        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: quantity, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
 
       }
 
@@ -2288,6 +2296,13 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
+    // Non-beer liquor items show quantity picker
+    if (item.menuType === 'LIQUOR') {
+      setLiquorQtyItem(item);
+      setShowLiquorQtyPicker(true);
+      return;
+    }
+
     addItemToSession(item);
   };
 
@@ -2295,6 +2310,13 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+
+  const handleLiquorQtySelect = (qty) => {
+    if (!liquorQtyItem) return;
+    addItemToSession(liquorQtyItem, qty);
+    setShowLiquorQtyPicker(false);
+    setLiquorQtyItem(null);
+  };
 
   const cancelSession = () => {
 
@@ -5918,6 +5940,13 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+
+      <LiquorQtyPicker
+        isOpen={showLiquorQtyPicker}
+        itemName={liquorQtyItem?.n || ''}
+        onSelect={handleLiquorQtySelect}
+        onClose={() => { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); }}
+      />
       <KotConfirmModal
         isOpen={showKotConfirm}
         itemCount={currentSessionItems.length}

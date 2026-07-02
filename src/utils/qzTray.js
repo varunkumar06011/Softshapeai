@@ -150,7 +150,10 @@ const KITCHEN_PRINTER = import.meta.env.VITE_KITCHEN_PRINTER_NAME || 'KITCHEN_PR
 const BAR_PRINTER = import.meta.env.VITE_BAR_PRINTER_NAME || 'BAR_PRINTER';
 const BILLING_PRINTER = import.meta.env.VITE_BILLING_PRINTER_NAME || 'BILLING_PRINTER';
 
-export function getPrinterForJob(type, restaurantId, sectionTag) {
+export function getPrinterForJob(type, restaurantId, sectionTag, printerName) {
+  // If backend has already resolved an explicit printer name, use it directly.
+  if (printerName) return printerName;
+
   const config = getRestaurantConfig();
   const mapping = config?.printerConfig?.agentMapping || {};
   const printers = config?.printerConfig?.printers || [];

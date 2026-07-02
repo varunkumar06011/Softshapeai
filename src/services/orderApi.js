@@ -333,6 +333,10 @@ export async function saveTransaction({
   cgst,
   sgst,
   grandTotal,
+  sectionId,
+  sectionTag,
+  billNumber,
+  platform,
 }) {
   const res = await fetch(apiUrl('/api/transactions'), {
     method: 'POST',
@@ -352,6 +356,10 @@ export async function saveTransaction({
       cgst,
       sgst,
       grandTotal,
+      sectionId,
+      sectionTag,
+      billNumber,
+      platform,
     }),
   });
   return parseResponse(res);

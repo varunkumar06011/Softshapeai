@@ -59,7 +59,15 @@ export const authService = {
       purgeLegacyCaches();
     }
     if (data.preAuthToken) {
+      // Clear stale session from previous login so old tokens don't
+      // interfere with the outlet selection flow
+      localStorage.removeItem('ss_token');
+      localStorage.removeItem('ss_user');
+      localStorage.removeItem('ss_restaurant');
       localStorage.setItem('ss_preauth_token', data.preAuthToken);
+      if (data.accessibleOutlets) {
+        localStorage.setItem('ss_accessible_outlets', JSON.stringify(data.accessibleOutlets));
+      }
     }
     return data;
   },
