@@ -6084,7 +6084,7 @@ export function KitchenInventory() {
 
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
-            body: JSON.stringify({ restaurantId, name: ingredient, unit, prize, currentStock, category, reorderLevel: 0 }),
+            body: JSON.stringify({ restaurantId, name: ingredient, unit, price: prize, currentStock, category, reorderLevel: 0 }),
 
           });
 
