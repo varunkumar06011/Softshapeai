@@ -311,8 +311,16 @@ const CashierDashboard = ({ onLogout }) => {
       .catch(() => {});
   }, []);
 
-  // Fetch sections dynamically for tab labels
-  const [fetchedSections, setFetchedSections] = useState([]);
+  // Fetch sections dynamically for tab labels — cached locally for instant load
+  const SECTIONS_CACHE_KEY = getTenantScopedKey('cashier_sections_cache');
+  const [fetchedSections, setFetchedSections] = useState(() => {
+    try {
+      const cached = localStorage.getItem(SECTIONS_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [sectionsFetchKey, setSectionsFetchKey] = useState(0);
   useEffect(() => {
     fetch(`${API_BASE}/api/venue/sections`, {
@@ -329,12 +337,16 @@ const CashierDashboard = ({ onLogout }) => {
       .then(data => {
         const sections = Array.isArray(data) ? data : data.sections || [];
         setFetchedSections(sections);
+        try {
+          localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+        } catch (e) {
+          console.warn('[fetchedSections] failed to cache sections:', e);
+        }
       })
       .catch(err => {
         console.error('[fetchedSections] fetch failed:', err);
-        setFetchedSections([]);
       });
-  }, [sectionsFetchKey]);
+  }, [SECTIONS_CACHE_KEY, sectionsFetchKey]);
 
   // Build dynamic source maps from fetchedSections (replaces hardcoded constants)
   const sectionTagToSource = useMemo(() => {
@@ -3931,9 +3943,9 @@ const CashierDashboard = ({ onLogout }) => {
       <OfflineStatusBar />
       <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
       {/* SIDEBAR / BOTTOM BAR */}
-      <aside className="w-full sm:w-20 lg:w-72 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
-        <div className="hidden sm:flex p-3 lg:p-8 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
-          <div className="bg-white p-1.5 lg:p-4 rounded-2xl lg:rounded-[32px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-14 lg:w-44 flex items-center justify-center">
+      <aside className="w-full sm:w-20 lg:w-56 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
+        <div className="hidden sm:flex p-3 lg:p-4 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
+          <div className="bg-white p-1.5 lg:p-3 rounded-2xl lg:rounded-[24px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-14 lg:w-32 flex items-center justify-center">
             <img
               src="/logo softshape.ai.png"
               alt="Softshape.ai"
@@ -3955,7 +3967,7 @@ const CashierDashboard = ({ onLogout }) => {
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
-              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-4 px-5 sm:px-4 py-2.5 sm:py-3.5 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 ${activeTab === item.id
+              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-3 px-5 sm:px-3 py-2.5 sm:py-2.5 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 ${activeTab === item.id
                 ? 'bg-[#E53935] text-white font-black shadow-lg shadow-red-500/15 scale-[1.01]'
                 : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
@@ -3967,8 +3979,8 @@ const CashierDashboard = ({ onLogout }) => {
           ))}
         </nav>
 
-        <div className="hidden sm:block p-3.5 border-t border-gray-100 mt-auto pb-8">
-          <button onClick={onLogout} className="flex items-center gap-4 w-full p-3.5 rounded-xl text-gray-450 hover:text-red-650 hover:bg-red-50 transition-all hover:scale-[1.02] active:scale-98">
+        <div className="hidden sm:block p-3 border-t border-gray-100 mt-auto pb-6">
+          <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-gray-450 hover:text-red-650 hover:bg-red-50 transition-all hover:scale-[1.02] active:scale-98">
             <LogOut size={22} className="text-gray-405 group-hover:text-red-600" />
             <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-gray-500 group-hover:text-red-600">Logout</span>
           </button>
@@ -5242,12 +5254,12 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       ) : (
                         <div
-                          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
+                          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
                         >
                           {activeMenuItems.map((item) => (
                             <div
                               key={item.id || item.n}
-                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[120px] p-4 gap-2 justify-between"
+                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[132px] p-3 sm:p-4 gap-2 justify-between"
                             >
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
@@ -5261,8 +5273,8 @@ const CashierDashboard = ({ onLogout }) => {
                                 )}
                               </div>
 
-                              {/* Item name — large and readable */}
-                              <h4 className="text-sm md:text-base font-black text-gray-900 leading-snug line-clamp-3">
+                              {/* Item name — full visibility, wraps cleanly */}
+                              <h4 className="text-xs sm:text-sm font-black text-gray-900 leading-snug line-clamp-4 break-words">
                                 <HighlightedText text={item.n} highlight={searchQuery} />
                               </h4>
 
@@ -5281,7 +5293,7 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
 
                   {/* COMPACT CART */}
-                  <div className={`w-full ${isCartExpanded ? 'lg:w-[640px]' : 'lg:w-[440px]'} flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`}>
+                  <div className={`w-full ${isCartExpanded ? 'lg:w-[520px]' : 'lg:w-[380px]'} flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`}>
                     <div
                       className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
                       onClick={() => setIsCartMinimized(!isCartMinimized)}
