@@ -323,42 +323,73 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = language === 'te' ? 'te-IN' : 'en-IN';
+    utterance.rate = 1;
+    utterance.pitch = 1;
 
     const trySpeak = () => {
       const voices = window.speechSynthesis.getVoices();
       const match = voices.find(v => v.lang === utterance.lang);
       if (match) utterance.voice = match;
       window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
       window.speechSynthesis.speak(utterance);
     };
 
     if (window.speechSynthesis.getVoices().length === 0) {
       window.speechSynthesis.onvoiceschanged = trySpeak;
+      setTimeout(trySpeak, 500);
     } else {
       trySpeak();
     }
   }, []);
 
   const startSpireListening = useCallback(() => {
-    if (!spireSpeechSupported) return;
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'te-IN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    if (!spireSpeechSupported) {
+      console.error('[Spire] SpeechRecognition not supported in this browser');
+      return;
+    }
 
-    recognition.onstart = () => setSpireListening(true);
-    recognition.onend = () => setSpireListening(false);
-    recognition.onerror = () => setSpireListening(false);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setSpireInput(transcript);
-      setTimeout(() => {
-        handleSpireSubmit({ preventDefault: () => {} });
-      }, 0);
+    const runRecognition = () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.continuous = false;
+
+      recognition.onstart = () => setSpireListening(true);
+      recognition.onend = () => setSpireListening(false);
+      recognition.onerror = (event) => {
+        setSpireListening(false);
+        console.error('[Spire] speech recognition error:', event.error);
+      };
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setSpireInput(transcript);
+        setTimeout(() => {
+          handleSpireSubmit({ preventDefault: () => {} }, transcript);
+        }, 0);
+      };
+
+      try {
+        recognition.start();
+      } catch (err) {
+        console.error('[Spire] recognition.start error:', err);
+      }
     };
 
-    recognition.start();
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(runRecognition)
+        .catch((err) => {
+          console.error('[Spire] mic permission denied:', err);
+          window.alert('Microphone access is required for voice input. Please allow microphone permission in your browser settings.');
+        });
+    } else {
+      runRecognition();
+    }
   }, [spireSpeechSupported, handleSpireSubmit]);
 
   return (
