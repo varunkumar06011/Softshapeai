@@ -183,6 +183,8 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
 
     return {
       totalRevenue: salesSummary.totalRevenue || 0,
+      totalSales: salesSummary.totalSales ?? salesSummary.totalSubtotal ?? 0,
+      netSales: salesSummary.netSales ?? 0,
       totalTransactions: salesSummary.totalTransactions || 0,
       averageBillValue: salesSummary.averageBillValue || 0,
       totalDiscount: salesSummary.totalDiscount || 0,
@@ -206,7 +208,8 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
       { key: 'value', label: 'Value' },
     ];
     const rows = [
-      { metric: 'Total Revenue', value: summary.totalRevenue },
+      { metric: 'Total Sales', value: summary.totalSales },
+      { metric: 'Net Sales', value: summary.netSales },
       { metric: 'Total Transactions', value: summary.totalTransactions },
       { metric: 'Average Bill Value', value: summary.averageBillValue },
       { metric: 'Total Discount', value: summary.totalDiscount },
@@ -231,7 +234,8 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
             { key: 'value', label: 'Value' },
           ],
           rows: [
-            { metric: 'Total Revenue', value: summary.totalRevenue },
+            { metric: 'Total Sales', value: summary.totalSales },
+            { metric: 'Net Sales', value: summary.netSales },
             { metric: 'Total Transactions', value: summary.totalTransactions },
             { metric: 'Average Bill Value', value: summary.averageBillValue },
             { metric: 'Total Discount', value: summary.totalDiscount },
@@ -273,7 +277,7 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
   const trend = data.sales?.byDay?.map((d) => ({ time: d.date, rev: d.revenue })) || [];
   const methodPie = summary.paymentMethods.map((m) => ({
     name: m.method,
-    value: Math.round((m.amount / (summary.totalRevenue || 1)) * 100),
+    value: Math.round((m.amount / (summary.totalSales || 1)) * 100),
   }));
   const categoryBar = summary.categories.slice(0, 6).map((c) => ({ name: c.name, revenue: c.totalRevenue }));
   const methodIcons = { CASH: Banknote, UPI: Smartphone, CARD: CreditCard, SPLIT: Layers };
@@ -286,9 +290,9 @@ export default function OperationsDashboard({ dateFilter, onDownloadRef }) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Revenue" value={<Money value={summary.totalRevenue} />} sub="Sales in this period" icon={DollarSign} color="text-green-600" />
-        <StatCard label="Transactions" value={summary.totalTransactions} sub="Bills settled" icon={Package} color="text-blue-600" />
-        <StatCard label="Avg Bill Value" value={<Money value={summary.averageBillValue} />} sub="Revenue / Orders" icon={TrendingUp} color="text-amber-600" />
+        <StatCard label="Total Sales" value={<Money value={summary.totalSales} />} sub="With GST, after discount" icon={DollarSign} color="text-green-600" />
+        <StatCard label="Net Sales" value={<Money value={summary.netSales} />} sub="Excl. GST, after discount" icon={TrendingUp} color="text-blue-600" />
+        <StatCard label="Transactions" value={summary.totalTransactions} sub="Bills settled" icon={Package} color="text-amber-600" />
         <StatCard label="Total Discount" value={<Money value={summary.totalDiscount} />} sub="Discounts given" icon={Star} color="text-purple-600" />
       </div>
 

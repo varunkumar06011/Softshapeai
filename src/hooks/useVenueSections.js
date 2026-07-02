@@ -22,12 +22,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchVenues } from '../services/tableApi';
 
-// All non-BAR venueTypes route through the same kitchen/menu/printer path as "restaurant"
-const BAR_TYPES = ['BAR'];
+// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
 
 // Maps a venue type to the outlet type for routing purposes
 function getOutletForVenueType(venueType) {
-  return venueType === 'BAR' ? 'bar' : 'restaurant';
+  if (!venueType) return 'restaurant';
+  return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase()) ? 'bar' : 'restaurant';
 }
 
 /**

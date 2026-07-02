@@ -14,6 +14,8 @@
 // Item shape: { n: name, c: category, p: price, t: type, id, desc, alias, ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getItemCategory } from "../../utils/itemHelpers";
+
 /** Build searchable text for a POS menu item ({ n, c, p, t, id, desc, ... }). */
 export function getMenuSearchText(item) {
   if (!item) return "";
@@ -133,8 +135,8 @@ export function menuItemMatchesSearch(item, query) {
 
   const tokens = q.split(/\s+/).filter(Boolean);
 
-  const nameLower = (item.n || item.name || "").toLowerCase();
-  const catLower = (item.c || item.category || "").toLowerCase();
+  const nameLower = String(item.n || item.name || "").toLowerCase();
+  const catLower = String(item.c || item.category || "").toLowerCase();
   const isVeg = item.t === "veg" || item.isVeg === true;
   const isSpecial = item.isSpecial === true || item.special === true || item.is_special === true;
 

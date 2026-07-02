@@ -53,7 +53,7 @@ import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { getTenantScopedKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext.jsx';
 
-import { isBeerItem } from '../utils/itemHelpers';
+import { isBeerItem, getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 
@@ -70,7 +70,6 @@ import { useBarTableSync } from '../services/barTableSyncService';
 
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
-import VariantPicker from '../shared/components/VariantPicker';
 
 import VenueSectionView from '../shared/components/VenueSectionView';
 
@@ -90,6 +89,13 @@ import { hapticSuccess } from '../shared/hooks/useHaptics';
 
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
+
+// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+function isBarLikeVenue(venueType) {
+  if (!venueType) return false;
+  return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());
+}
 
 
 
@@ -812,7 +818,6 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  const [activeVariantItem, setActiveVariantItem] = useState(null);
 
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [inlineQtyItem, setInlineQtyItem] = useState(null);
@@ -1095,11 +1100,16 @@ export default function CaptainApp({ onLogout }) {
           ? Number(overridePrice)
           : Number(item.p || item.price || 0);
       }
-      const remappedVariants = item.variants?.map(v => {
+      const remappedVariants = item.variants?.map((v, idx) => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
-        return variantOverride !== undefined
-          ? { ...v, price: Number(variantOverride) }
-          : v;
+        if (variantOverride !== undefined) {
+          return { ...v, price: Number(variantOverride) };
+        }
+        // Apply item-level venue price override to the default (or first) variant
+        if (overridePrice !== undefined && (v.isDefault || (idx === 0 && !item.variants.some(vv => vv.isDefault)))) {
+          return { ...v, price: Number(overridePrice) };
+        }
+        return v;
       }) ?? item.variants;
 
       return { ...item, p: finalPrice, variants: remappedVariants };
@@ -1753,7 +1763,7 @@ export default function CaptainApp({ onLogout }) {
   // Reset tableSubCategory when switching outlets — use first fetched section
   useEffect(() => {
     const matchingSection = fetchedSections.find(s => {
-      const sectionOutlet = s.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      const sectionOutlet = isBarLikeVenue(s.venue?.venueType) ? 'bar' : 'restaurant';
       if (activeOutlet === 'both') return true;
       return sectionOutlet === activeOutlet;
     }) || fetchedSections[0];
@@ -2206,7 +2216,6 @@ export default function CaptainApp({ onLogout }) {
     isSubmittingKotRef.current = false;
     setExpandedNoteItemId(null);
     setInlineQtyItem(null);
-    setActiveVariantItem(null);
     setPreviewItem(null);
     setEditingItem(null);
 
@@ -2223,7 +2232,7 @@ export default function CaptainApp({ onLogout }) {
 
   // This prevents the cashier from seeing a table as occupied before any order is confirmed.
 
-  const addItemToSession = (item, variant = null) => {
+  const addItemToSession = (item) => {
     if (!activeTableId) {
       console.warn('[CaptainApp] addItemToSession blocked: no activeTableId. Item:', item?.n, 'view:', view);
       return; // no active table, do nothing
@@ -2231,10 +2240,11 @@ export default function CaptainApp({ onLogout }) {
     const itemKey = String(item.id || item.n || '');
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 2000) return; // 2-second cooldown per item
+    if (now - lastAdd < 900) return; // 900ms cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
-    const finalPrice = variant ? Number(variant.price) : item.p;
+    const finalPrice = item.p;
+    const finalName = item.n;
 
 
 
@@ -2242,17 +2252,17 @@ export default function CaptainApp({ onLogout }) {
 
       const currentCart = prev[activeTableId] ?? [];
 
-      const existing = currentCart.find(i => i.n === item.n);
+      const existing = currentCart.find(i => i.n === finalName);
 
       let updatedCart;
 
       if (existing) {
 
-        updatedCart = currentCart.map(i => i.n === item.n ? { ...i, q: i.q + 1 } : i);
+        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + 1 } : i);
 
       } else {
 
-        updatedCart = [...currentCart, { ...item, n: item.n, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
+        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: 1, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
 
       }
 
@@ -2260,7 +2270,7 @@ export default function CaptainApp({ onLogout }) {
 
     });
 
-    addNotification(`${item.n} added`, 'success');
+    addNotification(`${finalName} added`, 'success');
 
     setSearchQuery('');
 
@@ -2278,23 +2288,11 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
-    // Other liquor items (spirits) should show variant picker
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'LIQUOR' && !item.isBottleItem) {
-      setActiveVariantItem(item);
-    } else {
-      addItemToSession(item);
-    }
+    addItemToSession(item);
   };
 
 
 
-  const handleVariantSelect = (item, variant) => {
-
-    setActiveVariantItem(null);
-
-    addItemToSession(item, variant);
-
-  };
 
 
 
@@ -2507,7 +2505,7 @@ export default function CaptainApp({ onLogout }) {
 
     // Snapshot items before the API call — needed for retry in the catch block.
     // Must be declared outside the try block so it's accessible in catch.
-    const retrySnapshot = [...currentSessionItems];
+    var retrySnapshot = [...currentSessionItems];
 
     try {
 
@@ -2589,6 +2587,9 @@ export default function CaptainApp({ onLogout }) {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
+        // Local print is best-effort. If the captain is on a different network
+        // (e.g. conference hall) and the local printer / Print Agent is unreachable,
+        // the backend cloud print agent will still print the KOT after the API call succeeds.
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
@@ -2931,7 +2932,8 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    // Optimistic UI — mark item as CANCELLED immediately
+    // Optimistic UI — decrement or remove item based on cancel quantity
+    const cancelQty = Number(kotItem.q ?? 1);
     setActiveTables(prev => prev.map(t => {
       if (t.backendId !== activeTable?.backendId) return t;
 
@@ -2947,11 +2949,13 @@ export default function CaptainApp({ onLogout }) {
 
             ...kot,
 
-            items: kot.items.map(i =>
-
-              i.orderItemId === kotItem.orderItemId ? { ...i, s: 'Cancelled', removedFromBill: true } : i
-
-            ),
+            items: kot.items.map(i => {
+              if (i.orderItemId !== kotItem.orderItemId) return i;
+              const currentQty = Number(i.q ?? i.quantity ?? 0);
+              const newQty = Math.max(0, currentQty - cancelQty);
+              if (newQty <= 0) return { ...i, s: 'Cancelled', removedFromBill: true, q: 0 };
+              return { ...i, q: newQty, quantity: newQty };
+            }),
 
           };
 
@@ -2959,12 +2963,16 @@ export default function CaptainApp({ onLogout }) {
 
         activeOrder: t.activeOrder ? {
           ...t.activeOrder,
-          items: (t.activeOrder.items || []).map(i =>
-            i.id === kotItem.orderItemId ? { ...i, removedFromBill: true } : i
-          ),
+          items: (t.activeOrder.items || []).map(i => {
+            if (i.id !== kotItem.orderItemId) return i;
+            const currentQty = Number(i.quantity ?? i.q ?? 0);
+            const newQty = Math.max(0, currentQty - cancelQty);
+            if (newQty <= 0) return { ...i, removedFromBill: true, quantity: 0, q: 0 };
+            return { ...i, quantity: newQty, q: newQty };
+          }),
         } : t.activeOrder,
 
-        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * (kotItem?.q ?? 1)),
+        currentBill: Math.max(0, (t.currentBill ?? 0) - (kotItem?.p ?? 0) * cancelQty),
 
       };
 
@@ -3897,7 +3905,7 @@ export default function CaptainApp({ onLogout }) {
                   {fetchedSections.length > 0
                     ? fetchedSections
                         .filter(section => {
-                          const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+                          const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
                           if (activeOutlet === 'both') return true;
                           return sectionOutlet === activeOutlet;
                         })
@@ -4503,9 +4511,9 @@ export default function CaptainApp({ onLogout }) {
 
     ? outletFilteredMenuItems.filter(item => {
 
-        const name = (item.n || item.name || '').toLowerCase();
+        const name = String(item.n || item.name || '').toLowerCase();
 
-        const cat = (item.c || item.category || '').toLowerCase();
+        const cat = String(item.c || item.category || '').toLowerCase();
 
         return words.some(w => name.includes(w) || cat.includes(w) ||
 
@@ -5065,6 +5073,10 @@ export default function CaptainApp({ onLogout }) {
 
                                 <div className="flex items-center gap-2">
 
+                                  <span className={`text-[10px] font-bold ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
+
+                                  <span className={`text-sm font-black ${isCancelled ? 'line-through text-red-400' : 'text-gray-900'}`}>₹{Number(item.p * item.q).toFixed(0)}</span>
+
                                   {isLoading ? (
 
                                     <Loader2 size={13} className="animate-spin text-red-400 shrink-0" />
@@ -5187,7 +5199,10 @@ export default function CaptainApp({ onLogout }) {
 
                               </div>
 
-                              <span className="text-sm font-black text-gray-900">₹{item.p * item.q}</span>
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-gray-400">₹{item.p} × {item.q}</span>
+                                <span className="text-sm font-black text-gray-900 block">₹{item.p * item.q}</span>
+                              </div>
 
                             </div>
 
@@ -5902,18 +5917,6 @@ export default function CaptainApp({ onLogout }) {
       })()}
 
 
-
-      {/* VARIANT PICKER */}
-
-      <VariantPicker
-
-        item={activeVariantItem}
-
-        onSelect={handleVariantSelect}
-
-        onClose={() => setActiveVariantItem(null)}
-
-      />
 
       <KotConfirmModal
         isOpen={showKotConfirm}

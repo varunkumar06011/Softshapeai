@@ -206,6 +206,35 @@ describe('syncEngine — syncPendingActions', () => {
     expect(count).toBe(0);
   });
 
+  it('should auto-resolve update-items 409 conflict via adopt_server and remove the action', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { requestId: 'r-update', actionType: 'update-items', status: 'error', statusCode: 409, error: 'Order was modified by another user' },
+        ],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    await addPendingAction({
+      requestId: 'r-update',
+      actionType: 'update-items',
+      entityId: 'order-1',
+      url: '/api/orders/order-1/items',
+      method: 'PATCH',
+      body: { items: [{ menuItemId: 'm1', quantity: 2 }] },
+    });
+
+    await syncPendingActions();
+
+    // adopt_server should discard the local change and remove the pending action
+    const count = await getPendingCount();
+    expect(count).toBe(0);
+    const status = getSyncStatus();
+    expect(status.syncStatus).toBe('idle');
+  });
+
   it('should match out-of-order bulk-sync results by requestId (regression)', async () => {
     // Backend processes entity groups concurrently and can return results in any order.
     // This test simulates a reversed result order and asserts that the frontend still

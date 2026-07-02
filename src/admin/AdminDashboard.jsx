@@ -17,102 +17,53 @@
 // Accessible to ADMIN and OWNER roles only. Uses Framer Motion for transitions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Table2,
-  UtensilsCrossed,
-  ClipboardList,
-  Receipt,
-  ChartNoAxesCombined,
-  DollarSign,
-  Megaphone,
-  Camera,
-  Package,
-  Sparkles,
-  Settings,
   LogOut,
   Bot,
   Send,
-  Star,
+  Sparkles,
   AlertCircle,
-  Printer,
-  Users,
-  QrCode,
-  Tag,
   Store,
   ChevronDown,
   CheckCircle,
   ArrowRight,
-  Wallet
 } from 'lucide-react';
-import {
-  Dashboard, Tables, MenuPage, Orders, Reports, Payroll, Marketing, Pricing, Inventory, BarTables, BarMenuPage, KitchenInventory, StaffManagement, Attendance
-} from './AdminComponents';
-import SettingsPage from './components/SettingsPage';
 import { useAuth } from '../context/AuthContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
 import { apiFetch } from '../services/apiConfig';
-import AdminVouchers from './AdminVouchers';
-import SurveillanceDashboard from './SurveillanceDashboard';
 import AIDishCreationModal from './AIDishCreationModal';
-import TodaySpecials from './TodaySpecials';
-import AdminTransactions from './AdminTransactions';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { getTenantScopedKey } from '../utils/cacheKeys';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 import { useTableSync } from '../services/tableSyncService';
-import { fetchTransactions } from '../services/orderApi';
 import { authService } from '../services/authService';
 import { reconnectSocket } from '../hooks/useSocket';
 
-import CaptainPerformanceDashboard from '../captain/CaptainPerformanceDashboard';
-import PrinterSettingsPage from './printers/PrinterSettingsPage';
-import TableQRCodes from './TableQRCodes';
-import PriceProfilesPage from './PriceProfilesPage';
-import OutletsOverview from './OutletsOverview';
+import { adminRoutes, managerRoutes, isRouteEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
+import AdminRouteGuard from './AdminRouteGuard';
 
-const navItems = [
-  ["dashboard", "Dashboard", LayoutDashboard],
-  ["tables", "Tables", Table2],
-  ["menu", "Menu", UtensilsCrossed],
-  ["specials", "Today Specials", Star],
-  ["orders", "Online Orders", ClipboardList],
-  ["transactions", "Transactions", Receipt],
-  ["reports", "Reports", ChartNoAxesCombined],
-  ["staff", "Staff", Users],
-  ["captains", "Captain Analytics", ChartNoAxesCombined],
-  ["payroll", "Payroll", DollarSign],
-  ["vouchers", "Vouchers", Wallet],
-  ["attendance", "Attendance", Users],
-  ["kitchen-inventory", "Kitchen/Bar Inventory", UtensilsCrossed],
-  ["marketing", "Marketing AI", Megaphone],
-  ["surveillance", "Surveillance", Camera],
-  ["pricing", "Pricing", Sparkles],
-  ["price-profiles", "Price Profiles", Tag],
-  ["settings", "Settings", Settings],
-  ["printers", "Printers", Printer],
-  ["qr-codes", "QR Codes", QrCode],
-  ["outlets-overview", "My Outlets", Store],
-];
-
-function getInventoryLabel(enabledModules) {
-  if (enabledModules?.bar && enabledModules?.food) return "Kitchen/Bar Inventory";
-  if (enabledModules?.bar) return "Bar Inventory";
-  if (enabledModules?.food) return "Kitchen Inventory";
-  return "Inventory";
-}
-
-const AdminDashboard = ({ role = 'admin', onLogout }) => {
+const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
+  const role = roleProp?.toLowerCase() || 'admin';
   const { shouldReduce } = useMotionConfig();
-  const [page, setPage] = useState(() => {
-    const saved = localStorage.getItem(getTenantScopedKey('admin_active_tab'));
-    if (role === 'manager' && saved !== 'tables' && saved !== 'captains') return 'tables';
-    if (saved === 'pos') return 'dashboard';
-    return saved || (role === 'manager' ? 'tables' : 'dashboard');
-  });
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Derive current section from URL — the URL is the single source of truth.
+  // No more useState + localStorage for active tab.
+  const page = useMemo(() => {
+    const subPath = location.pathname.replace('/admin/dashboard/', '').replace('/admin/dashboard', '');
+    return subPath.split('/')[0] || 'dashboard';
+  }, [location.pathname]);
+
+  // Preload the shared AdminComponents chunk in the background so Menu,
+  // Tables, Dashboard, etc. don't hit the network on first click.
+  useEffect(() => {
+    preloadAdminSections();
+  }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [spireOpen, setSpireOpen] = useState(false);
   const [dishModalOpen, setDishModalOpen] = useState(false);
@@ -127,6 +78,9 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   // Shared State
   const [revenue, setRevenue] = useState(0);
+  const [totalSales, setTotalSales] = useState(0);
+  const [netSales, setNetSales] = useState(0);
+  const [totalDiscount, setTotalDiscount] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
@@ -168,10 +122,14 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
 
   const loadStats = useCallback(async () => {
     try {
-      const todayISO = new Date().toISOString().slice(0, 10);
-      const res = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}`);
-      const data = await res.json();
+      const now = new Date();
+      const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+      const todayISO = istDate.toISOString().slice(0, 10);
+      const data = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}`);
       setRevenue(Math.round(data.summary?.totalRevenue ?? 0));
+      setTotalSales(Math.round(data.summary?.totalSales ?? data.summary?.totalSubtotal ?? 0));
+      setNetSales(Math.round(data.summary?.netSales ?? 0));
+      setTotalDiscount(Math.round(data.summary?.totalDiscount ?? 0));
       setOrdersCount(data.summary?.totalTransactions ?? 0);
     } catch (err) {
       console.warn('[AdminStats] Failed to load stats:', err.message);
@@ -255,39 +213,35 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
     };
   }, [socket, activeOutlet, loadStats]);
 
-  const moduleGatedNavItems = navItems
-    .map(([key, label, Icon]) => {
-      if (key === 'kitchen-inventory') {
-        return [key, getInventoryLabel(enabledModules), Icon];
-      }
-      return [key, label, Icon];
-    })
-    .filter(([key]) => {
-      if (key === 'specials') return true;
-      if (key === 'surveillance') return enabledModules.surveillance === true;
-      if (key === 'pricing') return enabledModules.pricing !== false;
-      if (key === 'tables') return enabledModules.tables !== false || enabledModules.food !== false;
-      if (key === 'menu') return enabledModules.food !== false || enabledModules.bar !== false;
-      if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;
-      if (key === 'transactions') return true;
-      if (key === 'reports') return true;
-      if (key === 'captains') return enabledModules.tables !== false;
-      if (key === 'payroll') return enabledModules.payroll !== false;
-      if (key === 'vouchers') return enabledModules.vouchers !== false;
-      if (key === 'attendance') return enabledModules.payroll !== false;
-      if (key === 'marketing') return enabledModules.marketing !== false;
-      if (key === 'kitchen-inventory') return enabledModules.food !== false || enabledModules.bar_inventory === true || enabledModules.bar !== false;
-      if (key === 'settings') return true;
-      if (key === 'printers') return true;
-      if (key === 'outlets-overview') return true;
-      return enabledModules[key] !== false;
-    });
+  // Build visible routes from the single adminRoutes config — drives both
+  // the sidebar nav buttons and the nested <Route> definitions.
+  const visibleRoutes = useMemo(() => {
+    return adminRoutes
+      .map(r => r.key === 'kitchen-inventory' ? { ...r, label: getInventoryLabel(enabledModules) } : r)
+      .filter(r => {
+        if (role === 'manager' && !managerRoutes.includes(r.key)) return false;
+        return isRouteEnabled(r.key, enabledModules);
+      });
+  }, [enabledModules, role]);
 
-  const displayNavItems = role === 'manager'
-    ? moduleGatedNavItems.filter(item => item[0] === 'tables' || item[0] === 'captains')
-    : moduleGatedNavItems;
+  const title = visibleRoutes.find((r) => r.key === page)?.label ?? "Dashboard";
 
-  const title = displayNavItems.find((x) => x[0] === page)?.[1] ?? "Dashboard";
+  // Helper passed to SettingsPage instead of raw setPage — child components
+  // never construct URL paths themselves.
+  const goToSection = useCallback((key) => {
+    navigate(`/admin/dashboard/${key}`);
+  }, [navigate]);
+
+  // Context object for passing props to route elements via cloneElement.
+  // Built once per render, consumed by routes that declare a props function.
+  const routeCtx = useMemo(() => ({
+    revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading,
+    activeOutlet, loadStats,
+    onAddDish: () => setDishModalOpen(true),
+    goToSection,
+    mUpload, setMUpload, mUploadRef, mGenerated, setMGenerated, mPosted, setMPosted,
+  }), [revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
+       goToSection, mUpload, mGenerated, mPosted]);
 
   const handleQuickSwitch = async (outletId) => {
     setShowOutletSwitcher(false);
@@ -295,7 +249,9 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
       const { token, user, restaurant: newRestaurant } = await authService.switchOutlet(outletId);
       setAuth({ token, user, restaurant: newRestaurant });
       reconnectSocket(token);
-      // Refresh current tab data after switch
+      // Stay on current section — URL is source of truth, section re-mounts
+      // with new outlet's data. If section is not enabled for new outlet,
+      // AdminRouteGuard redirects to dashboard synchronously.
       if (page === 'dashboard') loadStats();
     } catch (err) {
       alert(err.message || 'Failed to switch outlet');
@@ -359,9 +315,9 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
           </div>
 
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-            {displayNavItems.map(([k, label, Icon]) => (
-              <button key={k} onClick={() => { setPage(k); localStorage.setItem(getTenantScopedKey('admin_active_tab'), k); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === k ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
-                <Icon size={16} /> {label}
+            {visibleRoutes.map((r) => (
+              <button key={r.key} onClick={() => { navigate(`/admin/dashboard/${r.key}`); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === r.key ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
+                <r.icon size={16} /> {r.label}
               </button>
             ))}
           </div>
@@ -432,7 +388,7 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
                       ))}
                       <div className="border-t border-gray-100 mt-1 pt-1">
                         <button
-                          onClick={() => { setShowOutletSwitcher(false); setPage('outlets-overview'); }}
+                          onClick={() => { setShowOutletSwitcher(false); navigate('/admin/dashboard/outlets-overview'); }}
                           className="flex w-full items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-[#B71C1C]"
                         >
                           <ArrowRight size={14} /> Manage all outlets
@@ -450,32 +406,35 @@ const AdminDashboard = ({ role = 'admin', onLogout }) => {
         </header>
 
         <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
-          {page === "dashboard" && <Dashboard revenue={revenue} ordersCount={ordersCount} activityLog={activityLog} statsLoading={statsLoading} />}
-          {page === "tables" && (activeOutlet === 'restaurant' || activeOutlet === 'both') && <Tables onOpen={() => { }} />}
-          {page === "tables" && activeOutlet === 'bar' && <BarTables />}
-          {page === "menu" && (activeOutlet === 'restaurant' || activeOutlet === 'both') && <MenuPage onAddDish={() => setDishModalOpen(true)} />}
-          {page === "menu" && activeOutlet === 'bar' && <BarMenuPage />}
-          {page === "specials" && <TodaySpecials />}
-          {page === "orders" && <Orders />}
-          {page === "transactions" && <AdminTransactions onStatsRefresh={loadStats} />}
-          {page === "reports" && <Reports />}
-          {page === "captains" && (
-            <CaptainPerformanceDashboard captains={[]} recentSoldItems={[]} />
-          )}
-          {page === "payroll" && <Payroll onPayslip={() => { }} />}
-          {page === "vouchers" && <AdminVouchers />}
-          {page === "attendance" && <Attendance />}
-          {page === "kitchen-inventory" && <KitchenInventory />}
-          {page === "marketing" && <Marketing upload={mUpload} setUpload={setMUpload} uploadRef={mUploadRef} generated={mGenerated} setGenerated={setMGenerated} posted={mPosted} setPosted={setMPosted} />}
-          {page === "surveillance" && <SurveillanceDashboard onIncident={() => { }} />}
-          {page === "inventory" && <Inventory />}
-          {page === "pricing" && <Pricing />}
-          {page === "price-profiles" && <PriceProfilesPage />}
-          {page === "settings" && <SettingsPage onNavigate={setPage} />}
-          {page === "printers" && <PrinterSettingsPage />}
-          {page === "qr-codes" && <TableQRCodes />}
-          {page === "staff" && <StaffManagement />}
-          {page === "outlets-overview" && <OutletsOverview />}
+          <Suspense fallback={
+            <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-3">
+              <div className="w-8 h-8 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm font-bold text-gray-400">Loading section…</span>
+            </div>
+          }>
+            <Routes>
+              <Route index element={<Navigate to="dashboard" replace search={location.search} />} />
+              {adminRoutes.map((r) => {
+                const elementWithProps = r.props
+                  ? React.cloneElement(r.element, r.props(routeCtx))
+                  : r.element;
+                return (
+                  <Route key={r.key} path={r.key} element={
+                    <AdminRouteGuard
+                      allowedRoles={r.roles}
+                      role={role}
+                      routeKey={r.key}
+                      enabledModules={enabledModules}
+                      isRouteEnabledFn={isRouteEnabled}
+                    >
+                      {elementWithProps}
+                    </AdminRouteGuard>
+                  } />
+                );
+              })}
+              <Route path="*" element={<Navigate to="dashboard" replace />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
 
