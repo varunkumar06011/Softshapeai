@@ -6007,9 +6007,7 @@ export function KitchenInventory() {
 
     const hasScaleColumn = header === 'S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE';
 
-    if (header !== 'S.NO,INGREDIENT,CATEGORY,PRICE' && !hasStockColumn && !hasScaleColumn) {
-
-      alert(`Invalid CSV format.\nExpected header: S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE\nGot: ${header}`);
+      alert(`Invalid CSV format.\nExpected header one of:\n- S.NO,INGREDIENT,CATEGORY,PRICE\n- S.NO,INGREDIENT,CATEGORY,PRICE,STOCK\n- S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE\nGot: ${header}`);
 
       return;
 
