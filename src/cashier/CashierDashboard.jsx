@@ -4603,7 +4603,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + preTaxTotal(t), 0).toFixed(0)}
+                              ₹{filteredTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(0)}
                             </span>
                             <span className="text-[10px] font-bold text-red-100">
                               {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(0)}
@@ -4620,7 +4620,7 @@ const CashierDashboard = ({ onLogout }) => {
                           ].map(({ label, method, color, bg, border }) => {
                             const total = filteredTransactions
                               .filter(t => t.method === method)
-                              .reduce((sum, t) => sum + preTaxTotal(t), 0);
+                              .reduce((sum, t) => sum + netTotal(t), 0);
                             const count = filteredTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
