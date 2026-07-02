@@ -49,7 +49,6 @@ import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../context/SyncStatusContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
 import PendingActionsModal from '../shared/components/PendingActionsModal';
-import VariantPicker from '../shared/components/VariantPicker';
 import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { authService } from '../services/authService';
@@ -557,7 +556,6 @@ const CashierDashboard = ({ onLogout }) => {
   const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
   const menuLoading = activeOutlet === 'bar' || activeOutlet === 'both' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
-  const [variantPickerItem, setVariantPickerItem] = useState(null);
   const [extraTables, setExtraTables] = useState(() => {
     try { return JSON.parse(localStorage.getItem(getTenantScopedKey('cashier_extra_tables')) || '[]'); } catch { return []; }
   });
@@ -814,6 +812,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
   const [txnPage, setTxnPage] = useState(1);
+  const [activeVenueFilter, setActiveVenueFilter] = useState('all');
 
   function formatBillNumber(txn) {
     // Bill No column: prefer billNumber ("1", "2"...), fall back to plain txnNumber (no TXN- prefix)
@@ -970,10 +969,10 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
       console.log(`[Transactions] Applying gen=${myGeneration}, total=${sorted.length}`);
-      // Merge: keep existing transactions that aren't in the new fetch (preserves optimistic settlements)
+      // Replace entirely — only preserve optimistic (socket-added, not yet server-confirmed) txns
       setPastTransactions(prev => {
         const newIds = new Set(sorted.map(t => t.id));
-        const preserved = prev.filter(t => !newIds.has(t.id));
+        const preserved = prev.filter(t => !newIds.has(t.id) && t._optimistic === true);
         return [...sorted, ...preserved];
       });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
@@ -997,11 +996,28 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [activeOutlet, txnCustomDate, txnInitialLoaded]);
 
-  // FIX 2: Filtered transactions based on method and search
+  // Venue filter sections — sections filtered by current outlet, for venue filter pills
+  const venueFilterSections = useMemo(() => {
+    return fetchedSections.filter(section => {
+      const sectionOutlet = section.venue?.venueType === 'BAR' ? 'bar' : 'restaurant';
+      if (activeOutlet === 'both') return true;
+      return sectionOutlet === activeOutlet;
+    });
+  }, [fetchedSections, activeOutlet]);
+
+  // Reset venue filter when outlet changes
+  useEffect(() => {
+    setActiveVenueFilter('all');
+  }, [activeOutlet]);
+
+  // FIX 2: Filtered transactions based on method, search, and venue filter
   const filteredTransactions = useMemo(() => {
     let list = pastTransactions;
 
-    if (txnSourceFilter !== 'all') {
+    // Venue filter — takes precedence over source filter
+    if (activeVenueFilter !== 'all') {
+      list = list.filter(txn => txn.source === activeVenueFilter);
+    } else if (txnSourceFilter !== 'all') {
       list = list.filter(txn => txn.source === txnSourceFilter);
     }
 
@@ -1024,7 +1040,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return list;
-  }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter]);
+  }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter, activeVenueFilter]);
 
   const txnTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / TXN_PAGE_SIZE));
   const paginatedTransactions = useMemo(() => {
@@ -1035,7 +1051,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Reset page whenever txn filters change
   useEffect(() => {
     setTxnPage(1);
-  }, [txnDateFilter, txnMethodFilter, txnSourceFilter, txnSearch, txnCustomDate]);
+  }, [txnDateFilter, txnMethodFilter, txnSourceFilter, txnSearch, txnCustomDate, activeVenueFilter]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -1417,6 +1433,7 @@ const CashierDashboard = ({ onLogout }) => {
           tableDisplayName: socketTxn.tableLabel || (socketTxn.tableNumber ? `T${socketTxn.tableNumber}` : '—'),
           source: sectionTagToSource[socketTxn.sectionTag] || activeOutlet,
           restaurantId: activeRestaurantId,
+          _optimistic: true,
         };
         setPastTransactions(prev => {
           if (prev.some(t => t.id === mappedTxn.id)) return prev;
@@ -1597,10 +1614,19 @@ const CashierDashboard = ({ onLogout }) => {
   const loadTxnsRef = useRef(loadTransactions);
   useEffect(() => { loadTxnsRef.current = loadTransactions; }, [loadTransactions]);
   useEffect(() => {
-    if (activeTab === 'history') {
+    if (activeTab === 'history' || activeTab === 'dashboard' || activeTab === 'analytics') {
       loadTxnsRef.current(txnDateFilter);
     }
   }, [txnDateFilter, activeTab]);
+
+  // Reload transactions once after fetchedSections first loads so source mapping is correct
+  const sectionsLoadedForTxnsRef = useRef(false);
+  useEffect(() => {
+    if (fetchedSections.length > 0 && !sectionsLoadedForTxnsRef.current) {
+      sectionsLoadedForTxnsRef.current = true;
+      loadTxnsRef.current(txnDateFilterRef.current);
+    }
+  }, [fetchedSections]);
 
   useEffect(() => {
     // Guard: skip during KOT submission — handleSmartKOT updates selectedTable + cart synchronously
@@ -1881,19 +1907,22 @@ const CashierDashboard = ({ onLogout }) => {
     );
   }, [activeTableOrders]);
 
-  const todaysSales = useMemo(() => {
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
-    return pastTransactions
-      .filter(txn => txn.date === todayStr)
-      .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
-  }, [pastTransactions]);
+  // Revenue (Gross) = sum of subtotal (pre-discount, pre-tax)
+  // Net = Revenue - Discount = subtotal - discountAmount
+  // These use filteredTransactions so they respect the active date/source/method filters
+  const dashboardRevenue = useMemo(() => {
+    return filteredTransactions
+      .reduce((sum, txn) => sum + Number(txn.subtotal ?? txn.grandTotal ?? txn.amount ?? 0), 0);
+  }, [filteredTransactions]);
 
-  const todaysDiscount = useMemo(() => {
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE });
-    return pastTransactions
-      .filter(txn => txn.date === todayStr)
+  const dashboardDiscount = useMemo(() => {
+    return filteredTransactions
       .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
-  }, [pastTransactions]);
+  }, [filteredTransactions]);
+
+  const dashboardNet = useMemo(() => {
+    return dashboardRevenue - dashboardDiscount;
+  }, [dashboardRevenue, dashboardDiscount]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -3378,31 +3407,12 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    // Other liquor items (spirits) should show variant picker
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'LIQUOR' && !item.isBottleItem) {
-      setVariantPickerItem(item);
-    } else {
-      addToCart(item);
-      setSearchQuery('');
-      setSelectedCategory('All');
-      setActiveDiet('All');
-    }
-  };
-
-  const handleVariantSelect = (item, variant) => {
-    addItemCooldownRef.current['__global__'] = Date.now();
-    const finalName = `${item.n} (${variant.name})`;
-    addToCart({
-      ...item,
-      n: finalName,
-      p: Number(variant.price),
-      notes: item.notes || null
-    });
-    setVariantPickerItem(null);
+    addToCart(item);
     setSearchQuery('');
     setSelectedCategory('All');
     setActiveDiet('All');
   };
+
 
 
 
@@ -3920,9 +3930,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const stats = [
-    { label: "Revenue", value: `₹${Number(todaysSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Discount", value: `₹${Number(todaysDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
-    { label: "Net", value: `₹${Number(todaysSales - todaysDiscount).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Revenue", value: `₹${Number(dashboardRevenue).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discount", value: `₹${Number(dashboardDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
+    { label: "Net", value: `₹${Number(dashboardNet).toFixed(0)}`, change: "After discounts", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
@@ -4223,6 +4233,37 @@ const CashierDashboard = ({ onLogout }) => {
                       )}
                     </div>
 
+                    {/* Unified venue/section filter pills — drives transactions + analytics */}
+                    {activeTab !== 'tables' && venueFilterSections.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mr-1">Venue:</span>
+                        <button
+                          onClick={() => setActiveVenueFilter('all')}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${activeVenueFilter === 'all'
+                            ? 'bg-[#E53935] text-white shadow-sm'
+                            : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
+                            }`}
+                        >
+                          All
+                        </button>
+                        {venueFilterSections.map(section => {
+                          const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
+                          return (
+                            <button
+                              key={sourceKey}
+                              onClick={() => setActiveVenueFilter(sourceKey)}
+                              className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${activeVenueFilter === sourceKey
+                                ? 'bg-[#E53935] text-white shadow-sm'
+                                : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
+                                }`}
+                            >
+                              {section.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {activeTab === 'tables' && enabledModules.tables !== false && (
                       <div className="space-y-4">
                         {/* ── SUBCATEGORY PILLS — dynamically from fetched sections ── */}
@@ -4491,11 +4532,13 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Total Amount Summary */}
                         <div className="m-3 mb-2">
                           <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(0)}
+                              ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.subtotal ?? t.grandTotal ?? 0), 0).toFixed(0)}
                             </span>
-                            <span className="text-[10px] font-bold text-red-100">{filteredTransactions.length} transactions</span>
+                            <span className="text-[10px] font-bold text-red-100">
+                              {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(0)}
+                            </span>
                           </div>
                         </div>
 
@@ -4508,7 +4551,7 @@ const CashierDashboard = ({ onLogout }) => {
                           ].map(({ label, method, color, bg, border }) => {
                             const total = filteredTransactions
                               .filter(t => t.method === method)
-                              .reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0);
+                              .reduce((sum, t) => sum + Number(t.subtotal ?? t.grandTotal ?? 0), 0);
                             const count = filteredTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
@@ -4537,10 +4580,11 @@ const CashierDashboard = ({ onLogout }) => {
                             <button
                               key={f.key}
                               onClick={() => setTxnSourceFilter(f.key)}
-                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key
+                              disabled={activeVenueFilter !== 'all'}
+                              className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key && activeVenueFilter === 'all'
                                 ? 'bg-[#E53935] text-white shadow-sm'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                                }`}
+                                } ${activeVenueFilter !== 'all' ? 'opacity-40 cursor-not-allowed' : ''}`}
                             >
                               {f.label}
                             </button>
@@ -4800,7 +4844,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'analytics' && (
-                      <ItemAnalytics outlet={activeOutlet} sections={fetchedSections} />
+                      <ItemAnalytics outlet={activeOutlet} sections={fetchedSections} venueFilter={activeVenueFilter} />
                     )}
 
                     {activeTab === 'vouchers' && (
@@ -7093,11 +7137,6 @@ const CashierDashboard = ({ onLogout }) => {
         </div>
       )}
 
-      <VariantPicker
-        item={variantPickerItem}
-        onSelect={handleVariantSelect}
-        onClose={() => setVariantPickerItem(null)}
-      />
 
     </div>
   );

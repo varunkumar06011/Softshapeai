@@ -70,7 +70,6 @@ import { useBarTableSync } from '../services/barTableSyncService';
 
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
-import VariantPicker from '../shared/components/VariantPicker';
 
 import VenueSectionView from '../shared/components/VenueSectionView';
 
@@ -812,7 +811,6 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  const [activeVariantItem, setActiveVariantItem] = useState(null);
 
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [inlineQtyItem, setInlineQtyItem] = useState(null);
@@ -2211,7 +2209,6 @@ export default function CaptainApp({ onLogout }) {
     isSubmittingKotRef.current = false;
     setExpandedNoteItemId(null);
     setInlineQtyItem(null);
-    setActiveVariantItem(null);
     setPreviewItem(null);
     setEditingItem(null);
 
@@ -2228,7 +2225,7 @@ export default function CaptainApp({ onLogout }) {
 
   // This prevents the cashier from seeing a table as occupied before any order is confirmed.
 
-  const addItemToSession = (item, variant = null) => {
+  const addItemToSession = (item) => {
     if (!activeTableId) {
       console.warn('[CaptainApp] addItemToSession blocked: no activeTableId. Item:', item?.n, 'view:', view);
       return; // no active table, do nothing
@@ -2239,8 +2236,8 @@ export default function CaptainApp({ onLogout }) {
     if (now - lastAdd < 900) return; // 900ms cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
-    const finalPrice = variant ? Number(variant.price) : item.p;
-    const finalName = variant ? `${item.n} (${variant.name})` : item.n;
+    const finalPrice = item.p;
+    const finalName = item.n;
 
 
 
@@ -2284,23 +2281,11 @@ export default function CaptainApp({ onLogout }) {
       return;
     }
 
-    // Other liquor items (spirits) should show variant picker
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'LIQUOR' && !item.isBottleItem) {
-      setActiveVariantItem(item);
-    } else {
-      addItemToSession(item);
-    }
+    addItemToSession(item);
   };
 
 
 
-  const handleVariantSelect = (item, variant) => {
-
-    setActiveVariantItem(null);
-
-    addItemToSession(item, variant);
-
-  };
 
 
 
@@ -5925,18 +5910,6 @@ export default function CaptainApp({ onLogout }) {
       })()}
 
 
-
-      {/* VARIANT PICKER */}
-
-      <VariantPicker
-
-        item={activeVariantItem}
-
-        onSelect={handleVariantSelect}
-
-        onClose={() => setActiveVariantItem(null)}
-
-      />
 
       <KotConfirmModal
         isOpen={showKotConfirm}

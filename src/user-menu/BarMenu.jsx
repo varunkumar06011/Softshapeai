@@ -40,7 +40,6 @@ import { fetchPublicMenu } from '../services/unifiedMenuService';
 
 import { useBarMenuSync } from '../services/barMenuSyncService';
 
-import VariantPicker from '../shared/components/VariantPicker';
 
 import {
 
@@ -212,7 +211,6 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
   const [previewItem, setPreviewItem] = useState(null);
 
-  const [variantPickerItem, setVariantPickerItem] = useState(null);
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -723,29 +721,12 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
   // Cart actions
 
-  const addToCart = (item, variant = null, e = null) => {
+  const addToCart = (item, e = null) => {
 
     if (e) e.stopPropagation();
 
-
-
-    // Prompt for variant if not specified and item has multiple variants
-
-    if (item.variants && item.variants.length > 1 && !variant) {
-
-      setVariantPickerItem(item);
-
-      return;
-
-    }
-
-
-
-    const selectedVariant = variant || (item.variants && item.variants[0]) || null;
-
-    const finalName = selectedVariant ? `${item.n || item.name} (${selectedVariant.name})` : (item.n || item.name);
-
-    const finalPrice = selectedVariant ? selectedVariant.price : (item.p ?? getItemPrice(item));
+    const finalName = item.n || item.name;
+    const finalPrice = item.p ?? getItemPrice(item);
 
 
 
@@ -809,13 +790,6 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
 
 
-  const handleVariantSelect = (item, variant) => {
-
-    addToCart(item, variant);
-
-    setVariantPickerItem(null);
-
-  };
 
 
 
@@ -1711,23 +1685,7 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
 
 
-                {previewItem.variants && previewItem.variants.length > 1 ? (
-
-                  <button
-
-                    onClick={() => { setVariantPickerItem(previewItem); setPreviewItem(null); }}
-
-                    className="px-6 py-3.5 rounded-full bg-gradient-to-r from-[#B71C1C] to-[#E53935] text-white text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md"
-
-                  >
-
-                    Select Option
-
-                  </button>
-
-                ) : (
-
-                  cart.find(i => i.n === previewItem.n) ? (
+                {previewItem && (cart.find(i => i.n === previewItem.n) ? (
 
                     <div className="flex items-center gap-4 bg-red-50 rounded-full px-3 py-2 border border-red-100">
 
@@ -1761,9 +1719,7 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
                     </button>
 
-                  )
-
-                )}
+                  ))}
 
               </div>
 
@@ -1776,25 +1732,6 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
       )}
 
       </AnimatePresence>
-
-
-
-      {/* Variant Picker Modal */}
-
-      {variantPickerItem && (
-
-        <VariantPicker
-
-          item={variantPickerItem}
-
-          onSelect={handleVariantSelect}
-
-          onClose={() => setVariantPickerItem(null)}
-
-        />
-
-      )}
-
 
 
       {/* View Order Modal (Cart Drawer) */}
