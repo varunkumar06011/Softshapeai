@@ -5678,7 +5678,7 @@ export function KitchenInventory() {
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
+  const [newItem, setNewItem] = useState({ name: '', unit: 'Kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
 
   const [searchQuery, setSearchQuery] = useState('');
 
