@@ -25,6 +25,10 @@ import {
   LogOut,
   Bot,
   Send,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
   Sparkles,
   AlertCircle,
   Store,
@@ -42,6 +46,7 @@ import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig }
 import { useTableSync } from '../services/tableSyncService';
 import { authService } from '../services/authService';
 import { reconnectSocket } from '../hooks/useSocket';
+import { sendSpireMessage } from '../services/spireAgent';
 
 import { adminRoutes, managerRoutes, isRouteEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
 import AdminRouteGuard from './AdminRouteGuard';
@@ -61,13 +66,34 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
 
   // Preload the shared AdminComponents chunk in the background so Menu,
   // Tables, Dashboard, etc. don't hit the network on first click.
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [spireOpen, setSpireOpen] = useState(false);
+  const [spireMessages, setSpireMessages] = useState([]);
+  const [spireInput, setSpireInput] = useState('');
+  const [spireLoading, setSpireLoading] = useState(false);
+  const [spireVoiceEnabled, setSpireVoiceEnabled] = useState(true);
+  const [spireSpeechSupported, setSpireSpeechSupported] = useState(false);
+  const [spireListening, setSpireListening] = useState(false);
+  const [dishModalOpen, setDishModalOpen] = useState(false);
+  const [showOutletSwitcher, setShowOutletSwitcher] = useState(false);
+  const spireMessagesEndRef = useRef(null);
+
   useEffect(() => {
     preloadAdminSections();
   }, []);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [spireOpen, setSpireOpen] = useState(false);
-  const [dishModalOpen, setDishModalOpen] = useState(false);
-  const [showOutletSwitcher, setShowOutletSwitcher] = useState(false);
+
+  useEffect(() => {
+    if (spireOpen) {
+      const supported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+      setSpireSpeechSupported(!!supported);
+    }
+  }, [spireOpen]);
+
+  useEffect(() => {
+    if (spireMessagesEndRef.current) {
+      spireMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [spireMessages, spireLoading]);
   const accessibleOutlets = authService.getAccessibleOutlets();
 
   // Marketing AI State
@@ -261,6 +287,79 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   const trialDaysLeft = restaurant?.trialEndsAt
     ? Math.max(0, Math.ceil((new Date(restaurant.trialEndsAt) - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
+
+  // ── Spire AI handlers ─────────────────────────────────────────────────────
+  const handleSpireSubmit = useCallback(async (e, overrideText) => {
+    e?.preventDefault();
+    const text = (overrideText || spireInput).trim();
+    if (!text) return;
+
+    const userMessage = { role: 'user', text };
+    setSpireMessages(prev => [...prev, userMessage]);
+    setSpireInput('');
+    setSpireLoading(true);
+
+    try {
+      const reply = await sendSpireMessage(text);
+      const assistantMessage = { role: 'assistant', text: reply.answer, language: reply.language };
+      setSpireMessages(prev => [...prev, assistantMessage]);
+      if (spireVoiceEnabled) {
+        speakSpireReply(reply.answer, reply.language);
+      }
+    } catch (err) {
+      const errorMessage = { role: 'assistant', text: `Sorry, I couldn't fetch that: ${err.message}`, isError: true };
+      setSpireMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setSpireLoading(false);
+    }
+  }, [spireInput, spireVoiceEnabled]);
+
+  const sendSpireQuickAction = useCallback((text) => {
+    handleSpireSubmit({ preventDefault: () => {} }, text);
+  }, [handleSpireSubmit]);
+
+  const speakSpireReply = useCallback((text, language) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = language === 'te' ? 'te-IN' : 'en-IN';
+
+    const trySpeak = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const match = voices.find(v => v.lang === utterance.lang);
+      if (match) utterance.voice = match;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    };
+
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = trySpeak;
+    } else {
+      trySpeak();
+    }
+  }, []);
+
+  const startSpireListening = useCallback(() => {
+    if (!spireSpeechSupported) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'te-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setSpireListening(true);
+    recognition.onend = () => setSpireListening(false);
+    recognition.onerror = () => setSpireListening(false);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setSpireInput(transcript);
+      setTimeout(() => {
+        handleSpireSubmit({ preventDefault: () => {} });
+      }, 0);
+    };
+
+    recognition.start();
+  }, [spireSpeechSupported, handleSpireSubmit]);
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] text-[#1A1A1A] font-sans">
@@ -499,63 +598,117 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
             transition={shouldReduce ? { duration: 0 } : springs.gentle}
             className="relative w-full max-w-[450px] bg-white h-full shadow-2xl flex flex-col"
           >
-            <div className="bg-[#B71C1C] text-white p-8 flex items-center justify-between">
+            <div className="bg-[#B71C1C] text-white p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 bg-white/20 rounded-xl flex items-center justify-center">
                   <Bot size={24} />
                 </div>
                 <div>
                   <h3 className="text-xl font-black tracking-tight leading-none">Spire.ai Assistant</h3>
-                  <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Operational Intelligence Active</p>
+                  <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Operational Intelligence</p>
                 </div>
               </div>
-              <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">âœ•</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSpireVoiceEnabled(v => !v)}
+                  className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  title={spireVoiceEnabled ? 'Mute voice replies' : 'Enable voice replies'}
+                >
+                  {spireVoiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                </button>
+                <button onClick={() => setSpireOpen(false)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">✕</button>
+              </div>
             </div>
 
-            <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-[#FFF9F9]">
-              <div className="flex justify-end">
-                <div className="bg-white p-5 rounded-3xl rounded-tr-none border border-red-50 text-sm font-medium shadow-sm max-w-[85%] text-gray-700 leading-relaxed">
-                  Where did my 50kg chicken go today?
+            <div className="flex-grow overflow-y-auto p-5 space-y-4 bg-[#FFF9F9]">
+              {spireMessages.length === 0 && (
+                <div className="text-center text-sm text-gray-500 py-8">
+                  Ask about sales, items, attendance, purchases, or top sellers.
                 </div>
-              </div>
+              )}
 
-              <div className="bg-white p-8 rounded-[40px] border border-red-100 shadow-sm space-y-6">
-                <div className="flex items-center gap-2 text-[#B71C1C]">
-                  <Sparkles size={18} />
-                  <p className="text-[11px] font-black uppercase tracking-[0.2em]">Spire Intelligence</p>
-                </div>
-                <p className="text-base font-bold text-gray-900 leading-tight">
-                  Analyzing sales, inventory logs, and camera feeds...
-                </p>
-                <ul className="space-y-3 text-sm font-bold text-gray-700">
-                  <li className="flex gap-2"><span>â€¢</span> 12.5kg used in 50 Chicken Dum Biryani plates</li>
-                  <li className="flex gap-2"><span>â€¢</span> 35kg remains in cold storage (Fridge 2)</li>
-                  <li className="flex gap-2 text-[#E53935] font-black"><span>â€¢</span> 2.5kg discrepancy found.</li>
-                </ul>
-
-                <div className="relative aspect-[16/10] rounded-[32px] overflow-hidden bg-black group border-[3px] border-[#E53935] shadow-2xl">
-                  <div className="absolute top-4 left-4 z-10 bg-[#E53935] text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest animate-pulse">LIVE INCIDENT</div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                  <div className="absolute inset-4 border-2 border-[#E53935]/30 rounded-2xl animate-pulse" />
-
-                  <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between">
-                    <div>
-                      <p className="text-xs font-black text-white">Unauthorized Access</p>
-                      <p className="text-[9px] font-bold text-white/50">Zone: Cold Storage #2</p>
-                    </div>
-                    <p className="text-[10px] font-black text-white/70 tabular-nums">14:32:07</p>
+              {spireMessages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
+                      msg.role === 'user'
+                        ? 'bg-[#B71C1C] text-white rounded-tr-none'
+                        : msg.isError
+                        ? 'bg-red-50 text-red-700 border border-red-100 rounded-tl-none'
+                        : 'bg-white text-gray-700 border border-red-50 rounded-tl-none shadow-sm'
+                    }`}
+                  >
+                    {msg.text}
                   </div>
                 </div>
+              ))}
+
+              {spireLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-red-50 shadow-sm flex items-center gap-2">
+                    <div className="w-2 h-2 bg-[#B71C1C] rounded-full animate-bounce" />
+                    <div className="w-2 h-2 bg-[#B71C1C] rounded-full animate-bounce delay-75" />
+                    <div className="w-2 h-2 bg-[#B71C1C] rounded-full animate-bounce delay-150" />
+                  </div>
+                </div>
+              )}
+
+              <div ref={spireMessagesEndRef} />
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                {[
+                  { label: 'Today sales', text: 'today sales' },
+                  { label: 'Today attendance', text: 'today attendance' },
+                  { label: 'Top selling', text: 'top selling items today' },
+                  { label: 'This week discounts', text: 'this week discounts' },
+                  { label: 'Chicken sales', text: 'today chicken sales' },
+                  { label: 'Purchases', text: 'this week purchases' },
+                ].map((chip) => (
+                  <button
+                    key={chip.text}
+                    onClick={() => sendSpireQuickAction(chip.text)}
+                    className="px-3 py-1.5 bg-white border border-red-100 rounded-full text-xs font-semibold text-[#B71C1C] hover:bg-red-50 transition-colors"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="p-8 bg-white border-t border-gray-100">
-              <div className="flex gap-3">
-                <div className="flex-grow relative">
-                  <input className="w-full p-4 bg-gray-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-red-100" placeholder="Ask Spire anything..." />
+            <div className="p-5 bg-white border-t border-gray-100">
+              <form onSubmit={handleSpireSubmit} className="flex gap-3">
+                <div className="flex-grow relative flex items-center gap-2">
+                  <input
+                    className="w-full p-4 bg-gray-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-red-100 pr-12"
+                    placeholder="Ask Spire anything..."
+                    value={spireInput}
+                    onChange={(e) => setSpireInput(e.target.value)}
+                  />
+                  {spireSpeechSupported && (
+                    <button
+                      type="button"
+                      onClick={startSpireListening}
+                      disabled={spireListening}
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 flex items-center justify-center rounded-full transition-colors ${
+                        spireListening ? 'bg-red-100 text-[#B71C1C]' : 'hover:bg-gray-100 text-gray-500'
+                      }`}
+                      title={spireListening ? 'Listening...' : 'Voice input'}
+                    >
+                      {spireListening ? <MicOff size={16} /> : <Mic size={16} />}
+                    </button>
+                  )}
                 </div>
-                <button className="h-14 w-14 bg-[#B71C1C] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-100 hover:scale-105 active:scale-95 transition-all"><Send size={24} /></button>
-              </div>
+                <button
+                  type="submit"
+                  disabled={spireLoading || !spireInput.trim()}
+                  className="h-14 w-14 bg-[#B71C1C] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send size={24} />
+                </button>
+              </form>
+              {spireListening && (
+                <p className="text-xs text-[#B71C1C] mt-2 text-center">Listening...</p>
+              )}
             </div>
           </motion.div>
         </div>

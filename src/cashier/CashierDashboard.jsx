@@ -2055,9 +2055,9 @@ const CashierDashboard = ({ onLogout }) => {
         if (billFinderBillNo.trim()) {
           const search = billFinderBillNo.trim().toLowerCase();
           matches = matches && (
-            String(txn.billNumber || '').toLowerCase().includes(search) ||
-            String(txn.displayId || '').toLowerCase().includes(search) ||
-            String(txn.txnNumber || '').toLowerCase().includes(search)
+            String(txn.billNumber || '').toLowerCase() === search ||
+            String(txn.displayId || '').toLowerCase() === search ||
+            String(txn.txnNumber || '').toLowerCase() === search
           );
         }
         if (billFinderTableNo.trim()) {

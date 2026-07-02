@@ -140,7 +140,9 @@ import {
 
   Pencil,
 
-  Upload
+  Upload,
+
+  Loader
 
 } from 'lucide-react';
 
@@ -4892,6 +4894,15 @@ export function Payroll() {
 
   const [deletingId, setDeletingId] = useState(null);
 
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importTab, setImportTab] = useState('excel');
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [editedProposed, setEditedProposed] = useState([]);
+
   const saveTimers = useRef({});
 
 
@@ -5174,6 +5185,89 @@ export function Payroll() {
     loadAdvanceHistory(rec.id);
   };
 
+  const downloadImportTemplate = () => {
+    const csv = 'S.NO,NAME,DESIGNATION,SALARY\n1,Manas Kumar,Master,30000\n2,Jitendra,Master,20000\n3,Krishna,Assistant,13000';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'staff-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportPreview = async () => {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportError('');
+    setImportPreview(null);
+    setEditedProposed([]);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      const isPhoto = importFile.type.startsWith('image/');
+      const res = await fetch(`${API_BASE}/api/payroll/import/preview`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders() },
+        body: formData,
+        signal: AbortSignal.timeout(isPhoto ? 120000 : 30000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Preview failed');
+      setImportPreview(data);
+      setEditedProposed(data.proposed || []);
+    } catch (err) {
+      console.error('[Payroll] Import preview failed:', err);
+      setImportError(err.message || 'Failed to preview import');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleImportCommit = async () => {
+    const unresolved = editedProposed.filter((r) => r.action === 'ambiguous' || r.action === 'needsReview');
+    if (unresolved.length > 0) {
+      setImportError(`Please resolve ${unresolved.length} row(s) marked for review before committing.`);
+      return;
+    }
+    setImporting(true);
+    setImportError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/import/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ rows: editedProposed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Commit failed');
+      setShowImportModal(false);
+      setImportFile(null);
+      setImportPreview(null);
+      setEditedProposed([]);
+      loadData();
+      alert(`Import complete: ${data.created} created, ${data.updated} updated${data.errors.length ? `, ${data.errors.length} errors` : ''}`);
+    } catch (err) {
+      console.error('[Payroll] Import commit failed:', err);
+      setImportError(err.message || 'Failed to commit import');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateProposedRow = (index, field, value) => {
+    setEditedProposed((prev) => {
+      const next = [...prev];
+      const row = { ...next[index] };
+      if (field === 'baseSalary') row.baseSalary = parseFloat(value) || 0;
+      else if (field === 'role') row.role = value;
+      else if (field === 'name') row.name = value;
+      else if (field === 'staffCode') row.staffCode = value;
+      else if (field === 'action') row.action = value;
+      next[index] = row;
+      return next;
+    });
+  };
+
 
 
   const getRecord = (empId) => records.find((r) => r.employeeId === empId);
@@ -5384,25 +5478,42 @@ export function Payroll() {
 
           </div>
 
-          <button
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <button
 
-            onClick={() => {
+              onClick={() => {
 
-              setIdempotencyKey(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+                setIdempotencyKey(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 
-              setAddError('');
+                setAddError('');
 
-              setShowAddModal(true);
+                setShowAddModal(true);
 
-            }}
+              }}
 
-            className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
+              className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
 
-          >
+            >
 
-            Add Employee
+              Add Employee
 
-          </button>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowImportModal(true);
+                setImportTab('excel');
+                setImportFile(null);
+                setImportPreview(null);
+                setImportError('');
+                setEditedProposed([]);
+              }}
+              className="w-full sm:w-auto bg-gray-900 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-gray-800 transition-all shadow-xl shadow-gray-100 active:scale-95"
+            >
+              <Upload size={14} className="inline mr-2" />
+              Import Staff
+            </button>
+          </div>
 
         </div>
 
@@ -5894,6 +6005,226 @@ export function Payroll() {
 
         </div>
 
+      )}
+
+      {/* Import Staff Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowImportModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-gray-900">Import Staff</h3>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            {importError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-bold">
+                {importError}
+              </div>
+            )}
+
+            <div className="flex gap-2 border-b border-gray-200 pb-2">
+              <button
+                onClick={() => setImportTab('excel')}
+                className={`px-4 py-2 text-xs font-black rounded-lg ${importTab === 'excel' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                <FileSpreadsheet size={14} className="inline mr-1" />
+                Excel / CSV
+              </button>
+              <button
+                onClick={() => setImportTab('photo')}
+                className={`px-4 py-2 text-xs font-black rounded-lg ${importTab === 'photo' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                <Camera size={14} className="inline mr-1" />
+                Photo
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={downloadImportTemplate}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
+                >
+                  <Download size={14} className="inline mr-1" />
+                  Download template
+                </button>
+              </div>
+
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
+                <input
+                  type="file"
+                  id="staff-import-file"
+                  className="hidden"
+                  accept={importTab === 'excel' ? '.csv,.xlsx,.xls' : 'image/*'}
+                  onChange={(e) => {
+                    setImportFile(e.target.files[0]);
+                    setImportPreview(null);
+                    setEditedProposed([]);
+                    setImportError('');
+                  }}
+                />
+                <label htmlFor="staff-import-file" className="cursor-pointer flex flex-col items-center gap-2">
+                  <Upload size={32} className="text-gray-400" />
+                  <span className="text-sm font-bold text-gray-700">
+                    {importFile ? importFile.name : 'Click or drag file here'}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {importTab === 'excel' ? 'Supports .csv, .xlsx, .xls' : 'Supports .jpg, .png, .jpeg'}
+                  </span>
+                </label>
+              </div>
+
+              <button
+                onClick={handleImportPreview}
+                disabled={!importFile || importLoading}
+                className="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 disabled:opacity-50"
+              >
+                {importLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader size={16} className="animate-spin" />
+                    {importTab === 'photo' ? 'Scanning photo...' : 'Parsing file...'}
+                  </span>
+                ) : (
+                  'Preview Import'
+                )}
+              </button>
+
+              {importPreview && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-gray-900">
+                      Preview ({importPreview.parsedRows?.length || 0} rows found)
+                    </p>
+                    {importPreview.confidence && (
+                      <span className={`text-[10px] font-black px-2 py-1 rounded-full ${
+                        importPreview.confidence === 'HIGH' ? 'bg-green-100 text-green-700' :
+                        importPreview.confidence === 'MEDIUM' ? 'bg-blue-100 text-blue-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {importPreview.confidence} CONFIDENCE
+                      </span>
+                    )}
+                  </div>
+
+                  {importPreview.warnings?.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs space-y-1">
+                      {importPreview.warnings.map((w, i) => (
+                        <p key={i}>⚠ {w}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto max-h-[40vh]">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 font-black text-gray-500">S.No</th>
+                            <th className="px-3 py-2 font-black text-gray-500">Name</th>
+                            <th className="px-3 py-2 font-black text-gray-500">Designation</th>
+                            <th className="px-3 py-2 font-black text-gray-500">Salary</th>
+                            <th className="px-3 py-2 font-black text-gray-500">Action</th>
+                            <th className="px-3 py-2 font-black text-gray-500">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {editedProposed.map((row, idx) => (
+                            <tr key={idx} className={`${row.action === 'ambiguous' || row.action === 'needsReview' ? 'bg-amber-50' : ''}`}>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={row.staffCode || ''}
+                                  onChange={(e) => updateProposedRow(idx, 'staffCode', e.target.value)}
+                                  className="w-16 border border-gray-200 rounded px-2 py-1 text-xs"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={row.name}
+                                  onChange={(e) => updateProposedRow(idx, 'name', e.target.value)}
+                                  className="w-full border border-gray-200 rounded px-2 py-1 text-xs"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={row.role}
+                                  onChange={(e) => updateProposedRow(idx, 'role', e.target.value)}
+                                  className="w-full border border-gray-200 rounded px-2 py-1 text-xs"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  value={row.baseSalary}
+                                  onChange={(e) => updateProposedRow(idx, 'baseSalary', e.target.value)}
+                                  className="w-24 border border-gray-200 rounded px-2 py-1 text-xs text-right"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={row.action}
+                                  onChange={(e) => updateProposedRow(idx, 'action', e.target.value)}
+                                  className="border border-gray-200 rounded px-2 py-1 text-xs"
+                                >
+                                  <option value="create">Create</option>
+                                  <option value="update">Update</option>
+                                  <option value="ambiguous">Ambiguous</option>
+                                  <option value="needsReview">Needs Review</option>
+                                </select>
+                              </td>
+                              <td className="px-3 py-2">
+                                {row.action === 'create' && <span className="text-[10px] font-black text-green-600">NEW</span>}
+                                {row.action === 'update' && (
+                                  <span className="text-[10px] font-black text-blue-600">
+                                    UPDATE {row.oldBaseSalary !== row.baseSalary && ` ₹${row.oldBaseSalary} → ₹${row.baseSalary}`}
+                                  </span>
+                                )}
+                                {row.action === 'ambiguous' && <span className="text-[10px] font-black text-amber-600">AMBIGUOUS</span>}
+                                {row.action === 'needsReview' && <span className="text-[10px] font-black text-red-600">REVIEW</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setImportPreview(null);
+                        setEditedProposed([]);
+                        setImportFile(null);
+                      }}
+                      disabled={importing}
+                      className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm disabled:opacity-50"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={handleImportCommit}
+                      disabled={importing}
+                      className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50"
+                    >
+                      {importing ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader size={16} className="animate-spin" />
+                          Importing...
+                        </span>
+                      ) : (
+                        `Import ${editedProposed.filter((r) => r.action !== 'ambiguous' && r.action !== 'needsReview').length} Staff`
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

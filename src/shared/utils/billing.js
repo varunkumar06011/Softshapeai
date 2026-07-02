@@ -61,36 +61,34 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
     }
   });
 
-  // GST Calculation: GST on full food subtotal (before discount).
-  // Liquor is always 0% food GST. Discount is applied on overall bill total (subtotal + GST).
-  // GST-exempt items are subtracted from the taxable food amount.
+  // GST Calculation: GST on food only (5%), liquor has 0% food GST.
+  // Discount is applied to raw subtotal FIRST (proportionally), then GST on discounted food.
+  // This matches the backend settleOrderService calculation exactly.
   const subtotal = foodSubtotal + liquorSubtotal;
-  const taxableFood = Math.max(0, foodSubtotal - gstExemptFood);
+  const discountAmount = discountPercent > 0
+    ? Math.round(subtotal * (discountPercent / 100) * 100) / 100
+    : 0;
+
+  const discountedFood = foodSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (foodSubtotal / subtotal) : 0);
+  const gstExemptAfterDiscount = Math.max(0, gstExemptFood - (discountAmount > 0 && subtotal > 0 ? discountAmount * (gstExemptFood / subtotal) : 0));
+  const taxableFood = Math.max(0, discountedFood - gstExemptAfterDiscount);
 
   let baseAmount, cgst, sgst, taxes;
   if (pricesIncludeGst) {
-    // Prices include GST: extract the base, then split tax evenly from the base.
     baseAmount = Math.round((taxableFood / (1 + totalGstRate)) * 100) / 100;
     cgst = Math.round(baseAmount * cgstRate * 100) / 100;
     sgst = Math.round(baseAmount * sgstRate * 100) / 100;
     taxes = cgst + sgst;
   } else {
-    // Prices exclude GST: add tax on top of taxable food (gst-exempt excluded).
     baseAmount = taxableFood;
     cgst = Math.round(taxableFood * cgstRate * 100) / 100;
     sgst = Math.round(taxableFood * sgstRate * 100) / 100;
     taxes = cgst + sgst;
   }
 
-  // displayedSubtotal = food base + gst-exempt food + liquor (all at menu price, no discount)
-  const displayedSubtotal = Math.round((baseAmount + gstExemptFood + liquorSubtotal) * 100) / 100;
-
-  // Discount applies on overall bill total (displayedSubtotal + GST)
-  const preDiscountTotal = displayedSubtotal + taxes;
-  const discountAmount = discountPercent > 0
-    ? Math.round(preDiscountTotal * (discountPercent / 100) * 100) / 100
-    : 0;
-  const grandTotal = Number(Math.max(0, preDiscountTotal - discountAmount).toFixed(2));
+  const liquorAfterDiscount = liquorSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (liquorSubtotal / subtotal) : 0);
+  const displayedSubtotal = Math.round((baseAmount + gstExemptAfterDiscount + liquorAfterDiscount) * 100) / 100;
+  const grandTotal = Math.max(0, Math.round((displayedSubtotal + taxes) * 100) / 100);
 
   return {
     subtotal: displayedSubtotal,
