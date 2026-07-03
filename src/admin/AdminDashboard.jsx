@@ -111,6 +111,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
+  const [dashboardScope, setDashboardScope] = useState('current'); // 'current' | 'all'
 
   const { setTables } = useTableSync();
   const { restaurant, setRestaurant, setAuth } = useAuth();
@@ -151,7 +152,8 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
       const now = new Date();
       const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
       const todayISO = istDate.toISOString().slice(0, 10);
-      const data = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}`);
+      const outletId = dashboardScope === 'all' ? 'all' : restaurant?.id;
+      const data = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}&outletId=${outletId}`);
       setRevenue(Math.round(data.summary?.totalRevenue ?? 0));
       setTotalSales(Math.round(data.summary?.totalSales ?? data.summary?.totalSubtotal ?? 0));
       setNetSales(Math.round(data.summary?.netSales ?? 0));
@@ -162,7 +164,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [dashboardScope, restaurant?.id]);
 
   useEffect(() => {
     const pushLog = (text, type = "info") => {
@@ -179,7 +181,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
 
     const onTableUpdated = ({ table } = {}) => {
       if (!table) return;
-      pushLog(`Table ${table.number} â†’ ${table.workflowStatus || table.status}`, "info");
+      pushLog(`Table ${table.number} -> ${table.workflowStatus || table.status}`, "info");
     };
 
     socket.on("order:created", onOrderCreated);
@@ -262,12 +264,12 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   // Built once per render, consumed by routes that declare a props function.
   const routeCtx = useMemo(() => ({
     revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading,
-    activeOutlet, loadStats,
+    activeOutlet, loadStats, dashboardScope,
     onAddDish: () => setDishModalOpen(true),
     goToSection,
     mUpload, setMUpload, mUploadRef, mGenerated, setMGenerated, mPosted, setMPosted,
   }), [revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
-       goToSection, mUpload, mGenerated, mPosted]);
+       goToSection, mUpload, mGenerated, mPosted, dashboardScope]);
 
   const handleQuickSwitch = async (outletId) => {
     setShowOutletSwitcher(false);
@@ -497,22 +499,32 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
                   className="flex items-center gap-2 rounded-lg border border-[#FFCDD2] bg-[#FFEBEE] px-3 py-1.5 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] transition-colors"
                 >
                   <Store size={14} />
-                  <span className="hidden sm:inline max-w-[120px] truncate">{restaurant?.name}</span>
+                  <span className="hidden sm:inline max-w-[120px] truncate">{dashboardScope === 'all' ? 'All Outlets' : restaurant?.name}</span>
                   <ChevronDown size={14} />
                 </button>
                 {showOutletSwitcher && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowOutletSwitcher(false)} />
                     <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-[#FFCDD2] bg-white shadow-xl z-50 py-1">
+                      <button
+                        onClick={() => { setShowOutletSwitcher(false); setDashboardScope('all'); }}
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[#FFF5F5] ${
+                          dashboardScope === 'all' ? 'font-bold text-[#B71C1C]' : 'text-gray-700'
+                        }`}
+                      >
+                        {dashboardScope === 'all' && <CheckCircle size={14} className="text-[#B71C1C]" />}
+                        <span className="truncate">All Outlets</span>
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
                       {accessibleOutlets.map((o) => (
                         <button
                           key={o.id}
-                          onClick={() => handleQuickSwitch(o.id)}
+                          onClick={() => { setDashboardScope('current'); handleQuickSwitch(o.id); }}
                           className={`flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[#FFF5F5] ${
-                            o.id === restaurant?.id ? 'font-bold text-[#B71C1C]' : 'text-gray-700'
+                            o.id === restaurant?.id && dashboardScope !== 'all' ? 'font-bold text-[#B71C1C]' : 'text-gray-700'
                           }`}
                         >
-                          {o.id === restaurant?.id && <CheckCircle size={14} className="text-[#B71C1C]" />}
+                          {o.id === restaurant?.id && dashboardScope !== 'all' && <CheckCircle size={14} className="text-[#B71C1C]" />}
                           <span className="truncate">{o.name}</span>
                         </button>
                       ))}

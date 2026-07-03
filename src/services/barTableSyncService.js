@@ -105,55 +105,16 @@ function unwrapTableEvent(payload) {
   return payload?.table || payload;
 }
 
-// Merge incoming order items into existing items without losing any.
-// - Existing items with ids are kept unless the incoming set has a matching id.
-// - When the same id appears in both, the merge is NOT a naive replace:
-//     1. If existing has removedFromBill=true, keep it cancelled — a stale
-//        order:created must never revive a cancelled item.
-//     2. If incoming has removedFromBill=true, use it (cancel confirmed by backend).
-//     3. Otherwise prefer INCOMING quantity (backend is authoritative) — this
-//        prevents quantity inflation from stale local state or duplicate KOTs.
-// - Items only in existing (not in incoming) are preserved so KOTs never vanish.
+// Server is now authoritative — no merging needed.
+// The backend filters removedFromBill and quantity <= 0 items in tableInclude,
+// so incoming data is clean and complete.
 function mergeOrderItems(existing = [], incoming = []) {
-  const map = new Map();
-  const incomingByName = new Map(
-    incoming.map(i => [i.name ?? i.n, i]).filter(([k]) => !!k)
-  );
-  existing.forEach(i => {
-    const name = i.name ?? i.n;
-    if (!i.id && name && incomingByName.has(name)) return;
-    if (i.id) map.set(i.id, i);
-  });
-  incoming.forEach(i => {
-    if (!i.id) return;
-    const existingItem = map.get(i.id);
-    if (!existingItem) {
-      map.set(i.id, i);
-      return;
-    }
-    // Don't let a stale incoming revive a locally-cancelled item
-    if (existingItem.removedFromBill && !i.removedFromBill) {
-      // Keep existing cancelled state
-      return;
-    }
-    // Incoming confirms a cancel — use it
-    if (i.removedFromBill && !existingItem.removedFromBill) {
-      map.set(i.id, { ...existingItem, ...i });
-      return;
-    }
-    // Neither is cancelled — prefer INCOMING quantity (backend is authoritative)
-    // This prevents quantity inflation from stale local state or duplicate KOTs
-    map.set(i.id, { ...existingItem, ...i });
-  });
-  return Array.from(map.values());
+  return incoming;
 }
 
-// Merge an incoming order into an existing order, preserving items that the
-// incoming payload may not include (race conditions, partial payloads).
+// Server is authoritative — directly use incoming order
 function mergeOrder(incoming, existing) {
-  if (!existing) return incoming;
-  const mergedItems = mergeOrderItems(existing.items || [], incoming.items || []);
-  return { ...incoming, items: mergedItems };
+  return incoming;
 }
 
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
@@ -165,47 +126,23 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
   const isFreeWorkflow = dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
   const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
-  const mergedKotHistory = Array.isArray(row.kotHistory) ? row.kotHistory : [];
+  const mergedKotHistory = Array.isArray(row.kots) ? row.kots : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
 
   const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
   // Defensive: an order can only belong to this table if its tableId matches the row id.
   const incomingOrder = rawIncomingOrder && rawIncomingOrder.tableId === row.id ? rawIncomingOrder : null;
   const existingOrder = existing?.activeOrder;
   let activeOrder = incomingOrder;
+  // Server is authoritative — directly use incoming items (no merge)
   if (incomingOrder && existingOrder && incomingOrder.id === existingOrder.id) {
     const incomingUpdated = incomingOrder.updatedAt ? new Date(incomingOrder.updatedAt).getTime() : 0;
     const existingUpdated = existingOrder.updatedAt ? new Date(existingOrder.updatedAt).getTime() : 0;
-    const incomingItems = incomingOrder.items || [];
-    const existingItems = existingOrder.items || [];
     if (existingUpdated >= incomingUpdated) {
-      // Existing is newer — keep it, but merge in any items from incoming not already present
-      const existingIds = new Set(existingItems.map(i => i.id).filter(Boolean));
-      const newFromIncoming = incomingItems.filter(i => i.id && !existingIds.has(i.id));
-      activeOrder = {
-        ...existingOrder,
-        items: [...existingItems, ...newFromIncoming],
-      };
+      // Existing is newer — keep it
+      activeOrder = existingOrder;
     } else {
-      // Incoming is newer — use it but keep any existing items missing from incoming (partial payloads)
-      const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
-      const missingFromIncoming = existingItems.filter(
-        i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
-      );
-      // Preserve local cancellations: if an item was locally cancelled but the
-      // incoming payload hasn't confirmed the cancel yet, keep it cancelled
-      const existingCancelledIds = new Set(
-        existingItems.filter(i => i.removedFromBill && i.id).map(i => i.id)
-      );
-      const preservedIncomingItems = incomingItems.map(incomingItem => {
-        if (existingCancelledIds.has(incomingItem.id) && !incomingItem.removedFromBill) {
-          return { ...incomingItem, removedFromBill: true, quantity: 0 };
-        }
-        return incomingItem;
-      });
-      activeOrder = {
-        ...incomingOrder,
-        items: [...preservedIncomingItems, ...missingFromIncoming],
-      };
+      // Incoming is newer — use it directly
+      activeOrder = incomingOrder;
     }
   }
   // Preserve existing items if incoming has none (partial socket payloads)
@@ -231,9 +168,9 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
     kotHistory: (() => {
       if (isFreeWorkflow) return [];
-      const inc = Array.isArray(row.kotHistory) ? row.kotHistory : [];
-      const exc = existing?.kotHistory ?? [];
-      return inc.length >= exc.length ? inc : exc;
+      // Server is authoritative — use kots relation if available, fall back to kotHistory
+      const inc = Array.isArray(row.kots) ? row.kots : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
+      return inc;
     })(),
     currentBill: isFreeWorkflow ? 0 : (isStale && existing ? existing.currentBill : (row.currentBill ?? existing?.currentBill ?? 0)),
     updatedAt: row.updatedAt || existing?.updatedAt || null,

@@ -1611,22 +1611,19 @@ export default function CaptainApp({ onLogout }) {
         }
 
         const incomingOrder = table.orders?.[0] || table.activeOrder;
-        const mergedItems = incomingOrder?.items
-          ? mergeOrderItems(t.activeOrder?.items || [], incomingOrder.items)
-          : (t.activeOrder?.items || []);
         const isTableFree = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
-        const mergedKotHistory = isTableFree
-          ? []
-          : dedupKotHistory(t.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
+        // Server is now authoritative — directly use its items and kots (no merge)
+        const serverItems = incomingOrder?.items ?? (t.activeOrder?.items || []);
+        const serverKots = isTableFree ? [] : (Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
           currentBill: table.currentBill ?? t.currentBill,
           activeOrder: incomingOrder
-            ? { ...(t.activeOrder || {}), ...incomingOrder, items: mergedItems }
+            ? { ...(t.activeOrder || {}), ...incomingOrder, items: serverItems }
             : t.activeOrder,
-          kotHistory: mergedKotHistory,
+          kotHistory: serverKots,
         };
       });
       setActiveTables(applyUpdate);
@@ -1640,23 +1637,10 @@ export default function CaptainApp({ onLogout }) {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
-        // Merge incoming items with existing so KOTs don't vanish
-        const mergedItems = mergeOrderItems(t.activeOrder?.items || [], order.items || []);
-        const mergedOrder = { ...(t.activeOrder || {}), ...order, items: mergedItems };
-        // Sync cancelled status back into kotHistory items
-        const cancelledIds = new Set(
-          (order.items || []).filter(i => i.removedFromBill).map(i => i.id)
-        );
-        const updatedKotHistory = dedupKotHistory(
-          (t.kotHistory || []).map(kot => ({
-            ...kot,
-            items: kot.items.map(i =>
-              cancelledIds.has(i.orderItemId) ? { ...i, s: 'Cancelled', removedFromBill: true } : i
-            )
-          })),
-          Array.isArray(order.kotHistory) ? order.kotHistory : []
-        );
-        return { ...t, activeOrder: mergedOrder, kotHistory: updatedKotHistory };
+        // Server is authoritative — directly use incoming items (no merge)
+        const serverItems = order.items || (t.activeOrder?.items || []);
+        const serverKots = Array.isArray(order.kotHistory) ? order.kotHistory : (Array.isArray(order.kots) ? order.kots : (t.kotHistory || []));
+        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: serverKots };
       });
       setActiveTables(updateTables);
     };
@@ -1669,12 +1653,12 @@ export default function CaptainApp({ onLogout }) {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
-        // Merge items with existing so previously sent KOT items don't vanish
-        // if order:created arrives after order:updated (socket race condition)
-        const mergedItems = mergeOrderItems(t.activeOrder?.items || [], order.items || []);
+        // Server is authoritative — directly use incoming items (no merge)
+        const serverItems = order.items || [];
         return {
           ...t,
-          activeOrder: { ...order, items: mergedItems },
+          activeOrder: { ...order, items: serverItems },
+          kotHistory: Array.isArray(order.kotHistory) ? order.kotHistory : (t.kotHistory || []),
           status: t.status === 'Free' ? 'Occupied' : t.status,
           workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
         };

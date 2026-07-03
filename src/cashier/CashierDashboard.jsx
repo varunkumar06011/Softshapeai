@@ -105,7 +105,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
     time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
-    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kotHistory) ? row.kotHistory : []),
+    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kots) ? row.kots : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder: isFreeWorkflow ? null : (row.orders?.[0] || row.activeOrder || null),
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
@@ -1249,70 +1249,13 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     const dedupKotHistory = (existing = [], incoming = []) => {
-      const map = new Map();
-      [...existing, ...incoming].forEach(k => {
-        const existingK = map.get(k.id);
-        if (!existingK || (k.createdAt || 0) > (existingK.createdAt || 0)) {
-          map.set(k.id, k);
-        }
-      });
-      return Array.from(map.values());
+      // Server is authoritative — use incoming directly
+      return incoming;
     };
 
     const mergeOrder = (incoming, existing) => {
-      if (!existing) return incoming;
-      const incomingItems = incoming?.items || [];
-      const existingItems = existing?.items || [];
-
-      // Build a map of existing items by id
-      const existingMap = new Map(existingItems.map(i => [i.id, i]));
-      const incomingMap = new Map(incomingItems.map(i => [i.id, i]));
-
-      // Start with all incoming items, but protect locally-cancelled items
-      const mergedByIncoming = incomingItems.map(incomingItem => {
-        const existingItem = existingMap.get(incomingItem.id);
-        // Preserve local cancellations (removedFromBill=true) even if backend hasn't confirmed yet
-        if (existingItem?.removedFromBill && !incomingItem.removedFromBill) {
-          return { ...incomingItem, removedFromBill: true, quantity: 0 };
-        }
-        // Incoming confirms a cancel — use it
-        if (incomingItem.removedFromBill && existingItem && !existingItem.removedFromBill) {
-          return { ...existingItem, ...incomingItem };
-        }
-        // Neither is cancelled — prefer INCOMING quantity (backend is authoritative)
-        // The old 'prefer higher' logic caused quantity inflation when stale local state
-        // had a higher count than the backend's actual quantity
-        if (existingItem && !existingItem.removedFromBill && !incomingItem.removedFromBill) {
-          return { ...existingItem, ...incomingItem };
-        }
-        return incomingItem;
-      });
-
-      // Add back any existing items NOT present in incoming (additive — never drop items)
-      const localOnlyItems = existingItems.filter(i => !incomingMap.has(i.id) && i.id);
-
-      // ── DIAGNOSTIC: trace localOnlyItems in mergeOrder ──
-      if (localOnlyItems.length > 0) {
-        console.log('[DIAG mergeOrder] localOnlyItems (in existing, NOT in incoming):', localOnlyItems.map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
-      }
-      // ── END DIAGNOSTIC ──
-
-      // Remove id:null placeholders whose name matches a real-id item (server confirmed them)
-      const realItemNames = new Set(
-        mergedByIncoming.filter(i => i.id).map(i => (i.name ?? i.n ?? '').toLowerCase().trim())
-      );
-      const cleanedLocal = localOnlyItems.filter(i => {
-        if (!i.id) {
-          // Drop orphan placeholder if server already returned a real version
-          return !realItemNames.has((i.name ?? i.n ?? '').toLowerCase().trim());
-        }
-        return true;
-      });
-
-      return {
-        ...incoming,
-        items: [...mergedByIncoming, ...cleanedLocal],
-      };
+      // Server is authoritative — directly use incoming items (no merge)
+      return incoming;
     };
 
     const onOrderUpdated = (payload) => {
@@ -1390,7 +1333,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         const mergedKotHistory = incomingIsAvailable
           ? []
-          : dedupKotHistory(t.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
+          : (Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
         // When merging an occupied table:updated event, preserve existing activeOrder.items
         // if the incoming payload has no orders array (partial update)
         const incomingHasOrders = Array.isArray(table.orders) && table.orders.length > 0;
@@ -1448,7 +1391,7 @@ const CashierDashboard = ({ onLogout }) => {
           const incomingHasOrdersSel = Array.isArray(table.orders) && table.orders.length > 0;
           const mergedKotHistory = effectiveIsTableFree
             ? []
-            : dedupKotHistory(prev.kotHistory || [], Array.isArray(table.kotHistory) ? table.kotHistory : []);
+            : (Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = effectiveIsTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = effectiveIsTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));

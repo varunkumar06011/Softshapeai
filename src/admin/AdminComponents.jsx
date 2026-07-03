@@ -150,7 +150,7 @@ import {
 
 import { 
 
-  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart 
+  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, CartesianGrid
 
 } from 'recharts';
 
@@ -521,9 +521,10 @@ function IngredientAvatar({ name }) {
 
 
 
-export function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog }) {
+export function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope }) {
 
   const { tables } = useTableSync();
+  const { restaurant } = useAuth();
 
   const [sales, setSales] = useState([]);
 
@@ -569,7 +570,8 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${startISO}&endDate=${endISO}`, {
+        const outletId = dashboardScope === 'all' ? 'all' : restaurant?.id;
+        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${startISO}&endDate=${endISO}&outletId=${outletId}`, {
 
           headers: { ...getAuthHeaders() },
 
@@ -657,7 +659,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
     };
 
-  }, []);
+  }, [dashboardScope, restaurant?.id]);
 
 
 
@@ -743,7 +745,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-      <div className={card + " p-4 lg:col-span-2 flex flex-col"}>
+      <div className={card + " p-4 lg:col-span-2 flex flex-col animate-chart-in"}>
 
         <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
 
@@ -759,13 +761,27 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
             <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
 
-              <XAxis dataKey="d" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+              <defs>
 
-              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <linearGradient id="dashBarGrad" x1="0" y1="0" x2="0" y2="1">
+
+                  <stop offset="0%" stopColor="#E53935" stopOpacity={1} />
+
+                  <stop offset="100%" stopColor="#E53935" stopOpacity={0.4} />
+
+                </linearGradient>
+
+              </defs>
+
+              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
+
+              <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+
+              <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
 
               <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} />
 
-              <Bar dataKey="v" fill="#E53935" radius={[6, 6, 0, 0]} barSize={32} />
+              <Bar dataKey="v" fill="url(#dashBarGrad)" radius={[6, 6, 0, 0]} barSize={32} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
 
             </BarChart>
 
@@ -777,7 +793,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       
 
-      <div className={card + " p-0 overflow-hidden flex flex-col h-[320px] lg:h-auto"}>
+      <div className={card + " p-0 overflow-hidden flex flex-col h-[320px] lg:h-auto animate-chart-in-delay-1"}>
 
         <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
 

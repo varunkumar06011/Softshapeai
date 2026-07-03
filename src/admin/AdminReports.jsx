@@ -20,7 +20,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
@@ -390,26 +390,27 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
         <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts in this period" icon={Star} color="text-purple-600" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="font-black text-gray-900 flex items-center gap-2 mb-4">
             <TrendingUp size={18} className="text-[#B71C1C]" /> Revenue Trend
           </h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <AreaChart data={trend}>
+              <AreaChart data={trend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs><linearGradient id="esColorRev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#B71C1C" stopOpacity={0.1} />
+                  <stop offset="5%" stopColor="#B71C1C" stopOpacity={0.15} />
                   <stop offset="95%" stopColor="#B71C1C" stopOpacity={0} />
                 </linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} itemStyle={{ fontWeight: 'bold', fontSize: '12px' }} />
-                <Area type="monotone" dataKey="rev" stroke="#B71C1C" strokeWidth={3} fillOpacity={1} fill="url(#esColorRev)" />
+                <Area type="monotone" dataKey="rev" stroke="#B71C1C" strokeWidth={3} fillOpacity={1} fill="url(#esColorRev)" isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm flex flex-col">
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm flex flex-col animate-chart-in-delay-1">
           <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
             <Layers size={18} className="text-[#B71C1C]" /> Payment Mix
           </h3>
@@ -417,7 +418,7 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
             <div className="h-[200px] w-full relative">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
-                  <Pie data={methods} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={8} stroke="none">
+                  <Pie data={methods} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={8} stroke="none" isAnimationActive={true} animationDuration={800} animationEasing="ease-out">
                     {methods.map((_entry, i) => <Cell key={i} fill={['#B71C1C','#E53935','#EF9A9A','#FFCDD2'][i%4]} />)}
                   </Pie>
                   <Tooltip />
@@ -545,15 +546,22 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Payment Methods</h3>
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <BarChart layout="vertical" data={methods.map(([m, v]) => ({ method: m, amount: v.amount }))}>
+              <BarChart layout="vertical" data={methods.map(([m, v]) => ({ method: m, amount: v.amount }))} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="dsBarGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#B71C1C" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#B71C1C" stopOpacity={1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis dataKey="method" type="category" tick={{ fontSize: 11, fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), 'Amount']} />
-                <Bar dataKey="amount" fill="#B71C1C" radius={[0, 8, 8, 0]} barSize={24} />
+                <Bar dataKey="amount" fill="url(#dsBarGrad)" radius={[0, 8, 8, 0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -575,19 +583,20 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
         </div>
       </div>
       {daysCount > 1 && (
-        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in-delay-1">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Daily Trend</h3>
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <AreaChart data={trend}>
+              <AreaChart data={trend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs><linearGradient id="dsColorRev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#B71C1C" stopOpacity={0.1} />
+                  <stop offset="5%" stopColor="#B71C1C" stopOpacity={0.15} />
                   <stop offset="95%" stopColor="#B71C1C" stopOpacity={0} />
                 </linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} itemStyle={{ fontWeight: 'bold', fontSize: '12px' }} />
-                <Area type="monotone" dataKey="rev" stroke="#B71C1C" strokeWidth={3} fillOpacity={1} fill="url(#dsColorRev)" />
+                <Area type="monotone" dataKey="rev" stroke="#B71C1C" strokeWidth={3} fillOpacity={1} fill="url(#dsColorRev)" isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -792,12 +801,12 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
         <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
       </ReportHeader>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Revenue Distribution</h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={4} stroke="none">
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={4} stroke="none" isAnimationActive={true} animationDuration={800} animationEasing="ease-out">
                   {pieData.map((_e, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
                 </Pie>
                 <Tooltip formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), 'Revenue']} />
@@ -921,18 +930,19 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
         })}
       </div>
       {daysCount > 1 && (
-        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Daily Payment Trend</h3>
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <BarChart data={byDay}>
+              <BarChart data={byDay} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), '']} />
-                <Bar dataKey="CASH" stackId="a" fill="#B71C1C" radius={[0,0,0,0]} barSize={24} />
-                <Bar dataKey="UPI" stackId="a" fill="#E53935" radius={[0,0,0,0]} barSize={24} />
-                <Bar dataKey="CARD" stackId="a" fill="#EF9A9A" radius={[0,0,0,0]} barSize={24} />
-                <Bar dataKey="SPLIT" stackId="a" fill="#FFCDD2" radius={[4,4,0,0]} barSize={24} />
+                <Bar dataKey="CASH" stackId="a" fill="#B71C1C" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="UPI" stackId="a" fill="#E53935" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="CARD" stackId="a" fill="#EF9A9A" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="SPLIT" stackId="a" fill="#FFCDD2" radius={[4,4,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>
           </div>
