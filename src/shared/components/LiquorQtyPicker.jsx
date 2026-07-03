@@ -1,18 +1,41 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// LiquorQtyPicker — Quick quantity selection modal for non-beer liquor items
+// QuantityPicker — Typeable quantity input modal for any menu item
 // ─────────────────────────────────────────────────────────────────────────────
-// Shows predefined quantity pills (1, 2, 3, 6, 12, 25) when a non-beer liquor
-// item is clicked. Clicking a pill instantly adds that quantity to cart/session
-// and closes the modal. Does NOT open or expand the cart.
+// Opens when a menu item is clicked. The input starts empty so the user can
+// type immediately. If left blank and Add/Enter is pressed, it defaults to 1.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Plus, Minus } from 'lucide-react';
 
-const PREDEFINED_QTYS = [1, 2, 3, 6, 12, 25];
+export default function QuantityPicker({ isOpen, itemName, onSelect, onClose }) {
+  const [quantity, setQuantity] = useState('');
+  const inputRef = useRef(null);
 
-export default function LiquorQtyPicker({ isOpen, itemName, onSelect, onClose }) {
+  useEffect(() => {
+    if (isOpen) {
+      setQuantity('');
+      // Focus the input after the modal animates in so the user can type immediately
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const handleAdd = () => {
+    const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+    onSelect(qty);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleAdd();
+    if (e.key === 'Escape') onClose();
+  };
+
+  const adjust = (delta) => {
+    setQuantity((prev) => Math.max(1, Math.floor(Number(prev) || 1) + delta));
+  };
 
   return (
     <div
@@ -41,18 +64,45 @@ export default function LiquorQtyPicker({ isOpen, itemName, onSelect, onClose })
           </button>
         </div>
 
-        {/* Quantity Pills */}
-        <div className="p-5">
-          <div className="grid grid-cols-3 gap-3">
-            {PREDEFINED_QTYS.map((qty) => (
-              <button
-                key={qty}
-                onClick={() => onSelect(qty)}
-                className="py-3.5 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-800 text-sm font-black uppercase tracking-wider hover:bg-amber-500 hover:text-white hover:border-amber-500 active:scale-95 transition-all shadow-sm"
-              >
-                {qty} {qty === 1 ? 'pc' : 'pcs'}
-              </button>
-            ))}
+        {/* Quantity Input */}
+        <div className="p-5 space-y-4">
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => adjust(-1)}
+              className="w-12 h-12 rounded-xl border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 flex items-center justify-center transition-colors"
+            >
+              <Minus size={18} />
+            </button>
+            <input
+              ref={inputRef}
+              type="number"
+              min={1}
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-24 h-12 text-center text-xl font-black text-gray-900 border-2 border-amber-200 rounded-xl focus:border-amber-500 focus:outline-none"
+            />
+            <button
+              onClick={() => adjust(1)}
+              className="w-12 h-12 rounded-xl border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 flex items-center justify-center transition-colors"
+            >
+              <Plus size={18} />
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-black uppercase hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAdd}
+              className="flex-1 py-3 rounded-xl bg-[#E53935] text-white text-sm font-black uppercase hover:bg-red-700 transition-colors"
+            >
+              Add
+            </button>
           </div>
         </div>
       </div>

@@ -41,7 +41,7 @@ import { useSocket, getSocket } from '../hooks/useSocket';
 import { useTableSync } from '../services/tableSyncService';
 import { useLongPress } from '../hooks/useLongPress';
 import KotConfirmModal from '../shared/components/KotConfirmModal';
-import LiquorQtyPicker from '../shared/components/LiquorQtyPicker';
+import QuantityPicker from '../shared/components/LiquorQtyPicker';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable, reserveKotNumber } from '../services/orderApi';
 
@@ -54,7 +54,7 @@ import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { getTenantScopedKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext.jsx';
 
-import { isBeerItem, getItemCategory } from '../utils/itemHelpers';
+import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 
@@ -2290,28 +2290,12 @@ export default function CaptainApp({ onLogout }) {
     e.stopPropagation();
     console.log('[CaptainApp] handleItemClick:', item?.n, 'activeTableId:', activeTableId, 'view:', view);
 
-    // Beer items should be added directly
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && isBeerItem(item)) {
-      addItemToSession(item);
-      return;
-    }
-
-    // Non-beer liquor items show quantity picker
-    if (item.menuType === 'LIQUOR') {
-      setLiquorQtyItem(item);
-      setShowLiquorQtyPicker(true);
-      return;
-    }
-
-    addItemToSession(item);
+    // Show typeable quantity picker for every item
+    setLiquorQtyItem(item);
+    setShowLiquorQtyPicker(true);
   };
 
-
-
-
-
-
-  const handleLiquorQtySelect = (qty) => {
+  const handleQtySelect = (qty) => {
     if (!liquorQtyItem) return;
     addItemToSession(liquorQtyItem, qty);
     setShowLiquorQtyPicker(false);
@@ -5941,10 +5925,10 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-      <LiquorQtyPicker
+      <QuantityPicker
         isOpen={showLiquorQtyPicker}
         itemName={liquorQtyItem?.n || ''}
-        onSelect={handleLiquorQtySelect}
+        onSelect={handleQtySelect}
         onClose={() => { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); }}
       />
       <KotConfirmModal

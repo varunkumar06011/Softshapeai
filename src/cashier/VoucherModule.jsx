@@ -10,19 +10,26 @@ import {
   Receipt,
   Calendar,
 } from 'lucide-react';
-import { API_BASE, getAuthHeaders, apiFetch } from '../services/apiConfig';
-import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { apiFetch } from '../services/apiConfig';
+
+const EXPENSE_CATEGORIES = [
+  { value: 'MISCELLANEOUS', label: 'Miscellaneous expenses' },
+  { value: 'MAINTENANCE', label: 'Maintenance' },
+  { value: 'KITCHEN', label: 'Kitchen items' },
+  { value: 'ENTERTAINMENT', label: 'Entertainment' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+const APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
 
 export default function VoucherModule() {
-  const restaurantId = getCurrentRestaurantId();
-
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
-  const [approvers, setApprovers] = useState([]);
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
 
   const [paidToType, setPaidToType] = useState('STAFF');
   const [paidToSearch, setPaidToSearch] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [paidToName, setPaidToName] = useState('');
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
@@ -53,15 +60,13 @@ export default function VoucherModule() {
 
   const loadData = useCallback(async (date = summaryDate) => {
     try {
-      const [opts, approverList, narrations, summary, recent] = await Promise.all([
+      const [opts, narrations, summary, recent] = await Promise.all([
         apiFetch('/api/vouchers/paid-to-options'),
-        apiFetch('/api/vouchers/approver-options'),
         apiFetch('/api/vouchers/narration-suggestions'),
         apiFetch(`/api/vouchers/today-summary?date=${date}`),
         apiFetch(`/api/vouchers?date=${date}&limit=10`),
       ]);
       setPaidToOptions(opts || { staff: [] });
-      setApprovers(approverList || []);
       setNarrationSuggestions(narrations || []);
       setTodaySummary(summary || null);
       setRecentVouchers(recent || []);
@@ -98,23 +103,29 @@ export default function VoucherModule() {
     s.name.toLowerCase().includes(paidToSearch.toLowerCase())
   ) || [];
 
-  const filteredApprovers = approvers?.filter((a) =>
-    a.name.toLowerCase().includes(approverSearch.toLowerCase())
-  ) || [];
+  const filteredCategories = EXPENSE_CATEGORIES.filter((c) =>
+    c.label.toLowerCase().includes(paidToSearch.toLowerCase())
+  );
+
+  const filteredApprovers = APPROVERS.filter((a) =>
+    a.toLowerCase().includes(approverSearch.toLowerCase())
+  );
 
   const filteredNarrations = narrationSuggestions?.filter((n) =>
     n.toLowerCase().includes(narrationDebounce.toLowerCase())
   ) || [];
 
   const handlePaidToSelect = (item) => {
-    if (item.id) {
+    if (item.type === 'STAFF') {
       setSelectedEmployee(item);
       setPaidToName(item.name);
       setPaidToType('STAFF');
+      setSelectedCategory(null);
     } else {
       setSelectedEmployee(null);
       setPaidToType('OTHER');
-      setPaidToName(item.name || '');
+      setPaidToName(item.label || '');
+      setSelectedCategory(item.value || null);
     }
     setPaidToSearch(item.name || item.label || '');
     setShowPaidToDropdown(false);
@@ -122,7 +133,7 @@ export default function VoucherModule() {
 
   const handleApproverSelect = (approver) => {
     setSelectedApprover(approver);
-    setApproverSearch(approver.name);
+    setApproverSearch(approver);
     setShowApproverDropdown(false);
   };
 
@@ -136,6 +147,14 @@ export default function VoucherModule() {
       setError('Please enter a valid amount');
       return;
     }
+    if (paidToType === 'STAFF' && !selectedEmployee) {
+      setError('Please select a staff member');
+      return;
+    }
+    if (paidToType === 'OTHER' && !selectedCategory) {
+      setError('Please select an expense category');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -145,11 +164,12 @@ export default function VoucherModule() {
 
       const body = {
         paidToType,
-        paidToName: paidToType === 'STAFF' ? (selectedEmployee?.name || paidToSearch.trim()) : paidToSearch.trim(),
+        paidToName: paidToName.trim() || paidToSearch.trim(),
         employeeId: paidToType === 'STAFF' ? (selectedEmployee?.employeeId || selectedEmployee?.id) : undefined,
         amount: parseFloat(amount),
         narration: narration.trim() || undefined,
-        approvedById: selectedApprover?.id || undefined,
+        category: paidToType === 'STAFF' ? undefined : selectedCategory,
+        approvedByName: selectedApprover || undefined,
         idempotencyKey,
         voucherDate: summaryDate,
       };
@@ -163,7 +183,9 @@ export default function VoucherModule() {
       setAmount('');
       setNarration('');
       setPaidToSearch('');
+      setPaidToName('');
       setSelectedEmployee(null);
+      setSelectedCategory(null);
       setSelectedApprover(null);
       setApproverSearch('');
       loadData();
@@ -266,15 +288,15 @@ export default function VoucherModule() {
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search staff..."
+                placeholder="Search staff or category..."
                 value={paidToSearch}
                 onChange={(e) => {
                   setPaidToSearch(e.target.value);
                   setShowPaidToDropdown(true);
-                  if (paidToType !== 'STAFF') {
-                    setPaidToType('STAFF');
-                    setSelectedEmployee(null);
-                  }
+                  setPaidToType('STAFF');
+                  setSelectedEmployee(null);
+                  setSelectedCategory(null);
+                  setPaidToName('');
                 }}
                 onFocus={() => setShowPaidToDropdown(true)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
@@ -289,7 +311,7 @@ export default function VoucherModule() {
                     {filteredStaff.map((s) => (
                       <button
                         key={s.id}
-                        onClick={() => handlePaidToSelect(s)}
+                        onClick={() => handlePaidToSelect({ ...s, type: 'STAFF' })}
                         className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg"
                       >
                         {s.name}
@@ -298,18 +320,22 @@ export default function VoucherModule() {
                     ))}
                   </div>
                 )}
-                {paidToSearch.trim() && filteredStaff.length === 0 && (
+                {filteredCategories.length > 0 && (
                   <div className="p-1 border-t border-gray-100">
-                    <button
-                      onClick={() => handlePaidToSelect({ name: paidToSearch.trim() })}
-                      className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
-                    >
-                      + Use "{paidToSearch.trim()}" as a new name
-                    </button>
+                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Expense Categories</p>
+                    {filteredCategories.map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => handlePaidToSelect(c)}
+                        className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
+                      >
+                        {c.label}
+                      </button>
+                    ))}
                   </div>
                 )}
-                {filteredStaff.length === 0 && !paidToSearch.trim() && (
-                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No staff found</p>
+                {filteredStaff.length === 0 && filteredCategories.length === 0 && (
+                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No staff or category found</p>
                 )}
               </div>
             )}
@@ -382,12 +408,11 @@ export default function VoucherModule() {
                 {filteredApprovers.length > 0 ? (
                   filteredApprovers.map((a) => (
                     <button
-                      key={a.id}
+                      key={a}
                       onClick={() => handleApproverSelect(a)}
                       className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg"
                     >
-                      {a.name}
-                      <span className="text-[10px] text-gray-400 ml-2">{a.role}</span>
+                      {a}
                     </button>
                   ))
                 ) : (
@@ -460,8 +485,8 @@ export default function VoucherModule() {
             {recentVouchers.map((v) => (
               <div key={v.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-gray-900">#{v.voucherNo} — {v.paidToName}</p>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase">{v.voucherDate} · {v.paidToType}</p>
+                  <p className="text-sm font-bold text-gray-900">{v.narration || v.paidToName || '—'}</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">#{v.voucherNo} · {v.paidToName}{v.category ? ` · ${v.category}` : ''} · {v.voucherDate}</p>
                 </div>
                 <div className="text-right flex items-center gap-2">
                   <div>

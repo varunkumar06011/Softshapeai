@@ -19,7 +19,7 @@ export default function AdminVouchers() {
     startDate: today,
     endDate: today,
     status: '',
-    paidToType: '',
+    type: '',
   });
   const [actionLoading, setActionLoading] = useState({});
 
@@ -30,7 +30,10 @@ export default function AdminVouchers() {
       params.set('startDate', filters.startDate || today);
       params.set('endDate', filters.endDate || today);
       if (filters.status) params.set('status', filters.status);
-      if (filters.paidToType) params.set('paidToType', filters.paidToType);
+      if (filters.type) {
+        if (filters.type === 'STAFF') params.set('paidToType', 'STAFF');
+        else params.set('category', filters.type);
+      }
       params.set('limit', '500');
       const data = await apiFetch(`/api/vouchers?${params.toString()}`);
       setVouchers(data || []);
@@ -58,15 +61,16 @@ export default function AdminVouchers() {
   };
 
   const handleExport = () => {
-    const headers = ['Voucher No', 'Date', 'Paid To', 'Type', 'Amount', 'Narration', 'Approved By', 'Status'];
+    const headers = ['Voucher No', 'Date', 'Paid To', 'Type', 'Category', 'Amount', 'Narration', 'Approved By', 'Status'];
     const rows = vouchers.map((v) => [
       v.voucherNo,
       v.voucherDate,
       v.paidToName,
       v.paidToType,
+      v.category || '',
       Number(v.amount).toFixed(2),
       v.narration || '',
-      v.approvedBy?.name || '',
+      v.approvedByName || v.approvedBy?.name || '',
       v.status,
     ]);
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
@@ -147,18 +151,21 @@ export default function AdminVouchers() {
           <option value="VOIDED">Voided</option>
         </select>
         <select
-          value={filters.paidToType}
-          onChange={(e) => setFilters((f) => ({ ...f, paidToType: e.target.value }))}
+          value={filters.type}
+          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
           className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
         >
           <option value="">All Types</option>
           <option value="STAFF">Staff</option>
+          <option value="MISCELLANEOUS">Miscellaneous</option>
           <option value="MAINTENANCE">Maintenance</option>
+          <option value="KITCHEN">Kitchen</option>
+          <option value="ENTERTAINMENT">Entertainment</option>
           <option value="OTHER">Other</option>
         </select>
-        {(filters.startDate !== today || filters.endDate !== today || filters.status || filters.paidToType) && (
+        {(filters.startDate !== today || filters.endDate !== today || filters.status || filters.type) && (
           <button
-            onClick={() => setFilters({ startDate: today, endDate: today, status: '', paidToType: '' })}
+            onClick={() => setFilters({ startDate: today, endDate: today, status: '', type: '' })}
             className="text-xs font-bold text-gray-400 hover:text-gray-700"
           >
             Clear
@@ -185,6 +192,7 @@ export default function AdminVouchers() {
                   <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</th>
                   <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Paid To</th>
                   <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Type</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Category</th>
                   <th className="text-right px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Amount</th>
                   <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Narration</th>
                   <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Approved By</th>
@@ -199,9 +207,10 @@ export default function AdminVouchers() {
                     <td className="px-4 py-3 font-bold text-gray-700">{v.voucherDate}</td>
                     <td className="px-4 py-3 font-bold text-gray-900">{v.paidToName}</td>
                     <td className="px-4 py-3 font-bold text-gray-500 text-xs">{v.paidToType}</td>
+                    <td className="px-4 py-3 font-bold text-gray-500 text-xs">{v.category || '—'}</td>
                     <td className="px-4 py-3 text-right font-black text-[#E53935]">₹{Number(v.amount).toLocaleString()}</td>
                     <td className="px-4 py-3 text-xs text-gray-600 max-w-[200px] truncate">{v.narration || '—'}</td>
-                    <td className="px-4 py-3 text-xs font-bold text-gray-600">{v.approvedBy?.name || '—'}</td>
+                    <td className="px-4 py-3 text-xs font-bold text-gray-600">{v.approvedByName || v.approvedBy?.name || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${
                         v.status === 'VERIFIED' ? 'bg-green-100 text-green-700' :

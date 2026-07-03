@@ -55,9 +55,9 @@ import { authService } from '../services/authService';
 import ItemAnalytics from './ItemAnalytics';
 import VoucherModule from './VoucherModule';
 import VenueSectionView from '../shared/components/VenueSectionView';
-import { API_BASE, getAuthHeaders } from '../services/apiConfig';
-import { isBeerItem, getItemCategory } from '../utils/itemHelpers';
-import LiquorQtyPicker from '../shared/components/LiquorQtyPicker';
+import { API_BASE, getAuthHeaders, apiFetch } from '../services/apiConfig';
+import { getItemCategory } from '../utils/itemHelpers';
+import QuantityPicker from '../shared/components/LiquorQtyPicker';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKolkataDate, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
@@ -444,6 +444,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [activeNoteItemId, setActiveNoteItemId] = useState(null);
   const [noteInputValue, setNoteInputValue] = useState('');
+  const [editQtyItemId, setEditQtyItemId] = useState(null);
+  const [editQtyValue, setEditQtyValue] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTable, setSelectedTable] = useState(() => {
     try {
@@ -853,6 +855,9 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnPage, setTxnPage] = useState(1);
   const [activeVenueFilter, setActiveVenueFilter] = useState('all');
 
+  // Voucher summary for the currently selected dashboard date (used for Vouchers + Final Amount tiles)
+  const [voucherSummary, setVoucherSummary] = useState({ totalAmount: 0, count: 0 });
+
   function formatBillNumber(txn) {
     // Bill No column: prefer billNumber ("1", "2"...), fall back to plain txnNumber (no TXN- prefix)
     if (txn?.billNumber) return txn.billNumber;
@@ -861,6 +866,21 @@ const CashierDashboard = ({ onLogout }) => {
   }
 
   const [txnInitialLoaded, setTxnInitialLoaded] = useState(false);
+
+  // Load voucher total for the same date so the dashboard can show Vouchers + Final Amount tiles
+  const loadVoucherSummary = useCallback(async (dateParam) => {
+    if (!dateParam) {
+      setVoucherSummary({ totalAmount: 0, count: 0 });
+      return;
+    }
+    try {
+      const summary = await apiFetch(`/api/vouchers/today-summary?date=${dateParam}`);
+      setVoucherSummary(summary || { totalAmount: 0, count: 0 });
+    } catch (err) {
+      console.error('[VoucherSummary] Failed to load:', err);
+      setVoucherSummary({ totalAmount: 0, count: 0 });
+    }
+  }, []);
 
   const loadTransactions = useCallback(async (filter = 'today', dateOverride = null, opts = {}) => {
     const { silent = false } = opts;
@@ -1018,6 +1038,9 @@ const CashierDashboard = ({ onLogout }) => {
       });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
 
+      // Load voucher total for the same date so the dashboard can show Vouchers + Final Amount tiles
+      loadVoucherSummary(dateParam);
+
       // Only cache today's data + add version stamp
       if (filter === 'today') {
         localStorage.setItem(TX_CACHE_KEY, JSON.stringify(sorted));
@@ -1035,7 +1058,7 @@ const CashierDashboard = ({ onLogout }) => {
         setTxnsLoading(false);
       }
     }
-  }, [activeOutlet, txnCustomDate, txnInitialLoaded]);
+  }, [activeOutlet, txnCustomDate, txnInitialLoaded, loadVoucherSummary]);
 
   // Venue filter sections — sections filtered by current outlet, for venue filter pills
   const venueFilterSections = useMemo(() => {
@@ -1977,21 +2000,22 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   // Total Sales = sum of grandTotal (with GST, after discount — the final bill amount)
-  // Net Sales = sum of (subtotal - discount) (excl. GST, after discount)
+  // Voucher Amount = total non-voided vouchers for the selected dashboard date
+  // Final Amount = Total Sales − Voucher Amount (cashier-only "X Report")
   // These use filteredTransactions so they respect the active date/source/method filters
   const dashboardTotalSales = useMemo(() => {
     return filteredTransactions
       .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [filteredTransactions]);
 
-  const dashboardDiscount = useMemo(() => {
-    return filteredTransactions
-      .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
-  }, [filteredTransactions]);
+  // Voucher + final amount shown only on the cashier dashboard
+  const dashboardVoucherAmount = useMemo(() => {
+    return Number(voucherSummary?.totalAmount || 0);
+  }, [voucherSummary]);
 
-  const dashboardNetSales = useMemo(() => {
-    return filteredTransactions.reduce((sum, txn) => sum + netTotal(txn), 0);
-  }, [filteredTransactions]);
+  const dashboardFinalAmount = useMemo(() => {
+    return dashboardTotalSales - dashboardVoucherAmount;
+  }, [dashboardTotalSales, dashboardVoucherAmount]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -3561,32 +3585,12 @@ const CashierDashboard = ({ onLogout }) => {
     if (now - lastAdd < 900) return; // 900ms global cooldown between item additions
     addItemCooldownRef.current['__global__'] = now;
 
-    // Beer items should be added directly
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && isBeerItem(item)) {
-      addToCart(item);
-      setSearchQuery('');
-      setSelectedCategory('All');
-      setActiveDiet('All');
-      return;
-    }
-
-    // Non-beer liquor items show quantity picker
-    if (item.menuType === 'LIQUOR') {
-      setLiquorQtyItem(item);
-      setShowLiquorQtyPicker(true);
-      return;
-    }
-
-    addToCart(item);
-    setSearchQuery('');
-    setSelectedCategory('All');
-    setActiveDiet('All');
+    // Show typeable quantity picker for every item
+    setLiquorQtyItem(item);
+    setShowLiquorQtyPicker(true);
   };
 
-
-
-
-  const handleLiquorQtySelect = (qty) => {
+  const handleQtySelect = (qty) => {
     if (!liquorQtyItem) return;
     addToCart(liquorQtyItem, qty);
     setShowLiquorQtyPicker(false);
@@ -3682,6 +3686,17 @@ const CashierDashboard = ({ onLogout }) => {
     setCart(prev =>
       prev.map(i => i.id === itemId ? { ...i, notes: note.trim() || null } : i)
     );
+  };
+
+  const saveEditQty = (itemId) => {
+    const qty = Math.max(1, Math.floor(Number(editQtyValue) || 1));
+    kotRequestIdRef.current = null;
+    lastKotCartSignatureRef.current = null;
+    setCart(prev =>
+      prev.map(i => i.id === itemId ? { ...i, q: qty } : i)
+    );
+    setEditQtyItemId(null);
+    setEditQtyValue('');
   };
 
   const handleSmartKOT = async () => {
@@ -4111,8 +4126,8 @@ const CashierDashboard = ({ onLogout }) => {
 
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Discount", value: `₹${Number(dashboardDiscount).toFixed(0)}`, change: `${filteredTransactions.filter(t => t.discountAmount > 0).length} discounted`, icon: TrendingUp, color: "text-red-600", bg: "bg-red-50" },
-    { label: "Net Sales", value: `₹${Number(dashboardNetSales).toFixed(0)}`, change: "Excl. GST, after discount", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(0)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
+    { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(0)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
@@ -5502,19 +5517,16 @@ const CashierDashboard = ({ onLogout }) => {
                             <button onClick={(e) => { e.stopPropagation(); setCart([]); }} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={22} /></button>
                           </div>
                         </div>
-                        <div className="bg-white rounded-xl border border-gray-200 p-4.5 flex items-center justify-between gap-3 shadow-sm">
-                          <div className="flex items-center gap-3">
-                            <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center text-[#E53935] font-black text-lg shadow-sm border border-red-100">
-                              {selectedTable ? (selectedTable.displayName || selectedTable.name || ((activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`)) : 'POS'}
-                            </div>
-                            <div className="flex-grow min-w-0">
-                              <p className="text-sm md:text-base font-black text-gray-900 truncate">{selectedTable ? `Table ${selectedTable.displayName || selectedTable.name || selectedTable.id}` : 'Walk-in Order'}</p>
-                              <p className="text-xs text-gray-405 font-black uppercase tracking-widest leading-none mt-1">{selectedTable ? selectedTable.status : 'POS Draft'}</p>
-                            </div>
-                          </div>
-                          <button onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables'); }} className="px-4.5 py-2.5 bg-gray-105 text-gray-600 rounded-xl text-xs md:text-sm font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors">
-                            {selectedTable ? 'Change' : '+ Table'}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setActiveTab('tables'); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables'); }}
+                            className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-black hover:bg-gray-200 uppercase whitespace-nowrap border border-gray-200 transition-colors"
+                          >
+                            {selectedTable ? 'Change Table' : '+ Table'}
                           </button>
+                          <span className="text-xs font-bold text-gray-500 truncate hidden sm:inline">
+                            {selectedTable ? `Table ${selectedTable.displayName || selectedTable.name || selectedTable.id}` : 'Walk-in Order'}
+                          </span>
                         </div>
                       </div>
                       <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex lg:hidden items-center justify-center text-gray-400 shrink-0 ml-4 shadow-sm">
@@ -5547,14 +5559,17 @@ const CashierDashboard = ({ onLogout }) => {
                           if (!selectedTable) return [];
                           const order = selectedTable.activeOrder || selectedTable.orders?.[0];
                           if (order?.items?.length > 0) {
-                            return order.items
+                            return [...order.items]
                               .filter(i => !i.removedFromBill)
+                              .reverse()
                               .map(i => ({ ...i, n: i.name ?? i.n, p: Number(i.price ?? i.p ?? 0), q: Number(i.quantity ?? i.q ?? 1), isKotSent: true }));
                           }
-                          return (selectedTable.kotHistory || []).flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })));
+                          return [...(selectedTable.kotHistory || [])]
+                            .reverse()
+                            .flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })));
                         })();
-                        const pendingItems = cart.map(i => ({ ...i, isKotSent: false }));
-                        const displayCart = [...sessionItems, ...pendingItems];
+                        const pendingItems = [...cart].reverse().map(i => ({ ...i, isKotSent: false }));
+                        const displayCart = [...pendingItems, ...sessionItems];
 
                         if (displayCart.length === 0) {
                           return (
@@ -5587,6 +5602,29 @@ const CashierDashboard = ({ onLogout }) => {
                                     <span>•</span>
                                     <span>KOT-{item.kotId}</span>
                                   </div>
+                                ) : editQtyItemId === item.id ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      autoFocus
+                                      type="number"
+                                      min={1}
+                                      value={editQtyValue}
+                                      onChange={(e) => setEditQtyValue(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveEditQty(item.id);
+                                        if (e.key === 'Escape') { setEditQtyItemId(null); setEditQtyValue(''); }
+                                      }}
+                                      className="w-16 text-center text-sm font-black border border-amber-300 rounded-lg px-2 py-1 bg-amber-50 outline-none focus:border-amber-500"
+                                    />
+                                    <button
+                                      onClick={() => saveEditQty(item.id)}
+                                      className="text-xs font-black text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded-lg transition-colors"
+                                    >✓</button>
+                                    <button
+                                      onClick={() => { setEditQtyItemId(null); setEditQtyValue(''); }}
+                                      className="text-xs text-gray-400 hover:text-red-500 px-1 py-1 rounded transition-colors"
+                                    >✕</button>
+                                  </div>
                                 ) : (
                                   <>
                                     <div className="flex items-center bg-gray-100 rounded-lg p-1.5 gap-2">
@@ -5594,7 +5632,10 @@ const CashierDashboard = ({ onLogout }) => {
                                       <span className="w-9 text-center text-sm md:text-base font-black text-gray-805">{item.q}</span>
                                       <button onClick={() => updateQty(item.id, 1)} className="p-1.5 text-gray-600 hover:text-red-655 hover:bg-gray-200 rounded-lg transition-colors"><Plus size={14} /></button>
                                     </div>
-                                    <button className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg">Edit</button>
+                                    <button
+                                      onClick={() => { setEditQtyItemId(item.id); setEditQtyValue(String(item.q)); }}
+                                      className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                    >Edit</button>
                                   </>
                                 )}
                               </div>
@@ -5673,30 +5714,6 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
 
                     <div className="p-4 sm:p-4.5 border-t border-gray-100 bg-gray-50/50 space-y-3 shrink-0">
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
-                          <span>Subtotal</span>
-                          <span className="font-black text-gray-855 text-sm">₹{Number(selectedTable ? activeSubtotal : subtotal).toFixed(0)}</span>
-                        </div>
-                        {/* CGST + SGST — shown only when food items are present (taxes > 0) */}
-                        {(selectedTable ? activeCgst : cartCgst) > 0 && (
-                          <>
-                            <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
-                              <span>CGST</span>
-                              <span>₹{(selectedTable ? activeCgst : cartCgst).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-widest">
-                              <span>SGST</span>
-                              <span>₹{(selectedTable ? activeSgst : cartSgst).toFixed(2)}</span>
-                            </div>
-                          </>
-                        )}
-                        <div className="flex justify-between items-center pt-1.5 border-t border-gray-200">
-                          <span className="text-xs md:text-sm font-black text-gray-900 uppercase tracking-wider">NET TOTAL</span>
-                          <span className="text-2xl md:text-3xl lg:text-4xl font-black text-[#E53935] tracking-tight">₹{Number(selectedTable ? activeGrandTotal : cartGrandTotal).toFixed(0)}</span>
-                        </div>
-                      </div>
-
                       <div className="pt-0.5">
                         {(isWalkinMode || (activeOutlet === 'restaurant' && fetchedSections.some(s => {
                           const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
@@ -7294,10 +7311,10 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-      <LiquorQtyPicker
+      <QuantityPicker
         isOpen={showLiquorQtyPicker}
         itemName={liquorQtyItem?.n || ''}
-        onSelect={handleLiquorQtySelect}
+        onSelect={handleQtySelect}
         onClose={() => { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); }}
       />
     </div>
