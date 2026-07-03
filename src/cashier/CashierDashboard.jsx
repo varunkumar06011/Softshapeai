@@ -676,9 +676,13 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
-    // --- Recently terminated (survives hard refresh via localStorage for 5s) ---
+    // --- Recently terminated: block non-Free events for 5s, but always allow Free/AVAILABLE ---
     const termTs = recentlyTerminatedRef.current[tableId];
-    if (termTs && Date.now() - termTs < 5000) return true;
+    if (termTs && Date.now() - termTs < 5000) {
+      const freeStatuses = new Set(['Free', 'AVAILABLE', 'TERMINATED', 'CLEANING', 'Cleaning']);
+      const mapped = toFrontendTableStatus(incomingStatus);
+      if (!freeStatuses.has(incomingStatus) && !freeStatuses.has(mapped)) return true;
+    }
 
     // --- Bill printed but not yet settled: block any status that would revert to non-Waiting-Bill ---
     if (billPrintedTableIdsRef.current.has(tableId)) {
@@ -689,8 +693,12 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     if (!settledTableIdsRef.current.has(tableId)) return false;
-    // During 5s pause after settlement: block ALL updates
-    if (Date.now() < syncPauseUntilRef.current) return true;
+    // During 5s pause after settlement: block non-Free updates, allow Free/AVAILABLE through
+    if (Date.now() < syncPauseUntilRef.current) {
+      const freeStatuses = new Set(['Free', 'AVAILABLE', 'TERMINATED', 'CLEANING', 'Cleaning']);
+      const mapped = toFrontendTableStatus(incomingStatus);
+      return !freeStatuses.has(incomingStatus) && !freeStatuses.has(mapped);
+    }
     // After pause: if table is already Free locally, a new session may have started — allow
     const localTable = [...(activeTablesRef.current || [])]
       .find(t => t.backendId === tableId);
@@ -1356,7 +1364,10 @@ const CashierDashboard = ({ onLogout }) => {
       if (requestId && processedSocketRequestIds.current.has(requestId)) return;
       // No click cooldown — real-time updates must always be processed
       if (shouldBlockTableUpdate(table.id, table.status)) return;
-      if (terminatedTableIdsRef.current.has(table.id)) return;
+      if (terminatedTableIdsRef.current.has(table.id)) {
+        const incomingFree = table.status === 'AVAILABLE' || table.status === 'Free' || table.workflowStatus === 'Free';
+        if (!incomingFree) return;
+      }
       // ── DIAGNOSTIC: trace socket table:updated ──
       const _tblOrdersItems = (table.orders?.[0]?.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill }));
       console.log('[DIAG table:updated] table.id:', table.id, 'orders[0].items:', _tblOrdersItems, 'workflowStatus:', table.workflowStatus);
