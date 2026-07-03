@@ -4627,7 +4627,7 @@ export default function CaptainApp({ onLogout }) {
 
                             <span className="text-xs font-black w-4 text-center text-gray-900">{totalQty}</span>
 
-                            <button onClick={(e) => { e.stopPropagation(); addItemToSession(item); }} className="w-6 h-6 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"><Plus size={10} strokeWidth={3.5} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); handleItemClick(e, item); }} className="w-6 h-6 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"><Plus size={10} strokeWidth={3.5} /></button>
 
                           </div>
 
@@ -4873,7 +4873,7 @@ export default function CaptainApp({ onLogout }) {
 
                                               e.stopPropagation();
 
-                                              addItemToSession(item);
+                                              handleItemClick(e, item);
 
                                             }}
 
@@ -5340,7 +5340,7 @@ export default function CaptainApp({ onLogout }) {
 
                               <button
 
-                                onClick={(e) => { e.stopPropagation(); addItemToSession(item); }}
+                                onClick={(e) => { e.stopPropagation(); handleItemClick(e, item); }}
 
                                 className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center hover:bg-amber-500 hover:text-white transition-colors"
 
