@@ -1529,7 +1529,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (t.backendId === targetTableId) return mappedTarget || t;
         return t;
       });
-      setActiveTables(updateTables);
+      setActiveTables(updateTables, { skipPersist: true });
 
       if (sourceTableId) {
         recentlyTerminatedRef.current[sourceTableId] = Date.now();
@@ -1582,7 +1582,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (table.backendId === targetTableId) return mappedTarget || table;
         return table;
       });
-      setActiveTables(updateTables);
+      setActiveTables(updateTables, { skipPersist: true });
 
       if (selectedTable?.backendId === sourceTableId && mappedSource) {
         setSelectedTable(mappedSource);
@@ -3174,6 +3174,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
+      // skipPersist: true — backend already set the table to Free via the terminate endpoint;
+      // a redundant PATCH would race with the terminate socket events and cause flicker.
       setActiveTables(prev => prev.map(t =>
         t.id === tableSnap.id || t.backendId === tableSnap.backendId
           ? {
@@ -3190,7 +3192,7 @@ const CashierDashboard = ({ onLogout }) => {
               time: null,
             }
           : t
-      ));
+      ), { skipPersist: true });
 
       // Step 4: For extra tables — remove from extraTables so they vanish from UI immediately
       if (tableSnap.isExtra) {
@@ -3953,7 +3955,8 @@ const CashierDashboard = ({ onLogout }) => {
             if (et.id !== selectedTable.id) return et;
             return {
               ...et,
-              status: et.status === 'Free' ? 'Occupied' : et.status,
+              status: et.status === 'Free' ? 'Preparing' : et.status,
+              workflowStatus: et.status === 'Free' ? 'Preparing' : et.workflowStatus,
               kotHistory: serverKotHistory,
               currentBill: newTotalBill,
               activeOrder: {
@@ -3967,7 +3970,8 @@ const CashierDashboard = ({ onLogout }) => {
             if (!prev || prev.id !== selectedTable.id) return prev;
             return {
               ...prev,
-              status: prev.status === 'Free' ? 'Occupied' : prev.status,
+              status: prev.status === 'Free' ? 'Preparing' : prev.status,
+              workflowStatus: prev.status === 'Free' ? 'Preparing' : prev.workflowStatus,
               kotHistory: serverKotHistory,
               currentBill: newTotalBill,
               activeOrder: {
@@ -3980,9 +3984,11 @@ const CashierDashboard = ({ onLogout }) => {
         } else {
           const updater = prev => prev.map(t => {
             if (t.id !== selectedTable.id && t.backendId !== selectedTable.backendId) return t;
+            const kotStatus = t.status === 'Waiting Bill' ? 'Waiting Bill' : 'Preparing';
             return {
               ...t,
-              status: t.status === 'Free' ? 'Occupied' : t.status,
+              status: kotStatus,
+              workflowStatus: kotStatus,
               kotHistory: serverKotHistory,
               currentBill: newTotalBill,
               activeOrder: {
@@ -3992,12 +3998,14 @@ const CashierDashboard = ({ onLogout }) => {
               },
             };
           });
-          setActiveTables(updater);
+          setActiveTables(updater, { skipPersist: true });
           setSelectedTable(prev => {
             if (!prev) return prev;
+            const kotStatusSel = prev.status === 'Waiting Bill' ? 'Waiting Bill' : 'Preparing';
             return {
               ...prev,
-              status: prev.status === 'Free' ? 'Occupied' : prev.status,
+              status: kotStatusSel,
+              workflowStatus: kotStatusSel,
               kotHistory: serverKotHistory,
               currentBill: newTotalBill,
               activeOrder: {
