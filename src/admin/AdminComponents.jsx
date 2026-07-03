@@ -1124,6 +1124,13 @@ export function Pos() {
 export function Tables({ onOpen }) {
 
   const [activePopupTableId, setActivePopupTableId] = useState(null);
+  const [popupCaptainId, setPopupCaptainId] = useState('');
+  const [savingCaptain, setSavingCaptain] = useState(false);
+
+  useEffect(() => {
+    const t = tables.find(t => t.id === activePopupTableId);
+    setPopupCaptainId(t?.captainId || '');
+  }, [activePopupTableId, tables]);
 
   const [editMode, setEditMode] = useState(false);
 
@@ -1136,14 +1143,17 @@ export function Tables({ onOpen }) {
   const [loadingVenues, setLoadingVenues] = useState(true);
 
   const [staffMap, setStaffMap] = useState({});
+  const [staffList, setStaffList] = useState([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/auth/staff`, { headers: { ...getAuthHeaders() } })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
+        const list = Array.isArray(data) ? data : [];
         const map = {};
-        (Array.isArray(data) ? data : []).forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
+        list.forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
         setStaffMap(map);
+        setStaffList(list);
       })
       .catch(() => {});
   }, []);
@@ -1488,7 +1498,24 @@ export function Tables({ onOpen }) {
 
       const pCaptainName = pTable.captainName || staffMap[pTable.captainId] || 'Staff';
 
-      
+      const handleSaveCaptain = async () => {
+        setSavingCaptain(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/tables/${pTable.backendId || pTable.id}`, {
+            method: 'PATCH',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ captainId: popupCaptainId || null }),
+            credentials: 'include',
+          });
+          if (!res.ok) throw new Error('Failed to update table captain');
+          setActivePopupTableId(null);
+        } catch (err) {
+          console.error(err);
+          alert('Failed to assign captain');
+        } finally {
+          setSavingCaptain(false);
+        }
+      };
 
       return (
 
@@ -1508,11 +1535,20 @@ export function Tables({ onOpen }) {
 
                 </div>
 
-                <button onClick={() => setActivePopupTableId(null)} className="p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-lg transition-colors">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSaveCaptain}
+                    disabled={savingCaptain}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${savingCaptain ? 'bg-gray-100 text-gray-400' : 'bg-[#E53935] text-white hover:bg-[#B71C1C]'}`}
+                  >
+                    {savingCaptain ? 'Saving...' : 'Save Captain'}
+                  </button>
+                  <button onClick={() => setActivePopupTableId(null)} className="p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-lg transition-colors">
 
-                   <X size={18} />
+                     <X size={18} />
 
-                </button>
+                  </button>
+                </div>
 
              </div>
 
@@ -1526,7 +1562,16 @@ export function Tables({ onOpen }) {
 
                       <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Assigned Captain</span>
 
-                      <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><User size={14} className="text-gray-400"/> {pCaptainName}</span>
+                      <select
+                        className="text-sm font-bold text-gray-900 border border-gray-200 rounded-lg px-2 py-1 bg-white min-w-[140px]"
+                        value={popupCaptainId}
+                        onChange={e => setPopupCaptainId(e.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {staffList.filter(s => s.role === 'CAPTAIN').map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
 
                    </div>
 
@@ -5041,6 +5086,32 @@ export function Payroll() {
 
 
 
+  const handleGenerateRecord = async (employeeId) => {
+    const emp = employees.find((e) => e.id === employeeId);
+    if (!emp) return;
+    try {
+      setSavingRecordId(employeeId);
+      await apiFetch('/api/payroll/records', {
+        method: 'POST',
+        body: JSON.stringify({
+          restaurantId,
+          employeeId,
+          monthYear: dateMode === 'range' ? startDate.slice(0, 7) : monthYear,
+          startDate: dateMode === 'range' ? startDate : undefined,
+          endDate: dateMode === 'range' ? endDate : undefined,
+          presentDays: 0,
+          otDays: 0,
+          autoCount: false,
+        }),
+      });
+      await loadData();
+    } catch (err) {
+      console.error('[Payroll] Generate failed:', err);
+    } finally {
+      setSavingRecordId(null);
+    }
+  };
+
   const handleSaveRecord = async (employeeId) => {
 
     const vals = editValues[employeeId] || {};
@@ -5782,20 +5853,23 @@ export function Payroll() {
                           <span className="text-[10px] font-bold text-blue-600 animate-pulse">Saving...</span>
                         )}
 
-                        {rec && rec.status !== 'PAID' && (
-
+                        {rec ? (
+                          rec.status !== 'PAID' && (
+                            <button
+                              onClick={() => { setPayModal(rec); setPayAmount(''); }}
+                              className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
+                            >
+                              Pay
+                            </button>
+                          )
+                        ) : (
                           <button
-
-                            onClick={() => { setPayModal(rec); setPayAmount(''); }}
-
-                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
-
+                            onClick={() => handleGenerateRecord(emp.id)}
+                            disabled={savingRecordId === emp.id}
+                            className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-bold hover:bg-amber-200 disabled:opacity-50"
                           >
-
-                            Pay
-
+                            {savingRecordId === emp.id ? '...' : 'Generate'}
                           </button>
-
                         )}
 
                         <button
@@ -7091,7 +7165,7 @@ export function KitchenInventory() {
 
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-start">
 
           {accessibleOutlets.length > 1 && (
 
@@ -7233,7 +7307,7 @@ export function KitchenInventory() {
 
             onChange={(e) => setSearchQuery(e.target.value)}
 
-            className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none w-40"
+            className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none w-full sm:w-40"
 
           />
 
@@ -14166,7 +14240,7 @@ function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
 
     quantityChange: 0,
 
-    type: 'ADJUSTMENT',
+    type: item.isVirtual ? 'OPENING' : 'ADJUSTMENT',
 
     notes: '',
 
@@ -14265,6 +14339,10 @@ function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all font-medium"
 
             >
+
+              {item.isVirtual && (
+                <option value="OPENING">Opening Stock</option>
+              )}
 
               <option value="ADJUSTMENT">Manual Adjustment</option>
 
@@ -17425,7 +17503,7 @@ export function StaffManagement() {
 
   const [editing, setEditing] = useState(null);
 
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', permissions: {} });
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
   const [saving, setSaving] = useState(false);
 
@@ -17465,7 +17543,7 @@ export function StaffManagement() {
 
   const resetForm = () => {
 
-    setForm({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', permissions: {} });
+    setForm({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
     setEditing(null);
 
@@ -17495,9 +17573,9 @@ export function StaffManagement() {
 
         : form.role === 'OWNER'
 
-        ? { name: form.name, role: form.role, email: form.email, password: form.password }
+        ? { name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0 }
 
-        : { name: form.name, role: form.role, pin: form.pin };
+        : { name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0 };
 
       await apiFetch(path, { method, body: JSON.stringify(body) });
 
@@ -17521,7 +17599,7 @@ export function StaffManagement() {
 
   const handleDeactivate = async (id) => {
 
-    if (!confirm('Deactivate this staff member?')) return;
+    if (!confirm('Warning: Deactivating this staff member will permanently delete their payroll records, advances, attendance, and captain assignments. This cannot be undone. Do you want to continue?')) return;
 
     try {
 
@@ -17776,6 +17854,19 @@ export function StaffManagement() {
               />
 
             </div>
+            )}
+
+            {!editing && (
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Base Salary (Monthly)</label>
+                <input
+                  type="number"
+                  value={form.baseSalary}
+                  onChange={(e) => setForm({ ...form, baseSalary: e.target.value })}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                  placeholder="e.g. 15000"
+                />
+              </div>
             )}
 
             {editing && editing.role === 'CASHIER' && (

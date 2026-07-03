@@ -16,8 +16,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Users, TrendingUp, Calendar } from "lucide-react";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+import { apiFetch } from "../services/apiConfig";
 
 // Convert Date to ISO date string (YYYY-MM-DD)
 function toISODate(d) {
@@ -38,6 +37,9 @@ function getRangeDates(range, customStart, customEnd) {
     start.setDate(now.getDate() - 6);
     return { startDate: toISODate(start), endDate };
   }
+  if (range === 'All Time') {
+    return { startDate: '1970-01-01', endDate };
+  }
   // Monthly
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   return { startDate: toISODate(start), endDate };
@@ -56,8 +58,7 @@ export default function CaptainPerformanceDashboard() {
     const restaurantId = getCurrentRestaurantId();
     if (!restaurantId) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/reports/captain-performance?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
+    apiFetch(`/api/reports/captain-performance?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`)
       .then(data => setReport(data || null))
       .catch(() => setReport(null))
       .finally(() => setLoading(false));
@@ -101,7 +102,7 @@ export default function CaptainPerformanceDashboard() {
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
           <div className="flex bg-[#F4F4F5] p-1 rounded-xl overflow-x-auto scrollbar-hide">
-            {["Today", "Weekly", "Monthly", "Custom"].map(r => (
+            {["Today", "Weekly", "Monthly", "All Time", "Custom"].map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}

@@ -11,6 +11,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import { getKolkataDateString } from '../shared/utils/dateFormat';
 
 const EXPENSE_CATEGORIES = [
   { value: 'MISCELLANEOUS', label: 'Miscellaneous expenses' },
@@ -21,10 +22,12 @@ const EXPENSE_CATEGORIES = [
 ];
 
 const APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
+// Fallback hardcoded approvers used when the backend endpoint fails or returns empty.
 
 export default function VoucherModule() {
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
+  const [approverOptions, setApproverOptions] = useState([]);
 
   const [paidToType, setPaidToType] = useState('STAFF');
   const [paidToSearch, setPaidToSearch] = useState('');
@@ -45,12 +48,7 @@ export default function VoucherModule() {
 
   const [todaySummary, setTodaySummary] = useState(null);
   const [recentVouchers, setRecentVouchers] = useState([]);
-  const [summaryDate, setSummaryDate] = useState(() => {
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const ist = new Date(now.getTime() + istOffset);
-    return ist.toISOString().split('T')[0];
-  });
+  const [summaryDate, setSummaryDate] = useState(() => getKolkataDateString());
 
   const paidToRef = useRef(null);
   const approverRef = useRef(null);
@@ -60,18 +58,22 @@ export default function VoucherModule() {
 
   const loadData = useCallback(async (date = summaryDate) => {
     try {
-      const [opts, narrations, summary, recent] = await Promise.all([
+      const [opts, narrations, summary, recent, approvers] = await Promise.all([
         apiFetch('/api/vouchers/paid-to-options'),
         apiFetch('/api/vouchers/narration-suggestions'),
         apiFetch(`/api/vouchers/today-summary?date=${date}`),
         apiFetch(`/api/vouchers?date=${date}&limit=10`),
+        apiFetch('/api/vouchers/approver-options').catch(() => []),
       ]);
       setPaidToOptions(opts || { staff: [] });
       setNarrationSuggestions(narrations || []);
       setTodaySummary(summary || null);
       setRecentVouchers(recent || []);
+      const approverNames = (approvers || []).map((a) => a.name).filter(Boolean);
+      setApproverOptions(approverNames.length > 0 ? approverNames : APPROVERS);
     } catch (err) {
       console.error('[VoucherModule] Failed to load data:', err);
+      setApproverOptions(APPROVERS);
     }
   }, [summaryDate]);
 
@@ -107,7 +109,7 @@ export default function VoucherModule() {
     c.label.toLowerCase().includes(paidToSearch.toLowerCase())
   );
 
-  const filteredApprovers = APPROVERS.filter((a) =>
+  const filteredApprovers = approverOptions.filter((a) =>
     a.toLowerCase().includes(approverSearch.toLowerCase())
   );
 
