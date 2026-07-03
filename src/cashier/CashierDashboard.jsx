@@ -1507,6 +1507,17 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
+      // Guard: mark table as recently terminated so stale socket events (order:updated,
+      // table:updated from before settlement) cannot revive it and cause flicker.
+      if (tableId) {
+        terminatedTableIdsRef.current.add(tableId);
+        recentlyTerminatedRef.current[tableId] = Date.now();
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+        } catch {}
+        setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 15000);
+      }
+
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
       if (!isExtraTable) {
         const clearTable = (prev) => prev.map(t =>
