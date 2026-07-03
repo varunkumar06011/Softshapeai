@@ -2894,7 +2894,15 @@ const CashierDashboard = ({ onLogout }) => {
       // FIX 1 & 3: mark table as settled and update cache immediately
       if (selectedTable?.backendId && !selectedTable.isExtra) {
         setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-        syncPauseUntilRef.current = Date.now() + 2000;
+        syncPauseUntilRef.current = Date.now() + 5000;
+        // CRITICAL: write to localStorage so tableSyncService/barTableSyncService
+        // (which only check localStorage, not in-memory refs) block stale socket events
+        terminatedTableIdsRef.current.add(selectedTable.backendId);
+        recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+        } catch {}
+        setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
         const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
         try {
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
@@ -2985,7 +2993,13 @@ const CashierDashboard = ({ onLogout }) => {
             setSettledOrderIds(prev => new Set([...prev, orderId]));
             if (selectedTable?.backendId) {
               setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-              syncPauseUntilRef.current = Date.now() + 2000;
+              syncPauseUntilRef.current = Date.now() + 5000;
+              terminatedTableIdsRef.current.add(selectedTable.backendId);
+              recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+              try {
+                localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+              } catch {}
+              setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
             }
             return;
           }
@@ -3044,10 +3058,16 @@ const CashierDashboard = ({ onLogout }) => {
           // Mark as settled locally to prevent retries
           setSettledOrderIds(prev => new Set([...prev, orderId]));
 
-          // FIX 1 & 5: mark table backendId as settled and pause sync for 2s
+          // FIX 1 & 5: mark table backendId as settled and pause sync for 5s
           if (selectedTable?.backendId) {
             setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-            syncPauseUntilRef.current = Date.now() + 2000;
+            syncPauseUntilRef.current = Date.now() + 5000;
+            terminatedTableIdsRef.current.add(selectedTable.backendId);
+            recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+            try {
+              localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+            } catch {}
+            setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
           }
         } else if (isWalkinMode) {
           // Walk-in settlement: no orderId exists, create transaction directly
