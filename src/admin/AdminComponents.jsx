@@ -142,7 +142,9 @@ import {
 
   Upload,
 
-  Loader
+  Loader,
+
+  Activity
 
 } from 'lucide-react';
 
@@ -494,6 +496,16 @@ function compressImage(file, callback) {
 
 const AVATAR_COLORS = ['#B71C1C','#1B5E20','#0D47A1','#4A148C',
                        '#E65100','#006064','#827717','#37474F'];
+
+const _TITLE_KEEP_UPPER = new Set(['PP', 'PVC', 'HDPE', 'LDPE', 'HM', 'LD', 'B/L']);
+function toTitleCase(str) {
+  if (!str) return str;
+  return str.toLowerCase().split(' ').map(word => {
+    if (!word) return word;
+    if (_TITLE_KEEP_UPPER.has(word.toUpperCase())) return word.toUpperCase();
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(' ');
+}
 
 function IngredientAvatar({ name }) {
   const bg = AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
@@ -6274,7 +6286,7 @@ export function KitchenInventory() {
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', currentStock: '', prize: '', image: null, imagePreview: null });
+  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -6313,6 +6325,16 @@ export function KitchenInventory() {
   const [outletFilter, setOutletFilter] = useState('self'); // 'self' | 'combined'
 
   const [accessibleOutlets, setAccessibleOutlets] = useState([]);
+
+  const [categoryFilter, setCategoryFilter] = useState('All');
+
+  const [deductionCheckOrderId, setDeductionCheckOrderId] = useState('');
+
+  const [deductionCheckResult, setDeductionCheckResult] = useState(null);
+
+  const [deductionCheckLoading, setDeductionCheckLoading] = useState(false);
+
+  const [showDeductionPanel, setShowDeductionPanel] = useState(false);
 
   const csvImportRef = useRef(null);
 
@@ -6407,9 +6429,11 @@ export function KitchenInventory() {
 
           restaurantId,
 
-          name: newItem.name,
+          name: toTitleCase(newItem.name),
 
           unit: newItem.unit,
+
+          category: newItem.category.trim(),
 
           currentStock: parseFloat(newItem.currentStock) || 0,
 
@@ -6431,7 +6455,7 @@ export function KitchenInventory() {
         return;
       }
 
-      setNewItem({ name: '', unit: 'kg', currentStock: '', prize: '', image: null, imagePreview: null });
+      setNewItem({ name: '', unit: 'kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
 
       setShowAddModal(false);
 
@@ -6618,11 +6642,13 @@ export function KitchenInventory() {
 
     const header = lines[0].trim().replace(/\r/g, '');
 
-    const hasStockColumn = header === 'S.NO,INGREDIENT,TYPE,PRICE,STOCK';
+    const hasStockColumn = header === 'S.NO,INGREDIENT,CATEGORY,PRICE,STOCK';
 
-    if (header !== 'S.NO,INGREDIENT,TYPE,PRICE' && !hasStockColumn) {
+    const hasScaleColumn = header === 'S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE';
 
-      alert(`Invalid CSV format.\nExpected header: S.NO,INGREDIENT,TYPE,PRICE,STOCK\nGot: ${header}`);
+    if (header !== 'S.NO,INGREDIENT,CATEGORY,PRICE' && !hasStockColumn && !hasScaleColumn) {
+
+      alert(`Invalid CSV format.\nExpected header: S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE\nGot: ${header}`);
 
       return;
 
@@ -6646,17 +6672,20 @@ export function KitchenInventory() {
 
       if (cols.length < 4) { skipped++; continue; }
 
-      const [, ingredient, type, price, stock] = cols.map(c => c.trim());
+      const [, rawIngredient, rawCategory, price, stock, rawScale] = cols.map(c => c.trim());
+      const ingredient = toTitleCase(rawIngredient);
 
       if (!ingredient) { skipped++; continue; }
 
-      const prize = (price === 'N/A' || price === '' || price === '0') ? 0 : parseFloat(price) || 0;
+      const prize    = (price       === 'N/A' || price       === '' || price       === '0') ? 0  : parseFloat(price) || 0;
 
-      const unit  = (type  === 'N/A' || type  === '')                 ? '' : type;
+      const category = (rawCategory === 'N/A' || rawCategory === '' || rawCategory == null) ? '' : rawCategory;
 
-      const currentStock = (hasStockColumn && stock !== 'N/A' && stock !== '') ? parseFloat(stock) || 0 : 0;
+      const unit     = (rawScale    === 'N/A' || rawScale    === '' || rawScale    == null) ? '' : rawScale;
 
-      rows.push({ ingredient, unit, prize, currentStock, rowNum: i + 1 });
+      const currentStock = ((hasStockColumn || hasScaleColumn) && stock !== 'N/A' && stock !== '') ? parseFloat(stock) || 0 : 0;
+
+      rows.push({ ingredient, unit, prize, currentStock, category, rowNum: i + 1 });
 
     }
 
@@ -6684,7 +6713,7 @@ export function KitchenInventory() {
 
       const batch = rows.slice(b, b + BATCH);
 
-      await Promise.all(batch.map(async ({ ingredient, unit, prize, currentStock, rowNum }) => {
+      await Promise.all(batch.map(async ({ ingredient, unit, prize, currentStock, category, rowNum }) => {
 
         try {
 
@@ -6694,7 +6723,7 @@ export function KitchenInventory() {
 
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
-            body: JSON.stringify({ restaurantId, name: ingredient, unit, prize, currentStock, reorderLevel: 0 }),
+            body: JSON.stringify({ restaurantId, name: ingredient, unit, prize, currentStock, category, reorderLevel: 0 }),
 
           });
 
@@ -6777,9 +6806,19 @@ export function KitchenInventory() {
 
     try {
 
-      if (field === 'price') {
+      if (field === 'price' || field === 'name' || field === 'unit' || field === 'category') {
 
-        await handleUpdateItem(item.id, { price: parseFloat(editingCell.value) || 0 });
+        const payload = {};
+
+        if (field === 'price') payload.price = parseFloat(editingCell.value) || 0;
+
+        else if (field === 'name') payload.name = toTitleCase(editingCell.value.trim()) || item.name;
+
+        else if (field === 'unit') payload.unit = editingCell.value.trim() || item.unit;
+
+        else if (field === 'category') payload.category = editingCell.value.trim();
+
+        await handleUpdateItem(item.id, payload);
 
         setEditingCell(null);
 
@@ -6891,7 +6930,12 @@ export function KitchenInventory() {
 
 
 
-  const filteredItems = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const allCategories = [...new Set(items.map(i => i.category || '').filter(Boolean))].sort();
+
+  const filteredItems = items.filter(i =>
+    i.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    (categoryFilter === 'All' || (i.category || '') === categoryFilter)
+  );
 
   const allSelected = filteredItems.length > 0 && filteredItems.every(i => selectedIds.has(i.id));
 
@@ -7099,23 +7143,27 @@ export function KitchenInventory() {
 
               if (items.length === 0) return;
 
-              const headers = ['S.NO', 'INGREDIENT', 'TYPE', 'PRICE', 'STOCK'];
+              const headers = ['S.NO', 'INGREDIENT', 'CATEGORY', 'PRICE', 'STOCK', 'SCALE'];
 
               const rows = items.map((item, index) => {
 
                 const prize = parseFloat(item.price);
 
-                const priceCell = (!item.price || isNaN(prize) || prize === 0) ? 'N/A' : prize.toFixed(2);
+                const priceCell    = (!item.price || isNaN(prize) || prize === 0) ? 'N/A' : prize.toFixed(2);
 
-                const typeCell  = (item.unit && item.unit.trim() !== '') ? item.unit : 'N/A';
+                const scaleCell    = (item.unit && item.unit.trim() !== '') ? item.unit : 'N/A';
 
-                const stockCell = Number(item.currentStock || 0).toFixed(2);
+                const stockCell    = Number(item.currentStock || 0).toFixed(2);
 
-                const safeName  = item.name.includes(',') ? `"${item.name}"` : item.name;
+                const categoryCell = (item.category && item.category.trim() !== '') ? item.category.trim() : 'N/A';
 
-                const safeType  = typeCell.includes(',')  ? `"${typeCell}"` : typeCell;
+                const safeName     = item.name.includes(',')         ? `"${item.name}"`     : item.name;
 
-                return [index + 1, safeName, safeType, priceCell, stockCell].join(',');
+                const safeScale    = scaleCell.includes(',')         ? `"${scaleCell}"`    : scaleCell;
+
+                const safeCategory = categoryCell.includes(',')      ? `"${categoryCell}"` : categoryCell;
+
+                return [index + 1, safeName, safeCategory, priceCell, stockCell, safeScale].join(',');
 
               });
 
@@ -7219,8 +7267,118 @@ export function KitchenInventory() {
 
           </button>
 
+          <button
+
+            onClick={() => setShowDeductionPanel(p => !p)}
+
+            className={`w-full sm:w-auto px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 ${showDeductionPanel ? 'bg-[#B71C1C] text-white shadow-red-100 shadow-xl' : 'bg-[#F4F4F5] text-gray-700 hover:bg-gray-200'}`}
+
+          >
+
+            <Activity size={14} /> Deduction Check
+
+          </button>
+
         </div>
 
+      </div>
+
+
+
+      {/* Deduction Diagnostic Panel */}
+      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
+        <button
+          onClick={() => setShowDeductionPanel(p => !p)}
+          className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+        >
+          <div>
+            <p className="text-sm font-black text-gray-900">Deduction Check</p>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Debug why inventory didn't decrease after settlement</p>
+          </div>
+          <ChevronDown size={16} className={`text-gray-400 transition-transform ${showDeductionPanel ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showDeductionPanel && (
+          <div className="px-6 pb-6 space-y-4 border-t border-gray-100">
+            <div className="flex items-center gap-3 pt-4">
+              <input
+                type="text"
+                placeholder="Paste Order ID here…"
+                value={deductionCheckOrderId}
+                onChange={(e) => setDeductionCheckOrderId(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none font-mono"
+              />
+              <button
+                onClick={async () => {
+                  if (!deductionCheckOrderId.trim()) return;
+                  setDeductionCheckLoading(true);
+                  setDeductionCheckResult(null);
+                  try {
+                    const res = await fetch(`${API_BASE}/api/inventory/kitchen/deduction-check?orderId=${encodeURIComponent(deductionCheckOrderId.trim())}`, {
+                      headers: { ...getAuthHeaders() },
+                    });
+                    const data = await res.json();
+                    setDeductionCheckResult(res.ok ? data : { error: data.error || 'Request failed' });
+                  } catch (err) {
+                    setDeductionCheckResult({ error: err.message });
+                  } finally {
+                    setDeductionCheckLoading(false);
+                  }
+                }}
+                disabled={deductionCheckLoading || !deductionCheckOrderId.trim()}
+                className="px-5 py-2 bg-[#B71C1C] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#8E1414] disabled:opacity-50"
+              >
+                {deductionCheckLoading ? 'Checking…' : 'Check'}
+              </button>
+            </div>
+
+            {deductionCheckResult && (
+              <div className="space-y-3">
+                {deductionCheckResult.error ? (
+                  <p className="text-sm text-red-600 font-bold">{deductionCheckResult.error}</p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="font-bold text-gray-700">Status: <span className={deductionCheckResult.status === 'PAID' ? 'text-green-600' : 'text-amber-600'}>{deductionCheckResult.status}</span></span>
+                      <span className="font-bold text-gray-700">Inventory Deducted: <span className={deductionCheckResult.inventoryDeducted ? 'text-green-600' : 'text-red-600'}>{deductionCheckResult.inventoryDeducted ? 'Yes ✓' : 'No ✗'}</span></span>
+                      <span className="font-bold text-gray-700">Food Items: {deductionCheckResult.totalFoodItems}</span>
+                    </div>
+
+                    {deductionCheckResult.missingRecipes?.length > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                        <p className="text-xs font-black text-red-700 mb-1">No Recipe Set Up For:</p>
+                        <p className="text-xs text-red-600">{deductionCheckResult.missingRecipes.join(', ')}</p>
+                        <p className="text-[10px] text-red-500 mt-1">Go to Menu → Edit the item → Set Recipe to fix this.</p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      {deductionCheckResult.foodItems?.map((fi) => (
+                        <div key={fi.menuItemId} className={`rounded-xl border p-3 ${fi.hasRecipe ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-xs font-black text-gray-900">{fi.name} × {fi.orderedQty}</p>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${fi.hasRecipe ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {fi.hasRecipe ? '✓ Recipe found' : '✗ No recipe'}
+                            </span>
+                          </div>
+                          {fi.ingredients?.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {fi.ingredients.map((ing) => (
+                                <span key={ing.ingredientId} className="text-[10px] bg-white border border-green-200 rounded-lg px-2 py-0.5 text-gray-700">
+                                  {ing.name}: -{ing.totalDeductQty.toFixed(3)} {ing.unit} (stock: {ing.currentStock})
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
 
@@ -7291,6 +7449,25 @@ export function KitchenInventory() {
 
 
 
+      {/* Category Filter Tabs */}
+      {allCategories.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {['All', ...allCategories].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                categoryFilter === cat
+                  ? 'bg-[#B71C1C] text-white shadow-md'
+                  : 'bg-[#F4F4F5] text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {cat === 'All' ? `All (${items.length})` : `${cat} (${items.filter(i => (i.category || '') === cat).length})`}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Laptop Table */}
       <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
 
@@ -7322,7 +7499,9 @@ export function KitchenInventory() {
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Ingredient</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Type</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Scale</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
 
@@ -7452,7 +7631,57 @@ export function KitchenInventory() {
 
                         <div>
 
-                          <p className="font-black text-gray-900 text-sm">{item.name}</p>
+                          {editingCell?.itemId === item.id && editingCell?.field === 'name' ? (
+
+                            <div className="flex items-center gap-1">
+
+                              <input
+
+                                type="text"
+
+                                value={editingCell.value}
+
+                                onChange={(e) => setEditingCell(prev => ({ ...prev, value: e.target.value }))}
+
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleInlineSave(item, 'name'); if (e.key === 'Escape') setEditingCell(null); }}
+
+                                className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400 w-32"
+
+                                autoFocus
+
+                                disabled={editSaving}
+
+                              />
+
+                              <button onClick={() => handleInlineSave(item, 'name')} disabled={editSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+
+                              <button onClick={() => setEditingCell(null)} disabled={editSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+
+                            </div>
+
+                          ) : (
+
+                            <div className="flex items-center gap-1 group/name">
+
+                              <p className="font-black text-gray-900 text-sm">{toTitleCase(item.name)}</p>
+
+                              <button
+
+                                onClick={() => setEditingCell({ itemId: item.id, field: 'name', value: item.name })}
+
+                                className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/name:opacity-100 transition-opacity"
+
+                                title="Edit ingredient name"
+
+                              >
+
+                                <Pencil size={11} />
+
+                              </button>
+
+                            </div>
+
+                          )}
 
                           {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
 
@@ -7462,7 +7691,153 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-center text-gray-500 text-sm">{item.unit}</td>
+                    <td className="px-4 py-4 text-gray-500 text-sm">
+
+                      {editingCell?.itemId === item.id && editingCell?.field === 'category' ? (
+
+                        <div className="flex items-center justify-start gap-1">
+
+                          <input
+
+                            type="text"
+
+                            list="category-suggestions"
+
+                            value={editingCell.value}
+
+                            onChange={(e) => setEditingCell(prev => ({ ...prev, value: e.target.value }))}
+
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleInlineSave(item, 'category'); if (e.key === 'Escape') setEditingCell(null); }}
+
+                            className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400 w-32"
+
+                            placeholder="e.g. Vegetables"
+
+                            autoFocus
+
+                            disabled={editSaving}
+
+                          />
+
+                          <datalist id="category-suggestions">
+
+                            {allCategories.map(c => <option key={c} value={c} />)}
+
+                          </datalist>
+
+                          <button onClick={() => handleInlineSave(item, 'category')} disabled={editSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+
+                          <button onClick={() => setEditingCell(null)} disabled={editSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+
+                        </div>
+
+                      ) : (
+
+                        <div className="flex items-center justify-start gap-1 group/cat">
+
+                          <span className={`${item.category ? 'bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold' : 'text-gray-300 text-xs italic'}`}>
+
+                            {item.category || 'Uncategorized'}
+
+                          </span>
+
+                          <button
+
+                            onClick={() => setEditingCell({ itemId: item.id, field: 'category', value: item.category || '' })}
+
+                            className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/cat:opacity-100 transition-opacity"
+
+                            title="Edit category"
+
+                          >
+
+                            <Pencil size={11} />
+
+                          </button>
+
+                        </div>
+
+                      )}
+
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-500 text-sm">
+
+                      {editingCell?.itemId === item.id && editingCell?.field === 'unit' ? (
+
+                        <div className="flex items-center justify-start gap-1">
+
+                          <select
+
+                            value={editingCell.value}
+
+                            onChange={(e) => setEditingCell(prev => ({ ...prev, value: e.target.value }))}
+
+                            className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400"
+
+                            autoFocus
+
+                            disabled={editSaving}
+
+                          >
+
+                            <option value="Kg">Kg</option>
+
+                            <option value="G">G</option>
+
+                            <option value="L">L</option>
+
+                            <option value="Ml">Ml</option>
+
+                            <option value="Pcs">Pcs</option>
+
+                            <option value="Pack">Pack</option>
+
+                            <option value="Kgs">Kgs</option>
+
+                            <option value="Nos">Nos</option>
+
+                            <option value="Bottle">Bottle</option>
+
+                            <option value="Packets">Packets</option>
+
+                            <option value="Box">Box</option>
+
+                            <option value="Dozen">Dozen</option>
+
+                          </select>
+
+                          <button onClick={() => handleInlineSave(item, 'unit')} disabled={editSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+
+                          <button onClick={() => setEditingCell(null)} disabled={editSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+
+                        </div>
+
+                      ) : (
+
+                        <div className="flex items-center justify-start gap-1 group/unit">
+
+                          <span>{toTitleCase(item.unit)}</span>
+
+                          <button
+
+                            onClick={() => setEditingCell({ itemId: item.id, field: 'unit', value: toTitleCase(item.unit) })}
+
+                            className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/unit:opacity-100 transition-opacity"
+
+                            title="Edit scale"
+
+                          >
+
+                            <Pencil size={11} />
+
+                          </button>
+
+                        </div>
+
+                      )}
+
+                    </td>
 
                     <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
 
@@ -7540,6 +7915,7 @@ export function KitchenInventory() {
                     <td className="px-4 py-4 text-sm text-gray-900">Total</td>
                     <td className="px-4 py-4 text-center"></td>
                     <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center"></td>
                     <td className="px-4 py-4 text-center text-gray-900">{totals.opening.toFixed(2)}</td>
                     <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.openingAmt)}</td>
                     <td className="px-4 py-4 text-center text-gray-900">{totals.purchase.toFixed(2)}</td>
@@ -7597,8 +7973,11 @@ export function KitchenInventory() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="font-black text-gray-900 truncate">{item.name}</p>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase">{item.unit}</span>
+                    <p className="font-black text-gray-900 truncate">{toTitleCase(item.name)}</p>
+                    <div className="flex items-center gap-1.5">
+                      {item.category && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[9px] font-bold" title="Category">{item.category}</span>}
+                      <span className="text-[10px] font-bold text-gray-400 uppercase" title="Scale">{item.unit}</span>
+                    </div>
                   </div>
                   <p className="text-sm font-bold text-gray-900 mt-0.5">₹{price.toFixed(2)} <span className="text-[10px] font-medium text-gray-400">/ unit</span></p>
                   {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
@@ -7666,23 +8045,38 @@ export function KitchenInventory() {
 
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
 
-            <select value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
+            <div>
+              <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Scale</label>
+              <select value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
 
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
 
-              <option value="kg">kg</option>
+                <option value="Kg">Kg</option>
 
-              <option value="g">g</option>
+              <option value="G">G</option>
 
               <option value="L">L</option>
 
-              <option value="ml">ml</option>
+              <option value="Ml">Ml</option>
 
-              <option value="pcs">pcs</option>
+              <option value="Pcs">Pcs</option>
 
-              <option value="pack">pack</option>
+              <option value="Pack">Pack</option>
+
+              <option value="Kgs">Kgs</option>
+
+              <option value="Nos">Nos</option>
+
+              <option value="Bottle">Bottle</option>
+
+              <option value="Packets">Packets</option>
+
+              <option value="Box">Box</option>
+
+              <option value="Dozen">Dozen</option>
 
             </select>
+            </div>
 
             <input type="number" step="0.01" placeholder="Current Stock" value={newItem.currentStock} onChange={(e) => setNewItem({ ...newItem, currentStock: e.target.value })}
 
@@ -7691,6 +8085,21 @@ export function KitchenInventory() {
             <input type="number" step="0.01" min="0" placeholder="Price per unit (₹)" value={newItem.prize} onChange={(e) => setNewItem({ ...newItem, prize: e.target.value })}
 
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+
+            <div>
+              <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Category</label>
+              <input
+                type="text"
+                list="add-category-suggestions"
+                placeholder="e.g. Vegetables, Spices, Dairy"
+                value={newItem.category}
+                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+              <datalist id="add-category-suggestions">
+                {allCategories.map(c => <option key={c} value={c} />)}
+              </datalist>
+            </div>
 
             {/* Image Upload */}
             <div className="flex items-center gap-3">
@@ -7810,7 +8219,7 @@ export function KitchenInventory() {
 
                     <div className="flex-1">
 
-                      <p className="font-bold text-gray-900">{item.name}</p>
+                      <p className="font-bold text-gray-900">{toTitleCase(item.name)}</p>
 
                       <p className="text-xs text-gray-500">{item.totalSold} sold</p>
 
@@ -7861,6 +8270,7 @@ export function KitchenInventory() {
         </div>
 
       )}
+
 
     </div>
 
