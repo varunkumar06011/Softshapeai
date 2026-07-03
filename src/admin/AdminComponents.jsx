@@ -6301,9 +6301,20 @@ export function KitchenInventory() {
 
   const [imageEditPreview, setImageEditPreview] = useState(null);
 
+  const [outletFilter, setOutletFilter] = useState('self'); // 'self' | 'combined'
+
+  const [accessibleOutlets, setAccessibleOutlets] = useState([]);
+
   const csvImportRef = useRef(null);
 
   const restaurantId = getCurrentRestaurantId();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      if (raw) setAccessibleOutlets(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
 
 
 
@@ -6313,13 +6324,33 @@ export function KitchenInventory() {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(selectedDate)}`, {
+      if (outletFilter === 'combined') {
 
-        headers: { ...getAuthHeaders() },
+        const res = await fetch(`${API_BASE}/api/inventory/kitchen/combined?restaurantId=${restaurantId}`, {
 
-      });
+          headers: { ...getAuthHeaders() },
 
-      if (res.ok) setItems(await res.json());
+        });
+
+        if (res.ok) {
+
+          const data = await res.json();
+
+          setItems(data.kitchen || []);
+
+        }
+
+      } else {
+
+        const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(selectedDate)}`, {
+
+          headers: { ...getAuthHeaders() },
+
+        });
+
+        if (res.ok) setItems(await res.json());
+
+      }
 
     } catch (err) {
 
@@ -6331,7 +6362,7 @@ export function KitchenInventory() {
 
     }
 
-  }, [restaurantId, selectedDate]);
+  }, [restaurantId, selectedDate, outletFilter]);
 
 
 
@@ -7008,6 +7039,32 @@ export function KitchenInventory() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
+
+          {accessibleOutlets.length > 1 && (
+
+            <div className="flex items-center gap-2">
+
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">View</label>
+
+              <select
+
+                value={outletFilter}
+
+                onChange={(e) => setOutletFilter(e.target.value)}
+
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+
+              >
+
+                <option value="self">This Outlet</option>
+
+                <option value="combined">All Outlets (Combined)</option>
+
+              </select>
+
+            </div>
+
+          )}
 
           <div className="flex items-center gap-2">
 
