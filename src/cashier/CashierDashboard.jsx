@@ -676,9 +676,13 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
-    // --- Recently terminated (survives hard refresh via localStorage for 5s) ---
+    // --- Recently terminated: block non-Free events for 5s, but always allow Free/AVAILABLE ---
     const termTs = recentlyTerminatedRef.current[tableId];
-    if (termTs && Date.now() - termTs < 5000) return true;
+    if (termTs && Date.now() - termTs < 5000) {
+      const freeStatuses = new Set(['Free', 'AVAILABLE', 'TERMINATED', 'CLEANING', 'Cleaning']);
+      const mapped = toFrontendTableStatus(incomingStatus);
+      if (!freeStatuses.has(incomingStatus) && !freeStatuses.has(mapped)) return true;
+    }
 
     // --- Bill printed but not yet settled: block any status that would revert to non-Waiting-Bill ---
     if (billPrintedTableIdsRef.current.has(tableId)) {
@@ -689,8 +693,12 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     if (!settledTableIdsRef.current.has(tableId)) return false;
-    // During 5s pause after settlement: block ALL updates
-    if (Date.now() < syncPauseUntilRef.current) return true;
+    // During 5s pause after settlement: block non-Free updates, allow Free/AVAILABLE through
+    if (Date.now() < syncPauseUntilRef.current) {
+      const freeStatuses = new Set(['Free', 'AVAILABLE', 'TERMINATED', 'CLEANING', 'Cleaning']);
+      const mapped = toFrontendTableStatus(incomingStatus);
+      return !freeStatuses.has(incomingStatus) && !freeStatuses.has(mapped);
+    }
     // After pause: if table is already Free locally, a new session may have started — allow
     const localTable = [...(activeTablesRef.current || [])]
       .find(t => t.backendId === tableId);
@@ -1356,7 +1364,10 @@ const CashierDashboard = ({ onLogout }) => {
       if (requestId && processedSocketRequestIds.current.has(requestId)) return;
       // No click cooldown — real-time updates must always be processed
       if (shouldBlockTableUpdate(table.id, table.status)) return;
-      if (terminatedTableIdsRef.current.has(table.id)) return;
+      if (terminatedTableIdsRef.current.has(table.id)) {
+        const incomingFree = table.status === 'AVAILABLE' || table.status === 'Free' || table.workflowStatus === 'Free';
+        if (!incomingFree) return;
+      }
       // ── DIAGNOSTIC: trace socket table:updated ──
       const _tblOrdersItems = (table.orders?.[0]?.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill }));
       console.log('[DIAG table:updated] table.id:', table.id, 'orders[0].items:', _tblOrdersItems, 'workflowStatus:', table.workflowStatus);
@@ -1505,6 +1516,17 @@ const CashierDashboard = ({ onLogout }) => {
             return [mappedTxn, ...prev];
           });
         }
+      }
+
+      // Guard: mark table as recently terminated so stale socket events (order:updated,
+      // table:updated from before settlement) cannot revive it and cause flicker.
+      if (tableId) {
+        terminatedTableIdsRef.current.add(tableId);
+        recentlyTerminatedRef.current[tableId] = Date.now();
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+        } catch {}
+        setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 15000);
       }
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
@@ -2883,7 +2905,15 @@ const CashierDashboard = ({ onLogout }) => {
       // FIX 1 & 3: mark table as settled and update cache immediately
       if (selectedTable?.backendId && !selectedTable.isExtra) {
         setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-        syncPauseUntilRef.current = Date.now() + 2000;
+        syncPauseUntilRef.current = Date.now() + 5000;
+        // CRITICAL: write to localStorage so tableSyncService/barTableSyncService
+        // (which only check localStorage, not in-memory refs) block stale socket events
+        terminatedTableIdsRef.current.add(selectedTable.backendId);
+        recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+        try {
+          localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+        } catch {}
+        setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
         const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
         try {
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
@@ -2974,7 +3004,13 @@ const CashierDashboard = ({ onLogout }) => {
             setSettledOrderIds(prev => new Set([...prev, orderId]));
             if (selectedTable?.backendId) {
               setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-              syncPauseUntilRef.current = Date.now() + 2000;
+              syncPauseUntilRef.current = Date.now() + 5000;
+              terminatedTableIdsRef.current.add(selectedTable.backendId);
+              recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+              try {
+                localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+              } catch {}
+              setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
             }
             return;
           }
@@ -3030,13 +3066,28 @@ const CashierDashboard = ({ onLogout }) => {
             }
           }
 
+          // Warn if any kitchen inventory deductions failed (non-blocking)
+          if (Array.isArray(settleData?.kitchenDeductionErrors) && settleData.kitchenDeductionErrors.length > 0) {
+            addNotification(
+              'Kitchen Inventory Warning',
+              `Settlement succeeded but ${settleData.kitchenDeductionErrors.length} ingredient(s) could not be deducted. Check Kitchen Inventory → Deduction Check.`,
+              'warning'
+            );
+          }
+
           // Mark as settled locally to prevent retries
           setSettledOrderIds(prev => new Set([...prev, orderId]));
 
-          // FIX 1 & 5: mark table backendId as settled and pause sync for 2s
+          // FIX 1 & 5: mark table backendId as settled and pause sync for 5s
           if (selectedTable?.backendId) {
             setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-            syncPauseUntilRef.current = Date.now() + 2000;
+            syncPauseUntilRef.current = Date.now() + 5000;
+            terminatedTableIdsRef.current.add(selectedTable.backendId);
+            recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+            try {
+              localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+            } catch {}
+            setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
           }
         } else if (isWalkinMode) {
           // Walk-in settlement: no orderId exists, create transaction directly

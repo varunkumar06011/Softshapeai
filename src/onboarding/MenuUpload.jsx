@@ -30,6 +30,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   const [categorySuggestions, setCategorySuggestions] = useState(existingCategories);
   const [uploadMode, setUploadMode] = useState('standard'); // 'standard' | 'rate-card'
   const [venueNames, setVenueNames] = useState([]);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const isPdf = file?.name?.toLowerCase().endsWith('.pdf') || false;
 
   // Fetch existing categories in non-onboarding mode if not provided via props
@@ -181,6 +182,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
           rows: editedRows || parsed.rows,
           mode: parsed.mode || 'standard',
           venueMap: parsed.venueMap || {},
+          replaceExisting,
           ...(targetVenueId && targetVenueId !== 'all' ? { targetVenueId } : {}),
         }),
       });
@@ -473,6 +475,19 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
             </datalist>
           </div>
 
+          {/* Replace existing option */}
+          {!onboardingMode && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={replaceExisting}
+                onChange={(e) => setReplaceExisting(e.target.checked)}
+                className="w-4 h-4 accent-[#E53935]"
+              />
+              <span>Replace existing menu (deletes all current items before import)</span>
+            </label>
+          )}
+
           <div className="flex gap-3">
             <button
               onClick={handleReset}
@@ -505,6 +520,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
             <div>
               <p className="font-medium">
                 {importResult.created} items created{importResult.updated ? `, ${importResult.updated} updated` : ''}!
+                {importResult.deleted ? `, ${importResult.deleted} deleted` : ''}
               </p>
               {importResult.skipped.length > 0 && (
                 <p className="text-sm text-green-600 mt-1">{importResult.skipped.length} items skipped</p>

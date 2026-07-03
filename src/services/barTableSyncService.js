@@ -31,6 +31,17 @@ function isRecentlyTerminated(tableId) {
   } catch { return false; }
 }
 
+// Mark a table as recently terminated in localStorage so all tabs/devices share the guard
+function markRecentlyTerminated(tableId) {
+  try {
+    const key = getRecentlyTerminatedKey();
+    const raw = localStorage.getItem(key);
+    const map = raw ? JSON.parse(raw) : {};
+    map[tableId] = Date.now();
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
 let _persistingCount = 0;
 let _lastLocalUpdate = 0;
 
@@ -484,6 +495,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
         const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
         const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
         if (isSettledOrTerminated && hadActiveOrder) {
+          markRecentlyTerminated(updatedTable.id);
           window.dispatchEvent(new CustomEvent('table:settled', {
             detail: { tableId: updatedTable.id, tableNumber: existingTable?.number }
           }));
@@ -494,11 +506,16 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
             if (t.backendId !== updatedTable.id) return t;
             // Guard: skip active table during KOT submission to prevent duplicate items in display
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
+            // If this table was recently settled/terminated, block any stale event that would revive it
+            if (isRecentlyTerminated(t.backendId) && !incomingIsAvailable) {
+              console.warn('[BarTableSync] Skipping stale non-Free event for recently settled table', t.number);
+              return t;
+            }
             // Guard: if socket says AVAILABLE but local table has an active order,
             // skip this update — it's a stale/race event. Wait for the correct one.
             // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
             // legitimate settlement confirmation and must be accepted.
-            const incomingIsAvailable = updatedTable.status === 'AVAILABLE' || updatedTable.workflowStatus === 'Free';
             if (incomingIsAvailable && !isRecentlyTerminated(t.backendId)) {
               // Use tablesRef.current (synchronously updated) instead of prev (pre-commit state)
               // to correctly check if this table was just cleared by terminate/settle
