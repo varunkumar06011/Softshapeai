@@ -1643,12 +1643,13 @@ export function MenuPage({ onAddDish }) {
     fetchLivePrinters();
     const id = setInterval(fetchLivePrinters, 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, [restaurant?.id]);
 
   // Build a deduplicated list of all known printers from:
   // 1. Manually configured printers (admin settings)
   // 2. Live printers from print agent on cashier desktop (prioritized)
-  // 3. Cached availablePrinters from restaurant object
+  // 3. Live agent mapping values (kitchen/bar/bill → printer name)
+  // 4. Cached availablePrinters from restaurant object
   const allPrinterOptions = useMemo(() => {
     const map = new Map();
     // Configured printers first
@@ -1660,6 +1661,13 @@ export function MenuPage({ onAddDish }) {
     liveAgentPrinters.forEach(name => {
       if (typeof name === 'string') {
         map.set(name, { name, type: '', source: 'agent-live' });
+      }
+    });
+    // Live agent mapping values — the actual printer names assigned to kitchen/bar/bill
+    const liveMapping = liveAgentData?.agentMapping || {};
+    Object.values(liveMapping).forEach(name => {
+      if (typeof name === 'string' && name && !map.has(name)) {
+        map.set(name, { name, type: '', source: 'agent-mapped' });
       }
     });
     // Legacy cached fallback from restaurant object
@@ -1997,10 +2005,11 @@ export function MenuPage({ onAddDish }) {
     if (togglingMenuTypeId) return;
     const newType = item.menuType === 'LIQUOR' ? 'FOOD' : 'LIQUOR';
 
-    // Determine default printer for the new type
+    // Determine default printer for the new type — use agent mapping first, then fall back to type-based search
+    const agentMap = liveAgentData?.agentMapping || {};
     const defaultPrinter = newType === 'LIQUOR'
-      ? allPrinterOptions.find(p => (p.type === 'BAR' || p.name.toLowerCase().includes('bar')))?.name || ''
-      : allPrinterOptions.find(p => (p.type === 'KITCHEN' || p.type === 'KOT' || p.name.toLowerCase().includes('kitchen')))?.name || '';
+      ? agentMap.bar || allPrinterOptions.find(p => (p.type === 'BAR' || p.name.toLowerCase().includes('bar')))?.name || ''
+      : agentMap.kitchen || allPrinterOptions.find(p => (p.type === 'KITCHEN' || p.type === 'KOT' || p.name.toLowerCase().includes('kitchen')))?.name || '';
 
     const newPrinterTarget = defaultPrinter || item.printerTarget || item.categoryPrinterTarget || '';
 
@@ -2037,7 +2046,7 @@ export function MenuPage({ onAddDish }) {
     } finally {
       setTogglingMenuTypeId(null);
     }
-  }, [togglingMenuTypeId, refreshMenu, activeOutlet, allPrinterOptions]);
+  }, [togglingMenuTypeId, refreshMenu, activeOutlet, allPrinterOptions, liveAgentData]);
 
 
 
@@ -6301,9 +6310,20 @@ export function KitchenInventory() {
 
   const [imageEditPreview, setImageEditPreview] = useState(null);
 
+  const [outletFilter, setOutletFilter] = useState('self'); // 'self' | 'combined'
+
+  const [accessibleOutlets, setAccessibleOutlets] = useState([]);
+
   const csvImportRef = useRef(null);
 
   const restaurantId = getCurrentRestaurantId();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      if (raw) setAccessibleOutlets(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
 
 
 
@@ -6313,13 +6333,33 @@ export function KitchenInventory() {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(selectedDate)}`, {
+      if (outletFilter === 'combined') {
 
-        headers: { ...getAuthHeaders() },
+        const res = await fetch(`${API_BASE}/api/inventory/kitchen/combined?restaurantId=${restaurantId}`, {
 
-      });
+          headers: { ...getAuthHeaders() },
 
-      if (res.ok) setItems(await res.json());
+        });
+
+        if (res.ok) {
+
+          const data = await res.json();
+
+          setItems(data.kitchen || []);
+
+        }
+
+      } else {
+
+        const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(selectedDate)}`, {
+
+          headers: { ...getAuthHeaders() },
+
+        });
+
+        if (res.ok) setItems(await res.json());
+
+      }
 
     } catch (err) {
 
@@ -6331,7 +6371,7 @@ export function KitchenInventory() {
 
     }
 
-  }, [restaurantId, selectedDate]);
+  }, [restaurantId, selectedDate, outletFilter]);
 
 
 
@@ -7008,6 +7048,32 @@ export function KitchenInventory() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
+
+          {accessibleOutlets.length > 1 && (
+
+            <div className="flex items-center gap-2">
+
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">View</label>
+
+              <select
+
+                value={outletFilter}
+
+                onChange={(e) => setOutletFilter(e.target.value)}
+
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+
+              >
+
+                <option value="self">This Outlet</option>
+
+                <option value="combined">All Outlets (Combined)</option>
+
+              </select>
+
+            </div>
+
+          )}
 
           <div className="flex items-center gap-2">
 

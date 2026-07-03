@@ -139,6 +139,14 @@ export function useSocket(restaurantId) {
         socket.emit("leave", prev);
       }
       socket.emit("join", restaurantId);
+      // Also join the shared kitchen room for low-stock alerts
+      try {
+        const rest = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+        const kitchenId = rest.sharedKitchenOutletId || restaurantId;
+        if (kitchenId !== restaurantId) {
+          socket.emit("join:kitchen", kitchenId);
+        }
+      } catch { /* ignore parse error */ }
       prevRestaurantIdRef.current = restaurantId;
     };
 
