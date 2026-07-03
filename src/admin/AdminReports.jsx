@@ -23,19 +23,127 @@ import {
   Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  Banknote, BarChart2, ChevronDown, CreditCard, Download, FileSpreadsheet, FileText, Layers,
+  Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
   RefreshCw, Search, Smartphone, ArrowLeftRight, TrendingUp, DollarSign, Package, Star, AlertTriangle,
   ArrowUpDown,
 } from 'lucide-react';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
 import {
-  fetchReportDailySales, fetchReportItemwise, fetchReportCategorywise,
+  fetchReportDailySales, fetchReportCategorywise,
   fetchReportPaymentMethods, fetchReportDiscounts, fetchReportGST,
 } from '../services/reportsApi.js';
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE, apiFetch } from '../services/apiConfig';
+import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import OperationsDashboard from './OperationsDashboard';
+
+const BEVERAGE_KEYWORDS = [
+  'water', 'sprite', 'thums up', 'thumsup', 'tin thums', 'soda', 'cola', 'coke', 'pepsi',
+  'limca', 'fanta', 'mirinda', '7up', 'pulpy orange', 'fresh lime', 'mojitho', 'mojito',
+  'moctail', 'mocktail', 'fruit punch', 'lassi', 'butter milk', 'buttermilk', 'milk shake',
+  'milkshake', 'monster', 'charged', 'red bull', 'coolberg', 'juice',
+];
+
+const BEVERAGE_ALIASES = {
+  'thumsup': 'thums up',
+  'thums': 'thums up',
+  'tin thums': 'thums up',
+  'butter milk': 'buttermilk',
+  'milk shake': 'milkshake',
+  'moctail': 'mocktail',
+  'mojitho': 'mojito',
+};
+
+function normalizeBeverageNameForAnalytics(name) {
+  let normalized = String(name || '').toLowerCase();
+  normalized = normalized
+    .replace(/\b(tin|bottle|bottel|pet|can|glass|pack|packs)\b/g, ' ')
+    .replace(/\s+\d+(\.\d+)?\s*(ml|mls|milliliter|millilitre|l|ltr|liter|litre|lt|lts)\b/g, ' ')
+    .replace(/\s+\d+\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return BEVERAGE_ALIASES[normalized] || normalized;
+}
+
+function getReportCategoryFromAnalytics(item) {
+  if (item.type === 'liquor') return 'Liquor';
+  const normalizedName = normalizeBeverageNameForAnalytics(String(item.name || ''));
+  if (BEVERAGE_KEYWORDS.some((k) => normalizedName.includes(k))) return 'Beverages';
+  return 'Food';
+}
+
+async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all') {
+  const restaurantId = getCurrentRestaurantId();
+  const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
+  const res = await fetch(url, { headers: getAuthHeaders(), cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch item analytics');
+  const raw = await res.json();
+  const rawItems = Array.isArray(raw.items) ? raw.items : [];
+
+  const itemMap = new Map();
+  for (const it of rawItems) {
+    const category = getReportCategoryFromAnalytics(it);
+    const key = category === 'Beverages' ? normalizeBeverageNameForAnalytics(it.name) : it.name;
+    if (!itemMap.has(key)) {
+      itemMap.set(key, {
+        name: key,
+        category,
+        menuType: it.type === 'liquor' ? 'LIQUOR' : 'FOOD',
+        reportCategory: category,
+        quantitySold: 0,
+        totalRevenue: 0,
+        orderCount: 0,
+      });
+    }
+    const rec = itemMap.get(key);
+    rec.quantitySold += it.quantity || 0;
+    rec.totalRevenue += it.revenue || 0;
+    rec.orderCount += it.orderCount || 0;
+  }
+
+  let items = Array.from(itemMap.values());
+  if (categoryFilter === 'food') {
+    items = items.filter((it) => it.reportCategory === 'Food');
+  } else if (categoryFilter === 'liquor') {
+    items = items.filter((it) => it.reportCategory === 'Liquor');
+  } else if (categoryFilter === 'beverages') {
+    items = items.filter((it) => it.reportCategory === 'Beverages');
+  }
+
+  const totalRevenueAll = items.reduce((s, it) => s + it.totalRevenue, 0);
+  const totalQuantityAll = items.reduce((s, it) => s + it.quantitySold, 0);
+  const foodRevenue = items.filter((it) => it.reportCategory === 'Food').reduce((s, it) => s + it.totalRevenue, 0);
+  const liquorRevenue = items.filter((it) => it.reportCategory === 'Liquor').reduce((s, it) => s + it.totalRevenue, 0);
+  const beveragesRevenue = items.filter((it) => it.reportCategory === 'Beverages').reduce((s, it) => s + it.totalRevenue, 0);
+
+  const finalItems = items
+    .map((it) => ({
+      name: it.name,
+      category: it.category,
+      menuType: it.menuType,
+      reportCategory: it.reportCategory,
+      quantitySold: it.quantitySold,
+      unitPrice: it.quantitySold > 0 ? it.totalRevenue / it.quantitySold : 0,
+      totalRevenue: it.totalRevenue,
+      revenuePercent: totalRevenueAll > 0 ? (it.totalRevenue / totalRevenueAll) * 100 : 0,
+      orderCount: it.orderCount,
+    }))
+    .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+  return {
+    items: finalItems,
+    summary: {
+      totalItems: finalItems.length,
+      totalQuantity: totalQuantityAll,
+      totalRevenue: totalRevenueAll,
+      foodRevenue,
+      liquorRevenue,
+      beveragesRevenue,
+    },
+    dateRange: raw.dateRange,
+  };
+}
 
 const REPORT_CATEGORIES = [
   {
@@ -499,17 +607,17 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchReportItemwise(dateFilter.startDate, dateFilter.endDate, outletType, outletId); setData(res); }
+    try { const res = await fetchItemwiseAnalytics(dateFilter.startDate, dateFilter.endDate, outletType); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter, outletType, outletId]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletType]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {
     if (!data) return;
     const headers = [
       { key: 'name', label: 'Item Name' }, { key: 'category', label: 'Category' },
-      { key: 'menuType', label: 'Type' }, { key: 'quantitySold', label: 'Qty Sold' },
+      { key: 'reportCategory', label: 'Type' }, { key: 'quantitySold', label: 'Qty Sold' },
       { key: 'unitPrice', label: 'Unit Price', format: 'money' },
       { key: 'totalRevenue', label: 'Total Revenue', format: 'money' },
       { key: 'revenuePercent', label: 'Rev %', format: 'percent' },
@@ -521,7 +629,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
     downloadExcel({ title: 'Item-wise Sales', dateRange: dateRangeText, filename: 'Itemwise-Sales',
       sheets: [{ name: 'Items', headers: [
         { key: 'name', label: 'Item Name' }, { key: 'category', label: 'Category' },
-        { key: 'menuType', label: 'Type' }, { key: 'quantitySold', label: 'Qty Sold' },
+        { key: 'reportCategory', label: 'Type' }, { key: 'quantitySold', label: 'Qty Sold' },
         { key: 'unitPrice', label: 'Unit Price', format: 'money' },
         { key: 'totalRevenue', label: 'Total Revenue', format: 'money' },
         { key: 'revenuePercent', label: 'Rev %', format: 'percent' },
@@ -550,20 +658,21 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
       <ReportHeader title="Item-wise Sales" subtitle="Best & worst performing items">
         <div className="flex items-center gap-2">
           <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
-            {['all', 'food', 'liquor'].map((t) => (
+            {['all', 'food', 'beverages', 'liquor'].map((t) => (
               <button key={t} onClick={() => setOutletType(t)}
                 className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${outletType === t ? 'bg-white text-[#B71C1C] shadow' : 'text-gray-400 hover:text-gray-600'}`}>
-                {t === 'all' ? 'All' : t === 'food' ? 'Food' : 'Liquor'}
+                {t === 'all' ? 'All' : t === 'food' ? 'Food' : t === 'beverages' ? 'Beverages' : 'Liquor'}
               </button>
             ))}
           </div>
           <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
         </div>
       </ReportHeader>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Total Items" value={data.summary.totalItems} sub="Unique SKUs" icon={Package} color="text-blue-600" />
         <StatCard label="Total Quantity" value={data.summary.totalQuantity} sub="Units sold" icon={TrendingUp} color="text-amber-600" />
         <StatCard label="Food Revenue" value={<Money value={data.summary.foodRevenue} />} sub="Food items" icon={DollarSign} color="text-green-600" />
+        <StatCard label="Beverages Revenue" value={<Money value={data.summary.beveragesRevenue} />} sub="Beverage items" icon={Coffee} color="text-blue-600" />
         <StatCard label="Liquor Revenue" value={<Money value={data.summary.liquorRevenue} />} sub="Liquor items" icon={Star} color="text-purple-600" />
       </div>
       <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
@@ -602,8 +711,12 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                   <td className="px-3 py-3 font-bold text-gray-900">{it.name}</td>
                   <td className="px-3 py-3 text-gray-600 text-xs">{it.category}</td>
                   <td className="px-3 py-3">
-                    <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${it.menuType === 'LIQUOR' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                      {it.menuType}
+                    <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
+                      it.reportCategory === 'Liquor' ? 'bg-amber-100 text-amber-700' :
+                      it.reportCategory === 'Beverages' ? 'bg-blue-100 text-blue-700' :
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {it.reportCategory || it.menuType}
                     </span>
                   </td>
                   <td className="px-3 py-3 text-right font-bold text-gray-700">{it.quantitySold}</td>
@@ -670,7 +783,8 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const othersRevenue = others.reduce((s, c) => s + c.totalRevenue, 0);
   const pieData = [...top6.map((c) => ({ name: c.name, value: c.totalRevenue }))];
   if (others.length > 0) pieData.push({ name: 'Others', value: othersRevenue });
-  const colors = ['#B71C1C', '#E53935', '#EF9A9A', '#FFCDD2', '#F8BBD0', '#C2185B', '#880E4F'];
+  const categoryColors = { Food: '#B71C1C', Liquor: '#E53935', Beverages: '#2563EB' };
+  const colors = pieData.map((c) => categoryColors[c.name] || '#EF9A9A');
 
   return (
     <div className="space-y-6">
@@ -713,7 +827,7 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                     <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={c.totalRevenue} /></td>
                     <td className="px-3 py-3 text-right">
                       <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
-                        <div className="h-full bg-red-200 rounded-full" style={{ width: `${Math.min(c.revenuePercent, 100)}%` }} />
+                        <div className={`h-full rounded-full ${c.name === 'Beverages' ? 'bg-blue-200' : c.name === 'Liquor' ? 'bg-red-300' : 'bg-red-200'}`} style={{ width: `${Math.min(c.revenuePercent, 100)}%` }} />
                       </div>
                       <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
                     </td>

@@ -1,9 +1,10 @@
-import { lazy } from 'react';
+import { lazy, useState } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
   Settings, Printer, QrCode, Tag, Store, Users, Wallet, Star,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 // ── Lazy-loaded section components (code-splitting) ──────────────────────────
 // Each section becomes a separate chunk, reducing initial bundle size.
@@ -47,6 +48,46 @@ function MenuSection({ activeOutlet, onAddDish }) {
   return <MenuPage onAddDish={onAddDish} />;
 }
 
+function InventorySection() {
+  const { restaurant } = useAuth();
+  const enabledModules = restaurant?.enabledModules || {};
+  const [tab, setTab] = useState('bar');
+
+  const hasBar = enabledModules.bar_inventory === true || enabledModules.bar === true;
+  const hasFood = enabledModules.food !== false;
+
+  // Food-only outlet: show kitchen inventory
+  if (!hasBar && hasFood) return <KitchenInventory />;
+
+  // Bar-only outlet: show bar inventory
+  if (hasBar && !hasFood) return <Inventory />;
+
+  // Bar + dining outlet: show tabs for both
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b border-gray-200">
+        <button
+          onClick={() => setTab('bar')}
+          className={`px-4 py-3 font-bold text-sm transition-all ${
+            tab === 'bar' ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Bar Inventory
+        </button>
+        <button
+          onClick={() => setTab('kitchen')}
+          className={`px-4 py-3 font-bold text-sm transition-all ${
+            tab === 'kitchen' ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Kitchen Inventory
+        </button>
+      </div>
+      {tab === 'bar' ? <Inventory /> : <KitchenInventory />}
+    </div>
+  );
+}
+
 // ── Eager preloading for frequently used sections ──────────────────────────
 // Call this after AdminDashboard mounts so Menu, Tables, Dashboard, etc.
 // start downloading in the background before the user clicks them.
@@ -78,7 +119,7 @@ export const adminRoutes = [
   { key: 'payroll',           label: 'Payroll',                icon: DollarSign,          roles: ['admin','owner'], element: <Payroll />,                       props: (ctx) => ({ onPayslip: () => {} }) },
   { key: 'vouchers',          label: 'Vouchers',               icon: Wallet,              roles: ['admin','owner'], element: <AdminVouchers /> },
   { key: 'attendance',        label: 'Attendance',             icon: Users,               roles: ['admin','owner'], element: <Attendance /> },
-  { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner'], element: <KitchenInventory /> },
+  { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner'], element: <InventorySection /> },
   { key: 'marketing',         label: 'Marketing AI',           icon: Megaphone,           roles: ['admin','owner'], element: <Marketing />,                     props: (ctx) => ({ upload: ctx.mUpload, setUpload: ctx.setMUpload, uploadRef: ctx.mUploadRef, generated: ctx.mGenerated, setGenerated: ctx.setMGenerated, posted: ctx.mPosted, setPosted: ctx.setMPosted }) },
   { key: 'surveillance',      label: 'Surveillance',           icon: Camera,              roles: ['admin','owner'], element: <SurveillanceDashboard />,         props: (ctx) => ({ onIncident: () => {} }) },
   { key: 'pricing',           label: 'Pricing',                icon: Sparkles,            roles: ['admin','owner'], element: <Pricing /> },
