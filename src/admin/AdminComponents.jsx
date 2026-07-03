@@ -7083,11 +7083,11 @@ export function KitchenInventory() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
 
-        <div>
+        <div className="flex flex-col justify-center">
 
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Kitchen Inventory</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter leading-none whitespace-nowrap">Kitchen Inventory</h2>
 
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Ingredients & Daily Tracking</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Ingredients & Daily Tracking</p>
 
         </div>
 
