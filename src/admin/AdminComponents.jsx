@@ -17636,6 +17636,14 @@ export function StaffManagement() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [editedProposed, setEditedProposed] = useState([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
+
 
 
   const fetchStaff = useCallback(async () => {
@@ -17744,6 +17752,88 @@ export function StaffManagement() {
 
   };
 
+  const downloadStaffImportTemplate = () => {
+    const csv = 'S.NO,NAME,DESIGNATION,SALARY\n1,Manas Kumar,Master,30000\n2,Jitendra,Master,20000\n3,Krishna,Assistant,13000';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'staff-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleStaffImportPreview = async () => {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportError('');
+    setImportPreview(null);
+    setEditedProposed([]);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      const res = await fetch(`${API_BASE}/api/payroll/import/preview`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders() },
+        body: formData,
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Preview failed');
+      setImportPreview(data);
+      setEditedProposed(data.proposed || []);
+    } catch (err) {
+      console.error('[Staff] Import preview failed:', err);
+      setImportError(err.message || 'Failed to preview import');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleStaffImportCommit = async () => {
+    const unresolved = editedProposed.filter((r) => r.action === 'ambiguous' || r.action === 'needsReview');
+    if (unresolved.length > 0) {
+      setImportError(`Please resolve ${unresolved.length} row(s) marked for review before committing.`);
+      return;
+    }
+    setImporting(true);
+    setImportError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/import/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ rows: editedProposed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Commit failed');
+      setImportModalOpen(false);
+      setImportFile(null);
+      setImportPreview(null);
+      setEditedProposed([]);
+      fetchStaff();
+      alert(`Import complete: ${data.created} created, ${data.updated} updated${data.errors.length ? `, ${data.errors.length} errors` : ''}`);
+    } catch (err) {
+      console.error('[Staff] Import commit failed:', err);
+      setImportError(err.message || 'Failed to commit import');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateProposedRow = (index, field, value) => {
+    setEditedProposed((prev) => {
+      const next = [...prev];
+      const row = { ...next[index] };
+      if (field === 'baseSalary') row.baseSalary = parseFloat(value) || 0;
+      else if (field === 'role') row.role = value;
+      else if (field === 'name') row.name = value;
+      else if (field === 'staffCode') row.staffCode = value;
+      else if (field === 'action') row.action = value;
+      next[index] = row;
+      return next;
+    });
+  };
+
 
 
   if (loading) return (
@@ -17786,6 +17876,13 @@ export function StaffManagement() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 border border-gray-200 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 w-48"
           />
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="px-3 py-1.5 bg-gray-900 text-white text-[12px] font-bold rounded-xl hover:bg-gray-800 transition flex items-center gap-1"
+          >
+            <Upload size={14} />
+            Import Staff
+          </button>
           <button
             onClick={() => setModalOpen(true)}
             className="px-3 py-1.5 bg-[#E53935] text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition"
@@ -18054,6 +18151,190 @@ export function StaffManagement() {
 
         </div>
 
+      )}
+
+      {importModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setImportModalOpen(false)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-4xl max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h4 className="font-black text-[14px]">Import Staff</h4>
+              <button onClick={() => setImportModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            {importError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-bold">
+                {importError}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button onClick={downloadStaffImportTemplate} className="text-xs font-bold text-blue-600 hover:text-blue-800 underline">
+                <Download size={14} className="inline mr-1" />
+                Download template
+              </button>
+            </div>
+
+            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
+              <input
+                type="file"
+                id="staff-import-file"
+                className="hidden"
+                accept=".csv,.xlsx,.xls"
+                onChange={(e) => {
+                  setImportFile(e.target.files[0]);
+                  setImportPreview(null);
+                  setEditedProposed([]);
+                  setImportError('');
+                }}
+              />
+              <label htmlFor="staff-import-file" className="cursor-pointer flex flex-col items-center gap-2">
+                <Upload size={32} className="text-gray-400" />
+                <span className="text-sm font-bold text-gray-700">
+                  {importFile ? importFile.name : 'Click or drag file here'}
+                </span>
+                <span className="text-xs text-gray-500">Supports .csv, .xlsx, .xls</span>
+              </label>
+            </div>
+
+            <button
+              onClick={handleStaffImportPreview}
+              disabled={!importFile || importLoading}
+              className="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 disabled:opacity-50"
+            >
+              {importLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader size={16} className="animate-spin" />
+                  Parsing file...
+                </span>
+              ) : (
+                'Preview Import'
+              )}
+            </button>
+
+            {importPreview && (
+              <div className="space-y-3">
+                <p className="text-sm font-bold text-gray-900">
+                  Preview ({importPreview.parsedRows?.length || 0} rows found)
+                </p>
+
+                {importPreview.warnings?.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs space-y-1">
+                    {importPreview.warnings.map((w, i) => (
+                      <p key={i}>⚠ {w}</p>
+                    ))}
+                  </div>
+                )}
+
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto max-h-[40vh]">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 font-black text-gray-500">S.No</th>
+                          <th className="px-3 py-2 font-black text-gray-500">Name</th>
+                          <th className="px-3 py-2 font-black text-gray-500">Designation</th>
+                          <th className="px-3 py-2 font-black text-gray-500">Salary</th>
+                          <th className="px-3 py-2 font-black text-gray-500">Action</th>
+                          <th className="px-3 py-2 font-black text-gray-500">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {editedProposed.map((row, idx) => (
+                          <tr key={idx} className={`${row.action === 'ambiguous' || row.action === 'needsReview' ? 'bg-amber-50' : ''}`}>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={row.staffCode || ''}
+                                onChange={(e) => updateProposedRow(idx, 'staffCode', e.target.value)}
+                                className="w-16 border border-gray-200 rounded px-2 py-1 text-xs"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={row.name}
+                                onChange={(e) => updateProposedRow(idx, 'name', e.target.value)}
+                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={row.role}
+                                onChange={(e) => updateProposedRow(idx, 'role', e.target.value)}
+                                className="w-full border border-gray-200 rounded px-2 py-1 text-xs"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                value={row.baseSalary}
+                                onChange={(e) => updateProposedRow(idx, 'baseSalary', e.target.value)}
+                                className="w-24 border border-gray-200 rounded px-2 py-1 text-xs text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.action}
+                                onChange={(e) => updateProposedRow(idx, 'action', e.target.value)}
+                                className="border border-gray-200 rounded px-2 py-1 text-xs"
+                              >
+                                <option value="create">Create</option>
+                                <option value="update">Update</option>
+                                <option value="ambiguous">Ambiguous</option>
+                                <option value="needsReview">Needs Review</option>
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.action === 'create' && <span className="text-[10px] font-black text-green-600">NEW</span>}
+                              {row.action === 'update' && (
+                                <span className="text-[10px] font-black text-blue-600">
+                                  UPDATE {row.oldBaseSalary !== row.baseSalary && ` ₹${row.oldBaseSalary} → ₹${row.baseSalary}`}
+                                </span>
+                              )}
+                              {row.action === 'ambiguous' && <span className="text-[10px] font-black text-amber-600">AMBIGUOUS</span>}
+                              {row.action === 'needsReview' && <span className="text-[10px] font-black text-red-600">REVIEW</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setImportPreview(null);
+                      setEditedProposed([]);
+                      setImportFile(null);
+                    }}
+                    disabled={importing}
+                    className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm disabled:opacity-50"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    onClick={handleStaffImportCommit}
+                    disabled={importing}
+                    className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50"
+                  >
+                    {importing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader size={16} className="animate-spin" />
+                        Importing...
+                      </span>
+                    ) : (
+                      `Import ${editedProposed.filter((r) => r.action !== 'ambiguous' && r.action !== 'needsReview').length} Staff`
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
     </div>
