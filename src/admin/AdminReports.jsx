@@ -75,21 +75,22 @@ function getReportCategoryFromAnalytics(item) {
 
 async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all') {
   const restaurantId = getCurrentRestaurantId();
-  const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
+  const outletParam = categoryFilter !== 'all' ? `&outletType=${categoryFilter}` : '';
+  const url = `${API_BASE}/api/reports/itemwise-sales?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
   const res = await fetch(url, { headers: getAuthHeaders(), cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch item analytics');
+  if (!res.ok) throw new Error('Failed to fetch itemwise sales report');
   const raw = await res.json();
   const rawItems = Array.isArray(raw.items) ? raw.items : [];
 
   const itemMap = new Map();
   for (const it of rawItems) {
-    const category = getReportCategoryFromAnalytics(it);
-    const key = category === 'Beverages' ? normalizeBeverageNameForAnalytics(it.name) : it.name;
+    const category = it.reportCategory || getReportCategoryFromAnalytics(it);
+    const key = category === 'Beverages' ? (it.name || '').toLowerCase().trim() : it.name;
     if (!itemMap.has(key)) {
       itemMap.set(key, {
-        name: key,
-        category,
-        menuType: it.type === 'liquor' ? 'LIQUOR' : 'FOOD',
+        name: it.name,
+        category: it.category || category,
+        menuType: it.menuType === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
         reportCategory: category,
         quantitySold: 0,
         totalRevenue: 0,
@@ -97,8 +98,8 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
       });
     }
     const rec = itemMap.get(key);
-    rec.quantitySold += it.quantity || 0;
-    rec.totalRevenue += it.revenue || 0;
+    rec.quantitySold += it.quantitySold || it.quantity || 0;
+    rec.totalRevenue += it.totalRevenue || it.revenue || 0;
     rec.orderCount += it.orderCount || 0;
   }
 
@@ -165,6 +166,7 @@ const REPORT_CATEGORIES = [
     key: 'operations', label: 'Operations',
     reports: [
       { id: 'operations-dashboard', label: 'Operations Dashboard', icon: BarChart2, urgent: true },
+      { id: 'xreport-view', label: 'X Report View', icon: FileText, urgent: true },
       { id: 'discount-report', label: 'Discount Report', icon: Star, urgent: true },
       { id: 'cancelled-items', label: 'Cancelled / Edited Items', icon: AlertTriangle, urgent: false },
       { id: 'table-utilization', label: 'Table Utilization', icon: BarChart2, urgent: false },
@@ -1230,6 +1232,116 @@ function GSTReport({ dateFilter, outletId, onDownloadRef }) {
   );
 }
 
+function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchReports = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await apiFetch(`/api/xreports?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+        setReports(Array.isArray(data) ? data : []);
+      } catch (e) {
+        setError(e.message || 'Failed to load X Reports');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReports();
+  }, [dateFilter, outletId]);
+
+  const headers = [
+    { key: 'reportDate', label: 'Date' },
+    { key: 'totalSales', label: 'Total Sales', format: 'money' },
+    { key: 'voucherAmount', label: 'Vouchers', format: 'money' },
+    { key: 'cardAmount', label: 'Card', format: 'money' },
+    { key: 'cashAmount', label: 'Cash', format: 'money' },
+    { key: 'totalAmount', label: 'Total', format: 'money' },
+    { key: 'printed', label: 'Printed' },
+  ];
+  const rows = reports.map((r) => ({
+    reportDate: r.reportDate,
+    totalSales: Number(r.totalSales),
+    voucherAmount: Number(r.voucherAmount),
+    cardAmount: Number(r.cardAmount),
+    cashAmount: Number(r.cashAmount),
+    totalAmount: Number(r.totalAmount),
+    printed: r.printed ? 'Yes' : 'No',
+  }));
+  const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
+
+  const doPDF = () => {
+    downloadPDF({
+      title: 'X Reports',
+      dateRange: dateRangeText,
+      filename: 'X-Reports',
+      headers,
+      rows,
+    });
+  };
+
+  const doExcel = () => {
+    downloadExcel({
+      title: 'X Reports',
+      dateRange: dateRangeText,
+      filename: 'X-Reports',
+      sheets: [{ name: 'X Reports', headers, rows }],
+    });
+  };
+
+  useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [reports, dateFilter]);
+
+  if (loading) return <div className="text-center py-8 text-gray-400">Loading X Reports...</div>;
+  if (error) return <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>;
+  if (!reports.length) return <div className="text-center py-8 text-gray-400">No X Reports found for this date range.</div>;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-black text-gray-900 uppercase tracking-wider">X Reports</h3>
+        <p className="text-xs text-gray-500 mt-0.5">{dateFilter.startDate} to {dateFilter.endDate}</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-2 text-left font-black uppercase text-xs text-gray-500">Date</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Total Sales</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Vouchers</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Card</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Cash</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Total</th>
+              <th className="px-4 py-2 text-center font-black uppercase text-xs text-gray-500">Printed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((r) => (
+              <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
+                <td className="px-4 py-2 font-semibold text-gray-900">{r.reportDate}</td>
+                <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.totalSales).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.voucherAmount).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cardAmount).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashAmount).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-black">₹{Number(r.totalAmount).toFixed(2)}</td>
+                <td className="px-4 py-2 text-center">
+                  {r.printed ? (
+                    <span className="px-2 py-0.5 bg-green-50 text-green-600 border border-green-200 rounded text-xs font-bold">Yes</span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-400 border border-gray-200 rounded text-xs font-bold">No</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminReports() {
   const [activeReport, setActiveReport] = useState(DEFAULT_REPORT);
   const [search, setSearch] = useState('');
@@ -1408,6 +1520,7 @@ export default function AdminReports() {
             {activeReport === 'categorywise-sales' && <CategorywiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'operations-dashboard' && <OperationsDashboard dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'xreport-view' && <XReportAdminView dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}

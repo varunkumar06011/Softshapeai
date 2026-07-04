@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt
+  Maximize2, Minimize2, Eye, Receipt, FileText
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -54,6 +54,7 @@ import { useBarMenuSync } from '../services/barMenuSyncService';
 import { authService } from '../services/authService';
 import ItemAnalytics from './ItemAnalytics';
 import VoucherModule from './VoucherModule';
+import XReportSection from './XReportSection';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders, apiFetch } from '../services/apiConfig';
 import { getItemCategory } from '../utils/itemHelpers';
@@ -489,9 +490,10 @@ const CashierDashboard = ({ onLogout }) => {
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
   const [liquorQtyItem, setLiquorQtyItem] = useState(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('UPI');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
+  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
   const isSubmittingPaymentRef = useRef(false);
@@ -2667,7 +2669,7 @@ const CashierDashboard = ({ onLogout }) => {
         } catch (printErr) {
           console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
         }
-        setShowMethodPicker(true);
+        setShowSettleConfirm(true);
         return;
       }
 
@@ -2702,7 +2704,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
-      setShowMethodPicker(true);
+      setShowSettleConfirm(true);
     } catch (err) {
       console.error('Walk-in bill print error:', err);
       addNotification('Print Failed', err.message || 'Could not print walk-in bill', 'error');
@@ -2805,6 +2807,9 @@ const CashierDashboard = ({ onLogout }) => {
         'error'
       );
       setShowMethodPicker(false);
+      setShowSettleConfirm(false);
+      setShowTableModal(false);
+      setShowPaymentModal(false);
       isSubmittingPaymentRef.current = false;
       return;
     }
@@ -2816,6 +2821,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (orderId && settledOrderIds.has(orderId)) {
       addNotification('Already Settled', 'This order has already been settled.', 'error');
       setShowMethodPicker(false);
+      setShowSettleConfirm(false);
       setShowPaymentModal(false);
       isSubmittingPaymentRef.current = false;
       return;
@@ -2872,6 +2878,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Close modals and clear state
       setShowMethodPicker(false);
+      setShowSettleConfirm(false);
       setShowTableModal(false);
       setShowPaymentModal(false);
       setSelectedTable(null);
@@ -4183,11 +4190,28 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
+  const settlementBreakdown = useMemo(() => {
+    const breakdown = { CASH: 0, CARD: 0, UPI: 0, count: 0 };
+    for (const txn of filteredTransactions) {
+      const method = (txn.method || '').toUpperCase();
+      const amt = Number(txn.grandTotal ?? txn.amount ?? 0);
+      if (method === 'CASH') breakdown.CASH += amt;
+      else if (method === 'CARD') breakdown.CARD += amt;
+      else if (method === 'UPI') breakdown.UPI += amt;
+      breakdown.count++;
+    }
+    return breakdown;
+  }, [filteredTransactions]);
+
+  const waitingBillCount = useMemo(() => {
+    return dashboardFloorTables.filter(t => t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill').length;
+  }, [dashboardFloorTables]);
+
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(0)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(0)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: "Live floor", icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
   return (
@@ -4214,6 +4238,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
             { id: 'vouchers', label: 'Vouchers', icon: Receipt },
+            { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
           ].map((item) => (
             <button
@@ -4282,7 +4307,7 @@ const CashierDashboard = ({ onLogout }) => {
                           lastConfirmedItemsRef.current = [];
                           clearCashierTableCache(selectedTable);
                           setSelectedTable(t);
-                          setShowPaymentModal(true);
+                          setShowSettleConfirm(true);
                           setActiveTab('tables');
                           localStorage.setItem(getTenantScopedKey('cashier_active_tab'), 'tables');
                         }
@@ -4345,6 +4370,30 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                       ))}
                     </div>
+                    {/* Settlement Breakdown Summary */}
+                    {settlementBreakdown.count > 0 && (
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-3 flex items-center gap-2">
+                          <Banknote size={16} className="text-[#E53935]" />
+                          Settlement Breakdown
+                          <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{settlementBreakdown.count} transactions</span>
+                        </h3>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center">
+                            <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Cash</p>
+                            <p className="text-lg font-black text-amber-700 tabular-nums">₹{settlementBreakdown.CASH.toFixed(0)}</p>
+                          </div>
+                          <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-center">
+                            <p className="text-[9px] font-black text-green-400 uppercase tracking-widest mb-1">Card</p>
+                            <p className="text-lg font-black text-green-700 tabular-nums">₹{settlementBreakdown.CARD.toFixed(0)}</p>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
+                            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">UPI</p>
+                            <p className="text-lg font-black text-blue-700 tabular-nums">₹{settlementBreakdown.UPI.toFixed(0)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {/* Live Floor Status — Full Width, Only Running Tables */}
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
                       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -5078,6 +5127,10 @@ const CashierDashboard = ({ onLogout }) => {
 
                     {activeTab === 'vouchers' && (
                       <VoucherModule />
+                    )}
+
+                    {activeTab === 'xreport' && (
+                      <XReportSection />
                     )}
 
                     {activeTab === 'billfinder' && (
@@ -6017,7 +6070,7 @@ const CashierDashboard = ({ onLogout }) => {
                     return s === 'Waiting Bill' || s === 'BILLING_REQUESTED';
                   })() ? (
                     <button
-                      onClick={() => { if (isPrintingBill) return; setShowMethodPicker(true); }}
+                      onClick={() => { if (isPrintingBill) return; setShowSettleConfirm(true); }}
                       disabled={isSettling}
                       className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -6424,104 +6477,47 @@ const CashierDashboard = ({ onLogout }) => {
         );
       })()}
 
-      {/* PAYMENT METHOD PICKER */}
-      {showMethodPicker && (
+      {/* SETTLE CONFIRM — Cash default */}
+      {showSettleConfirm && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
-
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
             <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
               <div>
-                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle Table {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id}`}</p>
-                <p className="text-3xl font-black text-gray-900 mt-1">₹{Number(activeGrandTotal).toFixed(0)}</p>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Settle {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable?.number ?? selectedTable?.id}` : `T${selectedTable?.id ?? ''}`}</p>
+                <p className="text-3xl font-black text-gray-900 mt-1 tabular-nums">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : 0).toFixed(0)}</p>
               </div>
               <button
-                onClick={() => { setShowMethodPicker(false); setSelectedMethod(null); }}
+                onClick={() => setShowSettleConfirm(false)}
                 className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
               >
                 <X size={20} />
               </button>
             </div>
-
             <div className="p-6">
-              <p className="text-xs font-black uppercase text-gray-405 tracking-wider mb-3.5">Select Payment Method</p>
-              <div className="grid grid-cols-2 gap-4.5 mb-6">
-                {[
-                  { id: 'UPI', label: 'UPI', sub: 'GPay / PhonePe / Paytm' },
-                  { id: 'CARD', label: 'Card', sub: 'Debit / Credit' },
-                  { id: 'CASH', label: 'Cash', sub: 'Physical currency' },
-                  { id: 'OTHER', label: 'Other', sub: 'Voucher / Mixed' },
-                ].map(({ id, label, sub }) => (
+              <p className="text-xs font-black uppercase text-gray-400 tracking-wider mb-2">Payment Method</p>
+              <div className="flex gap-2 mb-5">
+                {['CASH', 'UPI', 'CARD'].map(m => (
                   <button
-                    key={id}
-                    onClick={() => setSelectedMethod(id)}
-                    className={`p-5 rounded-2xl border-2 text-left transition-all duration-150 hover:scale-[1.02] active:scale-95 ${selectedMethod === id
-                      ? 'border-[#E53935] bg-red-50 shadow-md shadow-red-500/10'
-                      : 'border-gray-150 bg-gray-50 hover:border-gray-300'
+                    key={m}
+                    onClick={() => setSelectedPaymentMethod(m)}
+                    className={`flex-1 py-2.5 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${selectedPaymentMethod === m
+                      ? 'border-[#E53935] bg-red-50 text-[#E53935]'
+                      : 'border-gray-150 bg-gray-50 text-gray-500 hover:border-gray-300'
                       }`}
                   >
-                    <p className={`text-base font-black ${selectedMethod === id ? 'text-[#E53935]' : 'text-gray-700'}`}>{label}</p>
-                    <p className="text-[11px] text-gray-450 font-bold mt-1 leading-snug">{sub}</p>
+                    {m}
                   </button>
                 ))}
               </div>
-
               <button
-                onClick={() => selectedMethod && !isPrintingBill && handlePayment(selectedMethod)}
-                disabled={!selectedMethod || isPrintingBill}
-                className={`w-full py-4.5 rounded-2xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedMethod && !isPrintingBill
+                onClick={() => !isPrintingBill && handlePayment(selectedPaymentMethod)}
+                disabled={isPrintingBill}
+                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${!isPrintingBill
                   ? 'bg-[#E53935] text-white shadow-lg shadow-red-150 hover:bg-[#c62828] border border-red-750'
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
-                {isPrintingBill
-                  ? 'Printing Bill...'
-                  : selectedMethod
-                    ? `Confirm ${selectedMethod} Payment`
-                    : 'Select a Method'}
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* COMPACT SETTLEMENT */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row animate-slide-in">
-            <div className="md:w-1/3 p-6 bg-gray-50 border-r border-gray-100">
-              <button onClick={() => { setShowPaymentModal(false); setSelectedTable(null); setSelectedPaymentMethod('UPI'); }} className="text-gray-400 hover:text-gray-900 mb-6"><X size={18} /></button>
-              <h2 className="text-[9px] font-black uppercase text-gray-400 mb-1">Bill Amount</h2>
-              <p className="text-4xl font-black text-gray-900 mb-6 tabular-nums">₹{Number(activeGrandTotal).toFixed(0)}</p>
-              <div className="space-y-3">
-                <div className="flex justify-between border-b border-gray-200 pb-1">
-                  <span className="text-[8px] font-black text-gray-400 uppercase">Order ID</span>
-                  <span className="text-[8px] font-black text-gray-900">#POS-45920</span>
-                </div>
-              </div>
-            </div>
-            <div className="md:w-2/3 p-8 flex flex-col gap-4">
-              <h3 className="text-[10px] font-black uppercase text-center tracking-widest">Settle Transaction</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {['UPI', 'CARD', 'CASH', 'SPLIT'].map(method => (
-                  <div
-                    key={method}
-                    onClick={() => setSelectedPaymentMethod(method)}
-                    className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 cursor-pointer transition-all ${selectedPaymentMethod === method
-                      ? 'border-[#E53935] bg-red-50 text-[#E53935]'
-                      : 'border-gray-50 bg-gray-50 text-gray-400'
-                      }`}
-                  >
-                    <CreditCard size={20} />
-                    <span className="text-[8px] font-black uppercase">{method}</span>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={() => handlePayment(selectedPaymentMethod)}
-                className="mt-2 py-3 bg-[#10B981] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-100 hover:bg-[#059669]"
-              >
-                Authorize Settlement
+                {isPrintingBill ? 'Processing...' : `Confirm ${selectedPaymentMethod} Settlement`}
               </button>
             </div>
           </div>

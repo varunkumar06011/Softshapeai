@@ -191,10 +191,29 @@ export default function VoucherModule() {
       setSelectedApprover(null);
       setApproverSearch('');
       loadData();
+      return result;
     } catch (err) {
       setError(err.message || 'Failed to create voucher');
+      return null;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveAndPrint = async () => {
+    setError('');
+    const voucher = await handleSave();
+    if (!voucher) return;
+
+    setPrinting(true);
+    try {
+      await apiFetch(`/api/vouchers/${voucher.id}/print`, { method: 'POST' });
+      setSavedVoucher(null);
+    } catch (err) {
+      setError('Saved, but print failed — use reprint button below.');
+      setSavedVoucher(voucher);
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -248,7 +267,7 @@ export default function VoucherModule() {
             <Wallet size={18} className="text-[#E53935]" />
             <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">Vouchers — {todaySummary.date}</h3>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Count</p>
               <p className="text-xl font-black text-gray-900">{todaySummary.count}</p>
@@ -260,12 +279,55 @@ export default function VoucherModule() {
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Unverified</p>
               <p className="text-xl font-black text-amber-600">{todaySummary.unverifiedCount}</p>
+              {todaySummary.unverifiedAmount > 0 && (
+                <p className="text-[10px] font-bold text-amber-500">₹{Number(todaySummary.unverifiedAmount).toLocaleString()}</p>
+              )}
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verified</p>
               <p className="text-xl font-black text-green-600">{todaySummary.verifiedCount}</p>
+              {todaySummary.verifiedAmount > 0 && (
+                <p className="text-[10px] font-bold text-green-500">₹{Number(todaySummary.verifiedAmount).toLocaleString()}</p>
+              )}
             </div>
           </div>
+          {/* Category Breakdown */}
+          {todaySummary.categoryBreakdown?.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">By Category</p>
+              <div className="space-y-1.5">
+                {todaySummary.categoryBreakdown.map((c) => (
+                  <div key={c.category} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                    <span className="text-xs font-bold text-gray-700">{c.category}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-bold text-gray-400">{c.count}x</span>
+                      <span className="text-sm font-black text-[#E53935] tabular-nums">₹{Number(c.totalAmount).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Staff Breakdown */}
+          {todaySummary.staffBreakdown?.length > 0 && (
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">By Staff</p>
+              <div className="space-y-1.5">
+                {todaySummary.staffBreakdown.slice(0, 5).map((s) => (
+                  <div key={s.name} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                    <span className="text-xs font-bold text-gray-700">{s.name}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-bold text-gray-400">{s.count}x</span>
+                      <span className="text-sm font-black text-[#E53935] tabular-nums">₹{Number(s.totalAmount).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+                {todaySummary.staffBreakdown.length > 5 && (
+                  <p className="text-[10px] text-gray-400 font-bold text-center pt-1">+{todaySummary.staffBreakdown.length - 5} more</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -425,21 +487,21 @@ export default function VoucherModule() {
           </div>
         </div>
 
-        {/* Save Button */}
+        {/* Save & Print Button */}
         <button
-          onClick={handleSave}
-          disabled={saving}
+          onClick={handleSaveAndPrint}
+          disabled={saving || printing}
           className="w-full bg-[#E53935] text-white rounded-xl px-4 py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          {saving ? (
+          {saving || printing ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              Saving...
+              {saving ? 'Saving...' : 'Printing...'}
             </>
           ) : (
             <>
-              <Check size={16} />
-              Save Voucher
+              <Printer size={16} />
+              Save & Print
             </>
           )}
         </button>

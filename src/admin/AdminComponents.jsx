@@ -4934,7 +4934,7 @@ export function Payroll() {
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const [newEmp, setNewEmp] = useState({ name: '', age: '', role: '', baseSalary: '' });
+  const [newEmp, setNewEmp] = useState({ name: '', age: '', role: '', designation: '', workerCategory: '', baseSalary: '' });
 
   const [addError, setAddError] = useState('');
 
@@ -5062,7 +5062,7 @@ export function Payroll() {
 
       });
 
-      setNewEmp({ name: '', age: '', role: '', baseSalary: '' });
+      setNewEmp({ name: '', age: '', role: '', designation: '', workerCategory: '', baseSalary: '' });
 
       setShowAddModal(false);
 
@@ -5377,6 +5377,17 @@ export function Payroll() {
 
   const totalOutstanding = records.reduce((sum, r) => sum + (Number(r.balanceSalary) || 0), 0);
 
+  const payrollSummary = useMemo(() => {
+    const totalEmployees = employees.length;
+    const employeesWithRecords = records.length;
+    const paidCount = records.filter(r => Number(r.balanceSalary || 0) <= 0 && Number(r.finalSalary || 0) > 0).length;
+    const partialCount = records.filter(r => Number(r.paidAmount || 0) > 0 && Number(r.balanceSalary || 0) > 0).length;
+    const pendingCount = records.filter(r => Number(r.paidAmount || 0) === 0 && Number(r.finalSalary || 0) > 0).length;
+    const notGeneratedCount = totalEmployees - employeesWithRecords;
+    const progressPercent = totalPayable > 0 ? Math.round((totalPaid / totalPayable) * 100) : 0;
+    return { totalEmployees, employeesWithRecords, paidCount, partialCount, pendingCount, notGeneratedCount, progressPercent };
+  }, [employees, records, totalPaid, totalPayable]);
+
 
 
   if (loading) {
@@ -5631,6 +5642,65 @@ export function Payroll() {
         </div>
       </div>
 
+      {/* Payroll Summary Card */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-2">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">Payroll Summary</h3>
+          <span className="text-[10px] font-bold text-gray-400">{payrollSummary.totalEmployees} employees</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
+            <p className="text-lg font-black text-[#B71C1C] tabular-nums">₹{totalPayable.toLocaleString()}</p>
+          </div>
+          <div className="bg-green-50 rounded-lg p-3 text-center">
+            <p className="text-[9px] font-black text-green-400 uppercase tracking-widest mb-1">Paid</p>
+            <p className="text-lg font-black text-green-700 tabular-nums">₹{totalPaid.toLocaleString()}</p>
+          </div>
+          <div className="bg-amber-50 rounded-lg p-3 text-center">
+            <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Outstanding</p>
+            <p className="text-lg font-black text-amber-700 tabular-nums">₹{totalOutstanding.toLocaleString()}</p>
+          </div>
+          <div className="bg-blue-50 rounded-lg p-3 text-center">
+            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Advance</p>
+            <p className="text-lg font-black text-blue-700 tabular-nums">₹{totalAdvance.toLocaleString()}</p>
+          </div>
+        </div>
+        {/* Progress Bar */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Payment Progress</span>
+            <span className="text-xs font-black text-gray-700">{payrollSummary.progressPercent}%</span>
+          </div>
+          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${payrollSummary.progressPercent}%` }} />
+          </div>
+        </div>
+        {/* Status Counts */}
+        <div className="flex flex-wrap gap-2">
+          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-gray-100 text-gray-600">
+            Not Generated: {payrollSummary.notGeneratedCount}
+          </span>
+          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-100 text-amber-700">
+            Pending: {payrollSummary.pendingCount}
+          </span>
+          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-blue-100 text-blue-700">
+            Partial: {payrollSummary.partialCount}
+          </span>
+          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-green-100 text-green-700">
+            Paid: {payrollSummary.paidCount}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
+        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Status:</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700">Pending</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">Partial</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700">Paid</span>
+      </div>
+
       <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
 
         <div className="overflow-x-auto">
@@ -5642,6 +5712,8 @@ export function Payroll() {
               <tr>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Employee</th>
+
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Designation</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Base Salary</th>
 
@@ -5712,6 +5784,13 @@ export function Payroll() {
 
                       </div>
 
+                    </td>
+
+                    <td className="px-4 py-4 text-left">
+                      <p className="text-sm font-bold text-gray-700">{emp.designation || '-'}</p>
+                      {emp.workerCategory && (
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">{emp.workerCategory.replace('_', ' ')}</p>
+                      )}
                     </td>
 
                     <td className="px-4 py-4 text-right">
@@ -5839,7 +5918,7 @@ export function Payroll() {
 
                       ) : (
 
-                        <span className="text-gray-300 text-xs">Not generated</span>
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
 
                       )}
 
@@ -5971,6 +6050,38 @@ export function Payroll() {
               <option value="Cashier">Cashier</option>
 
               <option value="Waitstaff">Waitstaff</option>
+
+            </select>
+
+            <select value={newEmp.designation} onChange={(e) => setNewEmp({ ...newEmp, designation: e.target.value })}
+
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
+
+              <option value="">Select Designation</option>
+
+              <option value="Master">Master</option>
+
+              <option value="Assistant">Assistant</option>
+
+              <option value="Supervisor">Supervisor</option>
+
+              <option value="Manager">Manager</option>
+
+              <option value="Trainee">Trainee</option>
+
+            </select>
+
+            <select value={newEmp.workerCategory} onChange={(e) => setNewEmp({ ...newEmp, workerCategory: e.target.value })}
+
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
+
+              <option value="">Select Worker Category</option>
+
+              <option value="SKILLED">Skilled</option>
+
+              <option value="SEMI_SKILLED">Semi-Skilled</option>
+
+              <option value="UNSKILLED">Unskilled</option>
 
             </select>
 
@@ -17507,6 +17618,8 @@ export function StaffManagement() {
 
   const [saving, setSaving] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
 
 
   const fetchStaff = useCallback(async () => {
@@ -17649,17 +17762,21 @@ export function StaffManagement() {
 
         <h3 className="font-semibold">Staff Management</h3>
 
-        <button
-
-          onClick={() => setModalOpen(true)}
-
-          className="px-3 py-1.5 bg-[#E53935] text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition"
-
-        >
-
-          + Add Staff
-
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search by name or role..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-1.5 border border-gray-200 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 w-48"
+          />
+          <button
+            onClick={() => setModalOpen(true)}
+            className="px-3 py-1.5 bg-[#E53935] text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition"
+          >
+            + Add Staff
+          </button>
+        </div>
 
       </div>
 
@@ -17685,7 +17802,11 @@ export function StaffManagement() {
 
           <tbody>
 
-            {staff.map((member) => (
+            {staff.filter(member => {
+              if (!searchQuery.trim()) return true;
+              const q = searchQuery.toLowerCase();
+              return (member.name || '').toLowerCase().includes(q) || (member.role || '').toLowerCase().includes(q);
+            }).map((member) => (
 
               <tr key={member.id} className="border-t border-gray-100 hover:bg-gray-50">
 
