@@ -35,9 +35,16 @@ async function loadCapacitorHaptics() {
   return CapacitorHaptics;
 }
 
+let userInteracted = false;
+if (typeof window !== 'undefined') {
+  const markInteracted = () => { userInteracted = true; };
+  window.addEventListener('pointerdown', markInteracted, { once: true });
+  window.addEventListener('keydown', markInteracted, { once: true });
+}
+
 function webVibrate(pattern) {
   try {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    if (userInteracted && typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate(pattern);
     }
   } catch {}
