@@ -5148,6 +5148,8 @@ export function Payroll() {
             name: emp.name,
             age: emp.age,
             role: emp.role,
+            designation: emp.designation,
+            workerCategory: emp.workerCategory,
             baseSalary: vals.baseSalary,
             restaurantId,
           }),
@@ -5156,7 +5158,8 @@ export function Payroll() {
 
       // Save presentDays/otDays on PayrollRecord. advanceAmount is read-only and
       // derived from vouchers + manual advances, so we do not send it to the backend.
-      if (vals.presentDays !== undefined || vals.otDays !== undefined || dateMode === 'range' || autoCountMap[employeeId]) {
+      // Also recalculate when base salary changes so the salary reflects the new amount.
+      if (vals.baseSalary !== undefined || vals.presentDays !== undefined || vals.otDays !== undefined || dateMode === 'range' || autoCountMap[employeeId]) {
         await apiFetch('/api/payroll/records', {
 
           method: 'POST',
@@ -5211,7 +5214,7 @@ export function Payroll() {
   }, []);
 
   const handleDeleteEmployee = async (employeeId) => {
-    if (!window.confirm('Delete this staff member? They will be hidden from payroll but existing records stay.')) return;
+    if (!window.confirm('Delete this staff member? This will permanently remove their payroll records, attendance, and staff access.')) return;
     try {
       setDeletingId(employeeId);
       await apiFetch(`/api/payroll/employees/${employeeId}`, {
@@ -17717,9 +17720,9 @@ export function StaffManagement() {
 
         : form.role === 'OWNER'
 
-        ? { name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0 }
+        ? { name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation }
 
-        : { name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0 };
+        : { name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation };
 
       await apiFetch(path, { method, body: JSON.stringify(body) });
 
@@ -18069,6 +18072,22 @@ export function StaffManagement() {
 
             )}
 
+            {!editing && (
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Designation</label>
+                <select
+                  value={form.designation}
+                  onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                >
+                  <option value="">Select designation</option>
+                  {DESIGNATIONS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {!editing && form.role === 'OWNER' && (
               <>
                 <div>
@@ -18391,6 +18410,8 @@ export function Attendance() {
 
   const [markingIds, setMarkingIds] = useState(new Set());
 
+  const [deletingId, setDeletingId] = useState(null);
+
   const [searchTerm, setSearchTerm] = useState('');
 
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -18582,6 +18603,33 @@ export function Attendance() {
     } catch (err) {
 
       setError(err.message || 'Failed to check out');
+
+    }
+
+  };
+
+
+
+  const handleDelete = async (employeeId) => {
+
+    if (!window.confirm('Delete this staff member? This will permanently remove their payroll records, attendance, and staff access.')) return;
+
+    setDeletingId(employeeId);
+    setError('');
+
+    try {
+
+      await apiFetch(`/api/payroll/employees/${employeeId}`, { method: 'DELETE' });
+
+      loadData();
+
+    } catch (err) {
+
+      setError(err.message || 'Failed to delete staff');
+
+    } finally {
+
+      setDeletingId(null);
 
     }
 
@@ -18920,6 +18968,15 @@ export function Attendance() {
                         </>
 
                       )}
+
+                      <button
+                        onClick={() => handleDelete(emp.id)}
+                        disabled={deletingId === emp.id}
+                        className="px-2 py-1 rounded text-[10px] font-bold bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50"
+                        title="Delete staff"
+                      >
+                        Del
+                      </button>
 
                     </div>
 
