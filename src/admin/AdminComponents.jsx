@@ -5553,6 +5553,10 @@ export function Payroll() {
 
           <div className="text-left sm:text-right">
 
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+              Totals for {new Date(`${monthYear}-01`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </p>
+
             <div className="flex gap-6">
               <div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Base</p>
