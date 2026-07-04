@@ -5813,17 +5813,25 @@ export function Payroll() {
                     </td>
 
                     <td className="px-4 py-4 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={vals.baseSalary ?? (Number(emp.baseSalary) || 0)}
-                        onChange={(e) => {
-                          setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
-                          debouncedSave(emp.id);
-                        }}
-                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
-                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={vals.baseSalary ?? (Number(emp.baseSalary) || 0)}
+                          onChange={(e) => {
+                            setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
+                          }}
+                          className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
+                        />
+                        <button
+                          onClick={() => handleSaveRecord(emp.id)}
+                          disabled={savingRecordId === emp.id || vals.baseSalary === Number(emp.baseSalary)}
+                          className="px-2 py-1 rounded text-[10px] font-bold bg-[#E53935] text-white hover:bg-[#c62828] disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {savingRecordId === emp.id ? 'Saving...' : 'Save'}
+                        </button>
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-center">
