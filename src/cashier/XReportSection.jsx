@@ -35,6 +35,7 @@ export default function XReportSection() {
   const [report, setReport] = useState({
     totalSales: 0,
     voucherAmount: 0,
+    parcelCounterSale: 0,
     cardAmount: 0,
     cashAmount: 0,
     notes500: 0,
@@ -46,7 +47,9 @@ export default function XReportSection() {
   });
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  const finalAmount = round2(Number(report.totalSales) - Number(report.voucherAmount || 0));
+  const finalAmount = round2(
+    Number(report.totalSales) - Number(report.voucherAmount || 0) + Number(report.parcelCounterSale || 0)
+  );
   const cardPlusCash = round2(
     Number(report.cardAmount || 0) + Number(report.cashAmount || 0)
   );
@@ -60,6 +63,7 @@ export default function XReportSection() {
       setReport({
         totalSales: Number(data.totalSales) || 0,
         voucherAmount: Number(data.voucherAmount) || 0,
+        parcelCounterSale: Number(data.parcelCounterSale) || 0,
         cardAmount: Number(data.cardAmount) || 0,
         cashAmount: Number(data.cashAmount) || 0,
         notes500: data.notes500 || 0,
@@ -95,6 +99,7 @@ export default function XReportSection() {
           reportDate,
           totalSales: Number(report.totalSales),
           voucherAmount: Number(report.voucherAmount || 0),
+          parcelCounterSale: Number(report.parcelCounterSale || 0),
           cardAmount: Number(report.cardAmount || 0),
           cashAmount: Number(report.cashAmount || 0),
           notes500: Number(report.notes500 || 0),
@@ -133,9 +138,10 @@ export default function XReportSection() {
     if (cashierName) lines.push(center(`Cashier: ${cashierName}`));
     lines.push(line);
     lines.push(row('Final Amount', '₹' + finalAmount.toFixed(2)));
-    lines.push(center('(Total Sales - Vouchers)'));
+    lines.push(center('(Total Sales - Vouchers + Parcel Counter)'));
     lines.push(dashed);
     lines.push(row('Voucher', '₹' + round2(Number(report.voucherAmount || 0)).toFixed(2)));
+    lines.push(row('Parcel Counter', '₹' + round2(Number(report.parcelCounterSale || 0)).toFixed(2)));
     lines.push(row('Card', '₹' + round2(Number(report.cardAmount || 0)).toFixed(2)));
     lines.push(row('Cash', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
     lines.push(dashed);
@@ -252,6 +258,19 @@ export default function XReportSection() {
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                   <span className="text-sm font-bold text-gray-600">Vouchers</span>
                   <span className="text-sm font-black text-purple-900 tabular-nums">₹{round2(Number(report.voucherAmount || 0)).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 gap-3">
+                  <span className="text-sm font-bold text-gray-600">Parcel Counter Sale <span className="text-red-500">*</span></span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={report.parcelCounterSale === 0 ? '' : report.parcelCounterSale}
+                    onChange={(e) => handleFieldChange('parcelCounterSale', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
                 </div>
                 <div className="flex justify-between items-center py-2">
                   <span className="text-sm font-black text-gray-900">Final Amount</span>
