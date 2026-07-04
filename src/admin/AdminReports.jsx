@@ -1270,7 +1270,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     { key: 'cardAmount', label: 'Card', format: 'money' },
     { key: 'cashAmount', label: 'Cash', format: 'money' },
     { key: 'cashFromNotes', label: 'Cash from Notes', format: 'money' },
-    { key: 'totalAmount', label: 'Total', format: 'money' },
+    { key: 'finalAmount', label: 'Final Amount', format: 'money' },
     { key: 'printed', label: 'Printed' },
   ];
   const rows = reports.map((r) => ({
@@ -1280,7 +1280,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     cardAmount: Number(r.cardAmount),
     cashAmount: Number(r.cashAmount),
     cashFromNotes: Number(r.cashFromNotes),
-    totalAmount: Number(r.totalAmount),
+    finalAmount: Number(r.totalSales) - Number(r.voucherAmount),
     printed: r.printed ? 'Yes' : 'No',
   }));
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
@@ -1326,7 +1326,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Card</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Cash</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Cash from Notes</th>
-              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Total</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Final Amount</th>
               <th className="px-4 py-2 text-center font-black uppercase text-xs text-gray-500">Printed</th>
             </tr>
           </thead>
@@ -1339,7 +1339,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cardAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashFromNotes).toFixed(2)}</td>
-                <td className="px-4 py-2 text-right tabular-nums font-black">₹{Number(r.totalAmount).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-black">₹{(Number(r.totalSales) - Number(r.voucherAmount)).toFixed(2)}</td>
                 <td className="px-4 py-2 text-center">
                   {r.printed ? (
                     <span className="px-2 py-0.5 bg-green-50 text-green-600 border border-green-200 rounded text-xs font-bold">Yes</span>
