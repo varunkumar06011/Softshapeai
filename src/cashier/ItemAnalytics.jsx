@@ -262,7 +262,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
       ['Item Name', 'Type', 'Quantity Sold', 'Orders', 'ML Poured', 'Revenue (Rs)'],
       ...filteredAndSortedData.map(item => [
         item.name,
-        item.type === 'liquor' ? 'Liquor' : 'Food',
+        item.type === 'liquor' ? 'Liquor' : item.type === 'beverages' ? 'Beverages' : 'Food',
         item.quantity,
         item.orderCount ?? 0,
         getLiquorMlPoured(item.name, item.quantity) ?? '',
@@ -399,6 +399,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
             {[
               { id: 'all', label: 'All' },
               { id: 'food', label: 'Food' },
+              { id: 'beverages', label: 'Beverages' },
               { id: 'liquor', label: 'Liquor' },
             ].map(filter => (
               <button
@@ -473,9 +474,11 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
                       <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
                         item.type === 'liquor'
                           ? 'bg-purple-100 text-purple-700'
-                          : 'bg-green-100 text-green-700'
+                          : item.type === 'beverages'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-green-100 text-green-700'
                       }`}>
-                        {item.type === 'liquor' ? 'Liquor' : 'Food'}
+                        {item.type === 'liquor' ? 'Liquor' : item.type === 'beverages' ? 'Beverages' : 'Food'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">

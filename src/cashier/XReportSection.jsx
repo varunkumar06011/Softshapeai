@@ -258,40 +258,44 @@ export default function XReportSection() {
                 <label className={labelClass}>Total Sales (auto-filled)</label>
                 <input
                   type="number"
-                  value={report.totalSales}
-                  onChange={(e) => handleFieldChange('totalSales', Number(e.target.value))}
+                  value={report.totalSales === 0 ? '' : report.totalSales}
+                  onChange={(e) => handleFieldChange('totalSales', e.target.value === '' ? 0 : Number(e.target.value))}
                   className={inputClass}
                   step="0.01"
+                  placeholder="0"
                 />
               </div>
               <div>
                 <label className={labelClass}>Voucher Amount</label>
                 <input
                   type="number"
-                  value={report.voucherAmount}
-                  onChange={(e) => handleFieldChange('voucherAmount', Number(e.target.value))}
+                  value={report.voucherAmount === 0 ? '' : report.voucherAmount}
+                  onChange={(e) => handleFieldChange('voucherAmount', e.target.value === '' ? 0 : Number(e.target.value))}
                   className={inputClass}
                   step="0.01"
+                  placeholder="0"
                 />
               </div>
               <div>
                 <label className={labelClass}>Card Amount</label>
                 <input
                   type="number"
-                  value={report.cardAmount}
-                  onChange={(e) => handleFieldChange('cardAmount', Number(e.target.value))}
+                  value={report.cardAmount === 0 ? '' : report.cardAmount}
+                  onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Number(e.target.value))}
                   className={inputClass}
                   step="0.01"
+                  placeholder="0"
                 />
               </div>
               <div>
                 <label className={labelClass}>Cash Amount</label>
                 <input
                   type="number"
-                  value={report.cashAmount}
-                  onChange={(e) => handleFieldChange('cashAmount', Number(e.target.value))}
+                  value={report.cashAmount === 0 ? '' : report.cashAmount}
+                  onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Number(e.target.value))}
                   className={inputClass}
                   step="0.01"
+                  placeholder="0"
                 />
               </div>
             </div>
@@ -366,9 +370,10 @@ export default function XReportSection() {
                     <input
                       type="number"
                       min="0"
-                      value={report[d.key]}
-                      onChange={(e) => handleFieldChange(d.key, Number(e.target.value))}
+                      value={report[d.key] === 0 ? '' : report[d.key]}
+                      onChange={(e) => handleFieldChange(d.key, e.target.value === '' ? 0 : Number(e.target.value))}
                       className={inputClass}
+                      placeholder="0"
                     />
                   </div>
                 ))}
