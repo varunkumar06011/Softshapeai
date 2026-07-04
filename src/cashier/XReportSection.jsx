@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Printer, Save, Calendar, TrendingUp, CreditCard, Banknote, Receipt } from 'lucide-react';
+import { Printer, Save, Calendar, TrendingUp, CreditCard, Banknote } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 
 const DENOMINATIONS = [
@@ -43,13 +43,11 @@ export default function XReportSection() {
   });
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  const totalAmount = round2(Number(report.totalSales) + Number(report.voucherAmount || 0));
+  const finalAmount = round2(Number(report.totalSales) + Number(report.voucherAmount || 0));
   const cardPlusCashPlusVoucher = round2(
     Number(report.cardAmount || 0) + Number(report.cashAmount || 0) + Number(report.voucherAmount || 0)
   );
-  const balanced = Math.abs(cardPlusCashPlusVoucher - round2(Number(report.totalSales))) < 0.01;
-  const hasAnyDenominations = DENOMINATIONS.some(d => Number(report[d.key] || 0) > 0);
-  const cashBalanced = !hasAnyDenominations || Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0))) < 0.01;
+  const balanced = Math.abs(cardPlusCashPlusVoucher - finalAmount) < 0.01;
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
@@ -85,14 +83,6 @@ export default function XReportSection() {
   };
 
   const handleSave = async () => {
-    if (!balanced) {
-      setError(`Card + Cash + Voucher (₹${cardPlusCashPlusVoucher}) must equal Total Sales (₹${round2(Number(report.totalSales))})`);
-      return false;
-    }
-    if (hasAnyDenominations && !cashBalanced) {
-      setError(`Cash from Notes (₹${round2(cashFromNotes)}) must equal Cash Amount (₹${round2(Number(report.cashAmount || 0))})`);
-      return false;
-    }
     setSaving(true);
     setError(null);
     try {
@@ -163,15 +153,11 @@ export default function XReportSection() {
         <h1>X REPORT</h1>
         <div class="date">Date: ${reportDate}</div>
         <div class="section">
-          <div class="row"><span>Total Sales</span><span>₹${round2(Number(report.totalSales)).toFixed(2)}</span></div>
-          <div class="row"><span>Voucher Amount</span><span>₹${round2(Number(report.voucherAmount || 0)).toFixed(2)}</span></div>
+          <div class="row"><span>Final Amount</span><span>₹${finalAmount.toFixed(2)}</span></div>
           <div class="row"><span>Card Amount</span><span>₹${round2(Number(report.cardAmount || 0)).toFixed(2)}</span></div>
           <div class="row"><span>Cash Amount</span><span>₹${round2(Number(report.cashAmount || 0)).toFixed(2)}</span></div>
-        </div>
-        <div class="section">
-          <div class="row total"><span>Total Amount</span><span>₹${totalAmount.toFixed(2)}</span></div>
           <div class="row"><span>Cash from Notes</span><span>₹${round2(cashFromNotes).toFixed(2)}</span></div>
-          <div class="row"><span>Variance</span><span>₹${round2(Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0)))).toFixed(2)}</span></div>
+          <div class="row"><span>Voucher Amount</span><span>₹${round2(Number(report.voucherAmount || 0)).toFixed(2)}</span></div>
         </div>
         <div class="section denom">
           <div class="row"><span>₹500 x ${report.notes500 || 0}</span><span>₹${(report.notes500 || 0) * 500}</span></div>
@@ -226,16 +212,10 @@ export default function XReportSection() {
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
                 <div className="flex items-center gap-1.5 mb-1">
                   <TrendingUp size={14} className="text-blue-500" />
-                  <span className="text-[10px] font-black uppercase text-blue-400">Total Sales</span>
+                  <span className="text-[10px] font-black uppercase text-blue-400">Final Amount</span>
                 </div>
-                <p className="text-lg font-black text-blue-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(0)}</p>
-              </div>
-              <div className="bg-purple-50 border border-purple-100 rounded-xl p-3">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Receipt size={14} className="text-purple-500" />
-                  <span className="text-[10px] font-black uppercase text-purple-400">Vouchers</span>
-                </div>
-                <p className="text-lg font-black text-purple-900 tabular-nums">₹{round2(Number(report.voucherAmount || 0)).toFixed(0)}</p>
+                <p className="text-lg font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(0)}</p>
+                <p className="text-[9px] font-bold text-blue-600">Total Sales + Vouchers</p>
               </div>
               <div className="bg-green-50 border border-green-100 rounded-xl p-3">
                 <div className="flex items-center gap-1.5 mb-1">
@@ -251,28 +231,24 @@ export default function XReportSection() {
                 </div>
                 <p className="text-lg font-black text-amber-900 tabular-nums">₹{round2(Number(report.cashAmount || 0)).toFixed(0)}</p>
               </div>
+              <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Banknote size={14} className="text-orange-500" />
+                  <span className="text-[10px] font-black uppercase text-orange-400">Cash from Notes</span>
+                </div>
+                <p className="text-lg font-black text-orange-900 tabular-nums">₹{round2(cashFromNotes).toFixed(0)}</p>
+              </div>
             </div>
 
             {/* Editable fields */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
               <div>
-                <label className={labelClass}>Total Sales (auto-filled)</label>
+                <label className={labelClass}>Final Amount (auto-filled)</label>
                 <input
                   type="number"
-                  value={report.totalSales === 0 ? '' : report.totalSales}
-                  onChange={(e) => handleFieldChange('totalSales', e.target.value === '' ? 0 : Number(e.target.value))}
-                  className={inputClass}
-                  step="0.01"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Voucher Amount (auto-filled)</label>
-                <input
-                  type="number"
-                  value={report.voucherAmount === 0 ? '' : report.voucherAmount}
-                  onChange={(e) => handleFieldChange('voucherAmount', e.target.value === '' ? 0 : Number(e.target.value))}
-                  className={inputClass}
+                  value={finalAmount === 0 ? '' : finalAmount}
+                  readOnly
+                  className={`${inputClass} bg-gray-100 cursor-not-allowed`}
                   step="0.01"
                   placeholder="0"
                 />
@@ -310,53 +286,24 @@ export default function XReportSection() {
                   <p className="text-base font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</p>
                 </div>
                 <div className="bg-white rounded-lg p-2.5 border border-gray-100">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Amount</p>
-                  <p className="text-base font-black text-blue-900 tabular-nums">₹{totalAmount.toFixed(2)}</p>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Vouchers</p>
+                  <p className="text-base font-black text-purple-900 tabular-nums">₹{round2(Number(report.voucherAmount || 0)).toFixed(2)}</p>
                 </div>
                 <div className="bg-white rounded-lg p-2.5 border border-gray-100">
                   <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Cash from Notes</p>
                   <p className="text-base font-black text-amber-900 tabular-nums">₹{round2(cashFromNotes).toFixed(2)}</p>
                 </div>
                 <div className="bg-white rounded-lg p-2.5 border border-gray-100">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Variance</p>
-                  <p className={`text-base font-black tabular-nums ${hasAnyDenominations ? (cashBalanced ? 'text-green-600' : 'text-red-600') : 'text-gray-500'}`}>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Cash Variance</p>
+                  <p className="text-base font-black text-red-600 tabular-nums">
                     ₹{round2(Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0)))).toFixed(2)}
                   </p>
                 </div>
               </div>
-              {/* Payment Breakdown Bar */}
-              <div className="mb-3">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Payment Breakdown</p>
-                <div className="flex h-6 rounded-lg overflow-hidden border border-gray-200">
-                  {Number(report.cardAmount || 0) > 0 && (
-                    <div className="bg-green-500 flex items-center justify-center text-[9px] font-black text-white" style={{ width: `${(Number(report.cardAmount || 0) / Math.max(round2(Number(report.totalSales)), 0.01)) * 100}%` }}>
-                      {((Number(report.cardAmount || 0) / Math.max(round2(Number(report.totalSales)), 0.01)) * 100).toFixed(0)}%
-                    </div>
-                  )}
-                  {Number(report.cashAmount || 0) > 0 && (
-                    <div className="bg-amber-500 flex items-center justify-center text-[9px] font-black text-white" style={{ width: `${(Number(report.cashAmount || 0) / Math.max(round2(Number(report.totalSales)), 0.01)) * 100}%` }}>
-                      {((Number(report.cashAmount || 0) / Math.max(round2(Number(report.totalSales)), 0.01)) * 100).toFixed(0)}%
-                    </div>
-                  )}
-                  {Number(report.voucherAmount || 0) > 0 && (
-                    <div className="bg-purple-500 flex items-center justify-center text-[9px] font-black text-white" style={{ width: `${(Number(report.voucherAmount || 0) / Math.max(round2(Number(report.totalSales)), 0.01)) * 100}%` }}>
-                      {((Number(report.voucherAmount || 0) / Math.max(round2(Number(report.totalSales)), 0.01)) * 100).toFixed(0)}%
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-3 mt-1.5 text-[9px] font-bold text-gray-500">
-                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500" />Card</span>
-                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" />Cash</span>
-                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500" />Voucher</span>
-                </div>
-              </div>
-              {/* Balance indicators */}
+              {/* Balance indicator (informational only) */}
               <div className="flex flex-wrap gap-2">
-                <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${balanced ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
-                  Card + Cash + Voucher = ₹{cardPlusCashPlusVoucher.toFixed(2)} {balanced ? '✓' : '✗'}
-                </div>
-                <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${hasAnyDenominations ? (cashBalanced ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200') : 'bg-gray-50 text-gray-500 border border-gray-200'}`}>
-                  Cash from Notes = ₹{round2(cashFromNotes).toFixed(2)} {hasAnyDenominations ? (cashBalanced ? '✓' : '✗') : '—'}
+                <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${balanced ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}>
+                  Card + Cash + Voucher = ₹{cardPlusCashPlusVoucher.toFixed(2)} {balanced ? '✓ matches Final Amount' : '≠ Final Amount'}
                 </div>
               </div>
             </div>
@@ -364,7 +311,7 @@ export default function XReportSection() {
             {/* Denomination table */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-4">
               <h3 className="text-sm font-black uppercase tracking-wider text-gray-700 mb-1">Cash Denomination Count</h3>
-              <p className="text-[10px] font-bold text-gray-500 mb-3">Optional — leave empty if no notes to declare</p>
+              <p className="text-[10px] font-bold text-gray-500 mb-3">Enter notes to declare cash amount — leave empty if no cash</p>
               <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                 {DENOMINATIONS.map(d => (
                   <div key={d.key}>
@@ -390,7 +337,7 @@ export default function XReportSection() {
             <div className="flex gap-3">
               <button
                 onClick={handleSave}
-                disabled={saving || !balanced}
+                disabled={saving}
                 className="flex-1 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-black uppercase tracking-wider transition-all hover:bg-gray-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Save size={16} />
@@ -398,7 +345,7 @@ export default function XReportSection() {
               </button>
               <button
                 onClick={handlePrint}
-                disabled={saving || !balanced}
+                disabled={saving}
                 className="flex-1 py-2.5 rounded-lg bg-[#E53935] text-white text-sm font-black uppercase tracking-wider transition-all hover:bg-[#c62828] shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Printer size={16} />
