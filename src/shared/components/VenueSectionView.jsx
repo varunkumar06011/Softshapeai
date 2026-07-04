@@ -32,6 +32,7 @@ export default function VenueSectionView({
   extraTables = [],
   onAddExtraTable = null,
   onRemoveExtraTable = null,
+  compactMode = false,
 }) {
 
   const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
@@ -115,9 +116,9 @@ export default function VenueSectionView({
     const pdrTables = [...sectionTables].sort((a, b) => (a.number || 0) - (b.number || 0));
 
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 max-w-[680px]">
+      <div className={`grid gap-3.5 max-w-[680px] ${compactMode ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
         {pdrTables.map((table) => (
-          <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+          <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
         ))}
       </div>
     );
@@ -131,10 +132,10 @@ export default function VenueSectionView({
   });
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+    <div className={`grid gap-3 ${compactMode ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'}`}>
       {sectionTables.map((table) => (
         <div key={table.backendId || table.id} className="relative">
-          <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+          <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
           {/* Add Extra (+) button — only on free regular tables */}
           {onAddExtraTable && (table.status === 'Free' || table.status === 'AVAILABLE' || !table.status) && (
             <button
@@ -150,7 +151,7 @@ export default function VenueSectionView({
       ))}
       {sectionExtraTables.map((table) => (
         <div key={`extra-${table.id}`} className="relative">
-          <VenueTableCard table={{ ...table, status: table.status || 'Free', isExtra: true }} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} />
+          <VenueTableCard table={{ ...table, status: table.status || 'Free', isExtra: true }} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
           {/* Remove Extra (−) button */}
           {onRemoveExtraTable && (
             <button
@@ -168,7 +169,7 @@ export default function VenueSectionView({
   );
 }
 
-function VenueTableCard({ table, sectionName, onClick }) {
+function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
   const status = table.status || 'Free';
   const isFree = status === 'Free' || status === 'AVAILABLE';
   const isBilling = status === 'Waiting Bill' || status === 'BILLING_REQUESTED';
@@ -179,7 +180,7 @@ function VenueTableCard({ table, sectionName, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
+      className={`${compactMode ? 'h-16 p-2 sm:p-3 rounded-xl sm:rounded-2xl' : 'aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl'} border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
         isExtra
           ? 'bg-blue-50 border-dashed border-blue-300 text-blue-600 hover:border-blue-400 shadow-sm'
           : isFree
@@ -193,26 +194,26 @@ function VenueTableCard({ table, sectionName, onClick }) {
     >
       {/* Section Badge - Top Left */}
       {(table.sectionName || table.section?.name) && (
-        <div className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shadow-sm z-10 ${getSectionBadgeColor(table)}`}>
+        <div className={`absolute ${compactMode ? 'top-1 left-1 px-1 py-0.5 text-[6px]' : 'top-2 left-2 px-1.5 py-0.5 text-[8px]'} rounded font-black uppercase tracking-wider shadow-sm z-10 ${getSectionBadgeColor(table)}`}>
           {getTableSectionLabel(table)}
         </div>
       )}
 
       {/* Captain Name Badge - Top Left below section badge, or Top Right if no section */}
       {table.captainName && (
-        <div className={`absolute ${table.sectionName || table.section?.name ? 'top-6 left-2' : 'top-2 right-2'} text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none shadow-sm z-10 max-w-[80%] truncate`}>
+        <div className={`absolute ${table.sectionName || table.section?.name ? (compactMode ? 'top-4 left-1' : 'top-6 left-2') : (compactMode ? 'top-1 right-1' : 'top-2 right-2')} ${compactMode ? 'text-[6px]' : 'text-[7px]'} font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none shadow-sm z-10 max-w-[80%] truncate`}>
           {table.captainName.split(' ')[0]}
         </div>
       )}
 
       {/* Big centered number */}
-      <span className="text-3xl sm:text-4xl font-black leading-none mt-1">
+      <span className={`${compactMode ? 'text-lg sm:text-xl' : 'text-3xl sm:text-4xl'} font-black leading-none mt-1`}>
         {table.number ?? table.id}
       </span>
 
       {/* Bottom status strip */}
       <div className="w-full flex flex-col items-center gap-1">
-        <div className={`w-full py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 ${
+        <div className={`w-full ${compactMode ? 'py-1 rounded-lg text-[7px] sm:text-[8px]' : 'py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px]'} font-black uppercase tracking-widest flex items-center justify-center gap-1 ${
           isFree
             ? 'bg-gray-100 text-gray-400'
             : isBilling
@@ -224,7 +225,7 @@ function VenueTableCard({ table, sectionName, onClick }) {
           {status}
         </div>
         {!isFree && (
-          <span className="text-[10px] font-black opacity-60">₹{calculateTableBill(table).grandTotal}</span>
+          <span className={`${compactMode ? 'text-[8px]' : 'text-[10px]'} font-black opacity-60`}>₹{calculateTableBill(table).grandTotal}</span>
         )}
       </div>
     </button>

@@ -4739,6 +4739,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 extraTables={extraTables}
                                 onAddExtraTable={handleAddVenueExtraTable}
                                 onRemoveExtraTable={handleRemoveVenueExtraTable}
+                                compactMode={true}
                               />
                             );
                           })
