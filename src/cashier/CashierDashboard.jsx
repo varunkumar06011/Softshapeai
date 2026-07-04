@@ -1239,14 +1239,17 @@ const CashierDashboard = ({ onLogout }) => {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
-            const incomingKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : prev.kotHistory);
+            const incomingKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+            const existingKot = prev.kotHistory || [];
+            const existingIds = new Set(existingKot.map(k => String(k.id)));
+            const mergedKotHistory = [...existingKot, ...incomingKotHistory.filter(k => !existingIds.has(String(k.id)))];
             const nextVal = {
               ...prev,
               activeOrder: mergeOrder(order, prev.activeOrder),
               status: prev.status === 'Free' ? 'Occupied' : prev.status,
               workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
               currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-              kotHistory: incomingKotHistory,
+              kotHistory: mergedKotHistory.length > 0 ? mergedKotHistory : existingKot,
             };
             validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
             return nextVal;
@@ -1255,7 +1258,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
-      const incomingGridKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : null);
+      const incomingGridKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1264,7 +1267,11 @@ const CashierDashboard = ({ onLogout }) => {
               status: t.status === 'Free' ? 'Occupied' : t.status,
               workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-              ...(incomingGridKotHistory ? { kotHistory: incomingGridKotHistory } : {}),
+              ...(incomingGridKotHistory.length > 0 ? (() => {
+                const existingGridKot = t.kotHistory || [];
+                const gridExistingIds = new Set(existingGridKot.map(k => String(k.id)));
+                return { kotHistory: [...existingGridKot, ...incomingGridKotHistory.filter(k => !gridExistingIds.has(String(k.id)))] };
+              })() : {}),
             }
           : t
       );
@@ -1303,8 +1310,11 @@ const CashierDashboard = ({ onLogout }) => {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
-            const incomingKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : prev.kotHistory);
-            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder), kotHistory: incomingKotHistory };
+            const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+            const existingKot = prev.kotHistory || [];
+            const existingIds = new Set(existingKot.map(k => String(k.id)));
+            const mergedKotHistory = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
+            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder), kotHistory: mergedKotHistory.length > 0 ? mergedKotHistory : existingKot };
             validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
             return nextVal;
           });
@@ -1313,14 +1323,18 @@ const CashierDashboard = ({ onLogout }) => {
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
       // No click cooldown — real-time updates from captain must always be visible
-      const incomingGridKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : null);
+      const incomingGridKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
               ...t,
               activeOrder: mergeOrder(order, t.activeOrder),
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-              ...(incomingGridKotHistory ? { kotHistory: incomingGridKotHistory } : {}),
+              ...(incomingGridKotArr.length > 0 ? (() => {
+                const existingGridKot = t.kotHistory || [];
+                const gridExistingIds = new Set(existingGridKot.map(k => String(k.id)));
+                return { kotHistory: [...existingGridKot, ...incomingGridKotArr.filter(k => !gridExistingIds.has(String(k.id)))] };
+              })() : {}),
             }
           : t
       );
@@ -1923,12 +1937,19 @@ const CashierDashboard = ({ onLogout }) => {
             .filter(i => !i.removedFromBill && i.quantity > 0)
             .reduce((sum, i) => sum + Number(i.price) * Number(i.quantity), 0);
           const allCancelled = updatedItems.every(i => i.removedFromBill || i.quantity === 0);
+          const updatedKotHistory = (t.kotHistory || [])
+            .map(kot => ({
+              ...kot,
+              items: (kot.items || []).filter(i => !transferredIds.has(i.orderItemId)),
+            }))
+            .filter(kot => (kot.items || []).length > 0);
           return {
             ...t,
             activeOrder: t.activeOrder ? { ...t.activeOrder, items: updatedItems } : t.activeOrder,
             currentBill: allCancelled ? 0 : newBill,
             status: allCancelled ? 'Free' : t.status,
             workflowStatus: allCancelled ? 'Free' : t.workflowStatus,
+            kotHistory: allCancelled ? [] : updatedKotHistory,
           };
         }
         return t;
@@ -1941,9 +1962,16 @@ const CashierDashboard = ({ onLogout }) => {
           const updatedItems = (prev.activeOrder?.items || [])
             .map(i => transferredIds.has(i.id) ? { ...i, removedFromBill: true, quantity: 0 } : i);
           const allCancelled = updatedItems.every(i => i.removedFromBill || i.quantity === 0);
+          const updatedKotHistory = (prev.kotHistory || [])
+            .map(kot => ({
+              ...kot,
+              items: (kot.items || []).filter(i => !transferredIds.has(i.orderItemId)),
+            }))
+            .filter(kot => (kot.items || []).length > 0);
           return {
             ...prev,
             activeOrder: prev.activeOrder ? { ...prev.activeOrder, items: updatedItems } : prev.activeOrder,
+            kotHistory: allCancelled ? [] : updatedKotHistory,
           };
         });
       }
@@ -2466,7 +2494,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       const response = await fetch(
         `${API_BASE}/api/orders/${selectedTable.activeOrder.id}/reprint-kot?restaurantId=${restaurantId}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+        { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
       );
       if (!response.ok) throw new Error('KOT reprint failed');
       addNotification('KOT Reprinted', 'Kitchen copy sent to printer.', 'success');
@@ -2584,7 +2612,8 @@ const CashierDashboard = ({ onLogout }) => {
                 name: i.n || i.name,
                 quantity: i.q,
                 price: Number(i.p),
-                menuType: i.menuType || 'FOOD'
+                menuType: i.menuType || 'FOOD',
+                notes: i.notes || null
               })),
               subtotal: subtotalAmt,
               grandTotal: grandTotalAmt,
@@ -2619,7 +2648,8 @@ const CashierDashboard = ({ onLogout }) => {
                 name: i.n || i.name,
                 quantity: i.q,
                 price: Number(i.p),
-                menuType: i.menuType || 'FOOD'
+                menuType: i.menuType || 'FOOD',
+                notes: i.notes || null
               })),
               subtotal: subtotalAmt,
               discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
@@ -3998,7 +4028,11 @@ const CashierDashboard = ({ onLogout }) => {
               ...et,
               status: et.status === 'Free' ? 'Preparing' : et.status,
               workflowStatus: et.status === 'Free' ? 'Preparing' : et.workflowStatus,
-              kotHistory: serverKotHistory,
+              kotHistory: (() => {
+                const existing = (et.kotHistory || []);
+                const existingIds = new Set(existing.map(k => String(k.id)));
+                return [...existing, ...(Array.isArray(serverKotHistory) ? serverKotHistory : []).filter(k => !existingIds.has(String(k.id)))];
+              })(),
               currentBill: newTotalBill,
               activeOrder: {
                 id: resolvedOrderId,
@@ -4013,7 +4047,11 @@ const CashierDashboard = ({ onLogout }) => {
               ...prev,
               status: prev.status === 'Free' ? 'Preparing' : prev.status,
               workflowStatus: prev.status === 'Free' ? 'Preparing' : prev.workflowStatus,
-              kotHistory: serverKotHistory,
+              kotHistory: (() => {
+                const existing = (prev.kotHistory || []);
+                const existingIds = new Set(existing.map(k => String(k.id)));
+                return [...existing, ...(Array.isArray(serverKotHistory) ? serverKotHistory : []).filter(k => !existingIds.has(String(k.id)))];
+              })(),
               currentBill: newTotalBill,
               activeOrder: {
                 id: resolvedOrderId,
@@ -4030,7 +4068,11 @@ const CashierDashboard = ({ onLogout }) => {
               ...t,
               status: kotStatus,
               workflowStatus: kotStatus,
-              kotHistory: serverKotHistory,
+              kotHistory: (() => {
+                const existing = (t.kotHistory || []);
+                const existingIds = new Set(existing.map(k => String(k.id)));
+                return [...existing, ...(Array.isArray(serverKotHistory) ? serverKotHistory : []).filter(k => !existingIds.has(String(k.id)))];
+              })(),
               currentBill: newTotalBill,
               activeOrder: {
                 id: resolvedOrderId,
@@ -4047,7 +4089,11 @@ const CashierDashboard = ({ onLogout }) => {
               ...prev,
               status: kotStatusSel,
               workflowStatus: kotStatusSel,
-              kotHistory: serverKotHistory,
+              kotHistory: (() => {
+                const existing = (prev.kotHistory || []);
+                const existingIds = new Set(existing.map(k => String(k.id)));
+                return [...existing, ...(Array.isArray(serverKotHistory) ? serverKotHistory : []).filter(k => !existingIds.has(String(k.id)))];
+              })(),
               currentBill: newTotalBill,
               activeOrder: {
                 id: resolvedOrderId,
@@ -4111,17 +4157,25 @@ const CashierDashboard = ({ onLogout }) => {
               if (selectedTable.isExtra) {
                 setExtraTables(prev => prev.map(et => {
                   if (et.id !== selectedTable.id) return et;
-                  return { ...et, kotHistory: serverKotHistory, activeOrder: { ...et.activeOrder, id: freshOrder.id, items: serverItems } };
+                  const existingKot = et.kotHistory || [];
+                  const existingIds = new Set(existingKot.map(k => String(k.id)));
+                  return { ...et, kotHistory: [...existingKot, ...serverKotHistory.filter(k => !existingIds.has(String(k.id)))], activeOrder: { ...et.activeOrder, id: freshOrder.id, items: serverItems } };
                 }));
               } else {
                 setActiveTables(prev => prev.map(t => {
                   if (t.backendId !== selectedTable.backendId) return t;
-                  return { ...t, kotHistory: serverKotHistory, activeOrder: { ...t.activeOrder, id: freshOrder.id, items: serverItems } };
+                  const existingKot = t.kotHistory || [];
+                  const existingIds = new Set(existingKot.map(k => String(k.id)));
+                  return { ...t, kotHistory: [...existingKot, ...serverKotHistory.filter(k => !existingIds.has(String(k.id)))], activeOrder: { ...t.activeOrder, id: freshOrder.id, items: serverItems } };
                 }));
               }
               setSelectedTable(prev => prev ? {
                 ...prev,
-                kotHistory: serverKotHistory,
+                kotHistory: (() => {
+                  const existingKot = prev.kotHistory || [];
+                  const existingIds = new Set(existingKot.map(k => String(k.id)));
+                  return [...existingKot, ...serverKotHistory.filter(k => !existingIds.has(String(k.id)))];
+                })(),
                 activeOrder: { ...prev.activeOrder, id: freshOrder.id, items: serverItems },
               } : prev);
 
@@ -5335,9 +5389,14 @@ const CashierDashboard = ({ onLogout }) => {
                                       <div className="space-y-1 text-[9px] text-gray-600 font-bold border-t border-gray-50 pt-2 mb-3">
                                         {kot.items.map((item, idx) => (
                                           <div key={`${kot.id}-${idx}`} className="flex justify-between items-center">
-                                            <div className="flex items-center gap-1.5">
-                                              <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
-                                              <span className="truncate max-w-[120px]">{item.n}</span>
+                                            <div className="flex flex-col min-w-0">
+                                              <div className="flex items-center gap-1.5">
+                                                <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                                <span className="truncate max-w-[120px]">{item.n}</span>
+                                              </div>
+                                              {item.notes && (
+                                                <span className="text-[8px] text-amber-600 italic font-semibold ml-3 truncate max-w-[120px]">* {item.notes}</span>
+                                              )}
                                             </div>
                                             <span>x{item.q}</span>
                                           </div>

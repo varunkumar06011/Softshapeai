@@ -112,10 +112,10 @@ export function buildFoodKOT(orderData: OrderData): object[] {
 
   cmds.push(LEFT, separator("-"), BOLD_ON, SIZE_2X);
 
-  const tableLabel = `Table : ${tableDisplay}`;
   const kotLabel = `KOT No : ${displayKotId}`;
-  const kotTableGap = Math.max(1, LINE_2X - tableLabel.length - kotLabel.length);
-  cmds.push(`${tableLabel}${' '.repeat(kotTableGap)}${kotLabel}\n`);
+  const tableLabel = `Table : ${tableDisplay}`;
+  const kotTableGap = Math.max(1, LINE_2X - kotLabel.length - tableLabel.length);
+  cmds.push(`${kotLabel}${' '.repeat(kotTableGap)}${tableLabel}\n`);
   cmds.push(SIZE_NORMAL, BOLD_OFF);
 
   cmds.push(
@@ -200,10 +200,10 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
 
   cmds.push(LEFT, separator("-"), BOLD_ON, SIZE_2X);
 
-  const tableLabel = `Table : ${tableDisplay}`;
   const kotLabel = `KOT No : ${displayKotId}`;
-  const kotTableGap = Math.max(1, LINE_2X - tableLabel.length - kotLabel.length);
-  cmds.push(`${tableLabel}${' '.repeat(kotTableGap)}${kotLabel}\n`);
+  const tableLabel = `Table : ${tableDisplay}`;
+  const kotTableGap = Math.max(1, LINE_2X - kotLabel.length - tableLabel.length);
+  cmds.push(`${kotLabel}${' '.repeat(kotTableGap)}${tableLabel}\n`);
   cmds.push(SIZE_NORMAL, BOLD_OFF);
 
   cmds.push(

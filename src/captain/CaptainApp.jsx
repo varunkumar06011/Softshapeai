@@ -1659,8 +1659,11 @@ export default function CaptainApp({ onLogout }) {
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || (t.activeOrder?.items || []);
-        const serverKots = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
-        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: serverKots };
+        const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+        const existingKot = t.kotHistory || [];
+        const existingIds = new Set(existingKot.map(k => String(k.id)));
+        const mergedKots = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
+        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: mergedKots.length > 0 ? mergedKots : existingKot };
       });
       setActiveTables(updateTables);
     };
@@ -1675,10 +1678,14 @@ export default function CaptainApp({ onLogout }) {
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || [];
+        const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : [];
+        const existingKot = t.kotHistory || [];
+        const existingIds = new Set(existingKot.map(k => String(k.id)));
+        const mergedKots = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
         return {
           ...t,
           activeOrder: { ...order, items: serverItems },
-          kotHistory: Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : (t.kotHistory || []),
+          kotHistory: mergedKots.length > 0 ? mergedKots : existingKot,
           status: t.status === 'Free' ? 'Occupied' : t.status,
           workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
         };
@@ -5078,6 +5085,10 @@ export default function CaptainApp({ onLogout }) {
                                   </div>
 
                                   <p className={`text-sm font-bold ${isCancelled ? 'line-through text-red-400' : 'text-gray-700'}`}>{item.n}</p>
+
+                                  {item.notes && (
+                                    <p className={`text-[10px] italic font-semibold ${isCancelled ? 'text-gray-300' : 'text-amber-600'} mt-0.5`}>* {item.notes}</p>
+                                  )}
 
                                 </div>
 

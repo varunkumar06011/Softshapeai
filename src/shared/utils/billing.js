@@ -200,7 +200,7 @@ export const groupOrderItems = (items) => {
     const name = (item.n ?? item.name ?? '').trim();
     const price = Number(item.p ?? item.price ?? 0);
     const qty = Number(item.q ?? item.quantity ?? 1);
-    const key = `${name}::${price}`;
+    const key = `${name}::${price}::${item.notes ?? ''}`;
 
     if (!map[key]) {
       map[key] = {
