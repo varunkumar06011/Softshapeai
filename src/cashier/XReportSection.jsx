@@ -158,18 +158,53 @@ export default function XReportSection() {
     const ok = await handleSave();
     if (!ok) return;
     try {
-      const result = await printLocal({
-        type: 'FINAL_BILL',
-        text: buildXReportText(),
-      });
-      if (!result.printed) {
-        setError(result.error || 'Print failed or queued. Check printer connection.');
-        return;
-      }
+      // 1. Try backend socket-based print first (uses PrintStation/Print Agent)
       await apiFetch(`/api/xreports/${reportDate}/print`, { method: 'POST' });
+      setSavedMsg('X Report sent to printer');
     } catch (err) {
-      setError('Print failed: ' + err.message);
+      // 2. Backend socket print failed — try local direct print as fallback
+      console.warn('[XReport] Backend print failed, trying local print:', err);
+      try {
+        const result = await printLocal({
+          type: 'FINAL_BILL',
+          text: buildXReportText(),
+        });
+        if (!result.printed) {
+          // 3. Local direct print also failed — fall back to browser print dialog
+          console.warn('[XReport] Direct print failed:', result.error);
+          openBrowserPrint(buildXReportText());
+          setSavedMsg('No direct printer found — opened browser print dialog. Configure Print Agent/QZ Tray for auto-print.');
+          return;
+        }
+        setSavedMsg('X Report printed locally');
+      } catch (localErr) {
+        setError('Print failed: ' + localErr.message);
+      }
     }
+  };
+
+  const openBrowserPrint = (text) => {
+    const printWin = window.open('', '_blank', 'width=400,height=600');
+    if (!printWin) {
+      setError('Popup blocked. Please allow popups to print.');
+      return;
+    }
+    const html = `
+      <html>
+      <head>
+        <title>X Report - ${reportDate}</title>
+        <style>
+          * { font-family: 'Courier New', monospace; margin: 0; padding: 0; box-sizing: border-box; }
+          body { width: 280px; padding: 8px; white-space: pre; font-size: 11px; }
+        </style>
+      </head>
+      <body>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body>
+      </html>
+    `;
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.focus();
+    printWin.print();
   };
 
   const inputClass = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums";
