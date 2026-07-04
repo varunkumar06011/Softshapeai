@@ -48,7 +48,8 @@ export default function XReportSection() {
     Number(report.cardAmount || 0) + Number(report.cashAmount || 0) + Number(report.voucherAmount || 0)
   );
   const balanced = Math.abs(cardPlusCashPlusVoucher - round2(Number(report.totalSales))) < 0.01;
-  const cashBalanced = Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0))) < 0.01;
+  const hasAnyDenominations = DENOMINATIONS.some(d => Number(report[d.key] || 0) > 0);
+  const cashBalanced = !hasAnyDenominations || Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0))) < 0.01;
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
@@ -88,7 +89,7 @@ export default function XReportSection() {
       setError(`Card + Cash + Voucher (₹${cardPlusCashPlusVoucher}) must equal Total Sales (₹${round2(Number(report.totalSales))})`);
       return false;
     }
-    if (!cashBalanced) {
+    if (hasAnyDenominations && !cashBalanced) {
       setError(`Cash from Notes (₹${round2(cashFromNotes)}) must equal Cash Amount (₹${round2(Number(report.cashAmount || 0))})`);
       return false;
     }
@@ -318,7 +319,7 @@ export default function XReportSection() {
                 </div>
                 <div className="bg-white rounded-lg p-2.5 border border-gray-100">
                   <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Variance</p>
-                  <p className={`text-base font-black tabular-nums ${balanced && cashBalanced ? 'text-green-600' : 'text-red-600'}`}>
+                  <p className={`text-base font-black tabular-nums ${hasAnyDenominations ? (cashBalanced ? 'text-green-600' : 'text-red-600') : 'text-gray-500'}`}>
                     ₹{round2(Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0)))).toFixed(2)}
                   </p>
                 </div>
@@ -354,15 +355,16 @@ export default function XReportSection() {
                 <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${balanced ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
                   Card + Cash + Voucher = ₹{cardPlusCashPlusVoucher.toFixed(2)} {balanced ? '✓' : '✗'}
                 </div>
-                <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${cashBalanced ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
-                  Cash from Notes = ₹{round2(cashFromNotes).toFixed(2)} {cashBalanced ? '✓' : '✗'}
+                <div className={`px-3 py-1.5 rounded-lg text-xs font-black ${hasAnyDenominations ? (cashBalanced ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200') : 'bg-gray-50 text-gray-500 border border-gray-200'}`}>
+                  Cash from Notes = ₹{round2(cashFromNotes).toFixed(2)} {hasAnyDenominations ? (cashBalanced ? '✓' : '✗') : '—'}
                 </div>
               </div>
             </div>
 
             {/* Denomination table */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-gray-700 mb-3">Cash Denomination Count</h3>
+              <h3 className="text-sm font-black uppercase tracking-wider text-gray-700 mb-1">Cash Denomination Count</h3>
+              <p className="text-[10px] font-bold text-gray-500 mb-3">Optional — leave empty if no notes to declare</p>
               <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                 {DENOMINATIONS.map(d => (
                   <div key={d.key}>
@@ -388,7 +390,7 @@ export default function XReportSection() {
             <div className="flex gap-3">
               <button
                 onClick={handleSave}
-                disabled={saving || !balanced || !cashBalanced}
+                disabled={saving || !balanced}
                 className="flex-1 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-black uppercase tracking-wider transition-all hover:bg-gray-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Save size={16} />
@@ -396,7 +398,7 @@ export default function XReportSection() {
               </button>
               <button
                 onClick={handlePrint}
-                disabled={saving || !balanced || !cashBalanced}
+                disabled={saving || !balanced}
                 className="flex-1 py-2.5 rounded-lg bg-[#E53935] text-white text-sm font-black uppercase tracking-wider transition-all hover:bg-[#c62828] shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Printer size={16} />
