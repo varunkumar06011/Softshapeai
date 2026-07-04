@@ -112,6 +112,23 @@ function unwrapTableEvent(payload) {
   return payload?.table || payload;
 }
 
+function normalizeKots(kots) {
+  if (!Array.isArray(kots)) return [];
+  return kots.map(kot => ({
+    id: String(kot.kotNumber ?? kot.id ?? ''),
+    time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+    items: (kot.items || []).map(ki => ({
+      id: ki.menuItemId || ki.id,
+      n: ki.name ?? ki.n,
+      p: Number(ki.price ?? ki.p ?? 0),
+      q: Number(ki.quantity ?? ki.q ?? 0),
+      s: ki.status === 'CANCELLED' ? 'Cancelled' : (ki.s ?? 'KOT Sent'),
+      orderItemId: ki.orderItemId,
+      notes: ki.notes,
+    })),
+  }));
+}
+
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   const dbStatus = row.status;
   const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
@@ -168,19 +185,21 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     activeOrder = existing.activeOrder;
   }
 
-  // kotHistory: keep whichever has more entries (incoming payloads can be partial)
-  const incomingKot = Array.isArray(row.kotHistory)
-    ? row.kotHistory.map((kot, ki) => {
-        const existingKot = existing?.kotHistory?.[ki];
-        return {
-          ...kot,
-          items: kot.items ? kot.items.map((item, ii) => ({
-            ...item,
-            orderItemId: existingKot?.items?.[ii]?.orderItemId ?? item.orderItemId,
-          })) : [],
-        };
-      })
-    : [];
+  // kotHistory: normalize DB kots relation (authoritative), fall back to legacy kotHistory
+  const incomingKot = (Array.isArray(row.kots) && row.kots.length > 0)
+    ? normalizeKots(row.kots)
+    : (Array.isArray(row.kotHistory)
+      ? row.kotHistory.map((kot, ki) => {
+          const existingKot = existing?.kotHistory?.[ki];
+          return {
+            ...kot,
+            items: kot.items ? kot.items.map((item, ii) => ({
+              ...item,
+              orderItemId: existingKot?.items?.[ii]?.orderItemId ?? item.orderItemId,
+            })) : [],
+          };
+        })
+      : []);
   const existingKot = existing?.kotHistory ?? [];
   const mergedKotHistory = isFreeWorkflow ? []
     : (incomingKot.length >= existingKot.length ? incomingKot : existingKot);

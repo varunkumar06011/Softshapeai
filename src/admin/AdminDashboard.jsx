@@ -219,7 +219,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
     };
   }, [socket, setTables]);
 
-  // â”€â”€ Real stats fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Real stats fetch ────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -439,7 +439,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
                 className="w-full h-full object-contain"
               />
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">âœ•</button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-bold text-white/90 flex-shrink-0 mb-2 mt-4">
             <span className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" />
@@ -590,7 +590,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
             onClick={() => setSpireOpen(true)}
             className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-[#E53935] px-4 py-2.5 text-white hover:bg-[#B71C1C] shadow-2xl font-black uppercase tracking-widest text-[10px] transition-colors group cursor-grab active:cursor-grabbing"
           >
-            <Sparkles size={14} className="group-hover:rotate-12 transition-transform" /> Ask Spire âœ¨
+            <Sparkles size={14} className="group-hover:rotate-12 transition-transform" /> Ask Spire ✨
           </motion.button>
           <AIDishCreationModal open={dishModalOpen} onClose={() => setDishModalOpen(false)} onSave={() => setDishModalOpen(false)} />
         </>

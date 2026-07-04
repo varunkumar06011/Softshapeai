@@ -1678,7 +1678,8 @@ export default function CaptainApp({ onLogout }) {
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || [];
-        const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : [];
+        const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory
+          : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
         const existingKot = t.kotHistory || [];
         const existingIds = new Set(existingKot.map(k => String(k.id)));
         const mergedKots = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
