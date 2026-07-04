@@ -1143,14 +1143,14 @@ export function Tables({ onOpen }) {
   const [popupCaptainId, setPopupCaptainId] = useState('');
   const [savingCaptain, setSavingCaptain] = useState(false);
 
+  const [editMode, setEditMode] = useState(false);
+
+  const { tables } = useTableSync();
+
   useEffect(() => {
     const t = tables.find(t => t.id === activePopupTableId);
     setPopupCaptainId(t?.captainId || '');
   }, [activePopupTableId, tables]);
-
-  const [editMode, setEditMode] = useState(false);
-
-  const { tables } = useTableSync();
 
   const [venues, setVenues] = useState([]);
 
