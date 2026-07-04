@@ -4024,51 +4024,53 @@ export function MenuPage({ onAddDish }) {
                 {/* Print To: merged KOT Destination + Item Printer Override */}
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
 
-                {activeOutlet === 'restaurant'
-                  ? <select
-                      value={editingItem.printerTarget || editingItem.categoryPrinterTarget || ''}
-                      onChange={(e) => {
-                        const val = e.target.value || null;
-                        setEditingItem({
-                          ...editingItem,
-                          printerTarget: val,
-                          categoryPrinterTarget: val,
-                        });
-                      }}
-                      className={input + ' w-full bg-gray-50'}
-                    >
-                      <option value="">Default (auto-resolve)</option>
-                      {allPrinterOptions.map(opt => (
-                        <option key={opt.name} value={opt.name}>
-                          {opt.name}
-                          {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  : <div className="flex gap-2">
-                      {[
-                        { value: 'FOOD', label: 'Food' },
-                        { value: 'LIQUOR', label: 'Bar / Drinks' },
-                      ].map(opt => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
-                          className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
-                            (editingItem.menuType || 'FOOD') === opt.value
-                              ? opt.value === 'FOOD'
-                                ? 'border-green-500 bg-green-50 text-green-700'
-                                : 'border-purple-500 bg-purple-50 text-purple-700'
-                              : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
-                          }`}
-                        >
-                          <div>{opt.label}</div>
-                        </button>
-                      ))}
-                    </div>}
+                <select
+                  value={editingItem.printerTarget || editingItem.categoryPrinterTarget || ''}
+                  onChange={(e) => {
+                    const val = e.target.value || null;
+                    setEditingItem({
+                      ...editingItem,
+                      printerTarget: val,
+                      categoryPrinterTarget: val,
+                    });
+                  }}
+                  className={input + ' w-full bg-gray-50'}
+                >
+                  <option value="">Default (auto-resolve)</option>
+                  {allPrinterOptions.map(opt => (
+                    <option key={opt.name} value={opt.name}>
+                      {opt.name}
+                      {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                    </option>
+                  ))}
+                </select>
+
+                {activeOutlet === 'bar' && (
+                  <div className="flex gap-2 mt-2">
+                    {[
+                      { value: 'FOOD', label: 'Food' },
+                      { value: 'LIQUOR', label: 'Bar / Drinks' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setEditingItem({ ...editingItem, menuType: opt.value })}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-xs font-black transition-all text-left ${
+                          (editingItem.menuType || 'FOOD') === opt.value
+                            ? opt.value === 'FOOD'
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        <div>{opt.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Physical Printer override (optional) */}
-                {activeOutlet === 'restaurant' && (
+                {(
                   <div>
                     <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Physical Printer Override (optional)</label>
                     <select
@@ -4483,28 +4485,29 @@ export function MenuPage({ onAddDish }) {
                 <div>
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
 
-                  {activeOutlet === 'restaurant'
-                    ? <select
-                        value={addingItem.printerTarget || addingItem.categoryPrinterTarget || ''}
-                        onChange={(e) => {
-                          const val = e.target.value || null;
-                          setAddingItem({
-                            ...addingItem,
-                            printerTarget: val,
-                            categoryPrinterTarget: val,
-                          });
-                        }}
-                        className={input + ' w-full bg-gray-50'}
-                      >
-                        <option value="">Default (auto-resolve)</option>
-                        {allPrinterOptions.map(opt => (
-                          <option key={opt.name} value={opt.name}>
-                            {opt.name}
-                            {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    : <div className="flex gap-2">
+                  <select
+                      value={addingItem.printerTarget || addingItem.categoryPrinterTarget || ''}
+                      onChange={(e) => {
+                        const val = e.target.value || null;
+                        setAddingItem({
+                          ...addingItem,
+                          printerTarget: val,
+                          categoryPrinterTarget: val,
+                        });
+                      }}
+                      className={input + ' w-full bg-gray-50'}
+                    >
+                      <option value="">Default (auto-resolve)</option>
+                      {allPrinterOptions.map(opt => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name}
+                          {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    {activeOutlet === 'bar' && (
+                      <div className="flex gap-2 mt-2">
                         {[
                           { value: 'FOOD', label: 'Food' },
                           { value: 'LIQUOR', label: 'Bar / Drinks' },
@@ -4524,11 +4527,12 @@ export function MenuPage({ onAddDish }) {
                             <div>{opt.label}</div>
                           </button>
                         ))}
-                      </div>}
+                      </div>
+                    )}
                 </div>
 
                 {/* Physical Printer override (optional) */}
-                {activeOutlet === 'restaurant' && (
+                {(
                   <div>
                     <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Physical Printer Override (optional)</label>
                     <select

@@ -79,7 +79,7 @@ export async function reserveKotNumber() {
   return apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 5000 });
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
@@ -88,6 +88,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (platform) { orderData.platform = platform; }
   if (localPrinted) { orderData.localPrinted = true; }
   if (preReservedKotNumber != null) { orderData.preReservedKotNumber = preReservedKotNumber; }
+  if (kotEventIds) { orderData.kotEventIds = kotEventIds; }
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
   if (!isBackendReachable()) {
@@ -160,7 +161,7 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
@@ -169,6 +170,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
   if (localPrinted) { body.localPrinted = true; }
   if (preReservedKotNumber != null) { body.preReservedKotNumber = preReservedKotNumber; }
+  if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
   // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
   if (!isBackendReachable()) {
@@ -489,12 +491,14 @@ export async function deleteTransaction(transactionId, restaurantId) {
   return res.json();
 }
 
-export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null } = {}) {
+export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null, localPrinted = false, billEventId = null } = {}) {
   const printRequestId = requestId || generateRequestId();
   const qs = new URLSearchParams({ restaurantId: restaurantId || '', requestId: printRequestId });
   if (tableNumber) qs.set('tableNumber', tableNumber);
   if (discountPercent) qs.set('discountPercent', String(discountPercent));
   if (kotNumbers) qs.set('kotNumbers', kotNumbers);
+  if (localPrinted) qs.set('localPrinted', 'true');
+  if (billEventId) qs.set('billEventId', billEventId);
 
   if (!isBackendReachable()) {
     await addPendingAction({
@@ -504,7 +508,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       actionType: 'print-bill',
       url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
       method: 'POST',
-      body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId },
+      body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
     });
     // Queue a local print job so the receipt prints immediately via local print agent
     await addOfflinePrintJob({

@@ -1250,7 +1250,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
       setLoading(true);
       setError(null);
       try {
-        const data = await apiFetch(`/api/xreports?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+        const data = await apiFetch(`/api/xreports?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}&outletId=${outletId}`);
         setReports(Array.isArray(data) ? data : []);
       } catch (e) {
         setError(e.message || 'Failed to load X Reports');
@@ -1262,6 +1262,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
   }, [dateFilter, outletId]);
 
   const headers = [
+    ...(outletId === 'all' ? [{ key: 'outletName', label: 'Outlet' }] : []),
     { key: 'reportDate', label: 'Date' },
     { key: 'totalSales', label: 'Total Sales', format: 'money' },
     { key: 'voucherAmount', label: 'Vouchers', format: 'money' },
@@ -1272,6 +1273,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     { key: 'printed', label: 'Printed' },
   ];
   const rows = reports.map((r) => ({
+    ...(outletId === 'all' ? { outletName: r.outletName || 'Unknown' } : {}),
     reportDate: r.reportDate,
     totalSales: Number(r.totalSales),
     voucherAmount: Number(r.voucherAmount),
@@ -1302,7 +1304,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     });
   };
 
-  useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [reports, dateFilter]);
+  useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [reports, dateFilter, outletId]);
 
   if (loading) return <div className="text-center py-8 text-gray-400">Loading X Reports...</div>;
   if (error) return <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>;
@@ -1318,6 +1320,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
+              {outletId === 'all' && <th className="px-4 py-2 text-left font-black uppercase text-xs text-gray-500">Outlet</th>}
               <th className="px-4 py-2 text-left font-black uppercase text-xs text-gray-500">Date</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Total Sales</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Vouchers</th>
@@ -1331,6 +1334,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
           <tbody>
             {reports.map((r) => (
               <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
+                {outletId === 'all' && <td className="px-4 py-2 font-semibold text-gray-900">{r.outletName || 'Unknown'}</td>}
                 <td className="px-4 py-2 font-semibold text-gray-900">{r.reportDate}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.totalSales).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.voucherAmount).toFixed(2)}</td>

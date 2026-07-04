@@ -2582,8 +2582,11 @@ export default function CaptainApp({ onLogout }) {
         console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);
       }
 
-      // 2. If we have a reserved KOT number, generate ESC/POS and fire local print
-      //    in parallel with the cloud API call.
+      // 2. If we have a reserved KOT number, generate ESC/POS and try local print FIRST.
+      //    This ensures localPrinted is known before the API call, so the backend
+      //    gets the correct flag and can skip socket emission when local print succeeded.
+      //    Shared eventIds ensure the Print Agent deduplicates even if the response is lost.
+      let kotEventIds = [];
       if (preReservedKotNumber != null) {
         const kotOrderData = {
           tableNumber: activeTable?.number ?? activeTable?.id,
@@ -2605,16 +2608,26 @@ export default function CaptainApp({ onLogout }) {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
-        // Local print is best-effort. If the captain is on a different network
-        // (e.g. conference hall) and the local printer / Print Agent is unreachable,
-        // the backend cloud print agent will still print the KOT after the API call succeeds.
+        // Generate shared eventIds that are passed to both local print and backend.
+        // If local print succeeds with these eventIds, and the response is lost
+        // (timeout), the backend will emit via socket with the SAME eventIds.
+        // The Print Agent's seenEventIds dedup will catch it — no duplicate print.
+        const foodEventId = `${requestId}-food`;
+        const liquorEventId = `${requestId}-liquor`;
+        kotEventIds = [];
+        if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
+        if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
+
+        // Try local print with a 5s overall timeout (3s per URL in printOffline).
+        // If local print fails (captain on mobile data, Print Agent unreachable),
+        // localPrinted stays false and the backend will emit via socket.
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
             printLocal({
               type: 'KOT',
               escposData: foodEscpos,
-              eventId: `${requestId}-food`,
+              eventId: foodEventId,
               data: kotOrderData,
             }).catch(err => console.warn('[KOT] Local food print failed:', err.message))
           );
@@ -2624,86 +2637,88 @@ export default function CaptainApp({ onLogout }) {
             printLocal({
               type: 'BAR_KOT',
               escposData: liquorEscpos,
-              eventId: `${requestId}-liquor`,
+              eventId: liquorEventId,
               data: kotOrderData,
             }).catch(err => console.warn('[KOT] Local liquor print failed:', err.message))
           );
         }
 
-        // Fire local print and API call in parallel.
-        // Use allSettled so a local print success is not masked by an API failure
-        // — otherwise the printer prints the KOT but the UI shows "not sent".
-        const [localPrintSettled, apiSettled] = await Promise.allSettled([
-          Promise.all(localPrintPromises),
-          (async () => {
-            if (existingOrderId) {
-              const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
-              const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              return await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, false, preReservedKotNumber);
-            } else {
-              try {
-                return await createOrder({
-                  tableId: activeTable?.backendId,
-                  tableNumber: activeTable?.number ?? activeTable?.id,
-                  restaurantId: orderRestaurantId,
-                  items: apiItems,
-                  requestId,
-                  captainName: currentCaptain?.name || undefined,
-                  sectionTag: activeTable?.sectionTag || undefined,
-                  preReservedKotNumber,
-                });
-              } catch (createErr) {
-                if (createErr.statusCode === 409 && createErr.existingOrderId) {
-                  console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
-                  activeOrderIdRef.current = createErr.existingOrderId;
-                  const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
-                  const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, false, preReservedKotNumber);
-                } else {
-                  throw createErr;
-                }
+        // Await local print results before sending the API call.
+        // This ensures we know localPrinted before the API call,
+        // and the backend gets the correct flag to skip/emit socket print.
+        const localPrintResults = await Promise.allSettled(localPrintPromises);
+        localPrinted = localPrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+
+        if (localPrinted) {
+          console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
+        } else {
+          console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
+        }
+
+        // 3. Send API call with correct localPrinted flag and shared kotEventIds.
+        try {
+          if (existingOrderId) {
+            const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+            const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+            savedOrder = response?.order || response;
+            const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
+            realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
+              ? _kotHistory[_kotHistory.length - 1].id
+              : null;
+          } else {
+            try {
+              savedOrder = await createOrder({
+                tableId: activeTable?.backendId,
+                tableNumber: activeTable?.number ?? activeTable?.id,
+                restaurantId: orderRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: currentCaptain?.name || undefined,
+                sectionTag: activeTable?.sectionTag || undefined,
+                preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
+              });
+            } catch (createErr) {
+              if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                activeOrderIdRef.current = createErr.existingOrderId;
+                const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+                const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
+                const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+                savedOrder = response?.order || response;
+                const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
+                realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
+                  ? _kotHistory[_kotHistory.length - 1].id
+                  : null;
+              } else {
+                throw createErr;
               }
             }
-          })(),
-        ]);
-
-        // Check if local print succeeded
-        const localPrintResults = localPrintSettled.status === 'fulfilled' ? localPrintSettled.value : [];
-        localPrinted = localPrintResults.some(r => r?.printed);
-
-        // If the API call failed but local print succeeded, warn the user
-        // that the KOT was printed but server sync failed — don't show "not sent".
-        if (apiSettled.status === 'rejected' && localPrinted) {
-          console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
-          addNotification(
-            `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
-            'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
-            'warning'
-          );
-          // Restore session items for retry
-          setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
-          setKotError({
-            message: 'KOT printed but server sync failed — tap Retry to confirm.',
-            retryItems: retrySnapshot,
-          });
-          return;
+          }
+        } catch (apiErr) {
+          // API call failed. If local print succeeded, warn user about sync pending.
+          if (localPrinted) {
+            console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
+            addNotification(
+              `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
+              'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
+              'warning'
+            );
+            setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
+            setKotError({
+              message: 'KOT printed but server sync failed — tap Retry to confirm.',
+              retryItems: retrySnapshot,
+            });
+            return;
+          }
+          // Both API and local print failed — throw to hit the catch block
+          throw apiErr;
         }
 
-        // If both API and local print failed, throw the API error to hit the catch block
-        if (apiSettled.status === 'rejected') {
-          throw apiSettled.reason;
-        }
-
-        const apiResult = apiSettled.value;
-        if (existingOrderId) {
-          savedOrder = apiResult?.order || apiResult;
-          const _kotHistory = apiResult?.order?.kotHistory || apiResult?.kotHistory;
-          realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
-            ? _kotHistory[_kotHistory.length - 1].id
-            : null;
-        } else {
-          savedOrder = apiResult;
-          if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
+        if (savedOrder?.id) activeOrderIdRef.current = savedOrder.id;
+        if (!existingOrderId) {
           const _savedKotHistory = savedOrder?.kotHistory;
           realKotId = Array.isArray(_savedKotHistory) && _savedKotHistory.length > 0
             ? _savedKotHistory[_savedKotHistory.length - 1].id
@@ -3487,7 +3502,7 @@ export default function CaptainApp({ onLogout }) {
 
       {/* GLOBAL HEADER */}
 
-      <header className={`h-14 bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50 transition-all duration-300 ${isHeaderVisible ? 'opacity-100 h-14' : 'opacity-0 h-0 overflow-hidden'}`}>
+      <header className={`bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50 transition-all duration-300 ${isHeaderVisible ? 'opacity-100 h-14' : 'opacity-0 h-0 overflow-hidden'}`}>
 
         <div className="flex items-center gap-4">
 
@@ -3515,8 +3530,6 @@ export default function CaptainApp({ onLogout }) {
 
         </div>
 
-
-
         <div className="flex items-center gap-3 sm:gap-6 shrink-0">
 
           <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-20'}`}>
@@ -3527,21 +3540,27 @@ export default function CaptainApp({ onLogout }) {
 
           </div>
 
-          <button onClick={() => {
-
-            localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
-
-            localStorage.removeItem(getTenantScopedKey('active_captain'));
-
-            setIsLoginView(true);
-
-            if (onLogout) onLogout();
-
-          }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors text-xs font-bold"><LogOut size={16} /> Logout</button>
-
         </div>
 
       </header>
+
+      {/* PERSISTENT LOGOUT BUTTON — always visible regardless of header scroll state */}
+
+      <button onClick={() => {
+
+        localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
+
+        localStorage.removeItem(getTenantScopedKey('active_captain'));
+
+        setIsLoginView(true);
+
+        if (onLogout) onLogout();
+
+      }} className="fixed top-2 right-2 z-[60] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-red-600 bg-white/90 backdrop-blur-sm shadow-md border border-gray-100 hover:bg-red-50 transition-colors text-xs font-bold">
+
+        <LogOut size={16} /> Logout
+
+      </button>
 
 
 

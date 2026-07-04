@@ -130,8 +130,12 @@ function normalizeKots(kots) {
 }
 
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
-  const dbStatus = row.status;
-  const persistedStatus = row.workflowStatus || toFrontendStatus(dbStatus);
+  const incomingTableUpdated = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+  const existingTableUpdated = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+  const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
+
+  const dbStatus = isStale && existing ? existing.dbStatus : row.status;
+  const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
 
   const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
   // Defensive: an order can only belong to this table if its tableId matches the row id.
@@ -219,6 +223,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     kotHistory: mergedKotHistory,
     currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
     activeOrder: isFreeWorkflow ? null : activeOrder,
+    updatedAt: isStale && existing ? existing.updatedAt : (row.updatedAt || existing?.updatedAt || null),
   };
 
   return base;
@@ -485,6 +490,19 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             // legitimate settlement confirmation and must be accepted.
             if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
               console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+              return t;
+            }
+            const incomingTableUpdated = updatedTable.updatedAt ? new Date(updatedTable.updatedAt).getTime() : 0;
+            const existingTableUpdated = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
+            if (incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated) {
+              console.warn('[TableSync] Skipping stale table:updated event for', t.number, { incoming: incomingTableUpdated, existing: existingTableUpdated });
+              return t;
+            }
+            // Safety: skip ghost occupied events (claims occupied but has no active session data)
+            const hasNoSession = (!updatedTable.orders || updatedTable.orders.length === 0) && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
+            const claimsOccupied = updatedTable.status === 'OCCUPIED' && updatedTable.workflowStatus !== 'Free';
+            if (claimsOccupied && hasNoSession && t.status === 'Free') {
+              console.warn('[TableSync] Skipping ghost OCCUPIED event for free table', t.number);
               return t;
             }
             const before = t;

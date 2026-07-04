@@ -491,8 +491,8 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
           <div className="flex items-center gap-3">
-            {/* Outlet Switcher Dropdown */}
-            {accessibleOutlets.length > 1 && (
+            {/* Outlet Switcher Dropdown — hidden on Reports page which has its own outlet filter */}
+            {accessibleOutlets.length > 1 && page !== 'reports' && (
               <div className="relative">
                 <button
                   onClick={() => setShowOutletSwitcher(!showOutletSwitcher)}
@@ -563,6 +563,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
                 return (
                   <Route key={r.key} path={r.key} element={
                     <AdminRouteGuard
+                      key={restaurant?.id || 'no-outlet'}
                       allowedRoles={r.roles}
                       role={role}
                       routeKey={r.key}

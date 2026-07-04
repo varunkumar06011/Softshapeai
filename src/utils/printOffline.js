@@ -27,7 +27,8 @@
 //   4. iOS PWA: generate shareable PDF receipt
 //   5. No printer: queue in offlinePrintJobs IndexedDB store for auto-print on reconnect
 
-import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, getPrintAgentUrl } from './offlineDB';
+import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
+import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
@@ -155,6 +156,118 @@ function buildKotText({ tableNumber, items, kotNumber, restaurantName, captainNa
   return lines.join('\n');
 }
 
+// ── Multi-URL Print Agent discovery ──────────────────────────────────────────
+
+let _cachedAgentUrls = null;
+let _lastDiscoveryTime = 0;
+const DISCOVERY_CACHE_MS = 30_000;
+
+/**
+ * Build a list of candidate Print Agent URLs to try, in priority order:
+ *   1. User-configured URL from IndexedDB (manual setting)
+ *   2. Backend-reported LAN IP (fetched from /api/print/agent-endpoint)
+ *   3. localStorage cache of last-known working URL
+ *   4. localhost fallback (same-machine only)
+ */
+async function discoverPrintAgentUrls() {
+  if (_cachedAgentUrls && Date.now() - _lastDiscoveryTime < DISCOVERY_CACHE_MS) {
+    return _cachedAgentUrls;
+  }
+
+  const urls = [];
+  const seen = new Set();
+
+  function add(url) {
+    if (!url) return;
+    const normalized = url.replace(/\/+$/, '');
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      urls.push(normalized);
+    }
+  }
+
+  // 1. User-configured URL
+  const configuredUrl = await getPrintAgentUrl();
+  if (configuredUrl && configuredUrl !== 'http://localhost:3100') {
+    add(configuredUrl);
+  }
+
+  // 2. Backend-reported URL (from Print Agent registration/heartbeat)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
+      method: 'GET',
+      headers: getAuthHeaders(),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.httpUrl) add(data.httpUrl);
+      if (data.lanIp) add(`http://${data.lanIp}:3100`);
+    }
+  } catch {
+    // Backend unreachable — skip
+  }
+
+  // 3. localStorage cache of last-known working URL
+  try {
+    const cached = localStorage.getItem('last_working_print_agent_url');
+    if (cached) add(cached);
+  } catch { /* ignore */ }
+
+  // 4. localhost fallback (works when running on the same machine as Print Agent)
+  add('http://localhost:3100');
+
+  _cachedAgentUrls = urls;
+  _lastDiscoveryTime = Date.now();
+  return urls;
+}
+
+/**
+ * Try each candidate Print Agent URL until one succeeds.
+ * Returns the working URL or null if all fail.
+ */
+async function tryPrintAgentUrls(body, jobType) {
+  const urls = await discoverPrintAgentUrls();
+
+  for (const url of urls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+
+      const res = await fetch(`${url}/print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${url}`);
+        // Cache the working URL for future use
+        try {
+          localStorage.setItem('last_working_print_agent_url', url);
+          if (url !== 'http://localhost:3100') {
+            await setPrintAgentUrl(url);
+          }
+        } catch { /* ignore */ }
+        return url;
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.log(`[printOffline] Print Agent not reachable at ${url}:`, err.message);
+      } else {
+        console.log(`[printOffline] Print Agent timeout at ${url}`);
+      }
+    }
+  }
+
+  return null;
+}
+
 // ── Print dispatch ───────────────────────────────────────────────────────────
 
 /**
@@ -174,7 +287,6 @@ export async function printLocal(job) {
   const mapping = await getPrinterMapping();
   const jobType = job.type || job.jobType;
   const printerName = job.printerName || resolvePrinter(jobType, mapping);
-  const printAgentUrl = await getPrintAgentUrl();
 
   // Generate text content if not provided (legacy fallback)
   const text = job.text || (jobType === 'FINAL_BILL' || jobType === 'BILL'
@@ -184,46 +296,28 @@ export async function printLocal(job) {
     : JSON.stringify(job.data || {}));
   const bytes = Array.from(textToEscpos(text));
 
-  // ── Primary: local Print Agent HTTP endpoint ──
-  // Try the Print Agent first regardless of platform. This lets a single local
-  // Print Agent handle all printer dispatch, even if the backend is offline.
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+  // ── Primary: local Print Agent HTTP endpoint (multi-URL discovery) ──
+  // Try multiple candidate URLs (configured, backend-reported, cached, localhost)
+  // to support captain on WiFi/LAN (direct HTTP) and mobile data (socket fallback).
+  const body = job.escposData
+    ? {
+        type: jobType,
+        printerName: printerName || undefined,
+        escposData: job.escposData,
+        eventId: job.eventId || undefined,
+        data: job.data || {},
+      }
+    : {
+        jobType,
+        printerName: printerName || undefined,
+        text,
+        bytes,
+        data: job.data || {},
+      };
 
-    // Use new contract when escposData is available, legacy contract otherwise
-    const body = job.escposData
-      ? {
-          type: jobType,
-          printerName: printerName || undefined,
-          escposData: job.escposData,
-          eventId: job.eventId || undefined,
-          data: job.data || {},
-        }
-      : {
-          jobType,
-          printerName: printerName || undefined,
-          text,
-          bytes,
-          data: job.data || {},
-        };
-
-    const res = await fetch(`${printAgentUrl}/print`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${printAgentUrl}`);
-      return { printed: true, queued: false };
-    }
-  } catch (err) {
-    // Print Agent not reachable — fall through to platform-specific paths
-    if (err.name !== 'AbortError') {
-      console.log(`[printOffline] Print Agent not reachable at ${printAgentUrl}, falling back:`, err.message);
-    }
+  const workingUrl = await tryPrintAgentUrls(body, jobType);
+  if (workingUrl) {
+    return { printed: true, queued: false };
   }
 
   // ── Tauri desktop: raw print via Rust command ──
@@ -409,4 +503,4 @@ async function shareAsPDF(job, text) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter };
+export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter, discoverPrintAgentUrls };

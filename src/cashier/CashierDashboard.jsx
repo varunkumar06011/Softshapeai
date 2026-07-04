@@ -2336,7 +2336,50 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 2: Snapshot billable items before print-bill so we can detect item loss
       billItemsSnapshotRef.current = getBillableItems(selectedTable);
 
-      // Call backend print-bill endpoint - emits FINAL_BILL socket event to PrintStation
+      // Step 3: Try local print FIRST (with timeout), then call backend with correct localPrinted flag.
+      // Shared billEventId ensures Print Agent deduplicates even if response is lost.
+      const billRequestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36));
+      const billEventId = `${billRequestId}-bill`;
+      let localPrinted = false;
+
+      try {
+        const { printLocal } = await import('../utils/printOffline');
+        const billItems = getBillableItems(selectedTable);
+        const billCalc = calculateOrderTotal(billItems, discountPercent);
+        const result = await printLocal({
+          jobType: 'FINAL_BILL',
+          eventId: billEventId,
+          data: {
+            tableNumber: selectedTable.number,
+            items: billItems,
+            subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+            cgst: billCalc.cgst,
+            sgst: billCalc.sgst,
+            grandTotal: billCalc.grandTotal,
+            billNumber: 'PENDING',
+            restaurant: {
+              name: restaurant?.name || undefined,
+              receiptHeader: restaurant?.receiptHeader || undefined,
+              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+              address: restaurant?.address || undefined,
+              phone: restaurant?.phone || undefined,
+            },
+          },
+        });
+        localPrinted = result?.printed || false;
+        if (localPrinted) {
+          console.log('[handleFinalBill] Local print succeeded — backend will skip socket emission');
+        } else {
+          console.log('[handleFinalBill] Local print failed — backend will emit via socket');
+        }
+      } catch (printErr) {
+        console.warn('[handleFinalBill] Local print failed:', printErr.message);
+      }
+
+      // Call backend print-bill endpoint with localPrinted flag and shared billEventId
       const orderId = selectedTable?.activeOrder?.id;
       if (orderId) {
         const printBillRestaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
@@ -2348,42 +2391,45 @@ const CashierDashboard = ({ onLogout }) => {
           .filter(Boolean)
           .join(',');
         const response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
         if (response?.offline) {
           addNotification('Offline', `Bill queued — will sync when online. Ref: ${response.billNumber}`, 'warning');
-          // Attempt local printing immediately via printOffline
-          try {
-            const { printLocal } = await import('../utils/printOffline');
-            const billItems = getBillableItems(selectedTable);
-            const billCalc = calculateOrderTotal(billItems, discountPercent);
-            const result = await printLocal({
-              jobType: 'FINAL_BILL',
-              data: {
-                tableNumber: selectedTable.number,
-                items: billItems,
-                subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-                discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
-                cgst: billCalc.cgst,
-                sgst: billCalc.sgst,
-                grandTotal: billCalc.grandTotal,
-                billNumber: response.billNumber,
-                restaurant: {
-                  name: restaurant?.name || undefined,
-                  receiptHeader: restaurant?.receiptHeader || undefined,
-                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-                  address: restaurant?.address || undefined,
-                  phone: restaurant?.phone || undefined,
+          // If local print didn't succeed above, try again with the offline bill number
+          if (!localPrinted) {
+            try {
+              const { printLocal } = await import('../utils/printOffline');
+              const billItems = getBillableItems(selectedTable);
+              const billCalc = calculateOrderTotal(billItems, discountPercent);
+              const result = await printLocal({
+                jobType: 'FINAL_BILL',
+                eventId: billEventId,
+                data: {
+                  tableNumber: selectedTable.number,
+                  items: billItems,
+                  subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+                  discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+                  cgst: billCalc.cgst,
+                  sgst: billCalc.sgst,
+                  grandTotal: billCalc.grandTotal,
+                  billNumber: response.billNumber,
+                  restaurant: {
+                    name: restaurant?.name || undefined,
+                    receiptHeader: restaurant?.receiptHeader || undefined,
+                    receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                    address: restaurant?.address || undefined,
+                    phone: restaurant?.phone || undefined,
+                  },
                 },
-              },
-            });
-            if (result.printed) {
-              addNotification('Local Print', 'Bill printed to local printer.', 'success');
-            } else if (result.queued) {
-              addNotification('Print Queued', `No printer available — will print on reconnect.`, 'warning');
+              });
+              if (result.printed) {
+                addNotification('Local Print', 'Bill printed to local printer.', 'success');
+              } else if (result.queued) {
+                addNotification('Print Queued', `No printer available — will print on reconnect.`, 'warning');
+              }
+            } catch (printErr) {
+              console.warn('[handleFinalBill] Local print failed:', printErr.message);
             }
-          } catch (printErr) {
-            console.warn('[handleFinalBill] Local print failed:', printErr.message);
           }
         } else {
           const returnedItems = response?.order?.items || response?.items || [];
@@ -3808,8 +3854,11 @@ const CashierDashboard = ({ onLogout }) => {
         console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);
       }
 
-      // 2. If we have a reserved KOT number, generate ESC/POS and fire local print
-      //    in parallel with the cloud API call.
+      // 2. If we have a reserved KOT number, generate ESC/POS and try local print FIRST.
+      //    This ensures localPrinted is known before the API call, so the backend
+      //    gets the correct flag and can skip socket emission when local print succeeded.
+      //    Shared eventIds ensure the Print Agent deduplicates even if the response is lost.
+      let kotEventIds = [];
       if (preReservedKotNumber != null && (selectedTable?.backendId || selectedTable?.isExtra)) {
         const kotOrderData = {
           tableNumber: selectedTable?.number ?? selectedTable?.id,
@@ -3831,13 +3880,20 @@ const CashierDashboard = ({ onLogout }) => {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
+        // Generate shared eventIds for dedup between local print and socket emission
+        const foodEventId = `${requestId}-food`;
+        const liquorEventId = `${requestId}-liquor`;
+        kotEventIds = [];
+        if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
+        if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
+
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
             printLocal({
               type: 'KOT',
               escposData: foodEscpos,
-              eventId: `${requestId}-food`,
+              eventId: foodEventId,
               data: kotOrderData,
             }).catch(err => console.warn('[KOT] Local food print failed:', err.message))
           );
@@ -3847,87 +3903,87 @@ const CashierDashboard = ({ onLogout }) => {
             printLocal({
               type: 'BAR_KOT',
               escposData: liquorEscpos,
-              eventId: `${requestId}-liquor`,
+              eventId: liquorEventId,
               data: kotOrderData,
             }).catch(err => console.warn('[KOT] Local liquor print failed:', err.message))
           );
         }
 
-        // Fire local print and API call in parallel.
-        // Use allSettled so a local print success is not masked by an API failure
-        // — otherwise the printer prints the KOT but the UI shows "not sent".
-        const [localPrintSettled, apiSettled] = await Promise.allSettled([
-          Promise.all(localPrintPromises),
-          (async () => {
-            if (selectedTable.isExtra) {
-              const orderId = selectedTable.activeOrder?.id;
-              if (orderId) {
-                return await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, preReservedKotNumber);
-              } else {
-                return await createOrder({
-                  tableId: selectedTable.backendId,
-                  tableNumber: selectedTable.number,
-                  restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-                  items: apiItems,
-                  requestId,
-                  captainName: undefined,
-                  isExtraTable: true,
-                  sectionTag: selectedTable.sectionTag || undefined,
-                  platform: selectedOrderPlatform,
-                  timeoutMs: 45000,
-                  preReservedKotNumber,
-                });
-              }
-            } else if (selectedTable.activeOrder?.id) {
-              return await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, false, preReservedKotNumber);
+        // Await local print results BEFORE sending the API call.
+        // This ensures the backend gets the correct localPrinted flag.
+        const localPrintResults = await Promise.allSettled(localPrintPromises);
+        localPrinted = localPrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+
+        if (localPrinted) {
+          console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
+        } else {
+          console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
+        }
+
+        // 3. Send API call with correct localPrinted flag and shared kotEventIds.
+        try {
+          if (selectedTable.isExtra) {
+            const orderId = selectedTable.activeOrder?.id;
+            if (orderId) {
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds);
             } else {
-              try {
-                return await createOrder({
-                  tableId: selectedTable.backendId,
-                  tableNumber: selectedTable.number || selectedTable.id,
-                  restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
-                  items: apiItems,
-                  requestId,
-                  captainName: undefined,
-                  sectionTag: selectedTable.sectionTag || undefined,
-                  platform: selectedOrderPlatform,
-                  timeoutMs: 45000,
-                  preReservedKotNumber,
-                });
-              } catch (createErr) {
-                if (createErr.statusCode === 409 && createErr.existingOrderId) {
-                  console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
-                  setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
-                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, false, preReservedKotNumber);
-                } else {
-                  throw createErr;
-                }
+              orderResponse = await createOrder({
+                tableId: selectedTable.backendId,
+                tableNumber: selectedTable.number,
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: undefined,
+                isExtraTable: true,
+                sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
+                timeoutMs: 45000,
+                preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
+              });
+            }
+          } else if (selectedTable.activeOrder?.id) {
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+          } else {
+            try {
+              orderResponse = await createOrder({
+                tableId: selectedTable.backendId,
+                tableNumber: selectedTable.number || selectedTable.id,
+                restaurantId: selectedTable.section?.restaurantId || activeRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: undefined,
+                sectionTag: selectedTable.sectionTag || undefined,
+                platform: selectedOrderPlatform,
+                timeoutMs: 45000,
+                preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
+              });
+            } catch (createErr) {
+              if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+              } else {
+                throw createErr;
               }
             }
-          })(),
-        ]);
-
-        const localPrintResults = localPrintSettled.status === 'fulfilled' ? localPrintSettled.value : [];
-        localPrinted = localPrintResults.some(r => r?.printed);
-
-        // If the API call failed but local print succeeded, warn the user
-        // that the KOT was printed but server sync failed — don't show "not sent".
-        if (apiSettled.status === 'rejected' && localPrinted) {
-          console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
-          addNotification(
-            `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
-            'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
-            'warning'
-          );
-          return;
+          }
+        } catch (apiErr) {
+          // API call failed. If local print succeeded, warn user about sync pending.
+          if (localPrinted) {
+            console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
+            addNotification(
+              `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
+              'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
+              'warning'
+            );
+            return;
+          }
+          throw apiErr;
         }
-
-        // If both API and local print failed, throw the API error to hit the catch block
-        if (apiSettled.status === 'rejected') {
-          throw apiSettled.reason;
-        }
-
-        orderResponse = apiSettled.value;
 
       } else {
         // Fallback: cloud-only flow (reserve failed or no table)
@@ -6522,21 +6578,6 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
             </div>
             <div className="p-6">
-              <p className="text-xs font-black uppercase text-gray-400 tracking-wider mb-2">Payment Method</p>
-              <div className="flex gap-2 mb-5">
-                {['CASH', 'UPI', 'CARD'].map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setSelectedPaymentMethod(m)}
-                    className={`flex-1 py-2.5 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${selectedPaymentMethod === m
-                      ? 'border-[#E53935] bg-red-50 text-[#E53935]'
-                      : 'border-gray-150 bg-gray-50 text-gray-500 hover:border-gray-300'
-                      }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
               <button
                 onClick={() => !isPrintingBill && handlePayment(selectedPaymentMethod)}
                 disabled={isPrintingBill}
@@ -6545,7 +6586,7 @@ const CashierDashboard = ({ onLogout }) => {
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
-                {isPrintingBill ? 'Processing...' : `Confirm ${selectedPaymentMethod} Settlement`}
+                {isPrintingBill ? 'Processing...' : 'Confirm Settlement'}
               </button>
             </div>
           </div>
