@@ -1269,6 +1269,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     { key: 'voucherAmount', label: 'Vouchers', format: 'money' },
     { key: 'cardAmount', label: 'Card', format: 'money' },
     { key: 'cashAmount', label: 'Cash', format: 'money' },
+    { key: 'cashFromNotes', label: 'Cash from Notes', format: 'money' },
     { key: 'totalAmount', label: 'Total', format: 'money' },
     { key: 'printed', label: 'Printed' },
   ];
@@ -1278,6 +1279,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     voucherAmount: Number(r.voucherAmount),
     cardAmount: Number(r.cardAmount),
     cashAmount: Number(r.cashAmount),
+    cashFromNotes: Number(r.cashFromNotes),
     totalAmount: Number(r.totalAmount),
     printed: r.printed ? 'Yes' : 'No',
   }));
@@ -1323,6 +1325,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Vouchers</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Card</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Cash</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Cash from Notes</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Total</th>
               <th className="px-4 py-2 text-center font-black uppercase text-xs text-gray-500">Printed</th>
             </tr>
@@ -1335,6 +1338,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.voucherAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cardAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashAmount).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashFromNotes).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums font-black">₹{Number(r.totalAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-center">
                   {r.printed ? (

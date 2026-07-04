@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Printer, Save, Calendar, TrendingUp, CreditCard, Banknote } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import { printLocal } from '../utils/printOffline';
+import { useAuth } from '../context/AuthContext';
 
 const DENOMINATIONS = [
   { key: 'notes500', value: 500, label: '₹500' },
@@ -23,6 +25,7 @@ function round2(n) {
 }
 
 export default function XReportSection() {
+  const { user, restaurant } = useAuth();
   const [reportDate, setReportDate] = useState(getTodayDate());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -112,66 +115,61 @@ export default function XReportSection() {
     }
   };
 
+  const buildXReportText = () => {
+    const W = 32;
+    const center = (s) => ' '.repeat(Math.max(0, Math.floor((W - s.length) / 2))) + s;
+    const line = '─'.repeat(W);
+    const dashed = '─ '.repeat(16).slice(0, W);
+    const row = (label, value) => `${label}${String(value).padStart(W - label.length)}`;
+    const count = (label, qty, amount) => `  ${label} × ${qty}${String('₹' + amount.toFixed(0)).padStart(W - label.length - qty.length - 5)}`;
+
+    const restaurantName = restaurant?.name || '';
+    const cashierName = user?.name || '';
+    const lines = [];
+    lines.push(line);
+    lines.push(center('X REPORT'));
+    if (restaurantName) lines.push(center(restaurantName));
+    lines.push(center(`Date: ${reportDate}`));
+    if (cashierName) lines.push(center(`Cashier: ${cashierName}`));
+    lines.push(line);
+    lines.push(row('Final Amount', '₹' + finalAmount.toFixed(2)));
+    lines.push(center('(Total Sales + Vouchers)'));
+    lines.push(dashed);
+    lines.push(row('Voucher', '₹' + round2(Number(report.voucherAmount || 0)).toFixed(2)));
+    lines.push(row('Card', '₹' + round2(Number(report.cardAmount || 0)).toFixed(2)));
+    lines.push(row('Cash', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
+    lines.push(dashed);
+    lines.push('Denomination breakdown:');
+    DENOMINATIONS.forEach(d => {
+      const qty = report[d.key] || 0;
+      if (qty > 0) {
+        lines.push(count(d.label, qty, qty * d.value));
+      }
+    });
+    lines.push(line);
+    lines.push(row('Cash from Notes', '₹' + round2(cashFromNotes).toFixed(2)));
+    lines.push(line);
+    lines.push(center('*** End of X Report ***'));
+    lines.push('\n\n\n');
+    return lines.join('\n');
+  };
+
   const handlePrint = async () => {
     const ok = await handleSave();
     if (!ok) return;
     try {
-      const printContent = generatePrintHTML();
-      const printWin = window.open('', '_blank', 'width=400,height=600');
-      if (!printWin) {
-        setError('Popup blocked. Please allow popups to print.');
+      const result = await printLocal({
+        type: 'FINAL_BILL',
+        text: buildXReportText(),
+      });
+      if (!result.printed) {
+        setError(result.error || 'Print failed or queued. Check printer connection.');
         return;
       }
-      printWin.document.write(printContent);
-      printWin.document.close();
-      printWin.focus();
-      printWin.print();
       await apiFetch(`/api/xreports/${reportDate}/print`, { method: 'POST' });
     } catch (err) {
       setError('Print failed: ' + err.message);
     }
-  };
-
-  const generatePrintHTML = () => {
-    return `
-      <html>
-      <head>
-        <title>X Report - ${reportDate}</title>
-        <style>
-          * { font-family: 'Courier New', monospace; margin: 0; padding: 0; box-sizing: border-box; }
-          body { width: 280px; padding: 8px; }
-          h1 { font-size: 14px; text-align: center; margin-bottom: 4px; }
-          .date { text-align: center; font-size: 11px; margin-bottom: 8px; }
-          .section { border-top: 1px dashed #000; padding-top: 6px; margin-top: 6px; }
-          .row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
-          .total { font-weight: bold; font-size: 13px; border-top: 2px solid #000; padding-top: 4px; margin-top: 4px; }
-          .denom { font-size: 10px; }
-          .footer { text-align: center; font-size: 9px; margin-top: 8px; border-top: 1px dashed #000; padding-top: 4px; }
-        </style>
-      </head>
-      <body>
-        <h1>X REPORT</h1>
-        <div class="date">Date: ${reportDate}</div>
-        <div class="section">
-          <div class="row"><span>Final Amount</span><span>₹${finalAmount.toFixed(2)}</span></div>
-          <div class="row"><span>Card Amount</span><span>₹${round2(Number(report.cardAmount || 0)).toFixed(2)}</span></div>
-          <div class="row"><span>Cash Amount</span><span>₹${round2(Number(report.cashAmount || 0)).toFixed(2)}</span></div>
-          <div class="row"><span>Cash from Notes</span><span>₹${round2(cashFromNotes).toFixed(2)}</span></div>
-          <div class="row"><span>Voucher Amount</span><span>₹${round2(Number(report.voucherAmount || 0)).toFixed(2)}</span></div>
-        </div>
-        <div class="section denom">
-          <div class="row"><span>₹500 x ${report.notes500 || 0}</span><span>₹${(report.notes500 || 0) * 500}</span></div>
-          <div class="row"><span>₹200 x ${report.notes200 || 0}</span><span>₹${(report.notes200 || 0) * 200}</span></div>
-          <div class="row"><span>₹100 x ${report.notes100 || 0}</span><span>₹${(report.notes100 || 0) * 100}</span></div>
-          <div class="row"><span>₹50 x ${report.notes50 || 0}</span><span>₹${(report.notes50 || 0) * 50}</span></div>
-          <div class="row"><span>₹20 x ${report.notes20 || 0}</span><span>₹${(report.notes20 || 0) * 20}</span></div>
-          <div class="row"><span>₹10 x ${report.notes10 || 0}</span><span>₹${(report.notes10 || 0) * 10}</span></div>
-          <div class="row total"><span>Cash from Notes</span><span>₹${round2(cashFromNotes).toFixed(2)}</span></div>
-        </div>
-        <div class="footer">*** End of X Report ***</div>
-      </body>
-      </html>
-    `;
   };
 
   const inputClass = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums";
