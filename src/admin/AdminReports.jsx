@@ -24,7 +24,7 @@ import {
 } from 'recharts';
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
-  RefreshCw, Search, Smartphone, ArrowLeftRight, TrendingUp, DollarSign, Package, Star, AlertTriangle,
+  RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, Star, AlertTriangle,
   ArrowUpDown,
 } from 'lucide-react';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
@@ -868,14 +868,16 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
   const doPDF = () => {
     if (!data) return;
     const headers = [
-      { key: 'date', label: 'Date' }, { key: 'CASH', label: 'Cash', format: 'money' },
-      { key: 'UPI', label: 'UPI', format: 'money' }, { key: 'CARD', label: 'Card', format: 'money' },
-      { key: 'SPLIT', label: 'Split', format: 'money' },
+      { key: 'date', label: 'Date' },
+      { key: 'CASH', label: 'Cash', format: 'money' },
+      { key: 'CARD', label: 'Card', format: 'money' },
       { key: 'total', label: 'Total', format: 'money' },
     ];
     const rows = (data.byDay || []).map((d) => ({
-      date: d.date, CASH: d.CASH || 0, UPI: d.UPI || 0, CARD: d.CARD || 0, SPLIT: d.SPLIT || 0,
-      total: (d.CASH || 0) + (d.UPI || 0) + (d.CARD || 0) + (d.SPLIT || 0),
+      date: d.date,
+      CASH: d.CASH || 0,
+      CARD: d.CARD || 0,
+      total: (d.CASH || 0) + (d.CARD || 0),
     }));
     downloadPDF({ title: 'Payment Method Breakdown', dateRange: dateRangeText, headers, rows, filename: 'Payment-Methods' });
   };
@@ -883,13 +885,15 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
     if (!data) return;
     downloadExcel({ title: 'Payment Method Breakdown', dateRange: dateRangeText, filename: 'Payment-Methods',
       sheets: [{ name: 'Daily', headers: [
-        { key: 'date', label: 'Date' }, { key: 'CASH', label: 'Cash', format: 'money' },
-        { key: 'UPI', label: 'UPI', format: 'money' }, { key: 'CARD', label: 'Card', format: 'money' },
-        { key: 'SPLIT', label: 'Split', format: 'money' },
+        { key: 'date', label: 'Date' },
+        { key: 'CASH', label: 'Cash', format: 'money' },
+        { key: 'CARD', label: 'Card', format: 'money' },
         { key: 'total', label: 'Total', format: 'money' },
       ], rows: (data.byDay || []).map((d) => ({
-        date: d.date, CASH: d.CASH || 0, UPI: d.UPI || 0, CARD: d.CARD || 0, SPLIT: d.SPLIT || 0,
-        total: (d.CASH || 0) + (d.UPI || 0) + (d.CARD || 0) + (d.SPLIT || 0),
+        date: d.date,
+        CASH: d.CASH || 0,
+        CARD: d.CARD || 0,
+        total: (d.CASH || 0) + (d.CARD || 0),
       })) }],
     });
   };
@@ -899,7 +903,7 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
   if (error) return <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalTransactions === 0) return <EmptyCard />;
 
-  const methodIcons = { CASH: Banknote, UPI: Smartphone, CARD: CreditCard, SPLIT: ArrowLeftRight };
+  const methodIcons = { CASH: Banknote, CARD: CreditCard };
   const methodMeta = data.methods || [];
   const byDay = data.byDay || [];
   const daysCount = byDay.length;
@@ -942,9 +946,7 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
                 <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), '']} />
                 <Bar dataKey="CASH" stackId="a" fill="#B71C1C" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
-                <Bar dataKey="UPI" stackId="a" fill="#E53935" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
-                <Bar dataKey="CARD" stackId="a" fill="#EF9A9A" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
-                <Bar dataKey="SPLIT" stackId="a" fill="#FFCDD2" radius={[4,4,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="CARD" stackId="a" fill="#EF9A9A" radius={[4,4,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -958,22 +960,18 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
               <tr>
                 <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Date</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Cash</th>
-                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">UPI</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Card</th>
-                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Split</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Total</th>
               </tr>
             </thead>
             <tbody>
               {byDay.map((d) => {
-                const total = (d.CASH || 0) + (d.UPI || 0) + (d.CARD || 0) + (d.SPLIT || 0);
+                const total = (d.CASH || 0) + (d.CARD || 0);
                 return (
                   <tr key={d.date} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
                     <td className="px-3 py-3 font-bold text-gray-900">{d.date}</td>
                     <td className="px-3 py-3 text-right text-gray-700"><Money value={d.CASH} /></td>
-                    <td className="px-3 py-3 text-right text-gray-700"><Money value={d.UPI} /></td>
                     <td className="px-3 py-3 text-right text-gray-700"><Money value={d.CARD} /></td>
-                    <td className="px-3 py-3 text-right text-gray-700"><Money value={d.SPLIT} /></td>
                     <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={total} /></td>
                   </tr>
                 );
