@@ -1359,7 +1359,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
 export default function AdminReports() {
   const [activeReport, setActiveReport] = useState(DEFAULT_REPORT);
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState({ type: 'today', startDate: getKolkataDateString(), endDate: getKolkataDateString() });
+  const [dateFilter, setDateFilter] = useState({ type: 'this-week', ...getDateRange('this-week') });
   const [exportOpen, setExportOpen] = useState(false);
   const [outletId, setOutletId] = useState('all');
   const [outlets, setOutlets] = useState([]);
