@@ -107,7 +107,7 @@ export function preloadAdminSections() {
 // To add a section: add one entry here. Both sidebar and routes update automatically.
 
 export const adminRoutes = [
-  { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner'], element: <Dashboard />,                    props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading }) },
+  { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner'], element: <Dashboard />,                    props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope }) },
   { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner'], element: <TablesSection />,                props: (ctx) => ({ activeOutlet: ctx.activeOutlet }) },
   { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner'], element: <MenuSection />,                  props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
   { key: 'specials',          label: 'Today Specials',         icon: Star,                roles: ['admin','owner'], element: <TodaySpecials /> },

@@ -106,7 +106,7 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
 
 /**
  * Returns ALL items for a table (including cancelled/removed).
- * Priority: DB Order items (table.orders[0].items) → kotHistory flattened.
+ * Priority: DB Order items (table.orders[0].items) → kots relation flattened.
  * DB Order items are normalized to the { n, p, q } shape used by billing/print utilities.
  */
 export const getAllOrderItems = (table) => {
@@ -115,17 +115,20 @@ export const getAllOrderItems = (table) => {
   // 1. Prefer DB-backed Order items (set by useTableSync when orders relation is included)
   const activeOrder = table.activeOrder || (table.orders && table.orders[0]);
 
-  // Flatten kotHistory items (all KOTs captain has sent — always complete)
-  const kotItems = (table.kotHistory && table.kotHistory.length > 0)
-    ? table.kotHistory.flatMap(kot => (kot.items || []).map(i => ({
+  // Flatten kots relation items (relational Kot/KotItem tables — always complete)
+  // Fall back to legacy kotHistory JSON blob for backward compat
+  const kotSource = Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []);
+  const kotItems = kotSource.length > 0
+    ? kotSource.flatMap(kot => (kot.items || []).map(i => ({
         id: i.id ?? null,
         n: i.n ?? i.name ?? '',
         p: Number(i.p ?? i.price ?? 0),
         q: Number(i.q ?? i.quantity ?? 1),
         quantity: Number(i.q ?? i.quantity ?? 1),
         notes: i.notes || null,
-        removedFromBill: i.removedFromBill || i.s === 'Cancelled' || false,
+        removedFromBill: i.removedFromBill || i.s === 'Cancelled' || i.status === 'CANCELLED' || false,
         menuType: i.menuType || null,
+        gstEnabled: i.gstEnabled ?? null,
         _fromKot: true,
       })))
     : [];
@@ -143,13 +146,12 @@ export const getAllOrderItems = (table) => {
       cancelledQuantity: Number(item.cancelledQuantity ?? 0),
       editedQuantity: Number(item.editedQuantity ?? 0),
       menuType: item.menuType || item.menuItem?.menuType || null,
+      gstEnabled: item.gstEnabled ?? item.menuItem?.gstEnabled ?? null,
     }));
 
-    // DB activeOrder.items is the source of truth for quantities —
-    // mapBackendTable additive merge already ensures all items from all KOTs are present.
-    // kotHistory is only used here to recover items ENTIRELY absent from DB
-    // (e.g. optimistic local KOT not yet confirmed by backend).
-    // Do NOT use kotHistory to adjust quantities — retried/duplicate KOTs inflate the count.
+    // DB activeOrder.items is the source of truth — server now filters removedFromBill
+    // and quantity <= 0 in tableInclude, so dbItems is clean and authoritative.
+    // kotItems is only used to recover items ENTIRELY absent from DB (edge case).
     const dbItemNames = new Set(
       dbItems.map(i => (i.n || '').trim().toLowerCase()).filter(Boolean)
     );
@@ -157,7 +159,7 @@ export const getAllOrderItems = (table) => {
     const seen = new Set();
     kotItems.forEach(i => {
       const name = (i.n || '').trim().toLowerCase();
-      if (!dbItemNames.has(name) && !seen.has(name)) {
+      if (!dbItemNames.has(name) && !seen.has(name) && !i.removedFromBill) {
         seen.add(name);
         kotOnlyItems.push(i);
       }
@@ -166,7 +168,7 @@ export const getAllOrderItems = (table) => {
     return [...dbItems, ...kotOnlyItems];
   }
 
-  // 2. Fall back to kotHistory (legacy JSON blob — kept for KOT timeline display)
+  // 2. Fall back to kots relation / kotHistory
   if (kotItems.length > 0) {
     return kotItems;
   }
@@ -209,6 +211,7 @@ export const groupOrderItems = (items) => {
         quantity: 0,
         notes: item.notes || null,
         menuType: item.menuType || null,
+        gstEnabled: item.gstEnabled ?? null,
         originalIds: [],
       };
     }
