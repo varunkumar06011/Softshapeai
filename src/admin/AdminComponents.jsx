@@ -17620,6 +17620,13 @@ export function BarMenuPage() {
 
 export function StaffManagement() {
 
+  const DESIGNATIONS = [
+    'helper', 'cleaning', 'master', 'assistant', 'family cleaning', 'washroom cleaning', 'supervisor',
+    'delivery and supervisor', 'arcel counter', 'store', 'family counter', 'bar counter', 'pick up', 'kitchen',
+    'parcel counter', 'accountans', 'manager', 'security', 'site security', 'purchase', 'electrician', 'counter',
+    'waiter', 'family', 'bar', 'bar cleaning'
+  ];
+
   const [staff, setStaff] = useState([]);
 
   const [loading, setLoading] = useState(true);
@@ -17630,7 +17637,7 @@ export function StaffManagement() {
 
   const [editing, setEditing] = useState(null);
 
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
   const [saving, setSaving] = useState(false);
 
@@ -17680,7 +17687,7 @@ export function StaffManagement() {
 
   const resetForm = () => {
 
-    setForm({ name: '', role: 'CAPTAIN', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
+    setForm({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
     setEditing(null);
 
@@ -17706,7 +17713,7 @@ export function StaffManagement() {
 
       const body = editing
 
-        ? { name: form.name, pin: form.pin, permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
+        ? { name: form.name, designation: form.designation, pin: form.pin, permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
 
         : form.role === 'OWNER'
 
@@ -17918,7 +17925,7 @@ export function StaffManagement() {
             {staff.filter(member => {
               if (!searchQuery.trim()) return true;
               const q = searchQuery.toLowerCase();
-              return (member.name || '').toLowerCase().includes(q) || (member.role || '').toLowerCase().includes(q);
+              return (member.name || '').toLowerCase().includes(q) || (member.designation || '').toLowerCase().includes(q) || (member.role || '').toLowerCase().includes(q);
             }).map((member) => (
 
               <tr key={member.id} className="border-t border-gray-100 hover:bg-gray-50">
@@ -17929,7 +17936,7 @@ export function StaffManagement() {
 
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
 
-                    {member.role}
+                    {member.designation || member.role}
 
                   </span>
 
@@ -17939,7 +17946,7 @@ export function StaffManagement() {
 
                   <button
 
-                    onClick={() => { setEditing(member); setForm({ name: member.name, role: member.role, pin: '', permissions: member.permissions || {} }); setModalOpen(true); }}
+                    onClick={() => { setEditing(member); setForm({ name: member.name, role: member.role, designation: member.designation || member.role, pin: '', permissions: member.permissions || {} }); setModalOpen(true); }}
 
                     className="text-[10px] font-bold text-gray-500 hover:text-[#E53935] mr-3"
 
@@ -18014,6 +18021,25 @@ export function StaffManagement() {
               />
 
             </div>
+
+            {editing && (
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Designation</label>
+                <select
+                  value={form.designation}
+                  onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                >
+                  <option value="">Select designation</option>
+                  {form.designation && !DESIGNATIONS.includes(form.designation) && (
+                    <option value={form.designation}>{form.designation}</option>
+                  )}
+                  {DESIGNATIONS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {!editing && (
 
@@ -18365,6 +18391,10 @@ export function Attendance() {
 
   const [markingIds, setMarkingIds] = useState(new Set());
 
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const [categoryFilter, setCategoryFilter] = useState('All');
+
 
 
   const loadData = useCallback(async () => {
@@ -18508,10 +18538,10 @@ export function Attendance() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === employees.length) {
+    if (selectedIds.size === filteredEmployees.length && filteredEmployees.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(employees.map(e => e.id)));
+      setSelectedIds(new Set(filteredEmployees.map(e => e.id)));
     }
   };
 
@@ -18563,6 +18593,29 @@ export function Attendance() {
 
   const totalCount = employees.length;
 
+  const categories = useMemo(() => {
+    const list = [...new Set(employees.map(e => (e.designation || e.role || 'Uncategorized').trim()).filter(Boolean))].sort();
+    return ['All', ...list];
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const matchesName = !searchTerm || (emp.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const category = (emp.designation || emp.role || '').trim();
+      const matchesCategory = categoryFilter === 'All' || category === categoryFilter;
+      return matchesName && matchesCategory;
+    });
+  }, [employees, searchTerm, categoryFilter]);
+
+  const filteredAttendance = useMemo(() => {
+    return attendance.filter((rec) => {
+      const matchesName = !searchTerm || (rec.employee?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const category = (rec.employee?.designation || rec.employee?.role || '').trim();
+      const matchesCategory = categoryFilter === 'All' || category === categoryFilter;
+      return matchesName && matchesCategory;
+    });
+  }, [attendance, searchTerm, categoryFilter]);
+
 
 
   if (loading) return (
@@ -18601,7 +18654,7 @@ export function Attendance() {
 
           <p className="text-[12px] text-gray-500">
             {viewMode === 'range'
-              ? `Showing ${attendance.length} record(s) from ${rangeStart} to ${rangeEnd}`
+              ? `Showing ${filteredAttendance.length} of ${attendance.length} record(s) from ${rangeStart} to ${rangeEnd}`
               : `Present today: ${presentCount}/${totalCount}`}
           </p>
 
@@ -18652,16 +18705,45 @@ export function Attendance() {
 
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={toggleSelectAll}
-          className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
-        >
-          {selectedIds.size === employees.length && employees.length > 0 ? 'Deselect All' : 'Select All'}
-        </button>
-        <span className="text-[11px] text-gray-500 font-bold">
-          {selectedIds.size} selected
-        </span>
+      <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
+            <Search size={14} className="text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="outline-none text-[12px] font-bold text-gray-900 placeholder-gray-400 w-40"
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="text-[10px] text-gray-400 hover:text-gray-600">✕</button>
+            )}
+          </div>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-[12px] font-bold text-gray-900 focus:outline-none focus:border-[#E53935]"
+          >
+            {categories.map((c) => (
+              <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>
+            ))}
+          </select>
+          <span className="text-[11px] text-gray-500 font-bold">
+            {filteredEmployees.length} shown
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleSelectAll}
+            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
+          >
+            {selectedIds.size === filteredEmployees.length && filteredEmployees.length > 0 ? 'Deselect All' : 'Select All'}
+          </button>
+          <span className="text-[11px] text-gray-500 font-bold">
+            {selectedIds.size} selected
+          </span>
+        </div>
         {selectedIds.size > 0 && (
           <>
             <span className="text-gray-300">|</span>
@@ -18689,18 +18771,18 @@ export function Attendance() {
               </tr>
             </thead>
             <tbody>
-              {attendance.length === 0 ? (
+              {filteredAttendance.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
-                    No attendance records found for this range.
+                    {attendance.length === 0 ? 'No attendance records found for this range.' : 'No records match your search or category.'}
                   </td>
                 </tr>
               ) : (
-                attendance.map((record) => (
+                filteredAttendance.map((record) => (
                   <tr key={record.id} className="border-t border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-bold text-gray-900">{record.date}</td>
                     <td className="px-4 py-3 font-bold text-gray-900">{record.employee?.name || '-'}</td>
-                    <td className="px-4 py-3 text-gray-600">{record.employee?.role || '-'}</td>
+                    <td className="px-4 py-3 text-gray-600">{record.employee?.designation || record.employee?.role || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
                         record.status === 'PRESENT' ? 'bg-green-100 text-green-700' :
@@ -18733,7 +18815,7 @@ export function Attendance() {
               <th className="px-2 py-2 text-left font-bold text-gray-500 w-10">
                 <input
                   type="checkbox"
-                  checked={employees.length > 0 && selectedIds.size === employees.length}
+                  checked={filteredEmployees.length > 0 && selectedIds.size === filteredEmployees.length}
                   onChange={toggleSelectAll}
                   className="accent-[#E53935]"
                 />
@@ -18757,7 +18839,7 @@ export function Attendance() {
 
           <tbody>
 
-            {employees.map((emp) => {
+            {filteredEmployees.map((emp) => {
 
               const status = getStatus(emp.id);
 
@@ -18779,7 +18861,7 @@ export function Attendance() {
 
                   <td className="px-4 py-3 font-bold text-gray-900">{emp.name}</td>
 
-                  <td className="px-4 py-3 text-gray-600">{emp.role || '-'}</td>
+                  <td className="px-4 py-3 text-gray-600">{emp.designation || emp.role || '-'}</td>
 
                   <td className="px-4 py-3">
 
@@ -18849,13 +18931,13 @@ export function Attendance() {
 
             })}
 
-            {employees.length === 0 && (
+            {filteredEmployees.length === 0 && (
 
               <tr>
 
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
 
-                  No employees found. Add employees in Payroll first.
+                  {employees.length === 0 ? 'No employees found. Add employees in Payroll first.' : 'No employees match your search or category.'}
 
                 </td>
 
