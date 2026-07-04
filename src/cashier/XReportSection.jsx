@@ -267,7 +267,7 @@ export default function XReportSection() {
                 />
               </div>
               <div>
-                <label className={labelClass}>Voucher Amount</label>
+                <label className={labelClass}>Voucher Amount (auto-filled)</label>
                 <input
                   type="number"
                   value={report.voucherAmount === 0 ? '' : report.voucherAmount}
