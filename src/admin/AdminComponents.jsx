@@ -5211,7 +5211,7 @@ export function Payroll() {
   }, []);
 
   const handleDeleteEmployee = async (employeeId) => {
-    if (!window.confirm('Delete this employee? They will be hidden from payroll but existing records stay.')) return;
+    if (!window.confirm('Delete this staff member? They will be hidden from payroll but existing records stay.')) return;
     try {
       setDeletingId(employeeId);
       await apiFetch(`/api/payroll/employees/${employeeId}`, {
@@ -5498,7 +5498,7 @@ export function Payroll() {
 
                 if (records.length === 0) return;
 
-                const headers = ['Employee Name', 'Base Salary', 'Present Days', 'OT Days', '4 Days', 'Total Days', 'Actual Salary', 'Advance', 'Final Salary', 'Salary Paid', 'Balance Salary', 'Status', 'Month'];
+                const headers = ['Staff Name', 'Base Salary', 'Present Days', 'OT Days', '4 Days', 'Total Days', 'Actual Salary', 'Advance', 'Final Salary', 'Salary Paid', 'Balance Salary', 'Status', 'Month'];
 
                 const rows = records.map(r => [
 
@@ -5614,7 +5614,7 @@ export function Payroll() {
 
             >
 
-              Add Employee
+              Add Staff
 
             </button>
 
@@ -5645,7 +5645,7 @@ export function Payroll() {
           <Search size={18} className="text-gray-400" />
           <input
             type="text"
-            placeholder="Search employee by name..."
+            placeholder="Search staff by name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 bg-transparent outline-none text-sm font-bold text-gray-900 placeholder-gray-400"
@@ -5662,7 +5662,7 @@ export function Payroll() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-2">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">Payroll Summary</h3>
-          <span className="text-[10px] font-bold text-gray-400">{payrollSummary.totalEmployees} employees</span>
+          <span className="text-[10px] font-bold text-gray-400">{payrollSummary.totalEmployees} staff</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
           <div className="bg-gray-50 rounded-lg p-3 text-center">
@@ -5727,7 +5727,7 @@ export function Payroll() {
 
               <tr>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Employee</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Staff</th>
 
                 <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Designation</th>
 
@@ -6009,7 +6009,7 @@ export function Payroll() {
 
           <Users size={48} className="mx-auto mb-3 opacity-30" />
 
-          <p>No employees yet. Click "Add Employee" to get started.</p>
+          <p>No staff yet. Click "Add Staff" to get started.</p>
 
         </div>
 
@@ -6017,7 +6017,7 @@ export function Payroll() {
 
       {employees.length > 0 && employees.filter((e) => e.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-sm font-bold">No employees match your search.</p>
+          <p className="text-sm font-bold">No staff match your search.</p>
         </div>
       )}
 
@@ -6031,7 +6031,7 @@ export function Payroll() {
 
           <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
 
-            <h3 className="text-lg font-black text-gray-900">Add Employee</h3>
+            <h3 className="text-lg font-black text-gray-900">Add Staff</h3>
 
             {addError && (
 
