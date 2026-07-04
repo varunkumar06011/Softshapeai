@@ -4985,10 +4985,6 @@ export function Payroll() {
   const [importError, setImportError] = useState('');
   const [editedProposed, setEditedProposed] = useState([]);
 
-  const saveTimers = useRef({});
-
-
-
   const restaurantId = getCurrentRestaurantId();
 
 
@@ -5206,13 +5202,6 @@ export function Payroll() {
 
   };
 
-  const debouncedSave = useCallback((employeeId) => {
-    if (saveTimers.current[employeeId]) clearTimeout(saveTimers.current[employeeId]);
-    saveTimers.current[employeeId] = setTimeout(() => {
-      handleSaveRecord(employeeId);
-    }, 800);
-  }, []);
-
   const handleDeleteEmployee = async (employeeId) => {
     if (!window.confirm('Delete this staff member? This will permanently remove their payroll records, attendance, and staff access.')) return;
     try {
@@ -5390,24 +5379,11 @@ export function Payroll() {
 
   const totalAdvance = records.reduce((sum, r) => sum + (Number(r.totalAdvance) || 0), 0);
 
-  const totalPayable = records.reduce((sum, r) => sum + (Number(r.finalSalary) || 0), 0);
+  const totalPayable = Math.max(0, totalBaseSalary - totalAdvance);
 
   const totalPaid = records.reduce((s, r) => s + Number(r.paidAmount), 0);
 
-  const totalOutstanding = records.reduce((sum, r) => sum + (Number(r.balanceSalary) || 0), 0);
-
-  const payrollSummary = useMemo(() => {
-    const totalEmployees = employees.length;
-    const employeesWithRecords = records.length;
-    const paidCount = records.filter(r => Number(r.balanceSalary || 0) <= 0 && Number(r.finalSalary || 0) > 0).length;
-    const partialCount = records.filter(r => Number(r.paidAmount || 0) > 0 && Number(r.balanceSalary || 0) > 0).length;
-    const pendingCount = records.filter(r => Number(r.paidAmount || 0) === 0 && Number(r.finalSalary || 0) > 0).length;
-    const notGeneratedCount = totalEmployees - employeesWithRecords;
-    const progressPercent = totalPayable > 0 ? Math.round((totalPaid / totalPayable) * 100) : 0;
-    return { totalEmployees, employeesWithRecords, paidCount, partialCount, pendingCount, notGeneratedCount, progressPercent };
-  }, [employees, records, totalPaid, totalPayable]);
-
-
+  const totalOutstanding = Math.max(0, totalPayable - totalPaid);
 
   if (loading) {
 
@@ -5661,57 +5637,6 @@ export function Payroll() {
         </div>
       </div>
 
-      {/* Payroll Summary Card */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-2">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">Payroll Summary</h3>
-          <span className="text-[10px] font-bold text-gray-400">{payrollSummary.totalEmployees} staff</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
-            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
-            <p className="text-lg font-black text-[#B71C1C] tabular-nums">₹{totalPayable.toLocaleString()}</p>
-          </div>
-          <div className="bg-green-50 rounded-lg p-3 text-center">
-            <p className="text-[9px] font-black text-green-400 uppercase tracking-widest mb-1">Paid</p>
-            <p className="text-lg font-black text-green-700 tabular-nums">₹{totalPaid.toLocaleString()}</p>
-          </div>
-          <div className="bg-amber-50 rounded-lg p-3 text-center">
-            <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Outstanding</p>
-            <p className="text-lg font-black text-amber-700 tabular-nums">₹{totalOutstanding.toLocaleString()}</p>
-          </div>
-          <div className="bg-blue-50 rounded-lg p-3 text-center">
-            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Advance</p>
-            <p className="text-lg font-black text-blue-700 tabular-nums">₹{totalAdvance.toLocaleString()}</p>
-          </div>
-        </div>
-        {/* Progress Bar */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Payment Progress</span>
-            <span className="text-xs font-black text-gray-700">{payrollSummary.progressPercent}%</span>
-          </div>
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${payrollSummary.progressPercent}%` }} />
-          </div>
-        </div>
-        {/* Status Counts */}
-        <div className="flex flex-wrap gap-2">
-          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-gray-100 text-gray-600">
-            Not Generated: {payrollSummary.notGeneratedCount}
-          </span>
-          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-100 text-amber-700">
-            Pending: {payrollSummary.pendingCount}
-          </span>
-          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-blue-100 text-blue-700">
-            Partial: {payrollSummary.partialCount}
-          </span>
-          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-green-100 text-green-700">
-            Paid: {payrollSummary.paidCount}
-          </span>
-        </div>
-      </div>
-
       <div className="flex items-center gap-3 mb-2 flex-wrap">
         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Status:</span>
         <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
@@ -5813,25 +5738,16 @@ export function Payroll() {
                     </td>
 
                     <td className="px-4 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={vals.baseSalary ?? (Number(emp.baseSalary) || 0)}
-                          onChange={(e) => {
-                            setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
-                          }}
-                          className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
-                        />
-                        <button
-                          onClick={() => handleSaveRecord(emp.id)}
-                          disabled={savingRecordId === emp.id || vals.baseSalary === Number(emp.baseSalary)}
-                          className="px-2 py-1 rounded text-[10px] font-bold bg-[#E53935] text-white hover:bg-[#c62828] disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {savingRecordId === emp.id ? 'Saving...' : 'Save'}
-                        </button>
-                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={vals.baseSalary ?? (Number(emp.baseSalary) || 0)}
+                        onChange={(e) => {
+                          setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
+                        }}
+                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
+                      />
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -5846,7 +5762,6 @@ export function Payroll() {
                             disabled={isAutoCount}
                             onChange={(e) => {
                               setEditValues({ ...editValues, [emp.id]: { ...vals, presentDays: parseFloat(e.target.value) || 0 } });
-                              debouncedSave(emp.id);
                             }}
                             className={`w-14 text-center border border-gray-200 rounded-lg py-1 text-sm ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
                           />
@@ -5854,7 +5769,6 @@ export function Payroll() {
                             onClick={() => {
                               const next = !isAutoCount;
                               setAutoCountMap({ ...autoCountMap, [emp.id]: next });
-                              if (next) debouncedSave(emp.id);
                             }}
                             className={`text-[10px] font-bold px-2 py-1 rounded-md ${isAutoCount ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
                           >
@@ -5876,7 +5790,6 @@ export function Payroll() {
 
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } });
-                          debouncedSave(emp.id);
                         }}
 
                         className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
@@ -5955,8 +5868,15 @@ export function Payroll() {
 
                       <div className="flex items-center justify-center gap-2">
 
-                        {savingRecordId === emp.id && (
+                        {savingRecordId === emp.id ? (
                           <span className="text-[10px] font-bold text-blue-600 animate-pulse">Saving...</span>
+                        ) : (
+                          <button
+                            onClick={() => handleSaveRecord(emp.id)}
+                            className="px-3 py-1.5 bg-[#E53935] text-white rounded-lg text-xs font-bold hover:bg-[#c62828]"
+                          >
+                            Save
+                          </button>
                         )}
 
                         {rec ? (
