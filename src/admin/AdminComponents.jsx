@@ -5372,16 +5372,30 @@ export function Payroll() {
 
   const getRecord = (empId) => records.find((r) => r.employeeId === empId);
 
+  const recordsByEmployee = useMemo(() => {
+    const map = new Map();
+    records.forEach((r) => {
+      if (!map.has(r.employeeId)) map.set(r.employeeId, r);
+    });
+    return map;
+  }, [records]);
+
   const totalBaseSalary = employees.reduce((sum, emp) => {
     const vals = editValues[emp.id] || {};
     return sum + (Number(vals.baseSalary ?? emp.baseSalary) || 0);
   }, 0);
 
-  const totalAdvance = records.reduce((sum, r) => sum + (Number(r.totalAdvance) || 0), 0);
+  const totalAdvance = employees.reduce((sum, emp) => {
+    const rec = recordsByEmployee.get(emp.id);
+    return sum + (Number(rec?.totalAdvance) || 0);
+  }, 0);
+
+  const totalPaid = employees.reduce((sum, emp) => {
+    const rec = recordsByEmployee.get(emp.id);
+    return sum + (Number(rec?.paidAmount) || 0);
+  }, 0);
 
   const totalPayable = Math.max(0, totalBaseSalary - totalAdvance);
-
-  const totalPaid = records.reduce((s, r) => s + Number(r.paidAmount), 0);
 
   const totalOutstanding = Math.max(0, totalPayable - totalPaid);
 
