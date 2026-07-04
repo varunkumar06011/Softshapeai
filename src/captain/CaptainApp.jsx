@@ -1592,6 +1592,26 @@ export default function CaptainApp({ onLogout }) {
       return Array.from(map.values());
     };
 
+    // Convert DB kots relation (from tableInclude) to frontend kotHistory format
+    // DB KotItem has: { id, orderItemId, menuItemId, name, quantity, price, notes, status }
+    // Frontend expects: { id, n, p, q, s, orderItemId, notes }
+    const normalizeKots = (kots) => {
+      if (!Array.isArray(kots)) return [];
+      return kots.map(kot => ({
+        id: String(kot.kotNumber ?? kot.id ?? ''),
+        time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+        items: (kot.items || []).map(ki => ({
+          id: ki.menuItemId || ki.id,
+          n: ki.name ?? ki.n,
+          p: Number(ki.price ?? ki.p ?? 0),
+          q: Number(ki.quantity ?? ki.q ?? 0),
+          s: ki.status === 'CANCELLED' ? 'Cancelled' : (ki.s ?? 'KOT Sent'),
+          orderItemId: ki.orderItemId,
+          notes: ki.notes,
+        })),
+      }));
+    };
+
     const onTableUpdated = ({ table } = {}) => {
       if (!table?.id) return;
       if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
@@ -1614,7 +1634,7 @@ export default function CaptainApp({ onLogout }) {
         const isTableFree = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         // Server is now authoritative — directly use its items and kots (no merge)
         const serverItems = incomingOrder?.items ?? (t.activeOrder?.items || []);
-        const serverKots = isTableFree ? [] : (Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
+        const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
@@ -1639,7 +1659,7 @@ export default function CaptainApp({ onLogout }) {
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || (t.activeOrder?.items || []);
-        const serverKots = Array.isArray(order.kotHistory) ? order.kotHistory : (Array.isArray(order.kots) ? order.kots : (t.kotHistory || []));
+        const serverKots = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
         return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: serverKots };
       });
       setActiveTables(updateTables);
@@ -1658,7 +1678,7 @@ export default function CaptainApp({ onLogout }) {
         return {
           ...t,
           activeOrder: { ...order, items: serverItems },
-          kotHistory: Array.isArray(order.kotHistory) ? order.kotHistory : (t.kotHistory || []),
+          kotHistory: Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : (t.kotHistory || []),
           status: t.status === 'Free' ? 'Occupied' : t.status,
           workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
         };

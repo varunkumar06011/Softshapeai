@@ -117,7 +117,7 @@ export const getAllOrderItems = (table) => {
 
   // Flatten kots relation items (relational Kot/KotItem tables — always complete)
   // Fall back to legacy kotHistory JSON blob for backward compat
-  const kotSource = Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []);
+  const kotSource = (Array.isArray(table.kots) && table.kots.length > 0) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []);
   const kotItems = kotSource.length > 0
     ? kotSource.flatMap(kot => (kot.items || []).map(i => ({
         id: i.id ?? null,

@@ -117,6 +117,24 @@ function mergeOrder(incoming, existing) {
   return incoming;
 }
 
+// Convert DB kots relation (from tableInclude) to frontend kotHistory format
+function normalizeKots(kots) {
+  if (!Array.isArray(kots)) return [];
+  return kots.map(kot => ({
+    id: String(kot.kotNumber ?? kot.id ?? ''),
+    time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+    items: (kot.items || []).map(ki => ({
+      id: ki.menuItemId || ki.id,
+      n: ki.name ?? ki.n,
+      p: Number(ki.price ?? ki.p ?? 0),
+      q: Number(ki.quantity ?? ki.q ?? 0),
+      s: ki.status === 'CANCELLED' ? 'Cancelled' : (ki.s ?? 'KOT Sent'),
+      orderItemId: ki.orderItemId,
+      notes: ki.notes,
+    })),
+  }));
+}
+
 function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = {}) {
   // Staleness guard: if existing has a newer updatedAt, keep existing status/currentBill
   const incomingTableUpdated = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
@@ -126,7 +144,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
   const isFreeWorkflow = dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
   const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
-  const mergedKotHistory = Array.isArray(row.kots) ? row.kots : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
+  const mergedKotHistory = (Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
 
   const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
   // Defensive: an order can only belong to this table if its tableId matches the row id.
@@ -169,7 +187,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     kotHistory: (() => {
       if (isFreeWorkflow) return [];
       // Server is authoritative — use kots relation if available, fall back to kotHistory
-      const inc = Array.isArray(row.kots) ? row.kots : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
+      const inc = (Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
       return inc;
     })(),
     currentBill: isFreeWorkflow ? 0 : (isStale && existing ? existing.currentBill : (row.currentBill ?? existing?.currentBill ?? 0)),

@@ -87,6 +87,24 @@ const toFrontendTableStatus = (backendStatus) => {
   return map[backendStatus] || 'Free';
 };
 
+// Convert DB kots relation (from tableInclude) to frontend kotHistory format
+const normalizeKots = (kots) => {
+  if (!Array.isArray(kots)) return [];
+  return kots.map(kot => ({
+    id: String(kot.kotNumber ?? kot.id ?? ''),
+    time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+    items: (kot.items || []).map(ki => ({
+      id: ki.menuItemId || ki.id,
+      n: ki.name ?? ki.n,
+      p: Number(ki.price ?? ki.p ?? 0),
+      q: Number(ki.quantity ?? ki.q ?? 0),
+      s: ki.status === 'CANCELLED' ? 'Cancelled' : (ki.s ?? 'KOT Sent'),
+      orderItemId: ki.orderItemId,
+      notes: ki.notes,
+    })),
+  }));
+};
+
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
 const mapRealtimeTablePayload = (row, existing = null) => {
   if (!row) return existing;
@@ -106,7 +124,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
     time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
-    kotHistory: isFreeWorkflow ? [] : (Array.isArray(row.kots) ? row.kots : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
+    kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder: isFreeWorkflow ? null : (row.orders?.[0] || row.activeOrder || null),
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
@@ -1221,12 +1239,14 @@ const CashierDashboard = ({ onLogout }) => {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
+            const incomingKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : prev.kotHistory);
             const nextVal = {
               ...prev,
               activeOrder: mergeOrder(order, prev.activeOrder),
               status: prev.status === 'Free' ? 'Occupied' : prev.status,
               workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
               currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+              kotHistory: incomingKotHistory,
             };
             validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
             return nextVal;
@@ -1235,6 +1255,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
+      const incomingGridKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : null);
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
@@ -1243,6 +1264,7 @@ const CashierDashboard = ({ onLogout }) => {
               status: t.status === 'Free' ? 'Occupied' : t.status,
               workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+              ...(incomingGridKotHistory ? { kotHistory: incomingGridKotHistory } : {}),
             }
           : t
       );
@@ -1281,7 +1303,8 @@ const CashierDashboard = ({ onLogout }) => {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
-            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder) };
+            const incomingKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : prev.kotHistory);
+            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder), kotHistory: incomingKotHistory };
             validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
             return nextVal;
           });
@@ -1290,12 +1313,14 @@ const CashierDashboard = ({ onLogout }) => {
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
       // No click cooldown — real-time updates from captain must always be visible
+      const incomingGridKotHistory = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : null);
       const updateTables = (prev) => prev.map(t =>
         t.backendId === order.tableId
           ? {
               ...t,
               activeOrder: mergeOrder(order, t.activeOrder),
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+              ...(incomingGridKotHistory ? { kotHistory: incomingGridKotHistory } : {}),
             }
           : t
       );
@@ -1335,7 +1360,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         const mergedKotHistory = incomingIsAvailable
           ? []
-          : (Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
+          : (Array.isArray(table.kots) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
         // When merging an occupied table:updated event, preserve existing activeOrder.items
         // if the incoming payload has no orders array (partial update)
         const incomingHasOrders = Array.isArray(table.orders) && table.orders.length > 0;
@@ -1393,7 +1418,7 @@ const CashierDashboard = ({ onLogout }) => {
           const incomingHasOrdersSel = Array.isArray(table.orders) && table.orders.length > 0;
           const mergedKotHistory = effectiveIsTableFree
             ? []
-            : (Array.isArray(table.kots) ? table.kots : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
+            : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = effectiveIsTableFree ? 0 : (table.currentBill ?? prev.currentBill);
           const stableBill = effectiveIsTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
