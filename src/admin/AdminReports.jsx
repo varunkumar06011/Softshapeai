@@ -1282,7 +1282,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     cardAmount: Number(r.cardAmount),
     cashAmount: Number(r.cashAmount),
     cashFromNotes: Number(r.cashFromNotes),
-    finalAmount: Number(r.totalSales) - Number(r.voucherAmount || 0) + Number(r.parcelCounterSale || 0),
+    finalAmount: Number(r.totalSales) - Number(r.voucherAmount || 0) + Number(r.parcelCounterSale || 0) - Number(r.cardAmount || 0),
     printed: r.printed ? 'Yes' : 'No',
   }));
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
@@ -1345,7 +1345,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cardAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashFromNotes).toFixed(2)}</td>
-                <td className="px-4 py-2 text-right tabular-nums font-black">₹{(Number(r.totalSales) - Number(r.voucherAmount || 0) + Number(r.parcelCounterSale || 0)).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-black">₹{(Number(r.totalSales) - Number(r.voucherAmount || 0) + Number(r.parcelCounterSale || 0) - Number(r.cardAmount || 0)).toFixed(2)}</td>
                 <td className="px-4 py-2 text-center">
                   {r.printed ? (
                     <span className="px-2 py-0.5 bg-green-50 text-green-600 border border-green-200 rounded text-xs font-bold">Yes</span>
