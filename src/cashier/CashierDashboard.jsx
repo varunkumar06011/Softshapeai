@@ -2837,7 +2837,7 @@ const CashierDashboard = ({ onLogout }) => {
         throw new Error(errBody.error || `Server returned ${response.status}`);
       }
 
-      addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(0)}`, 'success');
+      addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(2)}`, 'success');
       setShowSettleConfirm(true);
     } catch (err) {
       console.error('Walk-in bill print error:', err);
@@ -3961,7 +3961,7 @@ const CashierDashboard = ({ onLogout }) => {
       let preReservedKotNumber = null;
       let localPrinted = false;
       try {
-        const reserved = await reserveKotNumber();
+        const reserved = await reserveKotNumber(requestId);
         preReservedKotNumber = reserved?.kotNumber ?? null;
       } catch (reserveErr) {
         console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);
@@ -6867,7 +6867,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <span className="text-gray-500 mr-2">{item.quantity ?? item.q ?? 1}×</span>
                         {item.name ?? item.n ?? 'Unknown'}
                       </span>
-                      <span className="font-bold text-gray-600">₹{Number((item.price ?? item.p ?? 0) * (item.quantity ?? item.q ?? 1)).toFixed(0)}</span>
+                      <span className="font-bold text-gray-600">₹{Number((item.price ?? item.p ?? 0) * (item.quantity ?? item.q ?? 1)).toFixed(2)}</span>
                     </div>
                   ))
                 ) : (
@@ -6875,13 +6875,13 @@ const CashierDashboard = ({ onLogout }) => {
                 )}
               </div>
               <div className="border-t border-dashed border-gray-300 mt-3 pt-3 space-y-1">
-                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Subtotal</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.subtotal ?? 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Subtotal</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.subtotal ?? 0).toFixed(2)}</span></div>
                 {Number(billPreviewTxn.discountAmount ?? 0) > 0 && (
-                  <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Discount ({billPreviewTxn.discountPercent ?? 0}%)</span><span className="font-bold text-red-500">-₹{Number(billPreviewTxn.discountAmount ?? 0).toFixed(0)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Discount ({billPreviewTxn.discountPercent ?? 0}%)</span><span className="font-bold text-red-500">-₹{Number(billPreviewTxn.discountAmount ?? 0).toFixed(2)}</span></div>
                 )}
-                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">CGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.cgst ?? 0).toFixed(0)}</span></div>
-                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">SGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.sgst ?? 0).toFixed(0)}</span></div>
-                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#E53935]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">CGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.cgst ?? 0).toFixed(2)}</span></div>
+                <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">SGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.sgst ?? 0).toFixed(2)}</span></div>
+                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#E53935]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(2)}</span></div>
               </div>
             </div>
           </div>

@@ -2576,7 +2576,7 @@ export default function CaptainApp({ onLogout }) {
       let preReservedKotNumber = null;
       let localPrinted = false;
       try {
-        const reserved = await reserveKotNumber();
+        const reserved = await reserveKotNumber(requestId);
         preReservedKotNumber = reserved?.kotNumber ?? null;
       } catch (reserveErr) {
         console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);

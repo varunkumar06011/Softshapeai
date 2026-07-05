@@ -76,7 +76,7 @@ export function toOrderItems(items) {
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID
 }
 
-export async function reserveKotNumber() {
+export async function reserveKotNumber(requestId = null) {
   // Offline fallback: reserve a local KOT number so KOTs can still be printed
   // immediately. The backend will use this as preReservedKotNumber on sync.
   if (!isBackendReachable()) {
@@ -84,7 +84,9 @@ export async function reserveKotNumber() {
     return { kotNumber, offline: true };
   }
   try {
-    return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 5000 });
+    const body = {};
+    if (requestId) body.requestId = requestId;
+    return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 10000, body: JSON.stringify(body) });
   } catch (err) {
     // If the API failed because we went offline mid-call, fall back to local number
     if (!isBackendReachable()) {
