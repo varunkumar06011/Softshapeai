@@ -255,11 +255,11 @@ export default function TodaySpecials() {
       </div>
 
       {/* STAFF LEADERBOARD */}
-      {staffSold.length > 0 && (
-        <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
-          <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
-            <Users size={16} className="text-[#E53935]" /> Top Specials Sellers Today
-          </h3>
+      <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
+        <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
+          <Users size={16} className="text-[#E53935]" /> Top Specials Sellers Today
+        </h3>
+        {staffSold.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {staffSold.map(staff => (
               <div key={staff.userId} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
@@ -271,8 +271,10 @@ export default function TodaySpecials() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs font-bold text-gray-400">No specials sold yet. Sales will appear here once a captain or cashier settles a bill containing a special.</p>
+        )}
+      </div>
 
       {/* SPECIALS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
