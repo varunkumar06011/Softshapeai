@@ -325,16 +325,29 @@ export async function printLocal(job) {
 
   // ── Tauri desktop: raw print via Rust command ──
   if (platform === 'tauri') {
-    if (!printerName) {
+    let targetPrinter = printerName;
+    // If no mapping is saved, try the first available printer so offline prints still come out
+    if (!targetPrinter && window.__TAURI__) {
+      try {
+        const printers = await window.__TAURI__.invoke('list_printers');
+        if (printers && printers.length > 0) {
+          targetPrinter = printers[0];
+          console.log('[printOffline] No mapped printer, falling back to first Tauri printer:', targetPrinter);
+        }
+      } catch (err) {
+        console.warn('[printOffline] Failed to list Tauri printers:', err);
+      }
+    }
+    if (!targetPrinter) {
       return await queuePrintJob(job, text, 'No printer mapped');
     }
     try {
       const bytes = Array.from(textToEscpos(text));
       await window.__TAURI__.invoke('print_raw', {
-        printerName,
+        printerName: targetPrinter,
         bytes,
       });
-      console.log(`[printOffline] Printed [${job.jobType}] → ${printerName} (Tauri)`);
+      console.log(`[printOffline] Printed [${job.jobType}] → ${targetPrinter} (Tauri)`);
       return { printed: true, queued: false };
     } catch (err) {
       console.error(`[printOffline] Tauri print failed:`, err);
@@ -506,7 +519,7 @@ async function shareAsPDF(job, text) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter, discoverPrintAgentUrls };
+export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter, discoverPrintAgentUrls, printLocal };
 
 /**
  * Manual test entry point for the offline print pipeline.

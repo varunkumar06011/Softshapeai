@@ -17,15 +17,13 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function calculateBalance(openingBalance, sales, totalVouchers, adjustments) {
-  const ob = round2(openingBalance);
+function calculateBalance(sales, totalVouchers, adjustments) {
   const totalSales = round2(sales.acBar) + round2(sales.nonAcBar) + round2(sales.familyWing) + round2(sales.parcel) + round2(sales.swiggy) + round2(sales.zomato);
-  const afterSales = round2(ob + totalSales);
+  const afterSales = round2(totalSales);
   const afterVouchers = round2(afterSales - totalVouchers);
 
   const sorted = [...adjustments].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const steps = [
-    { label: 'Opening Balance', value: ob },
     { label: '+ Total Sales', value: afterSales },
     { label: '- Vouchers', value: afterVouchers },
   ];
@@ -38,7 +36,7 @@ function calculateBalance(openingBalance, sales, totalVouchers, adjustments) {
     steps.push({ label: `${adj.sign === 'PLUS' ? '+' : '−'} ${adj.label}`, value: running });
   }
 
-  return { openingBalance: ob, afterSales, afterVouchers, closingBalance: running, steps };
+  return { afterSales, afterVouchers, closingBalance: running, steps };
 }
 
 // ── Helper: get today's date in IST ───────────────────────────────────────────
@@ -383,8 +381,8 @@ export default function AdminDailyBalanceSheet() {
 
   // ── Live balance calculation ───────────────────────────────────────────────
   const balanceCalc = useMemo(() => {
-    return calculateBalance(overrides.openingBalance, computedSales, totalVouchers, adjustments);
-  }, [overrides, computedSales, totalVouchers, adjustments]);
+    return calculateBalance(computedSales, totalVouchers, adjustments);
+  }, [computedSales, totalVouchers, adjustments]);
 
   // ── Debounced autosave ─────────────────────────────────────────────────────
   const triggerSave = useCallback(() => {
@@ -582,14 +580,6 @@ export default function AdminDailyBalanceSheet() {
     });
     y = (doc.lastAutoTable?.finalY || y) + 8;
 
-    // Opening Balance
-    doc.setFontSize(13);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Opening Balance', margin, y);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`₹${overrides.openingBalance.toLocaleString('en-IN')}`, pageWidth - margin, y, { align: 'right' });
-    y += 8;
-
     // Vouchers
     if (vouchers.length > 0) {
       doc.setFontSize(13);
@@ -659,7 +649,7 @@ export default function AdminDailyBalanceSheet() {
     doc.text('Softshape AI can make mistakes. Please cross-check important information before relying on it.', margin, y + 5);
 
     return doc;
-  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, overrides.openingBalance, vouchers.length, voucherGroups, adjustments, balanceCalc.closingBalance]);
+  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, vouchers.length, voucherGroups, adjustments, balanceCalc.closingBalance]);
 
   // ── WhatsApp share: generate PDF + open chat with VGrand admin ───────────────
   const handleWhatsAppShare = async () => {
@@ -845,20 +835,6 @@ export default function AdminDailyBalanceSheet() {
           <div className="mt-1 text-xs text-gray-500">
             Vouchers (₹{voucherSubtotal.toLocaleString('en-IN')}) are deducted automatically from Total Sales in the running total below.
           </div>
-        </div>
-      </div>
-
-      {/* ── Opening balance ───────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-200 p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-gray-600">Opening Balance</span>
-          <input
-            type="number"
-            value={overrides.openingBalance}
-            onChange={(e) => handleFieldChange('openingBalance', Number(e.target.value) || 0)}
-            disabled={isLocked}
-            className="text-right text-lg font-black text-gray-900 bg-transparent outline-none w-32 disabled:opacity-60"
-          />
         </div>
       </div>
 

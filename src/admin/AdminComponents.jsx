@@ -1323,7 +1323,7 @@ export function Tables({ onOpen }) {
   const { tables } = useTableSync();
 
   useEffect(() => {
-    const t = tables.find(t => t.id === activePopupTableId);
+    const t = tables.find(t => (t.backendId || t.id) === activePopupTableId);
     setPopupCaptainId(t?.captainId || '');
   }, [activePopupTableId, tables]);
 
@@ -1671,7 +1671,7 @@ export function Tables({ onOpen }) {
 
     {activePopupTableId && (() => {
 
-      const pTable = tables.find(t => t.id === activePopupTableId);
+      const pTable = tables.find(t => (t.backendId || t.id) === activePopupTableId);
 
       if (!pTable || !pTable.status || pTable.status === 'Free' || pTable.status === 'available') {
 
@@ -1683,9 +1683,18 @@ export function Tables({ onOpen }) {
 
       
 
-      const pItems = (pTable.kotHistory && pTable.kotHistory.length > 0) ? pTable.kotHistory.flatMap(k => k.items || []) : (pTable.items || []);
+      const rawItems = (pTable.activeOrder?.items?.length > 0)
+        ? pTable.activeOrder.items
+        : (pTable.kotHistory && pTable.kotHistory.length > 0)
+          ? pTable.kotHistory.flatMap(k => k.items || [])
+          : (pTable.items || []);
+      const pItems = rawItems.map(i => ({
+        q: i.q ?? i.quantity ?? 1,
+        n: i.n ?? i.name ?? 'Item',
+        s: i.s ?? i.status ?? 'Sent',
+      }));
 
-      const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
+      const pCount = pItems.reduce((sum, i) => sum + Number(i.q || 0), 0);
 
       const pCaptainName = pTable.captainName || staffMap[pTable.captainId] || 'Staff';
 
@@ -1720,7 +1729,7 @@ export function Tables({ onOpen }) {
 
                    <div className={`w-3 h-3 rounded-full ${pTable.status === 'Waiting Bill' ? 'bg-amber-500 animate-pulse' : pTable.status === 'Preparing' ? 'bg-orange-500' : 'bg-red-600'}`} />
 
-                   <h3 className="font-black text-lg text-gray-900 tracking-tight">Table {pTable.id}</h3>
+                   <h3 className="font-black text-lg text-gray-900 tracking-tight">Table {pTable.number ?? pTable.id}</h3>
 
                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest bg-gray-200 text-gray-700">{pTable.status}</span>
 
@@ -15990,9 +15999,18 @@ export function BarTables() {
 
         
 
-        const pItems = (pTable.kotHistory && pTable.kotHistory.length > 0) ? pTable.kotHistory.flatMap(k => k.items || []) : (pTable.items || []);
+        const rawItems = (pTable.activeOrder?.items?.length > 0)
+          ? pTable.activeOrder.items
+          : (pTable.kotHistory && pTable.kotHistory.length > 0)
+            ? pTable.kotHistory.flatMap(k => k.items || [])
+            : (pTable.items || []);
+        const pItems = rawItems.map(i => ({
+          q: i.q ?? i.quantity ?? 1,
+          n: i.n ?? i.name ?? 'Item',
+          s: i.s ?? i.status ?? 'Sent',
+        }));
 
-        const pCount = pItems.reduce((sum, i) => sum + i.q, 0);
+        const pCount = pItems.reduce((sum, i) => sum + Number(i.q || 0), 0);
 
         const pCaptainName = pTable.captainName || staffMap[pTable.captainId] || 'Staff';
 

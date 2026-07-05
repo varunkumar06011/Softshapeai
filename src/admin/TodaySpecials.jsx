@@ -149,6 +149,7 @@ export default function TodaySpecials() {
         : formData.id
           ? null
           : new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+      syncToAllOutlets: true,
     };
   };
 
@@ -190,6 +191,7 @@ export default function TodaySpecials() {
       await updateMenuItem(id, {
         specialActive: true,
         specialExpiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+        syncToAllOutlets: true,
       });
       await refreshMenu();
       simulatePush();

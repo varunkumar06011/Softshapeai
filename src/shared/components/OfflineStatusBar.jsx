@@ -17,6 +17,7 @@ import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, Clock, ChevronDown } from '
 import { useSyncStatus } from '../../context/SyncStatusContext';
 import { getMenuCacheAgeMs } from '../../services/menuSyncService';
 import { getTableCacheAgeMs } from '../../services/tableSyncService';
+import { flushQueuedPrintJobs } from '../../utils/printOffline';
 
 export default function OfflineStatusBar() {
   const {
@@ -37,11 +38,25 @@ export default function OfflineStatusBar() {
 
   const [showConflicts, setShowConflicts] = useState(false);
   const [showPendingDetail, setShowPendingDetail] = useState(false);
+  const [printFlush, setPrintFlush] = useState({ running: false, result: null });
 
   // Auto-show conflict panel when conflicts arrive
   useEffect(() => {
     if (hasConflicts) setShowConflicts(true);
   }, [hasConflicts]);
+
+  async function handleRetryPrints() {
+    setPrintFlush({ running: true, result: null });
+    try {
+      const result = await flushQueuedPrintJobs();
+      setPrintFlush({ running: false, result: `${result.flushed} printed, ${result.failed} failed` });
+      // Clear status after 3 seconds
+      setTimeout(() => setPrintFlush({ running: false, result: null }), 3000);
+    } catch (err) {
+      setPrintFlush({ running: false, result: err?.message || 'Retry failed' });
+      setTimeout(() => setPrintFlush({ running: false, result: null }), 3000);
+    }
+  }
 
   // Don't render if everything is fine and no pending actions
   if (isOnline && syncStatus === 'idle' && pendingCount === 0 && !hasConflicts) {
@@ -140,6 +155,16 @@ export default function OfflineStatusBar() {
         </div>
 
         <div className="flex items-center gap-2">
+          {isOffline && (
+            <button
+              onClick={handleRetryPrints}
+              disabled={printFlush.running}
+              className="flex items-center gap-1 rounded bg-white/20 px-2 py-1 hover:bg-white/30 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={printFlush.running ? 'animate-spin' : ''} />
+              {printFlush.result ? printFlush.result : 'Retry prints'}
+            </button>
+          )}
           {isOnline && (hasError || pendingCount > 0) && (
             <button
               onClick={triggerSync}

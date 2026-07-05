@@ -1281,8 +1281,9 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs1 && Date.now() - termTs1 < 5000) return;
       // FREEZE: once bill is printed, hold items steady until settlement
       if (billPrintedTableIdsRef.current.has(order.tableId) && !settledTableIdsRef.current.has(order.tableId)) return;
-      // Skip updating selectedTable if it's an extra table — extra tables share backendId with parent
-      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
+      // Skip updating selectedTable if it's an extra table OR if the incoming order belongs to an extra table.
+      // Extra tables share backendId with parent, so we must not merge an extra-table order into the parent table view.
+      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra && !payload?.isExtraTable) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
         // (socket event would add items to sessionItems while they're still in pendingItems)
         if (!isSubmittingKotRef.current) {
@@ -1353,8 +1354,9 @@ const CashierDashboard = ({ onLogout }) => {
       // ── DIAGNOSTIC: trace socket order:updated ──
       console.log('[DIAG order:updated] incoming items:', (order.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
       // ── END DIAGNOSTIC ──
-      // Extra tables share backendId with parent — skip selectedTable update to prevent overwriting extra table's activeOrder
-      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra) {
+      // Extra tables share backendId with parent — skip selectedTable update if incoming order is from an extra table
+      // to prevent overwriting the parent table's activeOrder with the extra table's order.
+      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra && !payload?.isExtraTable) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
         if (!isSubmittingKotRef.current) {
           setSelectedTable(prev => {
@@ -1577,7 +1579,7 @@ const CashierDashboard = ({ onLogout }) => {
         setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
       }
       // Clear selectedTable only if it's the actual paid table (not an extra table that shares backendId)
-      if (selectedTable?.backendId === tableId && !selectedTable?.isExtra) {
+      if (selectedTable?.backendId === tableId && !selectedTable?.isExtra && !isExtraTable) {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);

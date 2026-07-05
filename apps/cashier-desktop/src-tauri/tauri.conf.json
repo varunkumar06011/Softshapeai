@@ -23,6 +23,7 @@
         "center": true
       }
     ],
+    "devtools": true,
     "security": {
       "csp": null
     },

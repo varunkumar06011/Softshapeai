@@ -34,6 +34,8 @@ import {
   getNextOfflineKotNumber,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
+import { printLocal } from "../utils/printOffline";
+import { getRestaurantName } from "../utils/getRestaurantConfig";
 
 // Generate a unique request ID for idempotency tracking
 function generateRequestId() {
@@ -61,6 +63,47 @@ async function parseResponse(res) {
   }
   if (res.status === 204) return null;
   return res.json();
+}
+
+async function printOfflineKot({ tableId, tableNumber, items, captainName, kotNumber, requestId }) {
+  if (!items || items.length === 0) return;
+  try {
+    const restaurantName = getRestaurantName();
+    const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+    const liquorItems = items.filter(i => (i.menuType || 'FOOD') === 'LIQUOR');
+
+    if (foodItems.length > 0) {
+      await printLocal({
+        jobType: 'KOT',
+        data: {
+          orderId: tableId,
+          tableNumber: tableNumber || tableId,
+          items: foodItems,
+          kotNumber,
+          restaurantName,
+          captainName,
+          requestId,
+        },
+      });
+    }
+
+    if (liquorItems.length > 0) {
+      await printLocal({
+        jobType: 'BAR_KOT',
+        data: {
+          orderId: tableId,
+          tableNumber: tableNumber || tableId,
+          items: liquorItems,
+          kotNumber,
+          restaurantName,
+          captainName,
+          requestId,
+        },
+      });
+    }
+  } catch (err) {
+    console.error('[Offline] Local KOT print failed:', err);
+  }
 }
 
 export function toOrderItems(items) {
@@ -130,6 +173,15 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
       items: kitchenItems,
       requestId: offlineRequestId,
     }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+    // Try local KOT print (Print Agent, QZ Tray, Tauri, etc.) so tickets still come out
+    await printOfflineKot({
+      tableId,
+      tableNumber: orderData.tableNumber || tableId,
+      items: orderData.items,
+      captainName,
+      kotNumber: preReservedKotNumber,
+      requestId: offlineRequestId,
+    });
     if (import.meta.env.DEV) {
       console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
     }
@@ -212,6 +264,15 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       items: kitchenItems,
       requestId: offlineRequestId,
     }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+    // Try local KOT print for the updated items
+    await printOfflineKot({
+      tableId: orderId,
+      tableNumber: tableNumber || orderId,
+      items: body.items,
+      captainName,
+      kotNumber: preReservedKotNumber,
+      requestId: offlineRequestId,
+    });
     if (import.meta.env.DEV) {
       console.log('[Offline] Update order items queued for sync:', orderId);
     }
@@ -530,16 +591,19 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       method: 'POST',
       body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
     });
-    // Queue a local print job so the receipt prints immediately via local print agent
-    await addOfflinePrintJob({
-      id: `offline-print-${Date.now()}`,
-      orderId,
-      requestId: printRequestId,
-      jobType: 'final-bill',
-      status: 'pending',
-      createdAt: Date.now(),
-      data: { restaurantId, tableNumber, discountPercent, kotNumbers },
-    });
+    // Only queue a local print job if the local printer did not already print it.
+    // CashierDashboard calls printLocal before this, so localPrinted=true means it already printed.
+    if (!localPrinted) {
+      await addOfflinePrintJob({
+        id: `offline-print-${Date.now()}`,
+        orderId,
+        requestId: printRequestId,
+        jobType: 'final-bill',
+        status: 'pending',
+        createdAt: Date.now(),
+        data: { restaurantId, tableNumber, discountPercent, kotNumbers },
+      });
+    }
     if (import.meta.env.DEV) {
       console.log('[Offline] Print bill queued for sync:', orderId);
     }
