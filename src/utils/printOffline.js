@@ -27,7 +27,7 @@
 //   4. iOS PWA: generate shareable PDF receipt
 //   5. No printer: queue in offlinePrintJobs IndexedDB store for auto-print on reconnect
 
-import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
+import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 
 // ── Platform detection ───────────────────────────────────────────────────────
@@ -206,6 +206,9 @@ async function discoverPrintAgentUrls() {
       const data = await res.json();
       if (data.httpUrl) add(data.httpUrl);
       if (data.lanIp) add(`http://${data.lanIp}:3100`);
+      if (data.printerMapping && Object.keys(data.printerMapping).length > 0) {
+        setLocalPrinterMapping(data.printerMapping).catch(() => {});
+      }
     }
   } catch {
     // Backend unreachable — skip
