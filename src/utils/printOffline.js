@@ -326,13 +326,14 @@ export async function printLocal(job) {
   // ── Tauri desktop: raw print via Rust command ──
   if (platform === 'tauri') {
     let targetPrinter = printerName;
-    // If no mapping is saved, try the first available printer so offline prints still come out
+    // If no mapping is saved, try the default Windows printer so offline prints still come out
     if (!targetPrinter && window.__TAURI__) {
       try {
         const printers = await window.__TAURI__.invoke('list_printers');
         if (printers && printers.length > 0) {
-          targetPrinter = printers[0];
-          console.log('[printOffline] No mapped printer, falling back to first Tauri printer:', targetPrinter);
+          const defaultPrinter = printers.find(p => p.isDefault) || printers[0];
+          targetPrinter = defaultPrinter?.name || printers[0].name;
+          console.log('[printOffline] No mapped printer, falling back to default Tauri printer:', targetPrinter);
         }
       } catch (err) {
         console.warn('[printOffline] Failed to list Tauri printers:', err);
