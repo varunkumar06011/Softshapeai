@@ -2,7 +2,7 @@ import { lazy, useState } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
-  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Star,
+  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Star, Scale,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,6 +25,7 @@ const KitchenInventory = lazy(() => import('./AdminComponents').then(m => ({ def
 const StaffManagement = lazy(() => import('./AdminComponents').then(m => ({ default: m.StaffManagement })));
 const Attendance      = lazy(() => import('./AdminComponents').then(m => ({ default: m.Attendance })));
 const AdminVouchers   = lazy(() => import('./AdminVouchers'));
+const AdminDailyBalanceSheet = lazy(() => import('./AdminDailyBalanceSheet'));
 const SurveillanceDashboard = lazy(() => import('./SurveillanceDashboard'));
 const TodaySpecials   = lazy(() => import('./TodaySpecials'));
 const AdminTransactions = lazy(() => import('./AdminTransactions'));
@@ -114,6 +115,7 @@ export const adminRoutes = [
   { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner'], element: <Orders /> },
   { key: 'transactions',      label: 'Transactions',           icon: Receipt,             roles: ['admin','owner'], element: <AdminTransactions />,            props: (ctx) => ({ onStatsRefresh: ctx.loadStats }) },
   { key: 'reports',           label: 'Reports',                icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <Reports /> },
+  { key: 'balanceSheet',      label: 'Daily Balance Sheet',    icon: Scale,               roles: ['admin','owner'], element: <AdminDailyBalanceSheet /> },
   { key: 'staff',             label: 'Staff',                  icon: Users,               roles: ['admin','owner'], element: <StaffManagement /> },
   { key: 'captains',          label: 'Captain Analytics',      icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <CaptainPerformanceDashboard /> },
   { key: 'payroll',           label: 'Payroll',                icon: DollarSign,          roles: ['admin','owner'], element: <Payroll />,                       props: (ctx) => ({ onPayslip: () => {} }) },
@@ -150,6 +152,7 @@ export function isRouteEnabled(key, enabledModules) {
   if (key === 'captains') return enabledModules.tables !== false;
   if (key === 'payroll') return enabledModules.payroll !== false;
   if (key === 'vouchers') return enabledModules.vouchers !== false;
+  if (key === 'balanceSheet') return enabledModules.dailyBalanceSheet !== false;
   if (key === 'attendance') return enabledModules.payroll !== false;
   if (key === 'marketing') return enabledModules.marketing !== false;
   if (key === 'kitchen-inventory') return enabledModules.food !== false || enabledModules.bar_inventory === true || enabledModules.bar !== false;
