@@ -6,6 +6,9 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
 
@@ -71,6 +74,51 @@ async function loadImageAsBase64(url) {
   });
 }
 
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function shareOrDownloadPDF(blob, filename) {
+  const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
+
+  if (isNative) {
+    // Capacitor native app: write PDF to cache and open native share dialog
+    const base64 = await blobToBase64(blob);
+    await Filesystem.writeFile({
+      path: filename,
+      data: base64,
+      directory: Directory.Cache,
+      recursive: true,
+    });
+    const fileUri = await Filesystem.getUri({
+      path: filename,
+      directory: Directory.Cache,
+    });
+    await Share.share({
+      title: 'Daily Balance Sheet',
+      text: `Daily Balance Sheet Report - ${filename}`,
+      url: fileUri.uri,
+      dialogTitle: 'Share via',
+    });
+    return;
+  }
+
+  // Web / PWA fallback: trigger browser download
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── Sales Tile component ─────────────────────────────────────────────────────
 function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, onChange }) {
   const [localValue, setLocalValue] = useState('');
@@ -90,7 +138,8 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
     if (isLocked) return;
     const numVal = localValue === '' ? null : Number(localValue);
     if (isManual) {
-      onChange(numVal);
+      // Manual fields stay manual; empty means 0
+      onChange(numVal ?? 0);
     } else {
       // For auto tiles: if user typed something different from computed, it becomes an override
       if (numVal != null && numVal !== round2(Number(computedValue) || 0)) {
@@ -107,6 +156,9 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
         <span className="text-xs font-bold text-gray-600">{label}</span>
         {isAuto && !hasOverride && (
           <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700">AUTO</span>
+        )}
+        {isManual && !hasOverride && (
+          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-600">MANUAL</span>
         )}
         {hasOverride && (
           <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">OVERRIDE</span>
@@ -298,11 +350,11 @@ export default function AdminDailyBalanceSheet() {
       setOverrides({
         openingBalance: Number(sheet.openingBalance) || 0,
         acBarSaleOverride: sheet.acBarSaleOverride != null ? Number(sheet.acBarSaleOverride) : null,
-        nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : null,
+        nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : 0,
         familyWingSaleOverride: sheet.familyWingSaleOverride != null ? Number(sheet.familyWingSaleOverride) : null,
-        parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : null,
-        swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : null,
-        zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : null,
+        parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : 0,
+        swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : 0,
+        zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : 0,
       });
       setAdjustments(sheet.adjustments || []);
     }
@@ -317,6 +369,15 @@ export default function AdminDailyBalanceSheet() {
     swiggy: overrides.swiggySale || 0,
     zomato: overrides.zomatoSale || 0,
   };
+
+  const totalSales = round2(
+    computedSales.acBar +
+    computedSales.nonAcBar +
+    computedSales.familyWing +
+    computedSales.parcel +
+    computedSales.swiggy +
+    computedSales.zomato
+  );
 
   const totalVouchers = Number(sheet?.totalVouchers) || 0;
 
@@ -502,10 +563,10 @@ export default function AdminDailyBalanceSheet() {
     y += 6;
 
     const salesRows = [
-      ['AC Bar', `₹${computedSales.acBar.toLocaleString('en-IN')}`],
+      ['Lounge Sales', `₹${computedSales.acBar.toLocaleString('en-IN')}`],
       ['Non-AC Bar', `₹${computedSales.nonAcBar.toLocaleString('en-IN')}`],
-      ['Family Wing', `₹${computedSales.familyWing.toLocaleString('en-IN')}`],
-      ['Parcel', `₹${computedSales.parcel.toLocaleString('en-IN')}`],
+      ['Family', `₹${computedSales.familyWing.toLocaleString('en-IN')}`],
+      ['Parcel Counter', `₹${computedSales.parcel.toLocaleString('en-IN')}`],
       ['Swiggy', `₹${computedSales.swiggy.toLocaleString('en-IN')}`],
       ['Zomato', `₹${computedSales.zomato.toLocaleString('en-IN')}`],
     ];
@@ -616,22 +677,19 @@ export default function AdminDailyBalanceSheet() {
       }
       const doc = generateBalanceSheetPDF(logoDataUrl);
       const blob = doc.output('blob');
+      const filename = `Daily-Balance-Sheet-${selectedDate}.pdf`;
+      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
 
-      // Download the PDF so the user can attach it in WhatsApp
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Daily-Balance-Sheet-${selectedDate}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Share / download the PDF
+      await shareOrDownloadPDF(blob, filename);
 
-      // Open WhatsApp chat with the VGrand admin number
-      const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
-      const whatsappUrl = `https://wa.me/${VGRAND_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-      window.open(whatsappUrl, '_blank');
+      // In browser, also open WhatsApp web with the fixed number
+      if (!isNative) {
+        const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
+        const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
+        const whatsappUrl = `https://wa.me/${VGRAND_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+        window.open(whatsappUrl, '_blank');
+      }
     } catch (err) {
       setError(err.message || 'Failed to generate PDF for WhatsApp');
     } finally {
@@ -651,7 +709,7 @@ export default function AdminDailyBalanceSheet() {
   return (
     <div className="space-y-4 p-4 max-w-5xl mx-auto">
       {/* ── Header: Date navigator + outlet selector ─────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
@@ -659,14 +717,14 @@ export default function AdminDailyBalanceSheet() {
           >
             <ChevronLeft size={18} />
           </button>
-          <div className="relative">
+          <div className="relative flex-1">
             <Calendar size={16} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               max={today}
-              className="rounded-lg border border-gray-200 pl-8 pr-2 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+              className="w-full rounded-lg border border-gray-200 pl-8 pr-2 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
             />
           </div>
           <button
@@ -686,7 +744,7 @@ export default function AdminDailyBalanceSheet() {
             <select
               value={outletId}
               onChange={(e) => setOutletId(e.target.value)}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935] sm:w-auto"
             >
               <option value="all">All Outlets</option>
               {accessibleOutlets.map((o) => (
@@ -727,9 +785,9 @@ export default function AdminDailyBalanceSheet() {
       {/* ── Sales tiles ───────────────────────────────────────────────────── */}
       <div>
         <h3 className="text-sm font-black text-gray-800 mb-2">Venue Sales</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <SalesTile
-            label="AC Bar"
+            label="Lounge Sales"
             computedValue={Number(sheet?.acBarSaleComputed) || 0}
             overrideValue={overrides.acBarSaleOverride}
             isManual={overrides.acBarSaleOverride != null}
@@ -738,14 +796,14 @@ export default function AdminDailyBalanceSheet() {
           />
           <SalesTile
             label="Non-AC Bar"
-            computedValue={Number(sheet?.nonAcBarSaleComputed) || 0}
+            computedValue={null}
             overrideValue={overrides.nonAcBarSaleOverride}
-            isManual={overrides.nonAcBarSaleOverride != null}
+            isManual={true}
             isLocked={isLocked}
             onChange={(v) => handleFieldChange('nonAcBarSaleOverride', v)}
           />
           <SalesTile
-            label="Family Wing"
+            label="Family"
             computedValue={Number(sheet?.familyWingSaleComputed) || 0}
             overrideValue={overrides.familyWingSaleOverride}
             isManual={overrides.familyWingSaleOverride != null}
@@ -753,10 +811,10 @@ export default function AdminDailyBalanceSheet() {
             onChange={(v) => handleFieldChange('familyWingSaleOverride', v)}
           />
           <SalesTile
-            label="Parcel"
-            computedValue={Number(sheet?.parcelSaleComputed) || 0}
+            label="Parcel Counter"
+            computedValue={null}
             overrideValue={overrides.parcelSaleOverride}
-            isManual={overrides.parcelSaleOverride != null}
+            isManual={true}
             isLocked={isLocked}
             onChange={(v) => handleFieldChange('parcelSaleOverride', v)}
           />
@@ -776,6 +834,17 @@ export default function AdminDailyBalanceSheet() {
             isLocked={isLocked}
             onChange={(v) => handleFieldChange('zomatoSale', v)}
           />
+        </div>
+        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-gray-700">Total Sales</span>
+            <span className="text-lg font-black text-gray-900">
+              ₹{totalSales.toLocaleString('en-IN')}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            Vouchers (₹{voucherSubtotal.toLocaleString('en-IN')}) are deducted automatically from Total Sales in the running total below.
+          </div>
         </div>
       </div>
 
@@ -848,33 +917,35 @@ export default function AdminDailyBalanceSheet() {
         </div>
 
         {showAddAdj && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 p-2">
+          <div className="mb-2 flex flex-col gap-2 rounded-lg border border-blue-300 bg-blue-50 p-2 sm:flex-row sm:items-center">
             <input
               type="text"
               value={newAdj.label}
               onChange={(e) => setNewAdj({ ...newAdj, label: e.target.value })}
               placeholder="Label (e.g. Daily expenses)"
-              className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
+              className="w-full flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
             />
-            <button
-              onClick={() => setNewAdj({ ...newAdj, sign: newAdj.sign === 'PLUS' ? 'MINUS' : 'PLUS' })}
-              className={`rounded px-2 py-1 text-sm font-bold ${newAdj.sign === 'PLUS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-            >
-              {newAdj.sign === 'PLUS' ? '+' : '−'}
-            </button>
-            <input
-              type="number"
-              value={newAdj.amount}
-              onChange={(e) => setNewAdj({ ...newAdj, amount: e.target.value })}
-              placeholder="Amount"
-              className="w-24 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
-            />
-            <button onClick={handleAddAdjustment} className="rounded bg-[#E53935] px-3 py-1 text-sm font-bold text-white hover:bg-[#C62828]">
-              Add
-            </button>
-            <button onClick={() => setShowAddAdj(false)} className="rounded bg-gray-200 px-2 py-1 text-sm text-gray-600">
-              Cancel
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setNewAdj({ ...newAdj, sign: newAdj.sign === 'PLUS' ? 'MINUS' : 'PLUS' })}
+                className={`rounded px-2 py-1 text-sm font-bold ${newAdj.sign === 'PLUS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+              >
+                {newAdj.sign === 'PLUS' ? '+' : '−'}
+              </button>
+              <input
+                type="number"
+                value={newAdj.amount}
+                onChange={(e) => setNewAdj({ ...newAdj, amount: e.target.value })}
+                placeholder="Amount"
+                className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none sm:w-24"
+              />
+              <button onClick={handleAddAdjustment} className="rounded bg-[#E53935] px-3 py-1 text-sm font-bold text-white hover:bg-[#C62828]">
+                Add
+              </button>
+              <button onClick={() => setShowAddAdj(false)} className="rounded bg-gray-200 px-2 py-1 text-sm text-gray-600">
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 
@@ -921,13 +992,13 @@ export default function AdminDailyBalanceSheet() {
       </div>
 
       {/* ── Action buttons ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
         {isLocked ? (
           isAdmin && (
             <button
               onClick={handleUnlock}
               disabled={statusLoading}
-              className="flex items-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700"
+              className="flex items-center justify-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700"
             >
               {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Unlock size={16} />}
               Unlock to Edit
@@ -939,7 +1010,7 @@ export default function AdminDailyBalanceSheet() {
               <button
                 onClick={handleWhatsAppShare}
                 disabled={statusLoading}
-                className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
+                className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
                 Send to WhatsApp
@@ -948,7 +1019,7 @@ export default function AdminDailyBalanceSheet() {
               <button
                 onClick={handleSubmit}
                 disabled={statusLoading || sheet?.status === 'SUBMITTED'}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                 {sheet?.status === 'SUBMITTED' ? 'Submitted' : 'Submit'}
@@ -958,7 +1029,7 @@ export default function AdminDailyBalanceSheet() {
               <button
                 onClick={handleLock}
                 disabled={statusLoading}
-                className="flex items-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700"
+                className="flex items-center justify-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
                 Lock
