@@ -319,14 +319,15 @@ export default function AdminDailyBalanceSheet() {
   const loadVouchers = useCallback(async () => {
     setVouchersLoading(true);
     try {
-      const data = await apiFetch(`/api/vouchers?date=${selectedDate}&limit=500`);
+      const params = new URLSearchParams({ date: selectedDate, limit: '500', outletId });
+      const data = await apiFetch(`/api/vouchers?${params.toString()}`);
       setVouchers(data || []);
     } catch {
       setVouchers([]);
     } finally {
       setVouchersLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, outletId]);
 
   useEffect(() => { loadSheet(); }, [loadSheet]);
   useEffect(() => { loadVouchers(); }, [loadVouchers]);
@@ -867,7 +868,10 @@ export default function AdminDailyBalanceSheet() {
                 <div className="space-y-1">
                   {vlist.map((v) => (
                     <div key={v.id} className="flex items-center justify-between text-xs text-gray-600">
-                      <span>{v.voucherNo}. {v.paidToName}</span>
+                      <span>
+                        {v.voucherNo}. {v.paidToName}
+                        {v.narration ? ` — ${v.narration}` : ''}
+                      </span>
                       <span>₹{Number(v.amount).toLocaleString('en-IN')}</span>
                     </div>
                   ))}
