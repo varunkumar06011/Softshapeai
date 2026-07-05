@@ -173,6 +173,4 @@ If you are a developer, restaurant owner, or integrator looking for a modern, of
 
 ---
 
-## 📄 License
 
-[ISC](./package.json) — SoftShape AI.
