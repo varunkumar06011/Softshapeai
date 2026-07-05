@@ -99,16 +99,8 @@ async function loadInitialMenu() {
 
     try {
       const apiItems = await fetchMenuFromBackend();
-      const saved = localStorage.getItem(getStorageKey());
-      const localItems = saved ? JSON.parse(saved) : [];
 
-      const localSpecials = localItems.filter((i) => i.isSpecial);
-      const specialNames = new Set(localSpecials.map((s) => s.n.toLowerCase()));
-      const filteredBase = apiItems.filter(
-        (m) => !specialNames.has(m.n.toLowerCase())
-      );
-
-      globalMenu = [...localSpecials, ...filteredBase];
+      globalMenu = apiItems;
       console.log(`[MenuSync] Loaded ${globalMenu.length} items from backend`);
     } catch (err) {
       console.error("[MenuSync] Failed to load initial menu", err);
@@ -211,19 +203,7 @@ export function useGlobalMenuSync() {
     try {
       const apiItems = await fetchMenuFromBackend();
 
-      const activeSpecials = (globalMenu || menu || []).filter(
-        (i) =>
-          i.isSpecial &&
-          i.active &&
-          (!i.expiresAt || Date.now() < i.expiresAt)
-      );
-      const specialNames = new Set(
-        activeSpecials.map((s) => s.n.toLowerCase())
-      );
-      const filteredBase = apiItems.filter(
-        (m) => !specialNames.has(m.n.toLowerCase())
-      );
-      globalMenu = [...activeSpecials, ...filteredBase];
+      globalMenu = apiItems;
       _loadError = null;
 
       localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
@@ -287,6 +267,10 @@ export function useGlobalMenuSync() {
             variants: updated.variants || [],
             venuePrices: updated.venuePrices || {},
             venueAvailabilities: updated.venueAvailabilities || {},
+            isSpecial: updated.isSpecial === true,
+            specialChannel: updated.specialChannel || 'BOTH',
+            active: updated.specialActive !== false,
+            expiresAt: updated.specialExpiresAt ? new Date(updated.specialExpiresAt).getTime() : null,
           };
           globalMenu = [...globalMenu, newItem];
         } else {
@@ -305,6 +289,10 @@ export function useGlobalMenuSync() {
                   venueAvailabilities: updated.venueAvailabilities
                     ? { ...(item.venueAvailabilities || {}), ...updated.venueAvailabilities }
                     : item.venueAvailabilities,
+                  isSpecial: updated.isSpecial !== undefined ? updated.isSpecial === true : item.isSpecial,
+                  specialChannel: updated.specialChannel ?? item.specialChannel,
+                  active: updated.specialActive !== undefined ? updated.specialActive !== false : item.active,
+                  expiresAt: updated.specialExpiresAt !== undefined ? (updated.specialExpiresAt ? new Date(updated.specialExpiresAt).getTime() : null) : item.expiresAt,
                 }
               : item
           );

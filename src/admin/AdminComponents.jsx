@@ -158,6 +158,8 @@ import { useMenu } from '../context/MenuContext';
 
 import { useAuth } from '../context/AuthContext';
 
+import { useSocket } from '../hooks/useSocket';
+
 import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
 
 import { getSmartRecommendation } from '../services/pricingEngine';
@@ -789,6 +791,10 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
         </div>
 
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <TopItemsWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+        </div>
+
       </div>
 
       
@@ -849,10 +855,181 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       </div>
 
+      <div className={card + " p-4 flex flex-col animate-chart-in-delay-2"}>
+        <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
+          <Star size={18} className="text-amber-500 fill-amber-500" />
+          Today Specials Sold
+        </h3>
+        <TodaySpecialsSoldWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+      </div>
+
     </div>
 
   </div>;
 
+}
+
+
+
+function TopItemsWidget({ dashboardScope, restaurantId }) {
+  const [topItems, setTopItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const socket = useSocket(restaurantId);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTopItems = async () => {
+      try {
+        setLoading(true);
+        const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
+        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity`, {
+          headers: { ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch top items');
+        const data = await res.json();
+        if (!cancelled) setTopItems(data.items || []);
+      } catch (err) {
+        console.warn('[TopItemsWidget] Failed to load top items:', err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadTopItems();
+    const interval = setInterval(loadTopItems, 300000); // 5 minutes
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [dashboardScope, restaurantId]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const loadTopItems = async () => {
+      try {
+        const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
+        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity`, {
+          headers: { ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch top items');
+        const data = await res.json();
+        setTopItems(data.items || []);
+      } catch (err) {
+        console.warn('[TopItemsWidget] Failed to load top items:', err.message);
+      }
+    };
+    const onOrderPaid = () => loadTopItems();
+    socket.on('order:paid', onOrderPaid);
+    return () => {
+      socket.off('order:paid', onOrderPaid);
+    };
+  }, [socket, dashboardScope, restaurantId]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {[1, 2, 3].map(i => <div key={i} className="h-8 bg-gray-100 rounded-lg" />)}
+      </div>
+    );
+  }
+
+  if (topItems.length === 0) {
+    return <p className="text-xs text-gray-400 font-bold">No sales data yet</p>;
+  }
+
+  return (
+    <div>
+      <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3">Top Selling Items</h4>
+      <div className="space-y-2">
+        {topItems.map((item, idx) => (
+          <div key={item.name} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-5 h-5 rounded-full bg-[#E53935] text-white text-[10px] font-black flex items-center justify-center shrink-0">{idx + 1}</span>
+              <span className="text-sm font-bold text-gray-900 truncate">{item.name}</span>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-sm font-black text-[#E53935]">{item.quantity}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
+function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
+  const [specials, setSpecials] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const socket = useSocket(restaurantId);
+
+  const loadSpecials = useCallback(async () => {
+    try {
+      setLoading(true);
+      const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
+      const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${outletId}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!res.ok) throw new Error('Failed to fetch today specials sold');
+      const data = await res.json();
+      setSpecials(data.specials || []);
+    } catch (err) {
+      console.warn('[TodaySpecialsSoldWidget] Failed to load:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [dashboardScope, restaurantId]);
+
+  useEffect(() => {
+    loadSpecials();
+  }, [loadSpecials]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderPaid = () => {
+      loadSpecials();
+    };
+    socket.on('order:paid', onOrderPaid);
+    return () => {
+      socket.off('order:paid', onOrderPaid);
+    };
+  }, [socket, loadSpecials]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {[1, 2, 3].map(i => <div key={i} className="h-8 bg-gray-100 rounded-lg" />)}
+      </div>
+    );
+  }
+
+  if (specials.length === 0) {
+    return <p className="text-xs text-gray-400 font-bold">No specials sold today</p>;
+  }
+
+  return (
+    <div>
+      <h4 className="text-xs font-black uppercase tracking-widest text-amber-500 mb-3 flex items-center gap-2">
+        <Star size={14} className="fill-amber-500" /> Today Specials Sold
+      </h4>
+      <div className="space-y-2">
+        {specials.map(special => (
+          <div key={special.id} className="flex items-center justify-between bg-amber-50 rounded-xl px-3 py-2 border border-amber-100">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-black text-gray-500 uppercase">{special.specialChannel || 'BOTH'}</span>
+              <span className="text-sm font-bold text-gray-900 truncate">{special.name}</span>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-sm font-black text-[#E53935]">{special.soldCount}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 

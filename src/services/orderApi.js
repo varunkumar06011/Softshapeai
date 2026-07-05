@@ -309,8 +309,10 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
       body,
     });
     // Store local transaction record for offline history
+    const localId = `offline-txn-${Date.now()}`;
+    body.localTxnId = localId;
     await addOfflineTransaction({
-      localId: `offline-txn-${Date.now()}`,
+      localId,
       orderId,
       requestId: settleRequestId,
       ...extraSettleData,
@@ -320,7 +322,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     if (import.meta.env.DEV) {
       console.log('[Offline] Settlement queued for sync:', orderId);
     }
-    return { offline: true, transaction: { id: `offline-txn-${Date.now()}`, ...body } };
+    return { offline: true, transaction: { id: localId, ...body } };
   }
 
   return withRetry(

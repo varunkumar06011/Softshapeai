@@ -37,6 +37,7 @@ import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createO
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
+import { getOfflineTransactions, markOfflineTransactionSynced } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
@@ -1052,17 +1053,50 @@ const CashierDashboard = ({ onLogout }) => {
         if (bTxn != null) return 1;
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
+      // Merge unsynced offline settlements so they appear in history without internet
+      const serverOrderIds = new Set(sorted.map(t => t.orderId).filter(Boolean));
+      let offlineTxns = [];
+      try {
+        const allOffline = await getOfflineTransactions();
+        offlineTxns = allOffline
+          .filter(t => !t.synced && isTxnInDateFilter(t.createdAt))
+          .map(mapOfflineTransaction)
+          .filter(t => {
+            if (activeOutlet === 'bar') return barSourcesRef.current.has(t.source);
+            if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(t.source);
+            return true;
+          })
+          // Drop offline entries whose order already has a server transaction
+          .filter(t => !serverOrderIds.has(t.orderId));
+      } catch (e) {
+        console.warn('[Transactions] Failed to load offline transactions:', e);
+      }
+
+      const merged = [...offlineTxns, ...sorted].sort((a, b) => {
+        const aBill = a.billNumber != null ? parseInt(a.billNumber, 10) : null;
+        const bBill = b.billNumber != null ? parseInt(b.billNumber, 10) : null;
+        if (aBill != null && bBill != null) return aBill - bBill;
+        if (aBill != null) return -1;
+        if (bBill != null) return 1;
+        const aTxn = a.txnNumber != null ? Number(a.txnNumber) : null;
+        const bTxn = b.txnNumber != null ? Number(b.txnNumber) : null;
+        if (aTxn != null && bTxn != null) return aTxn - bTxn;
+        if (aTxn != null) return -1;
+        if (bTxn != null) return 1;
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      });
+
       // ONLY apply result if this is still the latest call
       if (myGeneration !== loadTxnsGenerationRef.current) {
         console.log(`[Transactions] Discarding stale gen=${myGeneration}, current=${loadTxnsGenerationRef.current}`);
         return;
       }
-      console.log(`[Transactions] Applying gen=${myGeneration}, total=${sorted.length}`);
-      // Replace entirely — only preserve optimistic (socket-added, not yet server-confirmed) txns
+      console.log(`[Transactions] Applying gen=${myGeneration}, total=${merged.length} (${offlineTxns.length} offline)`);
+      // Replace entirely — only preserve optimistic (socket-added / offline, not yet server-confirmed) txns
       setPastTransactions(prev => {
-        const newIds = new Set(sorted.map(t => t.id));
+        const newIds = new Set(merged.map(t => t.id));
         const preserved = prev.filter(t => !newIds.has(t.id) && t._optimistic === true);
-        return [...sorted, ...preserved];
+        return [...merged, ...preserved];
       });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
 
@@ -1071,15 +1105,31 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Only cache today's data + add version stamp
       if (filter === 'today') {
-        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(sorted));
+        localStorage.setItem(TX_CACHE_KEY, JSON.stringify(merged));
         localStorage.setItem(`${TX_CACHE_KEY}_version`, Date.now().toString());
       }
     } catch (err) {
       if (myGeneration !== loadTxnsGenerationRef.current) return; // stale error, discard
       console.error('[Transactions] Critical fetch failure:', err);
-      // Fallback to cache
-      const cached = localStorage.getItem(TX_CACHE_KEY);
-      if (cached) setPastTransactions(JSON.parse(cached));
+      // Fallback to cache, but still overlay unsynced offline settlements
+      const cachedRaw = localStorage.getItem(TX_CACHE_KEY);
+      const cached = cachedRaw ? JSON.parse(cachedRaw) : [];
+      try {
+        const allOffline = await getOfflineTransactions();
+        const cachedOrderIds = new Set(cached.map(t => t.orderId).filter(Boolean));
+        const offlineTxns = allOffline
+          .filter(t => !t.synced && isTxnInDateFilter(t.createdAt))
+          .map(mapOfflineTransaction)
+          .filter(t => !cachedOrderIds.has(t.orderId))
+          .filter(t => {
+            if (activeOutlet === 'bar') return barSourcesRef.current.has(t.source);
+            if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(t.source);
+            return true;
+          });
+        setPastTransactions([...offlineTxns, ...cached].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      } catch {
+        setPastTransactions(cached);
+      }
     } finally {
       txnFetchingRef.current = false;
       if (!silent && myGeneration === loadTxnsGenerationRef.current) {
@@ -1681,6 +1731,54 @@ const CashierDashboard = ({ onLogout }) => {
     if (filter === 'custom') return txnDateStr === txnCustomDateRef.current;
     return true;
   }, []);
+
+  // ── Map offline IndexedDB settlement record into history-list shape ───
+  const mapOfflineTransaction = useCallback((txn) => {
+    const sectionById = fetchedSectionsRef.current.find(s => s.id === txn.sectionId);
+    const source = sectionTagToSourceRef.current[txn.sectionTag]
+      || (sectionById && (sectionTagToSourceRef.current[sectionById.sectionTag] || sectionById.name))
+      || (txn.sectionTag && txn.sectionTag.startsWith('venue-bar') ? 'bar'
+        : txn.sectionTag && txn.sectionTag.startsWith('venue-restaurant') ? 'restaurant'
+        : txn.sectionTag || activeOutlet);
+    const num = txn.tableNumber || null;
+    const tableDisplayName = (() => {
+      if (!num) return '—';
+      const section = fetchedSectionsRef.current.find(s => s.sectionTag === txn.sectionTag);
+      const venueType = section?.venue?.venueType;
+      if (isBarLikeVenue(venueType)) return `B${num}`;
+      return `T${num}`;
+    })();
+    const paidAt = txn.createdAt || Date.now();
+    return {
+      id: txn.localId,
+      orderId: txn.orderId || null,
+      txnNumber: null,
+      billNumber: null,
+      displayId: 'OFFLINE',
+      kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
+      amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+      grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
+      subtotal: txn.subtotal != null ? Number(txn.subtotal) : 0,
+      discountPercent: txn.discountPercent != null ? Number(txn.discountPercent) : 0,
+      discountAmount: txn.discountAmount != null ? Number(txn.discountAmount) : 0,
+      cgst: txn.cgst != null ? Number(txn.cgst) : 0,
+      sgst: txn.sgst != null ? Number(txn.sgst) : 0,
+      time: (() => { try { const d = new Date(paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+      date: (() => { try { const d = new Date(paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
+      timestamp: (() => { try { const d = new Date(paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
+      items: txn.itemCount || (Array.isArray(txn.items) ? txn.items.length : 0),
+      itemsList: txn.items || [],
+      captainId: 'CASHIER',
+      captainName: 'Head Cashier',
+      method: txn.paymentMethod || txn.method || 'OTHER',
+      tableNumber: num,
+      tableDisplayName,
+      source,
+      restaurantId: activeRestaurantId,
+      _optimistic: true,
+      _offline: true,
+    };
+  }, [activeOutlet, activeRestaurantId]);
 
   // ── Fetch fresh order data from backend ───
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
@@ -2596,30 +2694,12 @@ const CashierDashboard = ({ onLogout }) => {
   const handleRemoveVenueExtraTable = (extraTable) => {
     const extraItems = getAllOrderItems(extraTable);
     if (extraItems.length > 0) {
-      // Merge items back into parent table's activeOrder visually
-      const parentTable = activeTables.find(t => t.backendId === extraTable.baseBackendId);
-      if (parentTable?.activeOrder) {
-        const mainItems = parentTable.activeOrder.items || [];
-        const extraKotHistory = extraTable.kotHistory || [];
-        const mergedItems = [...mainItems, ...extraItems.map(i => ({
-          id: null,
-          n: i.n || i.name,
-          name: i.n || i.name,
-          p: Number(i.p ?? i.price ?? 0),
-          price: Number(i.p ?? i.price ?? 0),
-          q: Number(i.q ?? i.quantity ?? 1),
-          quantity: Number(i.q ?? i.quantity ?? 1),
-          menuType: (i.menuType || 'FOOD').toUpperCase(),
-          removedFromBill: false,
-          notes: i.notes || null,
-        }))];
-        const mergedKotHistory = [...(parentTable.kotHistory || []), ...extraKotHistory];
-        const updateTables = (prev) => prev.map(t =>
-          t.backendId === extraTable.baseBackendId
-            ? { ...t, activeOrder: { ...t.activeOrder, items: mergedItems }, kotHistory: mergedKotHistory, currentBill: (t.currentBill || 0) + (extraTable.currentBill || 0) }
-            : t
-        );
-        setActiveTables(updateTables, { skipPersist: true });
+      // Do not merge extra-table items back into the parent table visually.
+      // Extra tables have their own backend order; merging caused duplicate/untracked items.
+      const unsavedItems = extraItems.filter(i => !i.backendId && !i.id);
+      if (unsavedItems.length > 0) {
+        addNotification('Extra table has unsaved items', 'Settle or save them before removing the extra table.', 'warning');
+        return;
       }
     }
     setExtraTables(prev => prev.filter(et => et.id !== extraTable.id));
@@ -3073,6 +3153,22 @@ const CashierDashboard = ({ onLogout }) => {
               } catch {}
               setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
             }
+
+            // Show settlement in Past Transactions immediately while offline
+            const offlineTxn = settleData?.transaction;
+            if (offlineTxn && isTxnInDateFilter(Date.now())) {
+              const mappedOffline = mapOfflineTransaction({
+                ...offlineTxn,
+                localId: offlineTxn.id,
+                orderId,
+                createdAt: Date.now(),
+              });
+              setPastTransactions(prev => {
+                if (prev.some(t => t.id === mappedOffline.id)) return prev;
+                return [mappedOffline, ...prev];
+              });
+            }
+            loadTransactions(txnDateFilterRef.current, null, { silent: true });
             return;
           }
 
@@ -3455,6 +3551,13 @@ const CashierDashboard = ({ onLogout }) => {
     const cats = filtered.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
   }, [selectedMenuType, activeOutlet, menuItems, barMenuItems]);
+
+  const todaySpecials = useMemo(() => {
+    const now = Date.now();
+    return (menuItems || []).filter(
+      i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CASHIER' || i.specialChannel === 'BOTH')
+    );
+  }, [menuItems]);
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
@@ -5627,6 +5730,25 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
 
                     <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
+                      {!menuLoading && activeOutlet === 'restaurant' && todaySpecials.length > 0 && (
+                        <div className="mb-4">
+                          <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 mb-2 flex items-center gap-2">
+                            <Star size={14} className="fill-amber-500" /> Today Specials
+                          </h4>
+                          <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1">
+                            {todaySpecials.map(special => (
+                              <button
+                                key={special.id}
+                                onClick={() => handleAddItem(special)}
+                                className="shrink-0 flex flex-col items-start bg-gradient-to-br from-amber-50 to-white border border-amber-200 hover:border-amber-400 rounded-xl px-3 py-2 shadow-sm active:scale-95 transition-all text-left"
+                              >
+                                <span className="text-xs font-black text-gray-900 line-clamp-1 max-w-[140px]">{special.n}</span>
+                                <span className="text-xs font-black text-[#E53935]">₹{special.p}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {menuLoading ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                           {[1, 2, 3, 4, 5, 6].map(i => (

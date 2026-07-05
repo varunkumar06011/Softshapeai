@@ -109,6 +109,10 @@ export function mapFlatMenuItems(items) {
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       venuePrices: item.venuePrices || {},
       gstEnabled: item.gstEnabled !== false,
+      isSpecial: item.isSpecial === true,
+      specialChannel: item.specialChannel || "BOTH",
+      active: item.specialActive !== false,
+      expiresAt: item.specialExpiresAt ? new Date(item.specialExpiresAt).getTime() : null,
     };
   });
 }
@@ -212,6 +216,32 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
     `Cannot reach backend at ${API_BASE}. ` +
     "Check backend deployment status and ensure the service is active."
   );
+}
+
+export async function createMenuItem(data) {
+  const res = await fetch(apiUrl('/api/menu/items'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  return parseMenuResponse(res, 'Create menu item');
+}
+
+export async function updateMenuItem(id, data) {
+  const res = await fetch(apiUrl(`/api/menu/items/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  return parseMenuResponse(res, 'Update menu item');
+}
+
+export async function deleteMenuItem(id) {
+  const res = await fetch(apiUrl(`/api/menu/items/${id}`), {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return parseMenuResponse(res, 'Delete menu item');
 }
 
 export function persistMenu(menuItems, restaurantId = getCurrentRestaurantId()) {

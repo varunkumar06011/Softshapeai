@@ -504,3 +504,53 @@ async function shareAsPDF(job, text) {
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter, discoverPrintAgentUrls };
+
+/**
+ * Manual test entry point for the offline print pipeline.
+ * Run in the browser console: `window.testOfflinePrint()`
+ */
+export async function testOfflinePrintPipeline() {
+  const platform = detectPlatform();
+  const mapping = await getPrinterMapping();
+  const report = {
+    platform,
+    hasPrinterMapping: Object.keys(mapping).length > 0,
+    mapping,
+    queued: false,
+    flushed: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  try {
+    const result = await printLocal({
+      jobType: 'FINAL_BILL',
+      data: {
+        tableNumber: 'TEST',
+        items: [{ name: 'Test Item', quantity: 1, price: 100 }],
+        subtotal: 100,
+        grandTotal: 100,
+        billNumber: 'TEST-001',
+        restaurantName: 'Offline Print Test',
+      },
+    });
+    report.queued = result.queued;
+  } catch (err) {
+    report.errors.push(`Queue failed: ${err.message}`);
+  }
+
+  try {
+    const flush = await flushOfflinePrintJobs();
+    report.flushed = flush.flushed;
+    report.failed = flush.failed;
+  } catch (err) {
+    report.errors.push(`Flush failed: ${err.message}`);
+  }
+
+  console.log('[printOffline] Test report:', report);
+  return report;
+}
+
+if (typeof window !== 'undefined') {
+  window.testOfflinePrint = testOfflinePrintPipeline;
+}

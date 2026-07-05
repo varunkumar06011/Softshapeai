@@ -1145,7 +1145,7 @@ export default function CaptainApp({ onLogout }) {
 
     return outletFilteredMenuItems.filter(
 
-      i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt)
+      i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CAPTAIN' || i.specialChannel === 'BOTH')
 
     );
 

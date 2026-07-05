@@ -18,14 +18,17 @@ import {
   Plus, Edit2, Trash2, Save, X, Star, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
+import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
+import { createMenuItem, updateMenuItem, deleteMenuItem } from '../services/menuService';
+import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
 export default function TodaySpecials() {
   const { shouldReduce } = useMotionConfig();
-  const { allMenuItems, setGlobalMenu } = useMenu();
+  const { allMenuItems, refreshMenu } = useMenu();
   const specials = allMenuItems ? allMenuItems.filter(i => i.isSpecial) : [];
 
   const [targets, setTargets] = useState({});
@@ -51,11 +54,15 @@ export default function TodaySpecials() {
     available: true,
     isCombo: false,
     active: true,
+    specialChannel: 'BOTH',
     createdAt: null,
     expiresAt: null,
     swiggySynced: false,
     zomatoSynced: false,
   });
+  const [staffSold, setStaffSold] = useState([]);
+  const restaurantId = getCurrentRestaurantId();
+  const socket = useSocket(restaurantId);
 
 
 
@@ -64,6 +71,27 @@ export default function TodaySpecials() {
       .then(data => { setTargets(data); setTargetsLoading(false); })
       .catch(() => setTargetsLoading(false));
   }, []);
+
+  useEffect(() => {
+    const loadStaffSold = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff`, {
+          headers: { ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch staff specials');
+        const data = await res.json();
+        setStaffSold(data.staff || []);
+      } catch (err) {
+        console.error('[TodaySpecials] Failed to load staff sold:', err);
+      }
+    };
+    loadStaffSold();
+    if (!socket) return;
+    socket.on('order:paid', loadStaffSold);
+    return () => {
+      socket.off('order:paid', loadStaffSold);
+    };
+  }, [socket]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -102,48 +130,73 @@ export default function TodaySpecials() {
     reader.readAsDataURL(file);
   };
 
-  const handleSave = () => {
-    if (!formData.n || !formData.p) return;
+  const buildSpecialPayload = () => {
+    const price = Number(formData.p);
+    if (!formData.n || !price) return null;
+    return {
+      name: formData.n,
+      category: formData.c,
+      price,
+      isVeg: formData.t === 'veg',
+      imageUrl: formData.img || null,
+      isAvailable: formData.available !== false,
+      menuType: 'FOOD',
+      isSpecial: true,
+      specialChannel: ['CASHIER', 'CAPTAIN', 'BOTH'].includes(formData.specialChannel) ? formData.specialChannel : 'BOTH',
+      specialActive: formData.active !== false,
+      specialExpiresAt: formData.expiresAt
+        ? new Date(formData.expiresAt).toISOString()
+        : formData.id
+          ? null
+          : new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+    };
+  };
 
-    setGlobalMenu(prev => {
-      const now = Date.now();
+  const handleSave = async () => {
+    const payload = buildSpecialPayload();
+    if (!payload) return;
+
+    try {
       if (formData.id) {
-        return prev.map(s => s.id === formData.id ? { ...formData } : s);
+        await updateMenuItem(formData.id, payload);
+      } else {
+        await createMenuItem(payload);
       }
-      return [...prev, {
-        ...formData,
-        id: now.toString(),
-        createdAt: now,
-        expiresAt: now + (24 * 60 * 60 * 1000), // 24 hours
-        active: true,
-        isSpecial: true,
-      }];
-    });
-
-    setFormData({
-      id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false
-    });
-    setIsModalOpen(false);
+      await refreshMenu();
+      setFormData({
+        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false
+      });
+      setIsModalOpen(false);
+      simulatePush();
+    } catch (err) {
+      console.error('[TodaySpecials] Failed to save special:', err);
+      alert('Failed to save special. Please try again.');
+    }
   };
 
-  const handleDelete = (id) => {
-    setGlobalMenu(prev => prev.filter(s => s.id !== id));
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this special?')) return;
+    try {
+      await deleteMenuItem(id);
+      await refreshMenu();
+    } catch (err) {
+      console.error('[TodaySpecials] Failed to delete special:', err);
+      alert('Failed to delete special. Please try again.');
+    }
   };
 
-  const handleActivate = (id) => {
-    setGlobalMenu(prev => prev.map(s => {
-      if (s.id === id) {
-        return {
-          ...s,
-          active: true,
-          expiresAt: Date.now() + (24 * 60 * 60 * 1000),
-          swiggySynced: true,
-          zomatoSynced: true
-        };
-      }
-      return s;
-    }));
-    simulatePush();
+  const handleActivate = async (id) => {
+    try {
+      await updateMenuItem(id, {
+        specialActive: true,
+        specialExpiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+      });
+      await refreshMenu();
+      simulatePush();
+    } catch (err) {
+      console.error('[TodaySpecials] Failed to activate special:', err);
+      alert('Failed to activate special. Please try again.');
+    }
   };
 
   const simulatePush = () => {
@@ -200,6 +253,26 @@ export default function TodaySpecials() {
           </button>
         </div>
       </div>
+
+      {/* STAFF LEADERBOARD */}
+      {staffSold.length > 0 && (
+        <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
+            <Users size={16} className="text-[#E53935]" /> Top Specials Sellers Today
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {staffSold.map(staff => (
+              <div key={staff.userId} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+                <div className="text-right shrink-0">
+                  <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* SPECIALS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -397,6 +470,19 @@ export default function TodaySpecials() {
                     <div className="w-2 h-2 rounded-full bg-red-500" /> Non-Veg
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Channel</label>
+                <select
+                  value={formData.specialChannel}
+                  onChange={e => setFormData({ ...formData, specialChannel: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                >
+                  <option value="BOTH">Both (Cashier + Captain)</option>
+                  <option value="CASHIER">Cashier Only</option>
+                  <option value="CAPTAIN">Captain Only</option>
+                </select>
               </div>
 
               <div>

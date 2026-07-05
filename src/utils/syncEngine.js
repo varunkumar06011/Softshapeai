@@ -30,6 +30,7 @@ import {
   pruneOldPendingActions,
   setSyncMeta,
   getSyncMeta,
+  markOfflineTransactionSynced,
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
@@ -269,6 +270,9 @@ export async function syncPendingActions() {
         clearConflict(action.id);
         if (action.actionType === 'settle') {
           finalizeSettlementAudit(action.requestId, { status: result.status });
+          if (action.body?.localTxnId) {
+            markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
+          }
         }
         if (action.actionType === 'create-order' || action.actionType === 'update-items') {
           markKitchenItemsSynced(action.body?.tableId || action.entityId, action.requestId).catch(() => {});
@@ -277,7 +281,8 @@ export async function syncPendingActions() {
       } else if (result.status === 'conflict') {
         // Conflict — use conflictResolver to determine policy
         const resolution = resolveConflict(action, result);
-        const autoResolved = resolution.resolution === 'skip' || resolution.resolution === 'adopt_server';
+        // 'skip' = drop silently. 'adopt_server' = accept server state but keep in queue for UI surfacing.
+        const autoResolved = resolution.resolution === 'skip';
         await updatePendingAction(action.id, {
           status: autoResolved ? 'synced' : 'conflict',
           lastError: resolution.message,
@@ -288,10 +293,13 @@ export async function syncPendingActions() {
           clearConflict(action.id);
           if (action.actionType === 'settle') {
             finalizeSettlementAudit(action.requestId, { status: 'skipped' });
+            if (action.body?.localTxnId) {
+              markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
+            }
           }
           succeeded++;
         } else {
-          // Store conflict for UI surfacing
+          // Store conflict for UI surfacing (includes adopt_server)
           addConflict({
             actionId: action.id,
             requestId: action.requestId,
@@ -300,6 +308,9 @@ export async function syncPendingActions() {
           });
           if (action.actionType === 'settle') {
             finalizeSettlementAudit(action.requestId, { status: 'conflict', error: resolution.message });
+            if (action.body?.localTxnId) {
+              markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
+            }
           }
           hadConflict = true;
           failed++;
