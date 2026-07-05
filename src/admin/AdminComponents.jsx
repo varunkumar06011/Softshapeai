@@ -198,8 +198,6 @@ import { useVenueSections } from '../hooks/useVenueSections';
 
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
 
-import { useSocket } from '../hooks/useSocket';
-
 import FloorPlanEditor from './FloorPlanEditor';
 
 import MenuUpload from '../onboarding/MenuUpload';
