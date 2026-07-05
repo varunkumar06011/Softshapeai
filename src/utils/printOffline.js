@@ -519,7 +519,7 @@ async function shareAsPDF(job, text) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter, discoverPrintAgentUrls, printLocal };
+export { detectPlatform, buildBillText, buildKotText, getPrinterMapping, resolvePrinter, discoverPrintAgentUrls };
 
 /**
  * Manual test entry point for the offline print pipeline.
