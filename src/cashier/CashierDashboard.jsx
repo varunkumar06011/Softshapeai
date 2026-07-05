@@ -2312,19 +2312,29 @@ const CashierDashboard = ({ onLogout }) => {
         setActiveTables(updateBillStatus);
       }
 
-      // Step 1: Update table discount if entered
+      // Step 1: Update table discount if entered (only when online; otherwise
+      // the discount is still applied to the local bill and the queued print/settle
+      // actions carry the discountPercent).
       if (discountPercent > 0) {
         if (!selectedTable.isExtra) {
-          await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ discount: discountPercent })
-          });
-          // Persist discount so it survives modal close/reopen until settlement
+          // Persist discount locally so it survives modal close/reopen until settlement
           localStorage.setItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`), JSON.stringify({
             value: String(discountPercent),
             mode: 'percent'
           }));
+          if (!isOffline) {
+            try {
+              await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ discount: discountPercent })
+              });
+            } catch (discountErr) {
+              // Non-fatal: the discount is already saved locally and will be
+              // included in the queued bill/settle actions that sync later.
+              console.warn('[handleFinalBill] Table discount update failed (offline?):', discountErr.message);
+            }
+          }
         } else {
           // Extra table: store discount on the extraTables entry (no DB table to patch)
           setExtraTables(prev => prev.map(et =>

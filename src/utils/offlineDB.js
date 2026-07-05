@@ -689,3 +689,33 @@ export async function setPrintAgentUrl(url) {
   const config = await getLocalPrinterConfig();
   return setLocalPrinterConfig({ ...config, printAgentUrl: url, updatedAt: Date.now() });
 }
+
+// ── offline KOT number counter ───────────────────────────────────────────────
+// Used when backend is unreachable so KOTs can still be printed locally.
+// Counter is stored per day in syncMeta and resets at IST midnight to match
+// the backend's dailyCounter. The backend uses this as preReservedKotNumber
+// when the queued action syncs, so the printed number matches the DB number.
+// NOTE: in multi-device offline scenarios, two devices could reserve the same
+// local number; this is a rare edge case and accepted for now.
+
+function getIstDateString() {
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+export async function getNextOfflineKotNumber() {
+  const db = await openDB();
+  const key = `offlineKotCounter:${getIstDateString()}`;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('syncMeta', 'readwrite');
+    const store = tx.objectStore('syncMeta');
+    const req = store.get(key);
+    req.onsuccess = () => {
+      const current = req.result?.value || 0;
+      const next = current + 1;
+      store.put({ key, value: next, updatedAt: Date.now() });
+      resolve(next);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}

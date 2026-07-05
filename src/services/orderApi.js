@@ -31,6 +31,7 @@ import {
   addPendingAction,
   addOfflineTransaction,
   addOfflinePrintJob,
+  getNextOfflineKotNumber,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
 
@@ -76,7 +77,22 @@ export function toOrderItems(items) {
 }
 
 export async function reserveKotNumber() {
-  return apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 5000 });
+  // Offline fallback: reserve a local KOT number so KOTs can still be printed
+  // immediately. The backend will use this as preReservedKotNumber on sync.
+  if (!isBackendReachable()) {
+    const kotNumber = await getNextOfflineKotNumber();
+    return { kotNumber, offline: true };
+  }
+  try {
+    return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 5000 });
+  } catch (err) {
+    // If the API failed because we went offline mid-call, fall back to local number
+    if (!isBackendReachable()) {
+      const kotNumber = await getNextOfflineKotNumber();
+      return { kotNumber, offline: true };
+    }
+    throw err;
+  }
 }
 
 export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null }) {
