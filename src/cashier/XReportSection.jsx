@@ -51,7 +51,9 @@ export default function XReportSection() {
   const finalAmount = round2(
     Number(report.totalSales) - Number(report.voucherAmount || 0) + Number(report.parcelCounterSale || 0) - Number(report.cardAmount || 0)
   );
-  const balanced = Math.abs(Number(report.cashAmount || 0) - finalAmount) < 0.01;
+  const cardPlusCash = round2(Number(report.cardAmount || 0) + Number(report.cashAmount || 0));
+  const expectedTotal = round2(finalAmount + Number(report.cardAmount || 0));
+  const balanced = Math.abs(cardPlusCash - expectedTotal) < 0.01;
 
   const skipCashSyncRef = useRef(true);
 
@@ -168,7 +170,7 @@ export default function XReportSection() {
     lines.push(line);
     lines.push(row('Cash from Notes', '₹' + round2(cashFromNotes).toFixed(2)));
     lines.push(row('Cash Amount', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
-    lines.push(`Cash = ₹${round2(Number(report.cashAmount || 0)).toFixed(2)} (${balanced ? 'Balanced' : 'Mismatch'})`);
+    lines.push(`Card + Cash = ₹${cardPlusCash.toFixed(2)} (${balanced ? 'Balanced' : 'Mismatch'})`);
     lines.push(line);
     lines.push(center('*** End of Report ***'));
     lines.push('\n\n\n');
@@ -191,7 +193,7 @@ export default function XReportSection() {
     })),
     cashFromNotes: round2(cashFromNotes),
     cashAmount: round2(Number(report.cashAmount || 0)),
-    cardPlusCash: round2(Number(report.cashAmount || 0)),
+    cardPlusCash,
     balanced,
   });
 
@@ -374,7 +376,7 @@ export default function XReportSection() {
 
             {/* Balance check */}
             <div className={`px-4 py-2.5 rounded-lg text-sm font-black text-center ${balanced ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-              Cash = ₹{round2(Number(report.cashAmount || 0)).toFixed(2)} {balanced ? '= Final Amount ✓' : `≠ Final Amount (₹${finalAmount.toFixed(2)})`}
+              Card + Cash = ₹{cardPlusCash.toFixed(2)} {balanced ? 'Balanced ✓' : `≠ Expected (₹${expectedTotal.toFixed(2)})`}
             </div>
 
             {/* Action buttons */}
