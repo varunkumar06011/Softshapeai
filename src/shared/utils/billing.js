@@ -46,7 +46,7 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
     // Detect liquor/bar items by checking all possible field shapes from captain cart,
     // DB order items, and legacy kotHistory items.
     // BAR items (water bottles, packaged drinks, beer) are treated same as LIQUOR — no food GST.
-    const rawType = item.menuType || item.menuItem?.menuType || item.type || '';
+    const rawType = item.menuItem?.menuType || item.menuType || item.type || '';
     const typeUpper = rawType.toString().toUpperCase();
     const type = (typeUpper === 'LIQUOR' || typeUpper === 'BAR') ? 'liquor' : 'food';
 
@@ -90,17 +90,26 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
   const displayedSubtotal = Math.round((baseAmount + gstExemptAfterDiscount + liquorAfterDiscount) * 100) / 100;
   const grandTotal = Math.max(0, Math.round((displayedSubtotal + taxes) * 100) / 100);
 
+  // Round everything to whole numbers for display and print consistency
+  const rawSubtotalRounded = Math.round(subtotal);
+  const discountAmountRounded = Math.round(discountAmount);
+  const taxesRounded = Math.round(taxes);
+  const cgstRounded = Math.floor(taxesRounded / 2);
+  const sgstRounded = taxesRounded - cgstRounded;
+  const displayedSubtotalRounded = Math.round(displayedSubtotal);
+  const grandTotalRounded = Math.max(0, displayedSubtotalRounded + taxesRounded - discountAmountRounded);
+
   return {
-    subtotal: displayedSubtotal,
-    rawSubtotal: Number(subtotal.toFixed(2)),
-    taxes,
-    total: grandTotal,
-    grandTotal,
-    discountAmount: Number(discountAmount.toFixed(2)),
+    subtotal: displayedSubtotalRounded,
+    rawSubtotal: rawSubtotalRounded,
+    taxes: taxesRounded,
+    total: grandTotalRounded,
+    grandTotal: grandTotalRounded,
+    discountAmount: discountAmountRounded,
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
-    cgst,
-    sgst
+    cgst: cgstRounded,
+    sgst: sgstRounded
   };
 };
 
@@ -145,7 +154,7 @@ export const getAllOrderItems = (table) => {
       originalQuantity: item.originalQuantity ?? null,
       cancelledQuantity: Number(item.cancelledQuantity ?? 0),
       editedQuantity: Number(item.editedQuantity ?? 0),
-      menuType: item.menuType || item.menuItem?.menuType || null,
+      menuType: item.menuItem?.menuType || item.menuType || null,
       gstEnabled: item.gstEnabled ?? item.menuItem?.gstEnabled ?? null,
     }));
 

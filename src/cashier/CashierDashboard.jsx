@@ -2306,7 +2306,7 @@ const CashierDashboard = ({ onLogout }) => {
     );
     return calculateOrderTotal([...items, ...cart], discountPercent);
   }, [selectedTable, cart, discountPercent, removedItemIds]);
-  const activeSubtotal = activeOrderCalc.subtotal;
+  const activeSubtotal = activeOrderCalc.rawSubtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
   const activeGrandTotal = useMemo(() => {
@@ -2535,7 +2535,7 @@ const CashierDashboard = ({ onLogout }) => {
               if (result.printed) {
                 addNotification('Local Print', 'Bill printed to local printer.', 'success');
               } else if (result.queued) {
-                addNotification('Print Queued', `No printer available — will print on reconnect.`, 'warning');
+                addNotification('Print Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
               }
             } catch (printErr) {
               console.warn('[handleFinalBill] Local print failed:', printErr.message);
@@ -2639,7 +2639,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (result.printed) {
             addNotification('Offline KOT', 'KOT printed to local printer.', 'success');
           } else if (result.queued) {
-            addNotification('KOT Queued', 'No printer available — will print on reconnect.', 'warning');
+            addNotification('KOT Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
           }
         } catch (printErr) {
           console.warn('[handleReprintKOT] Local print failed:', printErr.message);
@@ -2800,7 +2800,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (result.printed) {
             addNotification('Local Print', 'Walk-in bill printed to local printer.', 'success');
           } else if (result.queued) {
-            addNotification('Print Queued', 'No printer available — will print on reconnect.', 'warning');
+            addNotification('Print Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
           }
         } catch (printErr) {
           console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
