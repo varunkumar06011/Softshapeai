@@ -2,9 +2,10 @@
  * Regression test: mapBackendTable in ALL sync services must never drop items.
  * Run: npx vitest run src/services/__tests__/syncInvariants.test.js
  *
- * Invariant: For any existing table with items in activeOrder and/or kotHistory,
- * after applying mapBackendTable with a partial incoming payload,
- * the output must contain ALL items from the existing table.
+ * Invariant: The server is authoritative. When incoming is newer, trust it
+ * directly (no additive union). Only preserve existing items when incoming
+ * has none (genuine partial payload). This prevents transferred items from
+ * being ghosted back onto the source table.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -44,16 +45,17 @@ function makeExistingTable(items = [], kotHistory = []) {
 
 // ── Minimal re-implementation of the item-merge invariant for testing ──
 // If this test breaks, it means the actual mapBackendTable in the service
-// file has drifted from the safe additive merge pattern.
+// file has drifted from the server-authoritative pattern.
 
-function mergeItems(incomingItems, existingItems) {
+function mergeItems(incomingItems, existingItems, incomingIsNewer = true) {
   if (!existingItems || existingItems.length === 0) return incomingItems || [];
   if (!incomingItems || incomingItems.length === 0) return existingItems;
-  const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
-  const missingFromIncoming = existingItems.filter(
-    i => i.id && !incomingIds.has(i.id)
-  );
-  return [...incomingItems, ...missingFromIncoming];
+  if (incomingIsNewer) {
+    // Server is authoritative — trust incoming directly
+    return incomingItems;
+  }
+  // Existing is newer — keep it
+  return existingItems;
 }
 
 function mergeKotHistory(incomingKot, existingKot) {
@@ -63,7 +65,7 @@ function mergeKotHistory(incomingKot, existingKot) {
 }
 
 describe('Item-loss invariants (regression tests)', () => {
-  it('must keep ALL existing items when incoming payload has fewer items (partial)', () => {
+  it('must trust server-authoritative items when incoming is newer (no additive union)', () => {
     const existingItems = [
       { id: 'it-1', name: 'Water Bottle', price: 50, quantity: 1 },
       { id: 'it-2', name: 'Karjura Beer', price: 250, quantity: 1 },
@@ -71,11 +73,9 @@ describe('Item-loss invariants (regression tests)', () => {
     const incomingItems = [
       { id: 'it-3', name: 'Pulpy Orange', price: 60, quantity: 1 },
     ];
-    const merged = mergeItems(incomingItems, existingItems);
-    expect(merged).toHaveLength(3);
-    expect(merged.map(i => i.name)).toContain('Water Bottle');
-    expect(merged.map(i => i.name)).toContain('Karjura Beer');
-    expect(merged.map(i => i.name)).toContain('Pulpy Orange');
+    const merged = mergeItems(incomingItems, existingItems, true);
+    expect(merged).toHaveLength(1);
+    expect(merged.map(i => i.name)).toEqual(['Pulpy Orange']);
   });
 
   it('must keep ALL existing items when incoming payload is missing items entirely', () => {
@@ -108,10 +108,29 @@ describe('Item-loss invariants (regression tests)', () => {
     const incomingItems = [
       { id: 'it-3', name: 'Juice', price: 60, quantity: 1 },
     ];
-    const merged = mergeItems(incomingItems, existingItems);
+    const merged = mergeItems(incomingItems, existingItems, true);
     const billable = merged.filter(i => !i.removedFromBill);
-    expect(billable).toHaveLength(2); // Water + Juice
-    expect(merged).toHaveLength(3); // Beer still present in full list
+    expect(billable).toHaveLength(1); // Juice only — server is authoritative
+    expect(merged).toHaveLength(1);
+  });
+
+  it('REGRESSION: must not ghost transferred items back onto source table', () => {
+    // Simulates item transfer: Table A had 3 items, 1 was transferred to Table B.
+    // Backend emits table:updated for Table A with only 2 items (newer updatedAt).
+    // The old additive merge would union the missing item back — causing a ghost.
+    const existingItems = [
+      { id: 'it-1', name: 'Water', price: 50, quantity: 1 },
+      { id: 'it-2', name: 'Beer', price: 250, quantity: 1 },
+      { id: 'it-3', name: 'Juice', price: 60, quantity: 1 }, // will be transferred
+    ];
+    const incomingItems = [
+      { id: 'it-1', name: 'Water', price: 50, quantity: 1 },
+      { id: 'it-2', name: 'Beer', price: 250, quantity: 1 },
+      // it-3 is gone — it was transferred to another table
+    ];
+    const merged = mergeItems(incomingItems, existingItems, true);
+    expect(merged).toHaveLength(2);
+    expect(merged.map(i => i.id)).not.toContain('it-3');
   });
 
   it('must merge duplicate items by quantity (kotHistory supplement)', () => {

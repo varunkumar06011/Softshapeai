@@ -150,21 +150,16 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     const existingItems = existingOrder.items || [];
 
     if (existingUpdated >= incomingUpdated) {
-      // Existing is newer or same — keep existing but merge in any incoming items
-      // that incoming has and existing does not (additive merge, never drop)
-      const existingIds = new Set(existingItems.map(i => i.id).filter(Boolean));
-      const newFromIncoming = incomingItems.filter(i => i.id && !existingIds.has(i.id));
-      activeOrder = {
-        ...existingOrder,
-        items: [...existingItems, ...newFromIncoming],
-      };
+      // Existing is newer or same — keep it.
+      // Only use incoming items if existing has none (partial payload fallback).
+      if (existingItems.length === 0 && incomingItems.length > 0) {
+        activeOrder = { ...existingOrder, items: incomingItems };
+      } else {
+        activeOrder = existingOrder;
+      }
     } else {
-      // Incoming is newer — use it but keep any existing items not in incoming
-      // (prevents item loss if incoming is a partial response)
-      const incomingIds = new Set(incomingItems.map(i => i.id).filter(Boolean));
-      const missingFromIncoming = existingItems.filter(
-        i => i.id && !incomingIds.has(i.id) && !i.removedFromBill
-      );
+      // Incoming is newer — server is authoritative, trust it directly.
+      // Only preserve existing items if incoming has none (genuine partial payload).
       // Preserve local cancellations: if an item was locally cancelled but the
       // incoming payload hasn't confirmed the cancel yet, keep it cancelled
       const existingCancelledIds = new Set(
@@ -176,10 +171,11 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
         }
         return incomingItem;
       });
-      activeOrder = {
-        ...incomingOrder,
-        items: [...preservedIncomingItems, ...missingFromIncoming],
-      };
+      if (incomingItems.length === 0 && existingItems.length > 0) {
+        activeOrder = { ...incomingOrder, items: existingItems };
+      } else {
+        activeOrder = { ...incomingOrder, items: preservedIncomingItems };
+      }
     }
   }
 
@@ -206,7 +202,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
       : []);
   const existingKot = existing?.kotHistory ?? [];
   const mergedKotHistory = isFreeWorkflow ? []
-    : (incomingKot.length >= existingKot.length ? incomingKot : existingKot);
+    : (incomingKot.length > 0 ? incomingKot : existingKot);
 
   const base = {
     backendId: row.id,

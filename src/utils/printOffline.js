@@ -103,21 +103,21 @@ function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, gra
   for (const item of items) {
     const name = (item.name || item.n || '').substring(0, 20);
     const qty = String(item.quantity || item.q || 1).padStart(3);
-    const price = Number(item.price || item.p || 0).toFixed(0).padStart(7);
+    const price = Number(item.price || item.p || 0).toFixed(2).padStart(7);
     lines.push(`${name}${qty}x${price}`);
   }
 
   lines.push(line);
   const rawSub = Number(subtotal || 0);
-  lines.push(`Subtotal:        Rs.${rawSub.toFixed(0)}`);
-  if (cgst) lines.push(`CGST:            Rs.${Number(cgst).toFixed(0)}`);
-  if (sgst) lines.push(`SGST:            Rs.${Number(sgst).toFixed(0)}`);
+  lines.push(`Subtotal:        Rs.${rawSub.toFixed(2)}`);
+  if (cgst) lines.push(`CGST:            Rs.${Number(cgst).toFixed(2)}`);
+  if (sgst) lines.push(`SGST:            Rs.${Number(sgst).toFixed(2)}`);
   if (discount && Number(discount.amount || 0) > 0) {
     const discAmt = Number(discount.amount || 0);
-    lines.push(`Discount (${discount.percent || 0}%): -Rs.${discAmt.toFixed(0)}`);
+    lines.push(`Discount (${discount.percent || 0}%): -Rs.${discAmt.toFixed(2)}`);
   }
   lines.push(line);
-  lines.push(`GRAND TOTAL:     Rs.${Number(grandTotal || 0).toFixed(0)}`);
+  lines.push(`GRAND TOTAL:     Rs.${Number(grandTotal || 0).toFixed(2)}`);
   lines.push(line);
   lines.push(center('Thank You!'));
   lines.push('\n\n\n');
