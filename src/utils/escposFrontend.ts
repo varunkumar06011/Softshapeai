@@ -158,6 +158,93 @@ export function buildFoodKOT(orderData: OrderData): object[] {
   return [{ type: "raw", format: "plain", data: cmds.join("") }];
 }
 
+// ─── X Report ────────────────────────────────────────────────────────────────
+
+export interface XReportDenomination {
+  label: string;
+  qty: number;
+  amount: number;
+}
+
+export interface XReportData {
+  restaurantName?: string;
+  cashierName?: string;
+  reportDate: string;
+  totalSales: number;
+  parcelCounterSale: number;
+  cardAmount: number;
+  voucherAmount: number;
+  finalAmount: number;
+  denominations: XReportDenomination[];
+  cashFromNotes: number;
+  cashAmount: number;
+  cardPlusCash: number;
+  balanced: boolean;
+}
+
+const XR_W = 32;
+
+function xrRow(label: string, value: string): string {
+  return `${label}${value.padStart(Math.max(1, XR_W - label.length))}`;
+}
+
+function xrCurrency(n: number): string {
+  return "Rs " + (Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2);
+}
+
+export function buildXReportEscpos(data: XReportData): object[] {
+  const dashed = "-".repeat(XR_W);
+
+  const cmds: string[] = [INIT, LEFT];
+  cmds.push(`${dashed}\n`);
+  cmds.push(CENTER, BOLD_ON, "X REPORT\n", BOLD_OFF, LEFT);
+  if (data.restaurantName) cmds.push(CENTER, `${data.restaurantName}\n`, LEFT);
+  cmds.push(CENTER, `Date: ${data.reportDate}\n`, LEFT);
+  if (data.cashierName) cmds.push(CENTER, `Cashier: ${data.cashierName}\n`, LEFT);
+  cmds.push(`${dashed}\n`);
+
+  cmds.push(`${xrRow("Total Sales", xrCurrency(data.totalSales))}\n`);
+  cmds.push(`${xrRow("Parcel Counter", xrCurrency(data.parcelCounterSale))}\n`);
+  cmds.push(`${xrRow("Card", xrCurrency(data.cardAmount))}\n`);
+  cmds.push(`${xrRow("Voucher", xrCurrency(data.voucherAmount))}\n`);
+  cmds.push(`${dashed}\n`);
+
+  // Final Amount — bold + double size, centered
+  cmds.push(
+    CENTER,
+    BOLD_ON,
+    SIZE_2X,
+    "FINAL AMOUNT\n",
+    xrCurrency(data.finalAmount) + "\n",
+    SIZE_NORMAL,
+    BOLD_OFF,
+    LEFT
+  );
+  cmds.push(`${dashed}\n`);
+
+  cmds.push("Denomination breakdown:\n");
+  data.denominations.forEach((d) => {
+    if (d.qty > 0) {
+      const left = `  ${d.label} x ${d.qty}`;
+      const right = "Rs" + d.amount.toFixed(0);
+      cmds.push(`${left}${right.padStart(Math.max(1, XR_W - left.length))}\n`);
+    }
+  });
+  cmds.push(`${dashed}\n`);
+
+  cmds.push(`${xrRow("Cash from Notes", xrCurrency(data.cashFromNotes))}\n`);
+  cmds.push(`${xrRow("Cash Amount", xrCurrency(data.cashAmount))}\n`);
+  cmds.push(
+    `Card + Cash = ${xrCurrency(data.cardPlusCash)} (${data.balanced ? "Balanced" : "Mismatch"})\n`
+  );
+  cmds.push(`${dashed}\n`);
+
+  cmds.push(CENTER, BOLD_ON, "*** End of Report ***\n", BOLD_OFF, LEFT);
+  cmds.push("\n\n\n", CUT);
+
+  return [{ type: "raw", format: "plain", data: cmds.join("") }];
+}
+
 // ─── Liquor / Bar KOT ─────────────────────────────────────────────────────────
 
 export function buildLiquorKOT(orderData: OrderData): object[] {

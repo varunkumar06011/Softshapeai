@@ -1265,6 +1265,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     ...(outletId === 'all' ? [{ key: 'outletName', label: 'Outlet' }] : []),
     { key: 'reportDate', label: 'Date' },
     { key: 'totalSales', label: 'Total Sales', format: 'money' },
+    { key: 'parcelCounterSale', label: 'Parcel Counter', format: 'money' },
     { key: 'voucherAmount', label: 'Vouchers', format: 'money' },
     { key: 'cardAmount', label: 'Card', format: 'money' },
     { key: 'cashAmount', label: 'Cash', format: 'money' },
@@ -1276,11 +1277,12 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     ...(outletId === 'all' ? { outletName: r.outletName || 'Unknown' } : {}),
     reportDate: r.reportDate,
     totalSales: Number(r.totalSales),
+    parcelCounterSale: Number(r.parcelCounterSale || 0),
     voucherAmount: Number(r.voucherAmount),
     cardAmount: Number(r.cardAmount),
     cashAmount: Number(r.cashAmount),
     cashFromNotes: Number(r.cashFromNotes),
-    finalAmount: Number(r.totalSales) - Number(r.voucherAmount),
+    finalAmount: Number(r.totalSales) - Number(r.voucherAmount || 0) + Number(r.parcelCounterSale || 0),
     printed: r.printed ? 'Yes' : 'No',
   }));
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
@@ -1323,6 +1325,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
               {outletId === 'all' && <th className="px-4 py-2 text-left font-black uppercase text-xs text-gray-500">Outlet</th>}
               <th className="px-4 py-2 text-left font-black uppercase text-xs text-gray-500">Date</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Total Sales</th>
+              <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Parcel Counter</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Vouchers</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Card</th>
               <th className="px-4 py-2 text-right font-black uppercase text-xs text-gray-500">Cash</th>
@@ -1337,11 +1340,12 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
                 {outletId === 'all' && <td className="px-4 py-2 font-semibold text-gray-900">{r.outletName || 'Unknown'}</td>}
                 <td className="px-4 py-2 font-semibold text-gray-900">{r.reportDate}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.totalSales).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.parcelCounterSale || 0).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.voucherAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cardAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashAmount).toFixed(2)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">₹{Number(r.cashFromNotes).toFixed(2)}</td>
-                <td className="px-4 py-2 text-right tabular-nums font-black">₹{(Number(r.totalSales) - Number(r.voucherAmount)).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-black">₹{(Number(r.totalSales) - Number(r.voucherAmount || 0) + Number(r.parcelCounterSale || 0)).toFixed(2)}</td>
                 <td className="px-4 py-2 text-center">
                   {r.printed ? (
                     <span className="px-2 py-0.5 bg-green-50 text-green-600 border border-green-200 rounded text-xs font-bold">Yes</span>

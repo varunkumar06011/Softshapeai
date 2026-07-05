@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Printer, Save, Calendar } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { printLocal } from '../utils/printOffline';
+import { buildXReportEscpos } from '../utils/escposFrontend';
 import { useAuth } from '../context/AuthContext';
 
 const DENOMINATIONS = [
@@ -55,9 +56,12 @@ export default function XReportSection() {
   );
   const balanced = Math.abs(cardPlusCash - finalAmount) < 0.01;
 
+  const skipCashSyncRef = useRef(true);
+
   const loadReport = useCallback(async (date) => {
     setLoading(true);
     setError(null);
+    skipCashSyncRef.current = true;
     try {
       const data = await apiFetch(`/api/xreports/${date}`);
       setReport({
@@ -83,6 +87,17 @@ export default function XReportSection() {
   useEffect(() => {
     loadReport(reportDate);
   }, [reportDate, loadReport]);
+
+  // Auto-fill Cash Amount from Cash from Notes whenever denomination counts change
+  useEffect(() => {
+    if (loading) return;
+    if (skipCashSyncRef.current) {
+      skipCashSyncRef.current = false;
+      return;
+    }
+    setReport(prev => ({ ...prev, cashAmount: cashFromNotes }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report.notes500, report.notes200, report.notes100, report.notes50, report.notes20, report.notes10, loading]);
 
   const handleFieldChange = (field, value) => {
     setReport(prev => ({ ...prev, [field]: value }));
@@ -137,14 +152,14 @@ export default function XReportSection() {
     lines.push(center(`Date: ${reportDate}`));
     if (cashierName) lines.push(center(`Cashier: ${cashierName}`));
     lines.push(line);
-    lines.push(row('Final Amount', '₹' + finalAmount.toFixed(2)));
-    lines.push(center('(Total Sales - Vouchers + Parcel Counter)'));
-    lines.push(dashed);
-    lines.push(row('Voucher', '₹' + round2(Number(report.voucherAmount || 0)).toFixed(2)));
+    lines.push(row('Total Sales', '₹' + round2(Number(report.totalSales)).toFixed(2)));
     lines.push(row('Parcel Counter', '₹' + round2(Number(report.parcelCounterSale || 0)).toFixed(2)));
     lines.push(row('Card', '₹' + round2(Number(report.cardAmount || 0)).toFixed(2)));
-    lines.push(row('Cash', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
-    lines.push(dashed);
+    lines.push(row('Voucher', '₹' + round2(Number(report.voucherAmount || 0)).toFixed(2)));
+    lines.push(line);
+    lines.push(center('FINAL AMOUNT'));
+    lines.push(center('₹' + finalAmount.toFixed(2)));
+    lines.push(line);
     lines.push('Denomination breakdown:');
     DENOMINATIONS.forEach(d => {
       const qty = report[d.key] || 0;
@@ -154,11 +169,33 @@ export default function XReportSection() {
     });
     lines.push(line);
     lines.push(row('Cash from Notes', '₹' + round2(cashFromNotes).toFixed(2)));
+    lines.push(row('Cash Amount', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
+    lines.push(`Card + Cash = ₹${cardPlusCash.toFixed(2)} (${balanced ? 'Balanced' : 'Mismatch'})`);
     lines.push(line);
-    lines.push(center('*** End of X Report ***'));
+    lines.push(center('*** End of Report ***'));
     lines.push('\n\n\n');
     return lines.join('\n');
   };
+
+  const buildXReportEscposData = () => buildXReportEscpos({
+    restaurantName: restaurant?.name || '',
+    cashierName: user?.name || '',
+    reportDate,
+    totalSales: round2(Number(report.totalSales)),
+    parcelCounterSale: round2(Number(report.parcelCounterSale || 0)),
+    cardAmount: round2(Number(report.cardAmount || 0)),
+    voucherAmount: round2(Number(report.voucherAmount || 0)),
+    finalAmount,
+    denominations: DENOMINATIONS.map(d => ({
+      label: d.label,
+      qty: report[d.key] || 0,
+      amount: (report[d.key] || 0) * d.value,
+    })),
+    cashFromNotes: round2(cashFromNotes),
+    cashAmount: round2(Number(report.cashAmount || 0)),
+    cardPlusCash,
+    balanced,
+  });
 
   const handlePrint = async () => {
     const ok = await handleSave();
@@ -173,7 +210,7 @@ export default function XReportSection() {
       try {
         const result = await printLocal({
           type: 'FINAL_BILL',
-          text: buildXReportText(),
+          escposData: buildXReportEscposData(),
         });
         if (!result.printed) {
           // 3. Local direct print also failed — fall back to browser print dialog
@@ -247,17 +284,13 @@ export default function XReportSection() {
 
         {!loading && (
           <div className="flex flex-col gap-4">
-            {/* Auto-filled summary — read only */}
+            {/* Auto-filled summary + Card/Voucher — Total Sales -> Parcel Counter -> Card -> Voucher */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">Auto-Filled From Sales</h3>
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
                   <span className="text-sm font-bold text-gray-600">Total Sales</span>
                   <span className="text-sm font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
-                  <span className="text-sm font-bold text-gray-600">Vouchers</span>
-                  <span className="text-sm font-black text-purple-900 tabular-nums">₹{round2(Number(report.voucherAmount || 0)).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 gap-3">
                   <span className="text-sm font-bold text-gray-600">Parcel Counter Sale <span className="text-red-500">*</span></span>
@@ -272,45 +305,32 @@ export default function XReportSection() {
                     placeholder="0.00"
                   />
                 </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-sm font-black text-gray-900">Final Amount</span>
-                  <span className="text-lg font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 gap-3">
+                  <span className="text-sm font-bold text-gray-600">Card Amount</span>
+                  <input
+                    type="number"
+                    value={report.cardAmount === 0 ? '' : report.cardAmount}
+                    onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Number(e.target.value))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-sm font-bold text-gray-600">Voucher</span>
+                  <span className="text-sm font-black text-purple-900 tabular-nums">₹{round2(Number(report.voucherAmount || 0)).toFixed(2)}</span>
                 </div>
               </div>
             </div>
 
-            {/* Card & Cash entry */}
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className={labelClass}>Card Amount</label>
-                <input
-                  type="number"
-                  value={report.cardAmount === 0 ? '' : report.cardAmount}
-                  onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Number(e.target.value))}
-                  className={inputClass}
-                  step="0.01"
-                  placeholder="Enter card amount"
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Cash Amount</label>
-                <input
-                  type="number"
-                  value={report.cashAmount === 0 ? '' : report.cashAmount}
-                  onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Number(e.target.value))}
-                  className={inputClass}
-                  step="0.01"
-                  placeholder="Enter cash amount"
-                />
-              </div>
+            {/* Final Amount — standout block */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5 flex flex-col items-center justify-center gap-1">
+              <span className="text-xs font-black uppercase tracking-widest text-blue-700">Final Amount</span>
+              <span className="text-3xl md:text-4xl font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
             </div>
 
-            {/* Balance check */}
-            <div className={`px-4 py-2.5 rounded-lg text-sm font-black text-center ${balanced ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-              Card + Cash = ₹{cardPlusCash.toFixed(2)} {balanced ? '= Final Amount ✓' : `≠ Final Amount (₹${finalAmount.toFixed(2)})`}
-            </div>
-
-            {/* Denomination count */}
+            {/* Reconciliation step: Denomination count + Cash Amount */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Cash Denomination Count</h3>
               <p className="text-[10px] font-bold text-gray-500 mb-3">Enter note counts — leave empty if none</p>
@@ -323,6 +343,7 @@ export default function XReportSection() {
                       min="0"
                       value={report[d.key] === 0 ? '' : report[d.key]}
                       onChange={(e) => handleFieldChange(d.key, e.target.value === '' ? 0 : Number(e.target.value))}
+                      onWheel={(e) => e.target.blur()}
                       className={inputClass}
                       placeholder="0"
                     />
@@ -333,12 +354,29 @@ export default function XReportSection() {
                 <span className="text-xs font-black uppercase text-gray-600">Cash from Notes</span>
                 <span className="text-sm font-black text-gray-900 tabular-nums">₹{round2(cashFromNotes).toFixed(2)}</span>
               </div>
+              <div className="mt-3">
+                <label className={labelClass}>Cash Amount</label>
+                <input
+                  type="number"
+                  value={report.cashAmount === 0 ? '' : report.cashAmount}
+                  onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Number(e.target.value))}
+                  onWheel={(e) => e.target.blur()}
+                  className={inputClass}
+                  step="0.01"
+                  placeholder="Enter cash amount"
+                />
+              </div>
               {Number(report.cashAmount || 0) > 0 && (
                 <div className="mt-2 flex justify-between items-center">
                   <span className="text-xs font-bold text-gray-500">Cash Variance</span>
                   <span className="text-sm font-black text-red-600 tabular-nums">₹{round2(Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0)))).toFixed(2)}</span>
                 </div>
               )}
+            </div>
+
+            {/* Balance check */}
+            <div className={`px-4 py-2.5 rounded-lg text-sm font-black text-center ${balanced ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+              Card + Cash = ₹{cardPlusCash.toFixed(2)} {balanced ? '= Final Amount ✓' : `≠ Final Amount (₹${finalAmount.toFixed(2)})`}
             </div>
 
             {/* Action buttons */}
