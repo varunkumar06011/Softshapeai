@@ -281,8 +281,9 @@ export async function syncPendingActions() {
       } else if (result.status === 'conflict') {
         // Conflict — use conflictResolver to determine policy
         const resolution = resolveConflict(action, result);
-        // 'skip' = drop silently. 'adopt_server' = accept server state but keep in queue for UI surfacing.
-        const autoResolved = resolution.resolution === 'skip';
+        // 'skip' and 'adopt_server' are auto-resolved: remove the pending action.
+        // The conflict is still surfaced in the UI so the cashier knows server state was adopted.
+        const autoResolved = resolution.resolution === 'skip' || resolution.resolution === 'adopt_server';
         await updatePendingAction(action.id, {
           status: autoResolved ? 'synced' : 'conflict',
           lastError: resolution.message,
@@ -290,7 +291,13 @@ export async function syncPendingActions() {
         });
         if (autoResolved) {
           await removePendingAction(action.id);
-          clearConflict(action.id);
+          // Keep conflict visible until user dismisses it, then clear it
+          addConflict({
+            actionId: action.id,
+            requestId: action.requestId,
+            actionType: action.actionType,
+            ...resolution,
+          });
           if (action.actionType === 'settle') {
             finalizeSettlementAudit(action.requestId, { status: 'skipped' });
             if (action.body?.localTxnId) {
@@ -299,7 +306,7 @@ export async function syncPendingActions() {
           }
           succeeded++;
         } else {
-          // Store conflict for UI surfacing (includes adopt_server)
+          // Store conflict for UI surfacing (manual / merge / keep_local)
           addConflict({
             actionId: action.id,
             requestId: action.requestId,

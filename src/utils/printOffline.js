@@ -271,6 +271,20 @@ async function tryPrintAgentUrls(body, jobType) {
   return null;
 }
 
+// ── Debug log (visible in UI) ─────────────────────────────────────────────────
+
+const offlinePrintLog = [];
+
+export function getOfflinePrintLog() {
+  return offlinePrintLog;
+}
+
+function logOfflinePrint(entry) {
+  offlinePrintLog.push({ timestamp: Date.now(), ...entry });
+  if (offlinePrintLog.length > 50) offlinePrintLog.shift();
+  console.log('[printOffline]', entry.status, entry.message, entry.detail || '');
+}
+
 // ── Print dispatch ───────────────────────────────────────────────────────────
 
 /**
@@ -291,6 +305,8 @@ export async function printLocal(job) {
   const jobType = job.type || job.jobType;
   const printerName = job.printerName || resolvePrinter(jobType, mapping);
 
+  logOfflinePrint({ status: 'start', message: `${jobType} on ${platform}`, detail: `mapped=${printerName || 'none'}` });
+
   // Generate text content if not provided (legacy fallback)
   const text = job.text || (jobType === 'FINAL_BILL' || jobType === 'BILL'
     ? buildBillText(job.data || {})
@@ -298,6 +314,38 @@ export async function printLocal(job) {
     ? buildKotText(job.data || {})
     : JSON.stringify(job.data || {}));
   const bytes = Array.from(textToEscpos(text));
+
+  // ── Tauri desktop: raw print via Rust command (fast path for offline) ──
+  if (platform === 'tauri') {
+    let targetPrinter = printerName;
+    if (!targetPrinter && window.__TAURI__) {
+      try {
+        const printers = await window.__TAURI__.invoke('list_printers');
+        logOfflinePrint({ status: 'info', message: 'Tauri list_printers', detail: `${printers.length} printers` });
+        if (printers && printers.length > 0) {
+          const defaultPrinter = printers.find(p => p.isDefault) || printers[0];
+          targetPrinter = defaultPrinter?.name || printers[0].name;
+          logOfflinePrint({ status: 'info', message: 'Falling back to default Tauri printer', detail: targetPrinter });
+        }
+      } catch (err) {
+        logOfflinePrint({ status: 'error', message: 'list_printers failed', detail: err?.message || String(err) });
+      }
+    }
+    if (!targetPrinter) {
+      return await queuePrintJob(job, text, 'No printer mapped');
+    }
+    try {
+      await window.__TAURI__.invoke('print_raw', {
+        printerName: targetPrinter,
+        bytes,
+      });
+      logOfflinePrint({ status: 'success', message: 'Tauri print_raw succeeded', detail: targetPrinter });
+      return { printed: true, queued: false };
+    } catch (err) {
+      logOfflinePrint({ status: 'error', message: 'Tauri print_raw failed', detail: err?.message || String(err) });
+      return await queuePrintJob(job, text, err?.message || String(err));
+    }
+  }
 
   // ── Primary: local Print Agent HTTP endpoint (multi-URL discovery) ──
   // Try multiple candidate URLs (configured, backend-reported, cached, localhost)
@@ -320,41 +368,10 @@ export async function printLocal(job) {
 
   const workingUrl = await tryPrintAgentUrls(body, jobType);
   if (workingUrl) {
+    logOfflinePrint({ status: 'success', message: 'Print Agent succeeded', detail: workingUrl });
     return { printed: true, queued: false };
   }
-
-  // ── Tauri desktop: raw print via Rust command ──
-  if (platform === 'tauri') {
-    let targetPrinter = printerName;
-    // If no mapping is saved, try the default Windows printer so offline prints still come out
-    if (!targetPrinter && window.__TAURI__) {
-      try {
-        const printers = await window.__TAURI__.invoke('list_printers');
-        if (printers && printers.length > 0) {
-          const defaultPrinter = printers.find(p => p.isDefault) || printers[0];
-          targetPrinter = defaultPrinter?.name || printers[0].name;
-          console.log('[printOffline] No mapped printer, falling back to default Tauri printer:', targetPrinter);
-        }
-      } catch (err) {
-        console.warn('[printOffline] Failed to list Tauri printers:', err);
-      }
-    }
-    if (!targetPrinter) {
-      return await queuePrintJob(job, text, 'No printer mapped');
-    }
-    try {
-      const bytes = Array.from(textToEscpos(text));
-      await window.__TAURI__.invoke('print_raw', {
-        printerName: targetPrinter,
-        bytes,
-      });
-      console.log(`[printOffline] Printed [${job.jobType}] → ${targetPrinter} (Tauri)`);
-      return { printed: true, queued: false };
-    } catch (err) {
-      console.error(`[printOffline] Tauri print failed:`, err);
-      return await queuePrintJob(job, text, err?.message || String(err));
-    }
-  }
+  logOfflinePrint({ status: 'error', message: 'Print Agent unreachable', detail: 'queued' });
 
   // ── Web with QZ Tray: try direct print ──
   if (platform === 'web') {
@@ -365,10 +382,10 @@ export async function printLocal(job) {
       const { sendToPrinter } = await import('./qzTray');
       const printData = [{ type: 'raw', format: 'plain', data: text }];
       await sendToPrinter(printerName, printData);
-      console.log(`[printOffline] Printed [${job.jobType}] → ${printerName} (QZ Tray)`);
+      logOfflinePrint({ status: 'success', message: 'QZ Tray succeeded', detail: printerName });
       return { printed: true, queued: false };
     } catch (err) {
-      console.warn(`[printOffline] QZ Tray print failed, queuing:`, err.message);
+      logOfflinePrint({ status: 'error', message: 'QZ Tray failed', detail: err?.message || String(err) });
       return await queuePrintJob(job, text, err?.message || String(err));
     }
   }
@@ -377,10 +394,10 @@ export async function printLocal(job) {
   if (platform === 'ios-pwa' || platform === 'ios-browser') {
     try {
       await shareAsPDF(job, text);
-      console.log(`[printOffline] Shared [${job.jobType}] as PDF (iOS)`);
+      logOfflinePrint({ status: 'success', message: 'iOS PDF share succeeded' });
       return { printed: true, queued: false };
     } catch (err) {
-      console.warn(`[printOffline] iOS PDF share failed, queuing:`, err.message);
+      logOfflinePrint({ status: 'error', message: 'iOS PDF share failed', detail: err?.message || String(err) });
       return await queuePrintJob(job, text, err?.message || String(err));
     }
   }
@@ -397,7 +414,7 @@ export async function printLocal(job) {
         const networkPort = parseInt(localStorage.getItem('offline_network_printer_port') || '9100', 10);
         const bytes = Array.from(textToEscpos(text));
         await EscposPrint.printNetwork({ ip: networkPrinterIp, port: networkPort, bytes });
-        console.log(`[printOffline] Printed [${job.jobType}] → ${networkPrinterIp}:${networkPort} (Capacitor network)`);
+        logOfflinePrint({ status: 'success', message: 'Capacitor network print succeeded', detail: `${networkPrinterIp}:${networkPort}` });
         return { printed: true, queued: false };
       }
 
@@ -405,18 +422,19 @@ export async function printLocal(job) {
       if (printerName) {
         const bytes = Array.from(textToEscpos(text));
         await EscposPrint.printRaw({ printerName, bytes });
-        console.log(`[printOffline] Printed [${job.jobType}] → ${printerName} (Capacitor Bluetooth)`);
+        logOfflinePrint({ status: 'success', message: 'Capacitor raw print succeeded', detail: printerName });
         return { printed: true, queued: false };
       }
 
       return await queuePrintJob(job, text, 'No printer configured for Android');
     } catch (err) {
-      console.warn(`[printOffline] Capacitor print failed, queuing:`, err.message);
+      logOfflinePrint({ status: 'error', message: 'Capacitor print failed', detail: err?.message || String(err) });
       return await queuePrintJob(job, text, err?.message || String(err));
     }
   }
 
   // ── Unknown platform: queue ──
+  logOfflinePrint({ status: 'error', message: 'Unknown platform', detail: platform });
   return await queuePrintJob(job, text, 'Unknown platform — cannot print locally');
 }
 
@@ -436,7 +454,7 @@ async function queuePrintJob(job, text, reason) {
     failReason: reason,
     createdAt: Date.now(),
   });
-  console.log(`[printOffline] Queued [${job.jobType}] — ${reason}`);
+  logOfflinePrint({ status: 'queued', message: `${job.jobType} queued`, detail: reason });
   return { printed: false, queued: true, error: reason };
 }
 
@@ -446,6 +464,7 @@ async function queuePrintJob(job, text, reason) {
  */
 export async function flushQueuedPrintJobs() {
   const jobs = await getOfflinePrintJobs();
+  logOfflinePrint({ status: 'flush', message: 'Flush started', detail: `${jobs.length} jobs` });
   if (!jobs || jobs.length === 0) return { flushed: 0, failed: 0 };
 
   let flushed = 0;
@@ -470,12 +489,12 @@ export async function flushQueuedPrintJobs() {
         failed++;
       }
     } catch (err) {
-      console.error(`[printOffline] Flush failed for job ${job.id}:`, err);
+      logOfflinePrint({ status: 'error', message: 'Flush job failed', detail: err?.message || String(err) });
       failed++;
     }
   }
 
-  console.log(`[printOffline] Flush complete: ${flushed} printed, ${failed} still pending`);
+  logOfflinePrint({ status: 'flush', message: 'Flush done', detail: `${flushed} ok, ${failed} failed` });
   return { flushed, failed };
 }
 

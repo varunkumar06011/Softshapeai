@@ -17,7 +17,7 @@ import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, Clock, ChevronDown } from '
 import { useSyncStatus } from '../../context/SyncStatusContext';
 import { getMenuCacheAgeMs } from '../../services/menuSyncService';
 import { getTableCacheAgeMs } from '../../services/tableSyncService';
-import { flushQueuedPrintJobs } from '../../utils/printOffline';
+import { flushQueuedPrintJobs, getOfflinePrintLog } from '../../utils/printOffline';
 
 export default function OfflineStatusBar() {
   const {
@@ -39,11 +39,28 @@ export default function OfflineStatusBar() {
   const [showConflicts, setShowConflicts] = useState(false);
   const [showPendingDetail, setShowPendingDetail] = useState(false);
   const [printFlush, setPrintFlush] = useState({ running: false, result: null });
+  const [lastPrintLog, setLastPrintLog] = useState(null);
 
   // Auto-show conflict panel when conflicts arrive
   useEffect(() => {
     if (hasConflicts) setShowConflicts(true);
   }, [hasConflicts]);
+
+  // Poll offline print log so the last failure reason is visible without DevTools
+  useEffect(() => {
+    let mounted = true;
+    function updateLog() {
+      if (!mounted) return;
+      const log = getOfflinePrintLog();
+      setLastPrintLog(log[log.length - 1] || null);
+    }
+    updateLog();
+    const interval = setInterval(updateLog, 1000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   async function handleRetryPrints() {
     setPrintFlush({ running: true, result: null });
@@ -180,6 +197,14 @@ export default function OfflineStatusBar() {
 
       {/* Spacer to prevent content from being hidden behind the status bar */}
       <div className="h-8" />
+
+      {/* Last offline print log — visible so failures can be diagnosed without DevTools */}
+      {isOffline && lastPrintLog && (
+        <div className="fixed top-8 left-0 right-0 z-[9998] bg-gray-900 text-white px-4 py-1 text-[10px] font-mono truncate">
+          {new Date(lastPrintLog.timestamp).toLocaleTimeString('en-IN')} — {lastPrintLog.status}: {lastPrintLog.message}
+          {lastPrintLog.detail && ` | ${lastPrintLog.detail}`}
+        </div>
+      )}
 
       {/* Pending actions detail dropdown */}
       {showPendingDetail && pendingCount > 0 && (
