@@ -4,6 +4,8 @@ import {
   Plus, Minus, Trash2, Save, Send, CheckCircle, TrendingUp, Wallet,
   ArrowRight, Edit3, X,
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
 
@@ -47,6 +49,26 @@ function shiftDate(dateStr, days) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function WhatsAppIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.955L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+    </svg>
+  );
+}
+
+async function loadImageAsBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load image: ${res.status}`);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 // ── Sales Tile component ─────────────────────────────────────────────────────
@@ -197,8 +219,16 @@ export default function AdminDailyBalanceSheet() {
   const [showAddAdj, setShowAddAdj] = useState(false);
   const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS' });
   const [statusLoading, setStatusLoading] = useState(false);
+  const [logoBase64, setLogoBase64] = useState(null);
   const saveTimerRef = useRef(null);
   const dragItemRef = useRef(null);
+
+  // Preload logo for PDF branding
+  useEffect(() => {
+    loadImageAsBase64('/logo softshape.ai.png')
+      .then((data) => setLogoBase64(data))
+      .catch(() => setLogoBase64(null));
+  }, []);
 
   const accessibleOutlets = useMemo(() => {
     try {
@@ -209,6 +239,14 @@ export default function AdminDailyBalanceSheet() {
 
   const isLocked = sheet?.status === 'LOCKED';
   const isAdmin = user?.role === 'admin' || user?.role === 'owner';
+
+  // VGrand admin: replace Submit with "Send to WhatsApp" (PDF share)
+  const isVGrand = useMemo(() => {
+    const name = (restaurant?.name || '').toLowerCase();
+    return name.includes('vgrand') || name.includes('v-grand') || name.includes('vgrand lounge');
+  }, [restaurant?.name]);
+
+  const VGRAND_WHATSAPP_NUMBER = '919550237788';
 
   // ── Load balance sheet ─────────────────────────────────────────────────────
   const loadSheet = useCallback(async () => {
@@ -416,6 +454,190 @@ export default function AdminDailyBalanceSheet() {
   const voucherSubtotal = useMemo(() => {
     return vouchers.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
   }, [vouchers]);
+
+  // ── Generate PDF in admin panel theme ────────────────────────────────────────
+  const generateBalanceSheetPDF = useCallback((logoDataUrl) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const primary = [229, 57, 53]; // #E53935
+    const dark = [17, 24, 39]; // #111827
+
+    // Logo (centered at top, 100mm x 40mm)
+    if (logoDataUrl) {
+      const logoWidth = 100;
+      const logoHeight = 40;
+      const logoX = (pageWidth - logoWidth) / 2;
+      try {
+        doc.addImage(logoDataUrl, 'PNG', logoX, 10, logoWidth, logoHeight);
+      } catch {
+        // Logo failed to embed; continue without it
+      }
+    }
+
+    // Header bar
+    doc.setFillColor(...primary);
+    doc.rect(0, 56, pageWidth, 24, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Daily Balance Sheet', margin, 72);
+
+    // Meta
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
+    doc.text(`Outlet: ${outletName}`, margin, 88);
+    doc.text(`Date: ${selectedDate}`, margin, 94);
+    doc.text(`Status: ${sheet?.status || 'DRAFT'}`, margin, 100);
+
+    let y = 108;
+
+    // Venue Sales
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...dark);
+    doc.text('Venue Sales', margin, y);
+    y += 6;
+
+    const salesRows = [
+      ['AC Bar', `₹${computedSales.acBar.toLocaleString('en-IN')}`],
+      ['Non-AC Bar', `₹${computedSales.nonAcBar.toLocaleString('en-IN')}`],
+      ['Family Wing', `₹${computedSales.familyWing.toLocaleString('en-IN')}`],
+      ['Parcel', `₹${computedSales.parcel.toLocaleString('en-IN')}`],
+      ['Swiggy', `₹${computedSales.swiggy.toLocaleString('en-IN')}`],
+      ['Zomato', `₹${computedSales.zomato.toLocaleString('en-IN')}`],
+    ];
+
+    doc.autoTable({
+      startY: y,
+      head: [['Venue', 'Amount']],
+      body: salesRows,
+      theme: 'grid',
+      headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 10, cellPadding: 2 },
+      margin: { left: margin, right: margin },
+    });
+    y = (doc.lastAutoTable?.finalY || y) + 8;
+
+    // Opening Balance
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Opening Balance', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`₹${overrides.openingBalance.toLocaleString('en-IN')}`, pageWidth - margin, y, { align: 'right' });
+    y += 8;
+
+    // Vouchers
+    if (vouchers.length > 0) {
+      doc.setFontSize(13);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Vouchers', margin, y);
+      y += 6;
+
+      const voucherRows = Object.entries(voucherGroups).map(([cat, vlist]) => [
+        cat,
+        `₹${vlist.reduce((s, v) => s + Number(v.amount), 0).toLocaleString('en-IN')}`,
+      ]);
+
+      doc.autoTable({
+        startY: y,
+        head: [['Category', 'Amount']],
+        body: voucherRows,
+        theme: 'grid',
+        headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 10, cellPadding: 2 },
+        margin: { left: margin, right: margin },
+      });
+      y = (doc.lastAutoTable?.finalY || y) + 8;
+    }
+
+    // Adjustments
+    if (adjustments.length > 0) {
+      doc.setFontSize(13);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Adjustments', margin, y);
+      y += 6;
+
+      const adjustmentRows = adjustments.map((a) => [
+        `${a.sign === 'PLUS' ? '+' : '-'} ${a.label}`,
+        `₹${Number(a.amount).toLocaleString('en-IN')}`,
+      ]);
+
+      doc.autoTable({
+        startY: y,
+        head: [['Description', 'Amount']],
+        body: adjustmentRows,
+        theme: 'grid',
+        headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 10, cellPadding: 2 },
+        margin: { left: margin, right: margin },
+      });
+      y = (doc.lastAutoTable?.finalY || y) + 8;
+    }
+
+    // Closing Balance bar
+    doc.setFillColor(...dark);
+    doc.rect(margin, y, pageWidth - margin * 2, 14, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Closing Balance', margin + 4, y + 9);
+    doc.text(`₹${balanceCalc.closingBalance.toLocaleString('en-IN')}`, pageWidth - margin - 4, y + 9, { align: 'right' });
+
+    // Footer — right after closing balance
+    y += 22;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Softshape AI — Software that shapes your business from Day 1.', margin, y);
+    doc.setTextColor(120);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Softshape AI can make mistakes. Please cross-check important information before relying on it.', margin, y + 5);
+
+    return doc;
+  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, overrides.openingBalance, vouchers.length, voucherGroups, adjustments, balanceCalc.closingBalance]);
+
+  // ── WhatsApp share: generate PDF + open chat with VGrand admin ───────────────
+  const handleWhatsAppShare = async () => {
+    setStatusLoading(true);
+    setError(null);
+    try {
+      let logoDataUrl = logoBase64;
+      if (!logoDataUrl) {
+        try {
+          logoDataUrl = await loadImageAsBase64('/logo softshape.ai.png');
+          setLogoBase64(logoDataUrl);
+        } catch {
+          logoDataUrl = null;
+        }
+      }
+      const doc = generateBalanceSheetPDF(logoDataUrl);
+      const blob = doc.output('blob');
+
+      // Download the PDF so the user can attach it in WhatsApp
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Daily-Balance-Sheet-${selectedDate}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Open WhatsApp chat with the VGrand admin number
+      const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
+      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
+      const whatsappUrl = `https://wa.me/${VGRAND_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+      window.open(whatsappUrl, '_blank');
+    } catch (err) {
+      setError(err.message || 'Failed to generate PDF for WhatsApp');
+    } finally {
+      setStatusLoading(false);
+    }
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -713,14 +935,25 @@ export default function AdminDailyBalanceSheet() {
           )
         ) : (
           <>
-            <button
-              onClick={handleSubmit}
-              disabled={statusLoading || sheet?.status === 'SUBMITTED'}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              {sheet?.status === 'SUBMITTED' ? 'Submitted' : 'Submit'}
-            </button>
+            {isVGrand ? (
+              <button
+                onClick={handleWhatsAppShare}
+                disabled={statusLoading}
+                className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
+                Send to WhatsApp
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={statusLoading || sheet?.status === 'SUBMITTED'}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {sheet?.status === 'SUBMITTED' ? 'Submitted' : 'Submit'}
+              </button>
+            )}
             {isAdmin && sheet?.status === 'SUBMITTED' && (
               <button
                 onClick={handleLock}
