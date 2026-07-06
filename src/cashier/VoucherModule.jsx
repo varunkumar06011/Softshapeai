@@ -188,7 +188,7 @@ export default function VoucherModule() {
         category: paidToType === 'STAFF' ? undefined : selectedCategory,
         approvedByName: selectedApprover || approverSearch.trim() || undefined,
         idempotencyKey,
-        voucherDate: summaryDate,
+        expenditureDate: summaryDate,
       };
 
       const result = await apiFetch('/api/vouchers', {

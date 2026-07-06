@@ -57,8 +57,8 @@ export default function XReportSection() {
     setError(null);
     try {
       const [data, expenditures] = await Promise.all([
-        apiFetch(`/api/xreports/${date}`),
-        apiFetch(`/api/expenditures?date=${date}`),
+        apiFetch(`/api/xreports/${date}`, { timeout: 60000 }),
+        apiFetch(`/api/expenditures?date=${date}`, { timeout: 60000 }),
       ]);
       setReport({
         totalSales: Number(data.totalSales) || 0,
@@ -300,7 +300,7 @@ export default function XReportSection() {
                 <span className="text-sm font-black text-gray-700 uppercase tracking-wide">Total Sale</span>
                 <span className="text-lg font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">From that:</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Manual entry:</p>
               <div className="flex flex-col gap-2 pl-2">
                 <div className="flex justify-between items-center py-1 gap-3">
                   <span className="text-sm font-bold text-gray-600">Cash</span>
