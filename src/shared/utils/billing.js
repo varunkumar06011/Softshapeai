@@ -20,7 +20,12 @@ import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
  * GST options default to the logged-in restaurant's configuration; pass `options` to override.
  */
 export const calculateOrderTotal = (items, discountPercent = 0, options = {}) => {
-  const config = getRestaurantConfig();
+  // Only read localStorage config when caller hasn't provided the needed fields
+  const needsConfig =
+    options.gstCategory == null ||
+    options.pricesIncludeGst == null ||
+    options.gstRegistered == null;
+  const config = needsConfig ? getRestaurantConfig() : {};
   const gstCategory = options.gstCategory ?? config.gstCategory ?? 'NON_AC';
   const pricesIncludeGst = options.pricesIncludeGst ?? config.pricesIncludeGst ?? false;
   const gstRegistered = options.gstRegistered ?? config.gstRegistered ?? true;
@@ -88,7 +93,9 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
 
   const liquorAfterDiscount = liquorSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (liquorSubtotal / subtotal) : 0);
   const displayedSubtotal = Math.round((baseAmount + gstExemptAfterDiscount + liquorAfterDiscount) * 100) / 100;
-  const grandTotal = Math.max(0, Math.round((displayedSubtotal + taxes) * 100) / 100);
+  const rawGrandTotal = Math.max(0, Math.round((displayedSubtotal + taxes) * 100) / 100);
+  const grandTotal = Math.round(rawGrandTotal);
+  const roundOff = Math.round((grandTotal - rawGrandTotal) * 100) / 100;
 
   // Round everything to whole numbers for display and print consistency
   const rawSubtotalRounded = Math.round(subtotal);
@@ -106,6 +113,7 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
     total: grandTotalRounded,
     grandTotal: grandTotalRounded,
     discountAmount: discountAmountRounded,
+    roundOff,
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
     cgst: cgstRounded,
@@ -236,15 +244,15 @@ export const groupOrderItems = (items) => {
  * Calculates the total bill dynamically from the table's order data.
  * Prefers DB Order items over kotHistory via getBillableItems().
  */
-export const calculateTableBill = (table) => {
+export const calculateTableBill = (table, options = {}) => {
   if (!table) return { subtotal: 0, taxes: 0, total: 0 };
-  return calculateOrderTotal(getBillableItems(table));
+  return calculateOrderTotal(getBillableItems(table), 0, options);
 };
 
 /**
  * Calculates the total bill including the unsubmitted (draft) session items.
  */
-export const calculateSessionBill = (table, draftItems = []) => {
+export const calculateSessionBill = (table, draftItems = [], options = {}) => {
   const committed = getBillableItems(table);
-  return calculateOrderTotal([...committed, ...draftItems]);
+  return calculateOrderTotal([...committed, ...draftItems], 0, options);
 };

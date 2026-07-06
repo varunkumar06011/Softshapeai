@@ -8289,7 +8289,7 @@ export function KitchenInventory() {
           const consumed = hasEntry ? Number(item.todayEntry.consumedStock ?? 0) : null;
           const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
           const totalStock = hasEntry ? opening + purchase : null;
-          const fmtAmt = (val) => val == null ? '—' : `₹${Number(val).toFixed(0)}`;
+          const fmtAmt = (val) => val == null ? '—' : `₹${Number(val).toFixed(2)}`;
           const fmtVal = (val, suffix = '') => val == null ? '—' : `${val} ${suffix}`.trim();
 
           return (

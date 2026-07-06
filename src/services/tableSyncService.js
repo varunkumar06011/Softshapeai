@@ -125,6 +125,8 @@ function normalizeKots(kots) {
       s: ki.status === 'CANCELLED' ? 'Cancelled' : (ki.s ?? 'KOT Sent'),
       orderItemId: ki.orderItemId,
       notes: ki.notes,
+      menuType: ki.menuType || null,
+      gstEnabled: ki.gstEnabled ?? null,
     })),
   }));
 }

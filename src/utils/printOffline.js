@@ -79,7 +79,7 @@ function textToEscpos(text) {
   return encoder.encode(text);
 }
 
-function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, grandTotal, billNumber, restaurantName, restaurant }) {
+function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, grandTotal, roundOff, billNumber, restaurantName, restaurant }) {
   const lines = [];
   const W = 32; // 32 chars wide for 58mm paper (48 for 80mm)
   const center = (s) => {
@@ -117,6 +117,10 @@ function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, gra
     lines.push(`Discount (${Math.round(Number(discount.percent || 0)).toFixed(0)}%): -Rs.${discAmt.toFixed(0)}`);
   }
   lines.push(line);
+  if (roundOff && Number(roundOff) !== 0) {
+    const roVal = Number(roundOff);
+    lines.push(`Round Off:       Rs.${roVal > 0 ? '+' : ''}${roVal.toFixed(2)}`);
+  }
   lines.push(`GRAND TOTAL:     Rs.${Math.round(Number(grandTotal || 0)).toFixed(0)}`);
   lines.push(line);
   lines.push(center('Thank You!'));

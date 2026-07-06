@@ -213,7 +213,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
             <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] rounded-xl p-4 flex flex-col gap-1 shadow-lg">
               <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
               <span className="text-3xl font-black text-white">
-                ₹{filtered.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(0)}
+                ₹{filtered.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(2)}
               </span>
               <span className="text-[10px] font-bold text-red-100">{filtered.length} transactions</span>
             </div>
@@ -231,7 +231,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
               return (
                 <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
                   <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
-                  <span className="text-sm font-black text-gray-900">₹{total.toFixed(0)}</span>
+                  <span className="text-sm font-black text-gray-900">₹{total.toFixed(2)}</span>
                   <span className="text-[9px] font-bold text-gray-400">{count} txns</span>
                 </div>
               );
@@ -365,7 +365,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                           </span>
                         </td>
                         <td className="p-4 text-right">
-                          <span className="text-sm font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                          <span className="text-sm font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</span>
                           <span className="block text-xs text-gray-400 font-bold">{txn.items} items</span>
                         </td>
                         <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
@@ -404,12 +404,12 @@ export default function AdminTransactions({ onStatsRefresh }) {
                                 {txn.itemsList.map((item, idx) => (
                                   <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
                                     <span className="text-xs font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
-                                    <span className="text-xs font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                    <span className="text-xs font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(2)}</span>
                                   </div>
                                 ))}
                                 <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
                                   <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</span>
                                 </div>
                               </div>
                             ) : (

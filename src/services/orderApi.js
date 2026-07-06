@@ -120,12 +120,8 @@ export function toOrderItems(items) {
 }
 
 export async function reserveKotNumber(requestId = null) {
-  // Offline fallback: reserve a local KOT number so KOTs can still be printed
-  // immediately. The backend will use this as preReservedKotNumber on sync.
-  if (!isBackendReachable()) {
-    const kotNumber = await getNextOfflineKotNumber();
-    return { kotNumber, offline: true };
-  }
+  // Try the API first — isBackendReachable() can be falsely negative on slow mobile networks.
+  // The catch block handles the offline fallback.
   try {
     const body = {};
     if (requestId) body.requestId = requestId;
@@ -151,66 +147,62 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (preReservedKotNumber != null) { orderData.preReservedKotNumber = preReservedKotNumber; }
   if (kotEventIds) { orderData.kotEventIds = kotEventIds; }
 
-  // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
-  if (!isBackendReachable()) {
-    const offlineRequestId = requestId || generateRequestId();
-    orderData.requestId = offlineRequestId;
-    await addPendingAction({
-      requestId: offlineRequestId,
-      entityId: tableId,
-      entityType: 'order',
-      actionType: 'create-order',
-      url: '/api/orders',
-      method: 'POST',
-      body: orderData,
-    });
-    // Queue KOT items locally so the kitchen display still works during KDS outage
-    const kitchenItems = orderData.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
-    await queueKitchenItems({
-      orderId: `offline-${Date.now()}`,
-      tableId,
-      tableNumber: orderData.tableNumber || tableId,
-      items: kitchenItems,
-      requestId: offlineRequestId,
-    }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
-    // Try local KOT print (Print Agent, QZ Tray, Tauri, etc.) so tickets still come out
-    await printOfflineKot({
-      tableId,
-      tableNumber: orderData.tableNumber || tableId,
-      items: orderData.items,
-      captainName,
-      kotNumber: preReservedKotNumber,
-      requestId: offlineRequestId,
-    });
-    if (import.meta.env.DEV) {
-      console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
-    }
-    return { id: `offline-${Date.now()}`, ...orderData, offline: true };
-  }
-
-  return withRetry(
-    async () => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const res = await fetch(apiUrl("/api/orders"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authService.getAuthHeader() },
-          body: JSON.stringify(orderData),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        return parseResponse(res);
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-          throw new Error("KOT request timed out — please retry");
+  // Try API first — isBackendReachable() can be falsely negative on slow mobile networks.
+  // Only fall back to offline queue if the API call actually fails after retries.
+  try {
+    return await withRetry(
+      async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res = await fetch(apiUrl("/api/orders"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authService.getAuthHeader() },
+            body: JSON.stringify(orderData),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          return parseResponse(res);
+        } catch (error) {
+          clearTimeout(timeoutId);
+          if (error.name === 'AbortError') {
+            throw new Error("KOT request timed out — please retry");
+          }
+          throw error;
         }
-        throw error;
+      },
+      RETRY_CONFIG.KOT
+    );
+  } catch (apiErr) {
+    // API call failed after retries — fall back to offline queue if backend is unreachable
+    if (!isBackendReachable()) {
+      console.warn('[Offline] API failed, queuing order for sync:', apiErr.message);
+      const offlineRequestId = requestId || generateRequestId();
+      orderData.requestId = offlineRequestId;
+      await addPendingAction({
+        requestId: offlineRequestId,
+        entityId: tableId,
+        entityType: 'order',
+        actionType: 'create-order',
+        url: '/api/orders',
+        method: 'POST',
+        body: orderData,
+      });
+      const kitchenItems = orderData.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+      await queueKitchenItems({
+        orderId: `offline-${Date.now()}`,
+        tableId,
+        tableNumber: orderData.tableNumber || tableId,
+        items: kitchenItems,
+        requestId: offlineRequestId,
+      }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+      if (import.meta.env.DEV) {
+        console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
       }
-    },
-    RETRY_CONFIG.KOT
-  );
+      return { id: `offline-${Date.now()}`, ...orderData, offline: true };
+    }
+    throw apiErr;
+  }
 }
 
 export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), status } = {}) {
@@ -242,74 +234,70 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (preReservedKotNumber != null) { body.preReservedKotNumber = preReservedKotNumber; }
   if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
-  // Offline queueing — store action in IndexedDB, sync engine will flush on reconnect
-  if (!isBackendReachable()) {
-    const offlineRequestId = requestId || generateRequestId();
-    body.requestId = offlineRequestId;
-    await addPendingAction({
-      requestId: offlineRequestId,
-      entityId: orderId,
-      entityType: 'order',
-      actionType: 'update-items',
-      url: `/api/orders/${orderId}/items`,
-      method: 'PATCH',
-      body,
-    });
-    // Queue KOT items locally so the kitchen display still works during KDS outage
-    const kitchenItems = body.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
-    await queueKitchenItems({
-      orderId,
-      tableId: orderId,
-      tableNumber: tableNumber || orderId,
-      items: kitchenItems,
-      requestId: offlineRequestId,
-    }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
-    // Try local KOT print for the updated items
-    await printOfflineKot({
-      tableId: orderId,
-      tableNumber: tableNumber || orderId,
-      items: body.items,
-      captainName,
-      kotNumber: preReservedKotNumber,
-      requestId: offlineRequestId,
-    });
-    if (import.meta.env.DEV) {
-      console.log('[Offline] Update order items queued for sync:', orderId);
-    }
-    return { id: orderId, offline: true, order: { id: orderId, items: body.items } };
-  }
+  // Try API first — isBackendReachable() can be falsely negative on slow mobile networks.
+  // Only fall back to offline queue if the API call actually fails after retries.
+  try {
+    return await withRetry(
+      async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  return withRetry(
-    async () => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-      try {
-        const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (res.status === 409) {
-          const data = await res.json().catch(() => ({}));
-          const err = new Error(data.error || "Order was modified by another user. Please refresh and try again.");
-          err.status = 409;
-          err.serverUpdatedAt = data.serverUpdatedAt;
-          throw err;
+        try {
+          const res = await fetch(apiUrl(`/api/orders/${orderId}/items`), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          if (res.status === 409) {
+            const data = await res.json().catch(() => ({}));
+            const err = new Error(data.error || "Order was modified by another user. Please refresh and try again.");
+            err.status = 409;
+            err.serverUpdatedAt = data.serverUpdatedAt;
+            throw err;
+          }
+          return parseResponse(res);
+        } catch (error) {
+          clearTimeout(timeoutId);
+          if (error.name === 'AbortError') {
+            throw new Error("KOT request timed out — please retry");
+          }
+          throw error;
         }
-        return parseResponse(res);
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-          throw new Error("KOT request timed out — please retry");
-        }
-        throw error;
+      },
+      { ...RETRY_CONFIG.KOT, shouldRetry: (err) => err.status !== 409 }
+    );
+  } catch (apiErr) {
+    // API call failed after retries — fall back to offline queue if backend is unreachable
+    if (!isBackendReachable()) {
+      console.warn('[Offline] API failed, queuing update for sync:', apiErr.message);
+      const offlineRequestId = requestId || generateRequestId();
+      body.requestId = offlineRequestId;
+      await addPendingAction({
+        requestId: offlineRequestId,
+        entityId: orderId,
+        entityType: 'order',
+        actionType: 'update-items',
+        url: `/api/orders/${orderId}/items`,
+        method: 'PATCH',
+        body,
+      });
+      const kitchenItems = body.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+      await queueKitchenItems({
+        orderId,
+        tableId: orderId,
+        tableNumber: tableNumber || orderId,
+        items: kitchenItems,
+        requestId: offlineRequestId,
+      }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+      if (import.meta.env.DEV) {
+        console.log('[Offline] Update order items queued for sync:', orderId);
       }
-    },
-    { ...RETRY_CONFIG.KOT, shouldRetry: (err) => err.status !== 409 }
-  );
+      return { id: orderId, offline: true, order: { id: orderId, items: body.items } };
+    }
+    throw apiErr;
+  }
 }
 
 export async function updateOrderStatus(orderId, status) {
@@ -416,6 +404,7 @@ export async function saveTransaction({
   cgst,
   sgst,
   grandTotal,
+  roundOff,
   sectionId,
   sectionTag,
   billNumber,
@@ -439,6 +428,7 @@ export async function saveTransaction({
       cgst,
       sgst,
       grandTotal,
+      roundOff,
       sectionId,
       sectionTag,
       billNumber,

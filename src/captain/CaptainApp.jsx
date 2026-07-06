@@ -2777,7 +2777,7 @@ export default function CaptainApp({ onLogout }) {
 
       const newKOT = {
 
-        id: realKotId || `kot-${Date.now()}`,
+        id: realKotId || (preReservedKotNumber != null ? String(preReservedKotNumber) : `kot-${Date.now()}`),
 
         time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
 
@@ -2884,7 +2884,11 @@ export default function CaptainApp({ onLogout }) {
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
       setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
       lastAnyItemAddedRef.current = 0;
-      addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
+      if (savedOrder?.offline) {
+        addNotification(`KOT #${preReservedKotNumber != null ? preReservedKotNumber : newKOT.id} Queued (Offline)`, 'KOT saved locally — will sync when back online.', 'warning');
+      } else {
+        addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
+      }
 
       // Background listener for print confirmation (non-blocking)
       const socket = getSocket();
@@ -5116,7 +5120,7 @@ export default function CaptainApp({ onLogout }) {
 
                                   <span className={`text-[10px] font-bold ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
 
-                                  <span className={`text-sm font-black ${isCancelled ? 'line-through text-red-400' : 'text-gray-900'}`}>₹{Number(item.p * item.q).toFixed(0)}</span>
+                                  <span className={`text-sm font-black ${isCancelled ? 'line-through text-red-400' : 'text-gray-900'}`}>₹{Number(item.p * item.q).toFixed(2)}</span>
 
                                   {isLoading ? (
 

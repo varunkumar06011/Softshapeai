@@ -45,6 +45,7 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig';
 import { getTenantScopedKey, getTablesCacheKey, getBarTablesCacheKey } from '../utils/cacheKeys';
 import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../context/SyncStatusContext';
@@ -630,6 +631,7 @@ const CashierDashboard = ({ onLogout }) => {
       : tables;
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
+  const restaurantConfig = useMemo(() => getRestaurantConfig(), []);
 
   // Refetch sections when the active restaurant/outlet changes
   useEffect(() => {
@@ -1001,6 +1003,7 @@ const CashierDashboard = ({ onLogout }) => {
           discountAmount,
           cgst,
           sgst,
+          roundOff: Number(txn.roundOff ?? 0),
           time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -1532,6 +1535,7 @@ const CashierDashboard = ({ onLogout }) => {
           discountAmount: Number(socketTxn.discountAmount ?? 0),
           cgst: Number(socketTxn.cgst ?? 0),
           sgst: Number(socketTxn.sgst ?? 0),
+          roundOff: Number(socketTxn.roundOff ?? 0),
           time: (() => { try { const d = new Date(socketTxn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           date: (() => { try { const d = new Date(socketTxn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           timestamp: (() => { try { const d = new Date(socketTxn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -1972,7 +1976,7 @@ const CashierDashboard = ({ onLogout }) => {
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
         const items = getBillableItems(table);
-        const bill = calculateTableBill(table);
+        const bill = calculateTableBill(table, restaurantConfig);
         return {
           id: `T${table.id}`,
           type: 'Dine-In',
@@ -2153,6 +2157,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [reprintPinTarget, setReprintPinTarget] = useState(null);
   const [reprintPinInput, setReprintPinInput] = useState('');
   const [reprintPinError, setReprintPinError] = useState('');
+  const [isVerifyingReprintPin, setIsVerifyingReprintPin] = useState(false);
 
   // Reset bill finder state when switching outlets to prevent stale empty state
   useEffect(() => {
@@ -2252,10 +2257,12 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const verifyReprintPin = async () => {
+    if (isVerifyingReprintPin) return;
     if (!reprintPinInput || reprintPinInput.length < 4) {
       setReprintPinError('Please enter a valid PIN.');
       return;
     }
+    setIsVerifyingReprintPin(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/verify-pin`, {
         method: 'POST',
@@ -2271,6 +2278,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
     } catch (error) {
       setReprintPinError('Failed to verify PIN. Please try again.');
+    } finally {
+      setIsVerifyingReprintPin(false);
     }
   };
 
@@ -2297,16 +2306,16 @@ const CashierDashboard = ({ onLogout }) => {
     }
   };
 
-  const { subtotal, taxes, total, grandTotal: cartGrandTotal, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart);
+  const { subtotal, taxes, total, grandTotal: cartGrandTotal, cgst: cartCgst, sgst: cartSgst } = calculateOrderTotal(cart, 0, restaurantConfig);
   const activeOrderCalc = useMemo(() => {
-    if (!selectedTable) return calculateOrderTotal(cart, discountPercent);
+    if (!selectedTable) return calculateOrderTotal(cart, discountPercent, restaurantConfig);
     const committedItems = getBillableItems(selectedTable);
     const items = committedItems.map(i =>
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
-    return calculateOrderTotal([...items, ...cart], discountPercent);
+    return calculateOrderTotal([...items, ...cart], discountPercent, restaurantConfig);
   }, [selectedTable, cart, discountPercent, removedItemIds]);
-  const activeSubtotal = activeOrderCalc.rawSubtotal;
+  const activeSubtotal = activeOrderCalc.rawSubtotal ?? activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
   const activeGrandTotal = useMemo(() => {
@@ -2457,7 +2466,7 @@ const CashierDashboard = ({ onLogout }) => {
       try {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
-        const billCalc = calculateOrderTotal(billItems, discountPercent);
+        const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
         const result = await printLocal({
           jobType: 'FINAL_BILL',
           eventId: billEventId,
@@ -2469,6 +2478,7 @@ const CashierDashboard = ({ onLogout }) => {
             cgst: billCalc.cgst,
             sgst: billCalc.sgst,
             grandTotal: billCalc.grandTotal,
+            roundOff: billCalc.roundOff ?? 0,
             billNumber: 'PENDING',
             restaurant: {
               name: restaurant?.name || undefined,
@@ -2510,7 +2520,7 @@ const CashierDashboard = ({ onLogout }) => {
             try {
               const { printLocal } = await import('../utils/printOffline');
               const billItems = getBillableItems(selectedTable);
-              const billCalc = calculateOrderTotal(billItems, discountPercent);
+              const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
               const result = await printLocal({
                 jobType: 'FINAL_BILL',
                 eventId: billEventId,
@@ -2522,6 +2532,7 @@ const CashierDashboard = ({ onLogout }) => {
                   cgst: billCalc.cgst,
                   sgst: billCalc.sgst,
                   grandTotal: billCalc.grandTotal,
+                  roundOff: billCalc.roundOff ?? 0,
                   billNumber: response.billNumber,
                   restaurant: {
                     name: restaurant?.name || undefined,
@@ -2718,9 +2729,10 @@ const CashierDashboard = ({ onLogout }) => {
     // Use calculateOrderTotal so walk-in GST matches the printed receipt exactly
     const walkinCalc = calculateOrderTotal(
       cart.map(i => ({ ...i, menuType: i.menuType || 'FOOD' })),
-      discountPercent
+      discountPercent,
+      restaurantConfig
     );
-    const subtotalAmt = walkinCalc.subtotal;
+    const subtotalAmt = walkinCalc.rawSubtotal ?? walkinCalc.subtotal;
     const discountAmt = walkinCalc.discountAmount;
     const cgstAmt = walkinCalc.cgst;
     const sgstAmt = walkinCalc.sgst;
@@ -3036,7 +3048,7 @@ const CashierDashboard = ({ onLogout }) => {
       try { localStorage.removeItem(TX_CACHE_KEY); } catch {}
 
       // Show success notification
-      addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(0)} collected`, 'success');
+      addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(2)} collected`, 'success');
 
       // Clear walk-in mode after settlement
       if (isWalkinMode) {
@@ -3116,6 +3128,7 @@ const CashierDashboard = ({ onLogout }) => {
               isExtraTable: selectedTable.isExtra ? true : undefined,
               sectionTag: selectedTable.sectionTag || undefined,
               grandTotal: Number(activeGrandTotal),
+              roundOff: Number(activeOrderCalc.roundOff ?? 0),
               subtotal: Number(activeSubtotal),
               discountAmount: Number(activeDiscountAmount),
               cgst: Number(activeCgst),
@@ -3204,6 +3217,7 @@ const CashierDashboard = ({ onLogout }) => {
               discountAmount: Number(txn.discountAmount ?? 0),
               cgst: Number(txn.cgst ?? 0),
               sgst: Number(txn.sgst ?? 0),
+              roundOff: Number(txn.roundOff ?? 0),
               time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -3278,6 +3292,7 @@ const CashierDashboard = ({ onLogout }) => {
             cgst: Number(activeCgst),
             sgst: Number(activeSgst),
             grandTotal: Number(activeGrandTotal),
+            roundOff: Number(activeOrderCalc.roundOff ?? 0),
             sectionId: walkinSectionId,
             sectionTag: walkinSectionTag,
             billNumber: null,
@@ -3312,6 +3327,7 @@ const CashierDashboard = ({ onLogout }) => {
               discountAmount: Number(txn.discountAmount ?? 0),
               cgst: Number(txn.cgst ?? 0),
               sgst: Number(txn.sgst ?? 0),
+              roundOff: Number(txn.roundOff ?? 0),
               time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -3506,7 +3522,7 @@ const CashierDashboard = ({ onLogout }) => {
       const liveItems = (selectedTable?.activeOrder?.items || [])
         .filter(item => !billRemovals.includes(item.id) && !item.removedFromBill)
         .map(item => ({ ...item, quantity: editQuantities[item.id] ?? item.quantity ?? item.q ?? 1 }));
-      const liveCalc = calculateOrderTotal([...liveItems, ...billAdditions], discountPercent);
+      const liveCalc = calculateOrderTotal([...liveItems, ...billAdditions], discountPercent, restaurantConfig);
       const updatedOrder = await editBill(selectedTable.activeOrder.id, {
         removedItemIds: billRemovals,
         editQuantities,
@@ -3954,7 +3970,7 @@ const CashierDashboard = ({ onLogout }) => {
       }))
       .filter(i => !!i.menuItemId);
 
-    const newTotalBill = selectedTable ? calculateSessionBill(selectedTable, cart).total : 0;
+    const newTotalBill = selectedTable ? calculateSessionBill(selectedTable, cart, restaurantConfig).total : 0;
 
     try {
       let orderResponse = null;
@@ -4283,7 +4299,11 @@ const CashierDashboard = ({ onLogout }) => {
         lastAnyItemAddedRef.current = 0;
         setExpandedNoteItemId(null);
         setIsKotSuccess(true);
-        addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
+        if (orderResponse?.offline) {
+          addNotification('KOT Queued (Offline)', `KOT for Table ${selectedTable?.id || 'Walk-in'} saved locally — will sync when back online.`, 'warning');
+        } else {
+          addNotification('KOT Pushed', `Sent ${kotsToCreate.length} KOT(s) for Table ${selectedTable?.id || 'Walk-in'}.`, 'success');
+        }
         setTimeout(() => setIsKotSuccess(false), 2000);
       }
     } catch (err) {
@@ -4401,9 +4421,9 @@ const CashierDashboard = ({ onLogout }) => {
   }, [dashboardFloorTables]);
 
   const stats = [
-    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(0)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(0)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
-    { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(0)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(2)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
+    { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
@@ -4574,15 +4594,15 @@ const CashierDashboard = ({ onLogout }) => {
                         <div className="grid grid-cols-3 gap-3">
                           <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Cash</p>
-                            <p className="text-lg font-black text-amber-700 tabular-nums">₹{settlementBreakdown.CASH.toFixed(0)}</p>
+                            <p className="text-lg font-black text-amber-700 tabular-nums">₹{settlementBreakdown.CASH.toFixed(2)}</p>
                           </div>
                           <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-green-400 uppercase tracking-widest mb-1">Card</p>
-                            <p className="text-lg font-black text-green-700 tabular-nums">₹{settlementBreakdown.CARD.toFixed(0)}</p>
+                            <p className="text-lg font-black text-green-700 tabular-nums">₹{settlementBreakdown.CARD.toFixed(2)}</p>
                           </div>
                           <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">UPI</p>
-                            <p className="text-lg font-black text-blue-700 tabular-nums">₹{settlementBreakdown.UPI.toFixed(0)}</p>
+                            <p className="text-lg font-black text-blue-700 tabular-nums">₹{settlementBreakdown.UPI.toFixed(2)}</p>
                           </div>
                         </div>
                       </div>
@@ -4638,7 +4658,7 @@ const CashierDashboard = ({ onLogout }) => {
                             .map((table, i) => {
                               const isWaitingBill = table.status === 'Waiting Bill';
                               const isPreparing = table.status === 'Preparing';
-                              const bill = calculateTableBill(table);
+                              const bill = calculateTableBill(table, restaurantConfig);
                               const billAmt = bill?.subtotal > 0
                                 ? bill.subtotal
                                 : Math.max(
@@ -4686,7 +4706,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       </p>
                                     )}
                                     <p className="text-xl font-black text-gray-900">
-                                      ₹{billAmt > 0 ? billAmt.toFixed(0) : '—'}
+                                      ₹{billAmt > 0 ? billAmt.toFixed(2) : '—'}
                                     </p>
                                   </div>
                                 </div>
@@ -4901,7 +4921,7 @@ const CashierDashboard = ({ onLogout }) => {
                                               notes: i.notes || null,
                                             }))];
                                             const mergedKotHistory = [...mainKotHistory, ...extraKotHistory];
-                                            const newBill = calculateOrderTotal(mergedItems).total;
+                                            const newBill = calculateOrderTotal(mergedItems, 0, restaurantConfig).total;
                                             // Update main table
                                             const updater = prev => prev.map(t => {
                                               if (t.backendId === mainTable.backendId) {
@@ -4947,7 +4967,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     <span className="text-2xl font-black">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                                     {!isFree && (
-                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table).grandTotal}</span>
+                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table, restaurantConfig).grandTotal}</span>
                                     )}
                                   </div>
                                 );
@@ -5031,10 +5051,10 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(0)}
+                              ₹{filteredTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
                             </span>
                             <span className="text-[10px] font-bold text-red-100">
-                              {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(0)}
+                              {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -5054,7 +5074,7 @@ const CashierDashboard = ({ onLogout }) => {
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
                                 <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
-                                <span className="text-sm font-black text-gray-900">₹{total.toFixed(0)}</span>
+                                <span className="text-sm font-black text-gray-900">₹{total.toFixed(2)}</span>
                                 <span className="text-[9px] font-bold text-gray-400">{count} txns</span>
                               </div>
                             );
@@ -5147,7 +5167,6 @@ const CashierDashboard = ({ onLogout }) => {
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Bill No</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Table</th>
-                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Captain</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
@@ -5156,7 +5175,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <tbody className="divide-y divide-gray-50">
                               {txnsLoading && !txnInitialLoaded && filteredTransactions.length === 0 ? (
                                 <tr>
-                                  <td colSpan={7} className="p-12 text-center">
+                                  <td colSpan={6} className="p-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2 py-8">
                                       <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
                                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
@@ -5182,12 +5201,6 @@ const CashierDashboard = ({ onLogout }) => {
                                       <td className="p-4">
                                         <span className="text-xs md:text-sm font-black text-gray-700">
                                           {txn.tableDisplayName || '—'}
-                                        </span>
-                                      </td>
-                                      {/* FIX 6: Captain */}
-                                      <td className="p-4">
-                                        <span className="text-xs font-bold text-gray-500 uppercase">
-                                          {txn.captainName || 'Head Cashier'}
                                         </span>
                                       </td>
                                       <td className="p-4">
@@ -5235,7 +5248,7 @@ const CashierDashboard = ({ onLogout }) => {
                                                 ).map((item, idx) => (
                                                   <div key={idx} className="flex justify-between items-center bg-white rounded-xl px-4 py-2.5 border border-gray-100">
                                                     <span className="text-xs md:text-sm font-bold text-gray-700">{item.name || item.n} × {item.quantity || item.q}</span>
-                                                    <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(0)}</span>
+                                                    <span className="text-xs md:text-sm font-black text-gray-900">₹{Number((item.price || item.p || 0) * (item.quantity || item.q || 1)).toFixed(2)}</span>
                                                   </div>
                                                 ))}
                                                 <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
@@ -5246,11 +5259,11 @@ const CashierDashboard = ({ onLogout }) => {
                                               <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 mt-2 space-y-2">
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
                                                   <span>Subtotal</span>
-                                                  <span className="text-gray-800">₹{Number(txn.subtotal ?? txn.itemsList.reduce((sum, item) => sum + Number(item.price || item.p || 0) * Number(item.quantity || item.q || 1), 0)).toFixed(0)}</span>
+                                                  <span className="text-gray-800">₹{Number(txn.subtotal ?? txn.itemsList.reduce((sum, item) => sum + Number(item.price || item.p || 0) * Number(item.quantity || item.q || 1), 0)).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
                                                   <span>Discount {Number(txn.discountPercent ?? 0) > 0 ? `(${Number(txn.discountPercent).toFixed(0)}%)` : '(0%)'}</span>
-                                                  <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(0)}</span>
+                                                  <span className="text-red-600">-₹{Number(txn.discountAmount ?? 0).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
                                                   <span>CGST</span>
@@ -5260,6 +5273,12 @@ const CashierDashboard = ({ onLogout }) => {
                                                   <span>SGST</span>
                                                   <span className="text-gray-800">₹{Number(txn.sgst ?? 0).toFixed(2)}</span>
                                                 </div>
+                                                {Number(txn.roundOff ?? 0) !== 0 && (
+                                                <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-gray-500">
+                                                  <span>Round Off</span>
+                                                  <span className="text-gray-800">{Number(txn.roundOff) > 0 ? '+' : ''}₹{Number(txn.roundOff ?? 0).toFixed(2)}</span>
+                                                </div>
+                                                )}
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                                                   <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
                                                   <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
@@ -5436,7 +5455,7 @@ const CashierDashboard = ({ onLogout }) => {
                                           {txn.method || '—'}
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</td>
+                                      <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</td>
                                       <td className="px-4 py-3 text-center">
                                         <div className="flex items-center justify-center gap-1.5">
                                           <button
@@ -5469,7 +5488,7 @@ const CashierDashboard = ({ onLogout }) => {
                                                     <span className="text-gray-500 mr-2">{item.quantity ?? item.q ?? 1}×</span>
                                                     {item.name ?? item.n ?? 'Unknown'}
                                                   </span>
-                                                  <span className="font-bold text-gray-600">₹{Number((item.price ?? item.p ?? 0) * (item.quantity ?? item.q ?? 1)).toFixed(0)}</span>
+                                                  <span className="font-bold text-gray-600">₹{Number((item.price ?? item.p ?? 0) * (item.quantity ?? item.q ?? 1)).toFixed(2)}</span>
                                                 </div>
                                               ))
                                             ) : (
@@ -6158,7 +6177,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <div className="flex items-center gap-2 sm:gap-3">
                               <span className={`text-[10px] font-bold whitespace-nowrap ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
                               <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                                ₹{Number(item.p * item.q).toFixed(0)}
+                                ₹{Number(item.p * item.q).toFixed(2)}
                               </span>
                               {isCancelled ? (
                                 <span className="text-xs font-black text-red-400 uppercase tracking-widest">Cancelled</span>
@@ -6226,16 +6245,22 @@ const CashierDashboard = ({ onLogout }) => {
                   <div className="flex-1 bg-gray-50 rounded-xl p-2.5 border border-gray-200 shadow-sm flex flex-col justify-center gap-1">
                     <div className="flex justify-between text-xs font-black text-gray-500 uppercase">
                       <span>Subtotal</span>
-                      <span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(0)}</span>
+                      <span className="font-black text-gray-800">₹{Number(activeSubtotal || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-xs font-black text-gray-500 uppercase">
                       <span>GST</span>
-                      <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(0)}</span>
+                      <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(2)}</span>
                     </div>
                     {discountPercent > 0 && (
                       <div className="flex justify-between text-xs font-black text-[#E53935] uppercase">
                         <span>Discount {discountMode === 'percent' ? `(${discountPercent}%)` : ''}</span>
-                        <span>-₹{activeDiscountAmount.toFixed(0)}</span>
+                        <span>-₹{activeDiscountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {Number(activeOrderCalc.roundOff ?? 0) !== 0 && (
+                      <div className="flex justify-between text-xs font-black text-gray-500 uppercase">
+                        <span>Round Off</span>
+                        <span className="font-black text-gray-800">{Number(activeOrderCalc.roundOff) > 0 ? '+' : ''}₹{Number(activeOrderCalc.roundOff).toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center pt-1 border-t border-gray-200 mt-0.5">
@@ -6458,7 +6483,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">New Total</p>
-                    <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{Number(liveTotal).toFixed(0)}</p>
+                    <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{Number(liveTotal).toFixed(2)}</p>
                   </div>
                   <button
                     onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillEditQuantities({}); setBillAdditions([]); setBillEditSearch(''); }}
@@ -6573,7 +6598,7 @@ const CashierDashboard = ({ onLogout }) => {
                             )}
                             <span className={`text-[10px] font-bold ${isMarked ? 'text-red-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
                             <span className={`text-sm sm:text-base font-black ${isMarked ? 'text-red-550' : 'text-gray-900'}`}>
-                              {isMarked ? '−' : ''}₹{Number(item.p * item.q).toFixed(0)}
+                              {isMarked ? '−' : ''}₹{Number(item.p * item.q).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -6624,7 +6649,7 @@ const CashierDashboard = ({ onLogout }) => {
                           className="flex justify-between items-center p-3.5 rounded-xl border border-gray-200 bg-gray-50 hover:border-amber-300 hover:bg-amber-50 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99]"
                         >
                           <span className="text-sm sm:text-base font-bold text-gray-850">{m.name || m.n}</span>
-                          <span className="text-sm sm:text-base font-black text-amber-600">+ ₹{Number(m.basePrice ?? m.p ?? 0).toFixed(0)}</span>
+                          <span className="text-sm sm:text-base font-black text-amber-600">+ ₹{Number(m.basePrice ?? m.p ?? 0).toFixed(2)}</span>
                         </div>
                       ))}
                     </div>
@@ -6657,7 +6682,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <span className="text-sm sm:text-base font-bold text-amber-800">{item.name}</span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="text-sm sm:text-base font-black text-amber-700">+₹{Number(item.price * item.quantity).toFixed(0)}</span>
+                            <span className="text-sm sm:text-base font-black text-amber-700">+₹{Number(item.price * item.quantity).toFixed(2)}</span>
                             <button
                               onClick={() => setBillAdditions(prev => prev.filter((_, i) => i !== idx))}
                               className="text-amber-450 hover:text-red-500 transition-colors cursor-pointer"
@@ -6883,7 +6908,10 @@ const CashierDashboard = ({ onLogout }) => {
                 )}
                 <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">CGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.cgst ?? 0).toFixed(2)}</span></div>
                 <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">SGST</span><span className="font-bold text-gray-700">₹{Number(billPreviewTxn.sgst ?? 0).toFixed(2)}</span></div>
-                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#E53935]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(2)}</span></div>
+                {Number(billPreviewTxn.roundOff ?? 0) !== 0 && (
+                  <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Round Off</span><span className="font-bold text-gray-700">{Number(billPreviewTxn.roundOff) > 0 ? '+' : ''}₹{Number(billPreviewTxn.roundOff ?? 0).toFixed(2)}</span></div>
+                )}
+                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#E53935]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
               </div>
             </div>
           </div>
@@ -6912,9 +6940,10 @@ const CashierDashboard = ({ onLogout }) => {
               {reprintPinError && <p className="text-xs font-bold text-red-500 mb-2">{reprintPinError}</p>}
               <button
                 onClick={verifyReprintPin}
-                className="w-full bg-[#E53935] text-white rounded-lg py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors"
+                disabled={isVerifyingReprintPin}
+                className="w-full bg-[#E53935] text-white rounded-lg py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Verify & Reprint
+                {isVerifyingReprintPin ? 'Verifying...' : 'Verify & Reprint'}
               </button>
             </div>
           </div>
@@ -7032,7 +7061,7 @@ const CashierDashboard = ({ onLogout }) => {
                             ? 'bg-green-100 text-green-700'
                             : 'bg-orange-100 text-orange-700'
                             }`}>
-                            {isFree ? 'Free' : `₹${Number(table.currentBill || 0).toFixed(0)}`}
+                            {isFree ? 'Free' : `₹${Number(table.currentBill || 0).toFixed(2)}`}
                           </span>
                         </div>
                       </button>
