@@ -22,23 +22,30 @@ import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
-import { createMenuItem, updateMenuItem, deleteMenuItem } from '../services/menuService';
+import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials } from '../services/menuService';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
 export default function TodaySpecials() {
   const { shouldReduce } = useMotionConfig();
   const { allMenuItems, refreshMenu } = useMenu();
-  const specials = allMenuItems ? allMenuItems.filter(i => i.isSpecial) : [];
+  const specials = allMenuItems
+    ? Array.from(new Map(allMenuItems.filter(i => i.isSpecial).map(i => [i.n, i])).values())
+    : [];
 
   const [targets, setTargets] = useState({});
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [captains, setCaptains] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
   const [selectedCaptain, setSelectedCaptain] = useState(null);
   const [pushStatus, setPushStatus] = useState(null);
+  const [bulkRows, setBulkRows] = useState([
+    { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' },
+  ]);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Target assignment states
   const [revenueTarget, setRevenueTarget] = useState(5000);
@@ -175,6 +182,35 @@ export default function TodaySpecials() {
     }
   };
 
+  const handleBulkSave = async () => {
+    const validRows = bulkRows.filter(r => r.n.trim() && Number(r.p) > 0);
+    if (validRows.length === 0) {
+      alert('Enter at least one item with a name and price.');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const payload = validRows.map(r => ({
+        name: r.n.trim(),
+        category: r.c || 'Main Course',
+        price: Number(r.p),
+        isVeg: r.t === 'veg',
+        menuType: r.menuType === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
+        specialChannel: r.channel || 'BOTH',
+      }));
+      await bulkImportSpecials(payload, true);
+      await refreshMenu();
+      setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' }]);
+      setIsBulkModalOpen(false);
+      simulatePush();
+    } catch (err) {
+      console.error('[TodaySpecials] Bulk import failed:', err);
+      alert('Bulk import failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this special?')) return;
     try {
@@ -246,6 +282,12 @@ export default function TodaySpecials() {
             className="flex-1 md:flex-none px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-black uppercase tracking-widest hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-center gap-2"
           >
             <Target size={16} className="text-[#E53935]" /> Assign Targets
+          </button>
+          <button
+            onClick={() => setIsBulkModalOpen(true)}
+            className="flex-1 md:flex-none px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-black uppercase tracking-widest hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-center gap-2"
+          >
+            <Plus size={16} /> Bulk Import
           </button>
           <button
             onClick={() => setIsModalOpen(true)}
@@ -544,6 +586,147 @@ export default function TodaySpecials() {
                 className="flex-1 py-3 bg-[#E53935] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-red-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <Save size={14} /> Save Special
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      {/* BULK IMPORT MODAL */}
+      <AnimatePresence>
+      {isBulkModalOpen && (
+        <motion.div
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={modalBackdropVariants}
+          transition={shouldReduce ? { duration: 0 } : { duration: 0.2 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+        >
+          <motion.div
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={modalContentVariants}
+            transition={shouldReduce ? { duration: 0 } : springs.standard}
+            className="bg-white w-full max-w-3xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+          >
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h3 className="text-sm font-black uppercase tracking-widest text-gray-900">Bulk Import Today Specials</h3>
+              <button onClick={() => setIsBulkModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-900 rounded-full hover:bg-gray-100"><X size={18} /></button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              <p className="text-xs font-bold text-gray-500 mb-4">Add many items at once. Duplicates will be updated, not created again.</p>
+              <div className="space-y-2">
+                {bulkRows.map((row, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Item name"
+                      value={row.n}
+                      onChange={e => {
+                        const next = [...bulkRows];
+                        next[idx] = { ...next[idx], n: e.target.value };
+                        setBulkRows(next);
+                      }}
+                      className="col-span-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Category"
+                      value={row.c}
+                      onChange={e => {
+                        const next = [...bulkRows];
+                        next[idx] = { ...next[idx], c: e.target.value };
+                        setBulkRows(next);
+                      }}
+                      className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Price"
+                      value={row.p}
+                      onChange={e => {
+                        const next = [...bulkRows];
+                        next[idx] = { ...next[idx], p: e.target.value };
+                        setBulkRows(next);
+                      }}
+                      className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                    />
+                    <select
+                      value={row.t}
+                      onChange={e => {
+                        const next = [...bulkRows];
+                        next[idx] = { ...next[idx], t: e.target.value };
+                        setBulkRows(next);
+                      }}
+                      className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                    >
+                      <option value="veg">Veg</option>
+                      <option value="non-veg">Non-Veg</option>
+                    </select>
+                    <select
+                      value={row.menuType}
+                      onChange={e => {
+                        const next = [...bulkRows];
+                        next[idx] = { ...next[idx], menuType: e.target.value };
+                        setBulkRows(next);
+                      }}
+                      className="col-span-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                    >
+                      <option value="FOOD">Food</option>
+                      <option value="LIQUOR">Liquor</option>
+                    </select>
+                    <select
+                      value={row.channel}
+                      onChange={e => {
+                        const next = [...bulkRows];
+                        next[idx] = { ...next[idx], channel: e.target.value };
+                        setBulkRows(next);
+                      }}
+                      className="col-span-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                    >
+                      <option value="BOTH">Both</option>
+                      <option value="CASHIER">Cashier</option>
+                      <option value="CAPTAIN">Captain</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        const next = [...bulkRows];
+                        next.splice(idx, 1);
+                        setBulkRows(next);
+                      }}
+                      disabled={bulkRows.length === 1}
+                      className="col-span-1 flex justify-center text-gray-400 hover:text-red-600 disabled:opacity-30"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setBulkRows([...bulkRows, { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' }])}
+                className="mt-4 px-4 py-2 bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-colors flex items-center gap-2"
+              >
+                <Plus size={14} /> Add Row
+              </button>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-3 mt-auto">
+              <button
+                onClick={() => setIsBulkModalOpen(false)}
+                className="flex-1 py-3 bg-white text-gray-700 rounded-xl text-[10px] font-black uppercase tracking-widest border border-gray-200 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkSave}
+                disabled={bulkSaving || !bulkRows.some(r => r.n.trim() && Number(r.p) > 0)}
+                className="flex-1 py-3 bg-[#E53935] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-red-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Save size={14} /> {bulkSaving ? 'Saving...' : 'Save All'}
               </button>
             </div>
           </motion.div>

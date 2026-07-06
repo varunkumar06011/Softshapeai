@@ -257,9 +257,16 @@ function AdjustmentPill({ adj, isLocked, onEdit, onDelete, onDragStart, onDragOv
 // ── Main component ───────────────────────────────────────────────────────────
 export default function AdminDailyBalanceSheet() {
   const { restaurant, user } = useAuth();
-  const today = getTodayIST();
+  const [today, setToday] = useState(getTodayIST);
   const [selectedDate, setSelectedDate] = useState(today);
   const [outletId, setOutletId] = useState('all');
+
+  // Refresh "today" periodically so the next-day arrow stays accurate in long-lived sessions
+  useEffect(() => {
+    setToday(getTodayIST());
+    const timer = setInterval(() => setToday(getTodayIST()), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
   const [sheet, setSheet] = useState(null);
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading] = useState(true);
