@@ -104,7 +104,7 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
   const cgstRounded = Math.floor(taxesRounded / 2);
   const sgstRounded = taxesRounded - cgstRounded;
   const displayedSubtotalRounded = Math.round(displayedSubtotal);
-  const grandTotalRounded = Math.max(0, displayedSubtotalRounded + taxesRounded - discountAmountRounded);
+  const grandTotalRounded = Math.max(0, grandTotal);
 
   return {
     subtotal: displayedSubtotalRounded,

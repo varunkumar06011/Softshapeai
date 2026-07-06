@@ -2466,27 +2466,28 @@ const CashierDashboard = ({ onLogout }) => {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
+        const offlineBillData = {
+          tableNumber: selectedTable.number,
+          items: billItems,
+          subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+          discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+          cgst: billCalc.cgst,
+          sgst: billCalc.sgst,
+          grandTotal: billCalc.grandTotal,
+          roundOff: billCalc.roundOff ?? 0,
+          billNumber: 'PENDING',
+          restaurant: {
+            name: restaurant?.name || undefined,
+            receiptHeader: restaurant?.receiptHeader || undefined,
+            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+            address: restaurant?.address || undefined,
+            phone: restaurant?.phone || undefined,
+          },
+        };
         const result = await printLocal({
           jobType: 'FINAL_BILL',
           eventId: billEventId,
-          data: {
-            tableNumber: selectedTable.number,
-            items: billItems,
-            subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-            discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
-            cgst: billCalc.cgst,
-            sgst: billCalc.sgst,
-            grandTotal: billCalc.grandTotal,
-            roundOff: billCalc.roundOff ?? 0,
-            billNumber: 'PENDING',
-            restaurant: {
-              name: restaurant?.name || undefined,
-              receiptHeader: restaurant?.receiptHeader || undefined,
-              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-              address: restaurant?.address || undefined,
-              phone: restaurant?.phone || undefined,
-            },
-          },
+          data: offlineBillData,
         });
         localPrinted = result?.printed || false;
         if (localPrinted) {
@@ -2510,8 +2511,8 @@ const CashierDashboard = ({ onLogout }) => {
           .filter(Boolean)
           .join(',');
         const response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId, billData: offlineBillData })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId, billData: offlineBillData });
         if (response?.offline) {
           addNotification('Offline', `Bill queued — will sync when online. Ref: ${response.billNumber}`, 'warning');
           // If local print didn't succeed above, try again with the offline bill number
@@ -3155,6 +3156,45 @@ const CashierDashboard = ({ onLogout }) => {
               offline: true,
               status: 'pending',
             });
+
+            // Print settlement receipt locally when offline
+            try {
+              const { printLocal } = await import('../utils/printOffline');
+              const settleBillItems = getBillableItems(selectedTable)
+                .filter(i => Number(i.quantity ?? i.q ?? 1) > 0);
+              const settleReceiptData = {
+                tableNumber: selectedTable?.number,
+                items: settleBillItems,
+                subtotal: Number(activeSubtotal),
+                discount: discountPercent > 0 ? { percent: discountPercent, amount: Number(activeDiscountAmount) } : null,
+                cgst: Number(activeCgst),
+                sgst: Number(activeSgst),
+                grandTotal: Number(activeGrandTotal),
+                roundOff: Number(activeOrderCalc.roundOff ?? 0),
+                billNumber: settleData?.transaction?.id || `OFFLINE-${settleRequestId.slice(0, 8).toUpperCase()}`,
+                paymentMethod: method,
+                restaurant: {
+                  name: restaurant?.name || undefined,
+                  receiptHeader: restaurant?.receiptHeader || undefined,
+                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                  address: restaurant?.address || undefined,
+                  phone: restaurant?.phone || undefined,
+                },
+              };
+              const settleResult = await printLocal({
+                jobType: 'FINAL_BILL',
+                eventId: `${settleRequestId}-settle-bill`,
+                data: settleReceiptData,
+              });
+              if (settleResult?.printed) {
+                addNotification('Receipt Printed', 'Settlement receipt printed to local printer.', 'success');
+              } else if (settleResult?.queued) {
+                addNotification('Receipt Queued', 'Settlement receipt queued — will print when printer is available.', 'warning');
+              }
+            } catch (printErr) {
+              console.warn('[Settlement] Offline receipt print failed:', printErr.message);
+            }
+
             // Mark as settled locally to prevent retries
             setSettledOrderIds(prev => new Set([...prev, orderId]));
             if (selectedTable?.backendId) {

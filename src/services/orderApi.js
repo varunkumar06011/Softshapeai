@@ -127,12 +127,12 @@ export async function reserveKotNumber(requestId = null) {
     if (requestId) body.requestId = requestId;
     return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 10000, body: JSON.stringify(body) });
   } catch (err) {
-    // If the API failed because we went offline mid-call, fall back to local number
-    if (!isBackendReachable()) {
-      const kotNumber = await getNextOfflineKotNumber();
-      return { kotNumber, offline: true };
-    }
-    throw err;
+    // Any API failure means we can't reach the backend — fall back to local KOT number
+    // so that local printing still works. Don't rely on isBackendReachable() which can
+    // give false positives when navigator.onLine is true but backend is unreachable.
+    console.warn('[reserveKotNumber] API failed, falling back to local KOT number:', err.message);
+    const kotNumber = await getNextOfflineKotNumber();
+    return { kotNumber, offline: true };
   }
 }
 
@@ -174,34 +174,33 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
       RETRY_CONFIG.KOT
     );
   } catch (apiErr) {
-    // API call failed after retries — fall back to offline queue if backend is unreachable
-    if (!isBackendReachable()) {
-      console.warn('[Offline] API failed, queuing order for sync:', apiErr.message);
-      const offlineRequestId = requestId || generateRequestId();
-      orderData.requestId = offlineRequestId;
-      await addPendingAction({
-        requestId: offlineRequestId,
-        entityId: tableId,
-        entityType: 'order',
-        actionType: 'create-order',
-        url: '/api/orders',
-        method: 'POST',
-        body: orderData,
-      });
-      const kitchenItems = orderData.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
-      await queueKitchenItems({
-        orderId: `offline-${Date.now()}`,
-        tableId,
-        tableNumber: orderData.tableNumber || tableId,
-        items: kitchenItems,
-        requestId: offlineRequestId,
-      }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
-      if (import.meta.env.DEV) {
-        console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
-      }
-      return { id: `offline-${Date.now()}`, ...orderData, offline: true };
+    // API call failed after retries — fall back to offline queue
+    console.warn('[Offline] API failed, queuing order for sync:', apiErr.message);
+    const offlineRequestId = requestId || generateRequestId();
+    const offlineOrderId = `offline-${Date.now()}`;
+    orderData.requestId = offlineRequestId;
+    orderData.offlineOrderId = offlineOrderId;
+    await addPendingAction({
+      requestId: offlineRequestId,
+      entityId: tableId,
+      entityType: 'order',
+      actionType: 'create-order',
+      url: '/api/orders',
+      method: 'POST',
+      body: orderData,
+    });
+    const kitchenItems = orderData.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+    await queueKitchenItems({
+      orderId: offlineOrderId,
+      tableId,
+      tableNumber: orderData.tableNumber || tableId,
+      items: kitchenItems,
+      requestId: offlineRequestId,
+    }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Order queued for sync:', orderData.tableNumber || orderData.tableId);
     }
-    throw apiErr;
+    return { id: offlineOrderId, ...orderData, offline: true };
   }
 }
 
@@ -269,34 +268,31 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       { ...RETRY_CONFIG.KOT, shouldRetry: (err) => err.status !== 409 }
     );
   } catch (apiErr) {
-    // API call failed after retries — fall back to offline queue if backend is unreachable
-    if (!isBackendReachable()) {
-      console.warn('[Offline] API failed, queuing update for sync:', apiErr.message);
-      const offlineRequestId = requestId || generateRequestId();
-      body.requestId = offlineRequestId;
-      await addPendingAction({
-        requestId: offlineRequestId,
-        entityId: orderId,
-        entityType: 'order',
-        actionType: 'update-items',
-        url: `/api/orders/${orderId}/items`,
-        method: 'PATCH',
-        body,
-      });
-      const kitchenItems = body.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
-      await queueKitchenItems({
-        orderId,
-        tableId: orderId,
-        tableNumber: tableNumber || orderId,
-        items: kitchenItems,
-        requestId: offlineRequestId,
-      }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
-      if (import.meta.env.DEV) {
-        console.log('[Offline] Update order items queued for sync:', orderId);
-      }
-      return { id: orderId, offline: true, order: { id: orderId, items: body.items } };
+    // API call failed after retries — fall back to offline queue
+    console.warn('[Offline] API failed, queuing update for sync:', apiErr.message);
+    const offlineRequestId = requestId || generateRequestId();
+    body.requestId = offlineRequestId;
+    await addPendingAction({
+      requestId: offlineRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'update-items',
+      url: `/api/orders/${orderId}/items`,
+      method: 'PATCH',
+      body,
+    });
+    const kitchenItems = body.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+    await queueKitchenItems({
+      orderId,
+      tableId: orderId,
+      tableNumber: tableNumber || orderId,
+      items: kitchenItems,
+      requestId: offlineRequestId,
+    }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+    if (import.meta.env.DEV) {
+      console.log('[Offline] Update order items queued for sync:', orderId);
     }
-    throw apiErr;
+    return { id: orderId, offline: true, order: { id: orderId, items: body.items } };
   }
 }
 
@@ -315,8 +311,15 @@ export async function updateOrderStatus(orderId, status) {
 }
 
 export async function requestBilling(orderId) {
-  if (!isBackendReachable()) {
-    const requestId = generateRequestId();
+  const requestId = generateRequestId();
+  try {
+    const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return parseResponse(res);
+  } catch (apiErr) {
+    console.warn('[Offline] Request billing API failed, queuing for sync:', apiErr.message);
     await addPendingAction({
       requestId,
       entityId: orderId,
@@ -328,11 +331,6 @@ export async function requestBilling(orderId) {
     });
     return { offline: true };
   }
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
-    method: "POST",
-    headers: getAuthHeaders(),
-  });
-  return parseResponse(res);
 }
 
 export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
@@ -349,7 +347,27 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
   const settleRequestId = requestId || generateRequestId();
   body.requestId = settleRequestId;
 
-  if (!isBackendReachable()) {
+  try {
+    return await withRetry(
+      async () => {
+        const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify(body),
+        });
+        if (res.status === 409) {
+          const data = await res.json().catch(() => ({}));
+          const err = new Error(data.error || "Order already settled");
+          err.status = 409;
+          throw err;
+        }
+        return parseResponse(res);
+      },
+      { ...RETRY_CONFIG.SETTLE, shouldRetry: (err) => err.status !== 409 }
+    );
+  } catch (apiErr) {
+    // API call failed — fall back to offline queue
+    console.warn('[Offline] Settle API failed, queuing for sync:', apiErr.message);
     await addPendingAction({
       requestId: settleRequestId,
       entityId: orderId,
@@ -375,18 +393,6 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     }
     return { offline: true, transaction: { id: localId, ...body } };
   }
-
-  return withRetry(
-    async () => {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(body),
-      });
-      return parseResponse(res);
-    },
-    { ...RETRY_CONFIG.SETTLE, shouldRetry: (err) => err.status !== 409 }
-  );
 }
 
 export async function saveTransaction({
@@ -463,7 +469,20 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null) {
   const cancelRequestId = requestId || generateRequestId();
 
-  if (!isBackendReachable()) {
+  try {
+    return await withRetry(
+      async () => {
+        const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId }),
+        });
+        return parseResponse(res);
+      },
+      { maxRetries: 2, baseDelayMs: 600, maxDelayMs: 2000, shouldRetry: (err) => err.status !== 409 }
+    );
+  } catch (apiErr) {
+    console.warn('[Offline] Cancel item API failed, queuing for sync:', apiErr.message);
     await addPendingAction({
       requestId: cancelRequestId,
       entityId: orderId,
@@ -478,18 +497,6 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
     }
     return { offline: true };
   }
-
-  return withRetry(
-    async () => {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId }),
-      });
-      return parseResponse(res);
-    },
-    { maxRetries: 2, baseDelayMs: 600, maxDelayMs: 2000, shouldRetry: (err) => err.status !== 409 }
-  );
 }
 
 export async function swapTable(sourceTableBackendId, targetTableBackendId, swappedBy, restaurantId) {
@@ -507,8 +514,16 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
 }
 
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
-  if (!isBackendReachable()) {
-    const requestId = generateRequestId();
+  const requestId = generateRequestId();
+  try {
+    const res = await fetch(apiUrl(`/api/orders/${orderId}/bill-edit`), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ removedItemIds, editQuantities, addedItems, editedBy }),
+    });
+    return parseResponse(res);
+  } catch (apiErr) {
+    console.warn('[Offline] Bill edit API failed, queuing for sync:', apiErr.message);
     await addPendingAction({
       requestId,
       entityId: orderId,
@@ -523,13 +538,6 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
     }
     return { offline: true };
   }
-
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/bill-edit`), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ removedItemIds, editQuantities, addedItems, editedBy }),
-  });
-  return parseResponse(res);
 }
 
 export async function transferItems(sourceTableBackendId, targetTableBackendId, itemIds, transferredBy, restaurantId) {
@@ -562,7 +570,7 @@ export async function deleteTransaction(transactionId, restaurantId) {
   return res.json();
 }
 
-export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null, localPrinted = false, billEventId = null } = {}) {
+export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null, localPrinted = false, billEventId = null, billData = null } = {}) {
   const printRequestId = requestId || generateRequestId();
   const qs = new URLSearchParams({ restaurantId: restaurantId || '', requestId: printRequestId });
   if (tableNumber) qs.set('tableNumber', tableNumber);
@@ -571,7 +579,15 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (localPrinted) qs.set('localPrinted', 'true');
   if (billEventId) qs.set('billEventId', billEventId);
 
-  if (!isBackendReachable()) {
+  try {
+    const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    });
+    return parseResponse(res);
+  } catch (apiErr) {
+    // API call failed — fall back to offline queue
+    console.warn('[Offline] Print bill API failed, queuing for sync:', apiErr.message);
     await addPendingAction({
       requestId: printRequestId,
       entityId: orderId,
@@ -582,16 +598,15 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
     });
     // Only queue a local print job if the local printer did not already print it.
-    // CashierDashboard calls printLocal before this, so localPrinted=true means it already printed.
     if (!localPrinted) {
       await addOfflinePrintJob({
         id: `offline-print-${Date.now()}`,
         orderId,
         requestId: printRequestId,
-        jobType: 'final-bill',
+        jobType: 'FINAL_BILL',
         status: 'pending',
         createdAt: Date.now(),
-        data: { restaurantId, tableNumber, discountPercent, kotNumbers },
+        data: billData || { restaurantId, tableNumber, discountPercent, kotNumbers },
       });
     }
     if (import.meta.env.DEV) {
@@ -603,12 +618,6 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       order: { id: orderId },
     };
   }
-
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-  });
-  return parseResponse(res);
 }
 
 export { generateRequestId };
@@ -617,7 +626,20 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
   // items: Array<{ orderItemId: string, cancelQuantity: number }>
   const cancelRequestId = requestId || generateRequestId();
 
-  if (!isBackendReachable()) {
+  try {
+    return await withRetry(
+      async () => {
+        const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-items`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId }),
+        });
+        return parseResponse(res);
+      },
+      { maxRetries: 1, baseDelayMs: 600, maxDelayMs: 2000, shouldRetry: (err) => err.status !== 409 }
+    );
+  } catch (apiErr) {
+    console.warn('[Offline] Cancel items API failed, queuing for sync:', apiErr.message);
     await addPendingAction({
       requestId: cancelRequestId,
       entityId: orderId,
@@ -632,16 +654,4 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
     }
     return { offline: true };
   }
-
-  return withRetry(
-    async () => {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-items`), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId }),
-      });
-      return parseResponse(res);
-    },
-    { maxRetries: 1, baseDelayMs: 600, maxDelayMs: 2000, shouldRetry: (err) => err.status !== 409 }
-  );
 }

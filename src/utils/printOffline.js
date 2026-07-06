@@ -60,11 +60,14 @@ async function getPrinterMapping() {
 }
 
 function resolvePrinter(jobType, mapping) {
-  // Fall back to mapping
-  if (jobType === 'KOT' || jobType === 'CANCEL_KOT') return mapping.kitchen;
-  if (jobType === 'BAR_KOT') return mapping.bar;
-  if (jobType === 'FINAL_BILL' || jobType === 'BILL') return mapping.bill;
-  if (jobType === 'TABLE_SWAP') return mapping.kitchen;
+  if (jobType === 'KOT' || jobType === 'CANCEL_KOT')
+    return mapping.kitchen || import.meta.env.VITE_KITCHEN_PRINTER_NAME || import.meta.env.VITE_KOT_PRINTER_NAME || null;
+  if (jobType === 'BAR_KOT')
+    return mapping.bar || import.meta.env.VITE_BAR_PRINTER_NAME || null;
+  if (jobType === 'FINAL_BILL' || jobType === 'BILL')
+    return mapping.bill || import.meta.env.VITE_BILLING_PRINTER_NAME || import.meta.env.VITE_DINE_IN_BILL_PRINTER_NAME || null;
+  if (jobType === 'TABLE_SWAP')
+    return mapping.kitchen || import.meta.env.VITE_KITCHEN_PRINTER_NAME || import.meta.env.VITE_KOT_PRINTER_NAME || null;
   return null;
 }
 
