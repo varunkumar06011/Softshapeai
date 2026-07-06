@@ -1573,47 +1573,8 @@ export default function CaptainApp({ onLogout }) {
     };
 
     const mergeOrderItems = (existing = [], incoming = []) => {
-      const map = new Map();
-      const incomingByName = new Map(incoming.map(i => [i.name ?? i.n, i]).filter(([k]) => !!k));
-
-      // Keep existing items unless they are optimistic placeholders (no id) that the backend
-      // has now confirmed with a real id. Cancelled items stay in the map so the captain can
-      // render them as struck-through.
-      existing.forEach(i => {
-        const name = i.name ?? i.n;
-        if (!i.id && name && incomingByName.has(name)) return;
-        if (i.id) map.set(i.id, i);
-      });
-
-      // Merge incoming items on top. Incoming is authoritative for cancellation state
-      // EXCEPT when existing is locally cancelled and incoming is stale (not cancelled).
-      incoming.forEach(i => {
-        if (!i.id) return;
-        const existingItem = map.get(i.id);
-        if (!existingItem) {
-          map.set(i.id, i);
-          return;
-        }
-        // Don't let a stale incoming revive a locally-cancelled item
-        if (existingItem.removedFromBill && !i.removedFromBill) {
-          return;
-        }
-        // Incoming confirms a cancel — use it
-        if (i.removedFromBill && !existingItem.removedFromBill) {
-          map.set(i.id, { ...existingItem, ...i });
-          return;
-        }
-        // Neither is cancelled — prefer the HIGHER quantity to protect additions
-        const existingQty = Number(existingItem.quantity ?? existingItem.q ?? 0);
-        const incomingQty = Number(i.quantity ?? i.q ?? 0);
-        if (incomingQty > existingQty) {
-          map.set(i.id, { ...existingItem, ...i });
-        } else {
-          map.set(i.id, { ...i, ...existingItem });
-        }
-      });
-
-      return Array.from(map.values());
+      // Server is authoritative — use incoming directly
+      return incoming;
     };
 
     const dedupKotHistory = (existing = [], incoming = []) => {
@@ -1665,7 +1626,7 @@ export default function CaptainApp({ onLogout }) {
           }
         }
 
-        const incomingOrder = table.orders?.[0] || table.activeOrder;
+        const incomingOrder = (table.orders?.[0] && table.orders[0].tableId === table.id) ? table.orders[0] : (table.activeOrder || null);
         const isTableFree = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         // Server is now authoritative — directly use its items and kots (no merge)
         const serverItems = incomingOrder?.items ?? (t.activeOrder?.items || []);
@@ -1695,10 +1656,7 @@ export default function CaptainApp({ onLogout }) {
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || (t.activeOrder?.items || []);
         const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-        const existingKot = t.kotHistory || [];
-        const existingIds = new Set(existingKot.map(k => String(k.id)));
-        const mergedKots = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
-        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: mergedKots.length > 0 ? mergedKots : existingKot };
+        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: incomingKotArr };
       });
       setActiveTables(updateTables);
     };
@@ -1715,13 +1673,10 @@ export default function CaptainApp({ onLogout }) {
         const serverItems = order.items || [];
         const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory
           : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-        const existingKot = t.kotHistory || [];
-        const existingIds = new Set(existingKot.map(k => String(k.id)));
-        const mergedKots = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
         return {
           ...t,
           activeOrder: { ...order, items: serverItems },
-          kotHistory: mergedKots.length > 0 ? mergedKots : existingKot,
+          kotHistory: incomingKotArr,
           status: t.status === 'Free' ? 'Occupied' : t.status,
           workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
         };
