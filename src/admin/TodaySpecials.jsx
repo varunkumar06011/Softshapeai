@@ -46,6 +46,7 @@ export default function TodaySpecials() {
     { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' },
   ]);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [selectedSpecialIds, setSelectedSpecialIds] = useState(new Set());
 
   // Target assignment states
   const [revenueTarget, setRevenueTarget] = useState(5000);
@@ -197,6 +198,7 @@ export default function TodaySpecials() {
         isVeg: r.t === 'veg',
         menuType: r.menuType === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
         specialChannel: r.channel || 'BOTH',
+        isAvailable: true,
       }));
       await bulkImportSpecials(payload, true);
       await refreshMenu();
@@ -234,6 +236,38 @@ export default function TodaySpecials() {
     } catch (err) {
       console.error('[TodaySpecials] Failed to activate special:', err);
       alert('Failed to activate special. Please try again.');
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedSpecialIds.size === specials.length) {
+      setSelectedSpecialIds(new Set());
+    } else {
+      setSelectedSpecialIds(new Set(specials.map(s => s.id)));
+    }
+  };
+
+  const toggleSelectSpecial = (id) => {
+    const next = new Set(selectedSpecialIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedSpecialIds(next);
+  };
+
+  const handleBulkMakeAvailable = async () => {
+    if (selectedSpecialIds.size === 0) return;
+    try {
+      await Promise.all(
+        Array.from(selectedSpecialIds).map(id =>
+          updateMenuItem(id, { isAvailable: true, syncToAllOutlets: true })
+        )
+      );
+      await refreshMenu();
+      setSelectedSpecialIds(new Set());
+      simulatePush();
+    } catch (err) {
+      console.error('[TodaySpecials] Bulk make available failed:', err);
+      alert('Failed to update items. Please try again.');
     }
   };
 
@@ -320,6 +354,30 @@ export default function TodaySpecials() {
         )}
       </div>
 
+      {/* BULK SELECTION TOOLBAR */}
+      {specials.length > 0 && (
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedSpecialIds.size === specials.length && specials.length > 0}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+            />
+            <span className="text-sm font-bold text-gray-700">
+              Select All ({selectedSpecialIds.size}/{specials.length})
+            </span>
+          </label>
+          <button
+            onClick={handleBulkMakeAvailable}
+            disabled={selectedSpecialIds.size === 0}
+            className="px-4 py-2 bg-green-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-green-600 transition-colors disabled:opacity-50"
+          >
+            Make Available
+          </button>
+        </div>
+      )}
+
       {/* SPECIALS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {specials.map(special => {
@@ -335,6 +393,17 @@ export default function TodaySpecials() {
                     <ImageIcon size={32} />
                   </div>
                 )}
+
+                <div className="absolute top-3 left-3 flex gap-2">
+                  <label className="w-6 h-6 rounded-md flex items-center justify-center bg-white shadow-sm border border-gray-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedSpecialIds.has(special.id)}
+                      onChange={() => toggleSelectSpecial(special.id)}
+                      className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+                    />
+                  </label>
+                </div>
 
                 <div className="absolute top-3 right-3 flex gap-2">
                   {special.isCombo && (
