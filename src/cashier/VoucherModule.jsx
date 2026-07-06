@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
+import { withRetry } from '../utils/resilience';
+import { printLocal } from '../utils/printOffline';
 
 const EXPENSE_CATEGORIES = [
   { value: 'MISCELLANEOUS', label: 'Miscellaneous expenses' },
@@ -56,21 +58,32 @@ export default function VoucherModule() {
   const [showNarrationSuggestions, setShowNarrationSuggestions] = useState(false);
 
   const loadData = useCallback(async (date = summaryDate) => {
-    try {
-      const [opts, narrations, summary, recent] = await Promise.all([
-        apiFetch('/api/vouchers/paid-to-options'),
-        apiFetch('/api/vouchers/narration-suggestions'),
-        apiFetch(`/api/vouchers/today-summary?date=${date}`),
-        apiFetch(`/api/vouchers?date=${date}&limit=10`),
-      ]);
-      setPaidToOptions(opts || { staff: [] });
-      setNarrationSuggestions(narrations || []);
-      setTodaySummary(summary || null);
-      setRecentVouchers(recent || []);
-      setApproverOptions(CROSS_OUTLET_APPROVERS);
-    } catch (err) {
-      console.error('[VoucherModule] Failed to load data:', err);
-      setApproverOptions(CROSS_OUTLET_APPROVERS);
+    // Each endpoint gets its own retry (handles transient timeouts / cold-start
+    // backends) and a longer timeout than the apiFetch default (15s), since a
+    // slow single call should no longer blank out the entire module.
+    const fetchWithRetry = (path) =>
+      withRetry(() => apiFetch(path, { timeout: 25000 }), { maxRetries: 2, baseDelayMs: 1000, maxDelayMs: 4000 });
+
+    const [optsRes, narrationsRes, summaryRes, recentRes] = await Promise.allSettled([
+      fetchWithRetry('/api/vouchers/paid-to-options'),
+      fetchWithRetry('/api/vouchers/narration-suggestions'),
+      fetchWithRetry(`/api/vouchers/today-summary?date=${date}`),
+      fetchWithRetry(`/api/vouchers?date=${date}&limit=10`),
+    ]);
+
+    setApproverOptions(CROSS_OUTLET_APPROVERS);
+
+    if (optsRes.status === 'fulfilled') setPaidToOptions(optsRes.value || { staff: [] });
+    if (narrationsRes.status === 'fulfilled') setNarrationSuggestions(narrationsRes.value || []);
+    if (summaryRes.status === 'fulfilled') setTodaySummary(summaryRes.value || null);
+    if (recentRes.status === 'fulfilled') setRecentVouchers(recentRes.value || []);
+
+    const failed = [optsRes, narrationsRes, summaryRes, recentRes].filter((r) => r.status === 'rejected');
+    if (failed.length > 0) {
+      console.error('[VoucherModule] Failed to load data:', failed.map((f) => f.reason?.message || f.reason));
+      setError('Some data failed to load — check your connection and try again.');
+    } else {
+      setError('');
     }
   }, [summaryDate]);
 
@@ -202,6 +215,22 @@ export default function VoucherModule() {
     }
   };
 
+  // Sends the print job via the backend (which also buffers/emits over the
+  // print-room socket for the PrintStation/Agent), and — in parallel — attempts
+  // a direct local print via the Print Agent's HTTP endpoint on the same LAN.
+  // The socket path alone is fire-and-forget: the backend can't confirm the
+  // Agent actually received it (e.g. mid-reconnect on a WiFi blip), so relying
+  // on it exclusively can show "printed" while nothing comes out. Both paths
+  // share the same eventId so the Print Agent dedupes if both arrive.
+  const dispatchVoucherPrint = async (voucherId) => {
+    const result = await apiFetch(`/api/vouchers/${voucherId}/print`, { method: 'POST' });
+    if (result?.escposData && result?.eventId) {
+      printLocal({ type: 'VOUCHER', escposData: result.escposData, eventId: result.eventId, data: {} })
+        .catch((err) => console.warn('[VoucherModule] Local print attempt failed:', err?.message || err));
+    }
+    return result;
+  };
+
   const handleSaveAndPrint = async () => {
     setError('');
     const voucher = await handleSave();
@@ -209,7 +238,7 @@ export default function VoucherModule() {
 
     setPrinting(true);
     try {
-      await apiFetch(`/api/vouchers/${voucher.id}/print`, { method: 'POST' });
+      await dispatchVoucherPrint(voucher.id);
       setSavedVoucher(null);
     } catch (err) {
       setError('Saved, but print failed — use reprint button below.');
@@ -223,7 +252,7 @@ export default function VoucherModule() {
     if (!savedVoucher) return;
     setPrinting(true);
     try {
-      await apiFetch(`/api/vouchers/${savedVoucher.id}/print`, { method: 'POST' });
+      await dispatchVoucherPrint(savedVoucher.id);
       setSavedVoucher(null);
     } catch (err) {
       setError(err.message || 'Failed to print voucher');
@@ -236,7 +265,7 @@ export default function VoucherModule() {
     setError('');
     setPrintingId(voucherId);
     try {
-      await apiFetch(`/api/vouchers/${voucherId}/print`, { method: 'POST' });
+      await dispatchVoucherPrint(voucherId);
     } catch (err) {
       setError(err.message || 'Failed to print voucher');
     } finally {

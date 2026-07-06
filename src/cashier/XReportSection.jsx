@@ -201,29 +201,39 @@ export default function XReportSection() {
   const handlePrint = async () => {
     const ok = await handleSave();
     if (!ok) return;
+
+    // The backend's socket emission to the print room is fire-and-forget — it
+    // can't confirm the PrintStation/Agent actually received the job (e.g.
+    // mid-reconnect on a WiFi blip), so a successful response here doesn't
+    // guarantee the report actually printed. Always also attempt a direct
+    // local print via the Print Agent's HTTP endpoint using the SAME eventId
+    // as the backend (when available) so the Agent dedupes if both arrive.
+    let escposData = null;
+    let eventId = null;
     try {
-      // 1. Try backend socket-based print first (uses PrintStation/Print Agent)
-      await apiFetch(`/api/xreports/${reportDate}/print`, { method: 'POST' });
-      setSavedMsg('X Report sent to printer');
+      const result = await apiFetch(`/api/xreports/${reportDate}/print`, { method: 'POST' });
+      escposData = result?.escposData || null;
+      eventId = result?.eventId || null;
     } catch (err) {
-      // 2. Backend socket print failed — try local direct print as fallback
-      console.warn('[XReport] Backend print failed, trying local print:', err);
-      try {
-        const result = await printLocal({
-          type: 'FINAL_BILL',
-          escposData: buildXReportEscposData(),
-        });
-        if (!result.printed) {
-          // 3. Local direct print also failed — fall back to browser print dialog
-          console.warn('[XReport] Direct print failed:', result.error);
-          openBrowserPrint(buildXReportText());
-          setSavedMsg('No direct printer found — opened browser print dialog. Configure Print Agent/QZ Tray for auto-print.');
-          return;
-        }
-        setSavedMsg('X Report printed locally');
-      } catch (localErr) {
-        setError('Print failed: ' + localErr.message);
+      console.warn('[XReport] Backend print request failed, trying local print only:', err);
+    }
+
+    try {
+      const result = await printLocal({
+        type: 'FINAL_BILL',
+        escposData: escposData || buildXReportEscposData(),
+        eventId: eventId || undefined,
+      });
+      if (!result.printed) {
+        // Local direct print also failed — fall back to browser print dialog
+        console.warn('[XReport] Direct print failed:', result.error);
+        openBrowserPrint(buildXReportText());
+        setSavedMsg('No direct printer found — opened browser print dialog. Configure Print Agent/QZ Tray for auto-print.');
+        return;
       }
+      setSavedMsg('X Report printed');
+    } catch (localErr) {
+      setError('Print failed: ' + localErr.message);
     }
   };
 
