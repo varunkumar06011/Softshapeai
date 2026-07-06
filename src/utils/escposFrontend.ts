@@ -190,86 +190,92 @@ export interface XReportData {
   cashFromNotes: number;
 }
 
-const XR_W = 32;
+const XR_W = 42;
 
 function xrRow(label: string, value: string): string {
   return `${label}${value.padStart(Math.max(1, XR_W - label.length))}`;
 }
 
 function xrCurrency(n: number): string {
-  return "Rs " + (Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2);
+  return "Rs." + (Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2);
 }
 
 export function buildXReportEscpos(data: XReportData): object[] {
-  const dashed = "-".repeat(XR_W);
-
   const cmds: string[] = [INIT, LEFT];
-  cmds.push(`${dashed}\n`);
-  cmds.push(CENTER, BOLD_ON, "X REPORT\n", BOLD_OFF, LEFT);
-  if (data.restaurantName) cmds.push(CENTER, `${data.restaurantName}\n`, LEFT);
-  cmds.push(CENTER, `Date: ${data.reportDate}\n`, LEFT);
-  if (data.cashierName) cmds.push(CENTER, `Cashier: ${data.cashierName}\n`, LEFT);
-  cmds.push(`${dashed}\n`);
+  cmds.push(CENTER, BOLD_ON, SIZE_2X, 'X REPORT\n', BOLD_OFF, SIZE_NORMAL);
+  if (data.restaurantName) {
+    cmds.push(CENTER, BOLD_ON, `${data.restaurantName.toUpperCase()}\n`, BOLD_OFF);
+  }
+  cmds.push(CENTER, `Date: ${data.reportDate}\n`);
+  if (data.cashierName) {
+    cmds.push(CENTER, `Cashier: ${data.cashierName}\n`);
+  }
+  cmds.push(separator('-'));
 
   // Total Sale + indented Cash/Card/Tips breakdown
-  cmds.push(BOLD_ON, `${xrRow("Total Sale", xrCurrency(data.totalSales))}\n`, BOLD_OFF);
-  cmds.push(`${xrRow("  Cash", xrCurrency(data.cashAmount))}\n`);
-  cmds.push(`${xrRow("  Card", xrCurrency(data.cardAmount))}\n`);
-  cmds.push(`${xrRow("  Tips", xrCurrency(data.tipsAmount))}\n`);
-  cmds.push(`${dashed}\n`);
+  cmds.push(LEFT, BOLD_ON, xrRow('Total Sale', xrCurrency(data.totalSales)), BOLD_OFF);
+  cmds.push('\n');
+  cmds.push(xrRow('  Cash', xrCurrency(data.cashAmount)));
+  cmds.push('\n');
+  cmds.push(xrRow('  Card', xrCurrency(data.cardAmount)));
+  cmds.push('\n');
+  cmds.push(xrRow('  Tips', xrCurrency(data.tipsAmount || 0)));
+  cmds.push('\n');
+  cmds.push(separator('-'));
 
   // Expenditure total + itemized expenditure rows (two lines per entry: Paid
   // To/Type/Amount, then Narration — Approved By)
-  cmds.push(BOLD_ON, `${xrRow("Expenditure (Total)", xrCurrency(data.expenditureAmount))}\n`, BOLD_OFF);
+  cmds.push(BOLD_ON, xrRow('Expenditure (Total)', xrCurrency(data.expenditureAmount)), BOLD_OFF);
+  cmds.push('\n');
   if (data.expenditures.length > 0) {
-    cmds.push(`  ${"Paid To".padEnd(16)}${"Type".padEnd(10)}Amt\n`);
-    cmds.push(`  ${"-".repeat(XR_W - 2)}\n`);
+    cmds.push(`  ${'Paid To'.padEnd(16)}${'Type'.padEnd(10)}Amt\n`);
+    cmds.push(`  ${'-'.repeat(XR_W - 2)}\n`);
     data.expenditures.forEach((v) => {
-      const name = (v.paidToName || "").slice(0, 16).padEnd(16);
-      const type = (v.category || v.paidToType || "").slice(0, 10).padEnd(10);
-      const amt = xrCurrency(v.amount).padStart(Math.max(1, XR_W - 2 - 16 - 10));
+      const name = (v.paidToName || '').slice(0, 16).padEnd(16);
+      const type = (v.category || v.paidToType || '').slice(0, 10).padEnd(10);
+      const amt = ('Rs.' + Number(v.amount).toFixed(2)).padStart(XR_W - 2 - 16 - 10);
       cmds.push(`  ${name}${type}${amt}\n`);
-      const approver = v.approvedByName ? `Appvd: ${v.approvedByName}` : "";
-      const narration = v.narration ? v.narration : "";
+      const approver = v.approvedByName ? `Appvd: ${v.approvedByName}` : '';
+      const narration = v.narration ? v.narration : '';
       if (narration || approver) {
-        const line2 = [narration, approver].filter(Boolean).join(" — ");
+        const line2 = [narration, approver].filter(Boolean).join(' — ');
         cmds.push(`    ${line2.slice(0, XR_W - 4)}\n`);
       }
     });
   }
-  cmds.push(`${dashed}\n`);
+  cmds.push(separator('-'));
 
-  // BALANCE — bold + double size, centered
+  // BALANCE (bold, double-size, centered)
   cmds.push(
-    CENTER,
-    BOLD_ON,
-    SIZE_2X,
-    "BALANCE\n",
-    xrCurrency(data.finalAmount) + "\n",
-    SIZE_NORMAL,
-    BOLD_OFF,
-    "(Total Sale - Expenditure)\n",
+    CENTER, BOLD_ON, SIZE_2X,
+    'BALANCE\n',
+    `Rs ${Number(data.finalAmount).toFixed(2)}\n`,
+    SIZE_NORMAL, BOLD_OFF,
+    '(Total Sale - Expenditure)\n',
     LEFT
   );
-  cmds.push(`${dashed}\n`);
+  cmds.push(separator('-'));
 
-  cmds.push("Denomination breakdown:\n");
+  // Denominations
+  cmds.push('Denomination breakdown:\n');
   data.denominations.forEach((d) => {
     if (d.qty > 0) {
-      const left = `  ${d.label} x ${d.qty}`;
-      const right = "Rs" + d.amount.toFixed(0);
-      cmds.push(`${left}${right.padStart(Math.max(1, XR_W - left.length))}\n`);
+      cmds.push(
+        LEFT,
+        `  ${d.label} x ${d.qty}${String('Rs.' + d.amount.toFixed(0)).padStart(XR_W - d.label.length - String(d.qty).length - 5)}\n`
+      );
     }
   });
-  cmds.push(`${dashed}\n`);
+  cmds.push(separator('-'));
 
-  cmds.push(`${xrRow("Cash from Notes", xrCurrency(data.cashFromNotes))}\n`);
-  cmds.push(`${dashed}\n`);
+  cmds.push(LEFT, xrRow('Cash from Notes', xrCurrency(data.cashFromNotes)));
+  cmds.push('\n');
+  cmds.push(separator('-'));
 
-  cmds.push(CENTER, BOLD_ON, "*** End of Report ***\n", BOLD_OFF, LEFT);
-  cmds.push("\n\n\n", CUT);
-
-  return [{ type: "raw", format: "plain", data: cmds.join("") }];
+  cmds.push(CENTER, '*** End of Report ***\n');
+  cmds.push('\n\n\n');
+  cmds.push(CUT);
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
 // ─── Liquor / Bar KOT ─────────────────────────────────────────────────────────

@@ -73,7 +73,7 @@ export default function XReportSection() {
         notes20: data.notes20 || 0,
         notes10: data.notes10 || 0,
       });
-      setExpenditures((vouchers || []).filter((v) => v.status !== 'VOIDED'));
+      setExpenditures((expenditures || []).filter((v) => v.status !== 'VOIDED'));
     } catch (err) {
       setError(err.message || 'Failed to load X Report');
     } finally {
