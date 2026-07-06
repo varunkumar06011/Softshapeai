@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Printer, Save, Calendar } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { printLocal } from '../utils/printOffline';
@@ -25,6 +25,11 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+function formatCurrency(value) {
+  const amount = round2(Number(value || 0));
+  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export default function XReportSection() {
   const { user, restaurant } = useAuth();
   const [reportDate, setReportDate] = useState(getTodayDate());
@@ -39,6 +44,7 @@ export default function XReportSection() {
     parcelCounterSale: 0,
     cardAmount: 0,
     cashAmount: 0,
+    tipsAmount: 0,
     notes500: 0,
     notes200: 0,
     notes100: 0,
@@ -47,20 +53,19 @@ export default function XReportSection() {
     notes10: 0,
   });
 
-  const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  const finalAmount = round2(
-    Number(report.totalSales) - Number(report.voucherAmount || 0) + Number(report.parcelCounterSale || 0) - Number(report.cardAmount || 0)
-  );
-  const cardPlusCash = round2(Number(report.cardAmount || 0) + Number(report.cashAmount || 0));
-  const expectedTotal = round2(finalAmount + Number(report.cardAmount || 0));
-  const balanced = Math.abs(cardPlusCash - expectedTotal) < 0.01;
+  const [vouchers, setVouchers] = useState([]);
+  const [vouchersLoading, setVouchersLoading] = useState(false);
+  const [vouchersError, setVouchersError] = useState(null);
 
-  const skipCashSyncRef = useRef(true);
+  const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
+  const expenditureTotal = round2(Number(report.voucherAmount || 0));
+  const balanceAmount = round2(Number(report.totalSales || 0) - expenditureTotal);
+  const expectedCash = round2(Number(report.cashAmount || 0));
+  const cashVariance = round2(cashFromNotes - expectedCash);
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
     setError(null);
-    skipCashSyncRef.current = true;
     try {
       const data = await apiFetch(`/api/xreports/${date}`);
       setReport({
@@ -69,6 +74,7 @@ export default function XReportSection() {
         parcelCounterSale: Number(data.parcelCounterSale) || 0,
         cardAmount: Number(data.cardAmount) || 0,
         cashAmount: Number(data.cashAmount) || 0,
+        tipsAmount: Number(data.tipsAmount) || 0,
         notes500: data.notes500 || 0,
         notes200: data.notes200 || 0,
         notes100: data.notes100 || 0,
@@ -83,20 +89,26 @@ export default function XReportSection() {
     }
   }, []);
 
+  const loadVouchers = useCallback(async (date) => {
+    setVouchersLoading(true);
+    setVouchersError(null);
+    try {
+      const params = new URLSearchParams({ date, limit: '300' });
+      const data = await apiFetch(`/api/vouchers?${params.toString()}`);
+      const filtered = (data || []).filter((voucher) => voucher.status !== 'VOIDED');
+      setVouchers(filtered);
+    } catch (err) {
+      setVouchersError(err.message || 'Failed to load expenditure vouchers');
+      setVouchers([]);
+    } finally {
+      setVouchersLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadReport(reportDate);
-  }, [reportDate, loadReport]);
-
-  // Auto-fill Cash Amount from Cash from Notes whenever denomination counts change
-  useEffect(() => {
-    if (loading) return;
-    if (skipCashSyncRef.current) {
-      skipCashSyncRef.current = false;
-      return;
-    }
-    setReport(prev => ({ ...prev, cashAmount: cashFromNotes }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report.notes500, report.notes200, report.notes100, report.notes50, report.notes20, report.notes10, loading]);
+    loadVouchers(reportDate);
+  }, [reportDate, loadReport, loadVouchers]);
 
   const handleFieldChange = (field, value) => {
     setReport(prev => ({ ...prev, [field]: value }));
@@ -114,8 +126,7 @@ export default function XReportSection() {
           totalSales: Number(report.totalSales),
           voucherAmount: Number(report.voucherAmount || 0),
           parcelCounterSale: Number(report.parcelCounterSale || 0),
-          cardAmount: Number(report.cardAmount || 0),
-          cashAmount: Number(report.cashAmount || 0),
+          tipsAmount: Number(report.tipsAmount || 0),
           notes500: Number(report.notes500 || 0),
           notes200: Number(report.notes200 || 0),
           notes100: Number(report.notes100 || 0),
@@ -138,9 +149,15 @@ export default function XReportSection() {
     const W = 32;
     const center = (s) => ' '.repeat(Math.max(0, Math.floor((W - s.length) / 2))) + s;
     const line = '─'.repeat(W);
-    const dashed = '─ '.repeat(16).slice(0, W);
-    const row = (label, value) => `${label}${String(value).padStart(W - label.length)}`;
-    const count = (label, qty, amount) => `  ${label} × ${qty}${String('₹' + amount.toFixed(0)).padStart(W - label.length - qty.length - 5)}`;
+    const row = (label, value) => `${label}${String(value).padStart(Math.max(1, W - label.length))}`;
+    const voucherRow = (paidTo, type, amount) => {
+      const name = (paidTo || '—').toString().slice(0, 12).padEnd(12, ' ');
+      const typeLabel = (type || '').toString().slice(0, 8).padEnd(8, ' ');
+      const amountStr = formatCurrency(amount);
+      const left = `  ${name}${typeLabel}`;
+      return `${left}${amountStr.padStart(Math.max(1, W - left.length))}`;
+    };
+    const denomLine = (label, qty, amount) => `  ${label} × ${qty}${String('₹' + amount.toFixed(0)).padStart(Math.max(1, W - label.length - String(qty).length - 5))}`;
 
     const restaurantName = restaurant?.name || '';
     const cashierName = user?.name || '';
@@ -151,26 +168,37 @@ export default function XReportSection() {
     lines.push(center(`Date: ${reportDate}`));
     if (cashierName) lines.push(center(`Cashier: ${cashierName}`));
     lines.push(line);
-    lines.push(row('Total Sales', '₹' + round2(Number(report.totalSales)).toFixed(2)));
-    lines.push(row('Parcel Counter', '₹' + round2(Number(report.parcelCounterSale || 0)).toFixed(2)));
-    lines.push(row('Card', '₹' + round2(Number(report.cardAmount || 0)).toFixed(2)));
-    lines.push(row('Voucher', '₹' + round2(Number(report.voucherAmount || 0)).toFixed(2)));
+    lines.push(row('Total Sale', formatCurrency(report.totalSales)));
+    lines.push(row('  Cash', formatCurrency(report.cashAmount)));
+    lines.push(row('  Card', formatCurrency(report.cardAmount)));
+    lines.push(row('  Tips', formatCurrency(report.tipsAmount)));
     lines.push(line);
-    lines.push(center('FINAL AMOUNT'));
-    lines.push(center('(Cash expected in drawer)'));
-    lines.push(center('₹' + finalAmount.toFixed(2)));
+    lines.push(row('Expenditure', formatCurrency(expenditureTotal)));
+    if (vouchers.length > 0) {
+      lines.push('  Paid To      Type      Amount');
+      vouchers.forEach((voucher) => {
+        const paidTo = voucher.paidToName || voucher.employee?.name || '—';
+        const type = voucher.paidToType === 'STAFF' ? 'Staff' : (voucher.category || 'Other');
+        lines.push(voucherRow(paidTo, type, voucher.amount));
+      });
+    } else {
+      lines.push('  (No vouchers recorded)');
+    }
+    lines.push(line);
+    lines.push(center('BALANCE'));
+    lines.push(center(formatCurrency(balanceAmount)));
     lines.push(line);
     lines.push('Denomination breakdown:');
     DENOMINATIONS.forEach(d => {
       const qty = report[d.key] || 0;
       if (qty > 0) {
-        lines.push(count(d.label, qty, qty * d.value));
+        lines.push(denomLine(d.label, qty, qty * d.value));
       }
     });
     lines.push(line);
-    lines.push(row('Cash from Notes', '₹' + round2(cashFromNotes).toFixed(2)));
-    lines.push(row('Cash Amount', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
-    lines.push(`Card + Cash = ₹${cardPlusCash.toFixed(2)} (${balanced ? 'Balanced' : 'Mismatch'})`);
+    lines.push(row('Cash from Notes', formatCurrency(cashFromNotes)));
+    lines.push(row('Expected Cash', formatCurrency(expectedCash)));
+    lines.push(row('Variance', formatCurrency(cashVariance)));
     lines.push(line);
     lines.push(center('*** End of Report ***'));
     lines.push('\n\n\n');
@@ -182,19 +210,24 @@ export default function XReportSection() {
     cashierName: user?.name || '',
     reportDate,
     totalSales: round2(Number(report.totalSales)),
-    parcelCounterSale: round2(Number(report.parcelCounterSale || 0)),
+    cashAmount: expectedCash,
     cardAmount: round2(Number(report.cardAmount || 0)),
-    voucherAmount: round2(Number(report.voucherAmount || 0)),
-    finalAmount,
+    tipsAmount: round2(Number(report.tipsAmount || 0)),
+    expenditureTotal,
+    balanceAmount,
+    vouchers: vouchers.map((voucher) => ({
+      paidTo: voucher.paidToName || voucher.employee?.name || '—',
+      type: voucher.paidToType === 'STAFF' ? 'Staff' : (voucher.category || 'Other'),
+      amount: Number(voucher.amount) || 0,
+    })),
     denominations: DENOMINATIONS.map(d => ({
       label: d.label,
       qty: report[d.key] || 0,
       amount: (report[d.key] || 0) * d.value,
     })),
     cashFromNotes: round2(cashFromNotes),
-    cashAmount: round2(Number(report.cashAmount || 0)),
-    cardPlusCash,
-    balanced,
+    expectedCash,
+    cashVariance,
   });
 
   const handlePrint = async () => {
@@ -284,53 +317,103 @@ export default function XReportSection() {
 
         {!loading && (
           <div className="flex flex-col gap-4">
-            {/* Auto-filled summary + Card/Voucher — Total Sales -> Parcel Counter -> Card -> Voucher */}
+            {/* Total Sale */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">Auto-Filled From Sales</h3>
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
-                  <span className="text-sm font-bold text-gray-600">Total Sales</span>
-                  <span className="text-sm font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-1">Total Sale</p>
+                  <p className="text-xs text-gray-500">Auto-computed from todays paid bills</p>
                 </div>
-                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 gap-3">
-                  <span className="text-sm font-bold text-gray-600">Parcel Counter Sale <span className="text-red-500">*</span></span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={report.parcelCounterSale === 0 ? '' : report.parcelCounterSale}
-                    onChange={(e) => handleFieldChange('parcelCounterSale', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
-                    onWheel={(e) => e.target.blur()}
-                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
-                    step="0.01"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 gap-3">
-                  <span className="text-sm font-bold text-gray-600">Card Amount</span>
-                  <input
-                    type="number"
-                    value={report.cardAmount === 0 ? '' : report.cardAmount}
-                    onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Number(e.target.value))}
-                    onWheel={(e) => e.target.blur()}
-                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
-                    step="0.01"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="flex justify-between items-center py-1.5">
-                  <span className="text-sm font-bold text-gray-600">Voucher</span>
-                  <span className="text-sm font-black text-purple-900 tabular-nums">₹{round2(Number(report.voucherAmount || 0)).toFixed(2)}</span>
+                <div className="text-3xl font-black text-gray-900 tabular-nums">{formatCurrency(report.totalSales)}</div>
+              </div>
+              <div className="mt-4 bg-white rounded-lg border border-gray-100 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-3">From that:</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold uppercase text-gray-500">Cash (auto)</span>
+                    <span className="text-xl font-black text-emerald-700 tabular-nums">{formatCurrency(report.cashAmount)}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold uppercase text-gray-500">Card / UPI (auto)</span>
+                    <span className="text-xl font-black text-blue-700 tabular-nums">{formatCurrency(report.cardAmount)}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold uppercase text-gray-500" htmlFor="tips-input">Tips (manual)</label>
+                    <input
+                      id="tips-input"
+                      type="number"
+                      value={report.tipsAmount === 0 ? '' : report.tipsAmount}
+                      onChange={(e) => handleFieldChange('tipsAmount', e.target.value === '' ? 0 : Number(e.target.value))}
+                      onWheel={(e) => e.target.blur()}
+                      className={inputClass}
+                      placeholder="0.00"
+                      step="0.01"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Final Amount — standout block */}
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5 flex flex-col items-center justify-center gap-1">
-              <span className="text-xs font-black uppercase tracking-widest text-blue-700">Final Amount</span>
-              <span className="text-3xl md:text-4xl font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
+            {/* Expenditure */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-1">Expenditure</p>
+                  <p className="text-xs text-gray-500">Vouchers paid on {reportDate}</p>
+                </div>
+                <div className="text-2xl font-black text-red-700 tabular-nums">{formatCurrency(expenditureTotal)}</div>
+              </div>
+              {vouchersError && (
+                <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-[11px] font-semibold text-red-600">
+                  {vouchersError}
+                </div>
+              )}
+              {vouchersLoading ? (
+                <div className="text-center py-6 text-sm text-gray-400">Loading vouchers…</div>
+              ) : vouchers.length === 0 ? (
+                <div className="text-center py-6 text-sm text-gray-400">No expenditure vouchers recorded for this date.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        <th className="py-2 pr-3">Paid To</th>
+                        <th className="py-2 pr-3">Type</th>
+                        <th className="py-2 pr-3">Narration</th>
+                        <th className="py-2 pr-3">Approved By</th>
+                        <th className="py-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vouchers.map((voucher) => (
+                        <tr key={voucher.id || voucher.voucherNo} className="border-t border-gray-100">
+                          <td className="py-2 pr-3 font-semibold text-gray-900 whitespace-nowrap">{voucher.paidToName || voucher.employee?.name || '—'}</td>
+                          <td className="py-2 pr-3 text-[11px] font-bold text-gray-500 whitespace-nowrap">
+                            {voucher.paidToType === 'STAFF' ? 'Staff' : (voucher.category || 'Other')}
+                          </td>
+                          <td className="py-2 pr-3 text-[11px] text-gray-600 max-w-[200px] truncate" title={voucher.narration || ''}>
+                            {voucher.narration || '—'}
+                          </td>
+                          <td className="py-2 pr-3 text-[11px] font-semibold text-gray-600 whitespace-nowrap">
+                            {voucher.approvedByName || voucher.approvedBy?.name || '—'}
+                          </td>
+                          <td className="py-2 text-right font-black text-gray-900 tabular-nums">{formatCurrency(voucher.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
-            {/* Reconciliation step: Denomination count + Cash Amount */}
+            {/* Balance */}
+            <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-6 text-center shadow-lg">
+              <p className="text-[11px] font-black uppercase tracking-[0.4em] text-white/70">Balance</p>
+              <p className="text-xs text-white/70 mb-2">Total Sale − Expenditure</p>
+              <p className="text-4xl font-black tabular-nums">{formatCurrency(balanceAmount)}</p>
+            </div>
+
+            {/* Denomination count & reconciliation */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Cash Denomination Count</h3>
               <p className="text-[10px] font-bold text-gray-500 mb-3">Enter note counts — leave empty if none</p>
@@ -350,33 +433,20 @@ export default function XReportSection() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex justify-between items-center pt-3 border-t border-gray-200">
-                <span className="text-xs font-black uppercase text-gray-600">Cash from Notes</span>
-                <span className="text-sm font-black text-gray-900 tabular-nums">₹{round2(cashFromNotes).toFixed(2)}</span>
-              </div>
-              <div className="mt-3">
-                <label className={labelClass}>Cash Amount</label>
-                <input
-                  type="number"
-                  value={report.cashAmount === 0 ? '' : report.cashAmount}
-                  onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Number(e.target.value))}
-                  onWheel={(e) => e.target.blur()}
-                  className={inputClass}
-                  step="0.01"
-                  placeholder="Enter cash amount"
-                />
-              </div>
-              {Number(report.cashAmount || 0) > 0 && (
-                <div className="mt-2 flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-500">Cash Variance</span>
-                  <span className="text-sm font-black text-red-600 tabular-nums">₹{round2(Math.abs(round2(cashFromNotes) - round2(Number(report.cashAmount || 0)))).toFixed(2)}</span>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2 text-sm font-black">
+                <div className="bg-white rounded-lg border border-gray-200 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Cash from Notes</p>
+                  <p className="text-xl text-gray-900 tabular-nums">{formatCurrency(cashFromNotes)}</p>
                 </div>
-              )}
-            </div>
-
-            {/* Balance check */}
-            <div className={`px-4 py-2.5 rounded-lg text-sm font-black text-center ${balanced ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-              Card + Cash = ₹{cardPlusCash.toFixed(2)} {balanced ? 'Balanced ✓' : `≠ Expected (₹${expectedTotal.toFixed(2)})`}
+                <div className="bg-white rounded-lg border border-gray-200 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Expected Cash (auto)</p>
+                  <p className="text-xl text-gray-900 tabular-nums">{formatCurrency(report.cashAmount)}</p>
+                </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Variance</p>
+                  <p className={`text-xl tabular-nums ${cashVariance === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{formatCurrency(cashVariance)}</p>
+                </div>
+              </div>
             </div>
 
             {/* Action buttons */}

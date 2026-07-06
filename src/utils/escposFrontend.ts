@@ -166,20 +166,27 @@ export interface XReportDenomination {
   amount: number;
 }
 
+export interface XReportVoucherRow {
+  paidTo: string;
+  type: string;
+  amount: number;
+}
+
 export interface XReportData {
   restaurantName?: string;
   cashierName?: string;
   reportDate: string;
   totalSales: number;
-  parcelCounterSale: number;
+  cashAmount: number;
   cardAmount: number;
-  voucherAmount: number;
-  finalAmount: number;
+  tipsAmount: number;
+  expenditureTotal: number;
+  balanceAmount: number;
+  vouchers: XReportVoucherRow[];
   denominations: XReportDenomination[];
   cashFromNotes: number;
-  cashAmount: number;
-  cardPlusCash: number;
-  balanced: boolean;
+  expectedCash: number;
+  cashVariance: number;
 }
 
 const XR_W = 32;
@@ -203,19 +210,29 @@ export function buildXReportEscpos(data: XReportData): object[] {
   if (data.cashierName) cmds.push(CENTER, `Cashier: ${data.cashierName}\n`, LEFT);
   cmds.push(`${dashed}\n`);
 
-  cmds.push(`${xrRow("Total Sales", xrCurrency(data.totalSales))}\n`);
-  cmds.push(`${xrRow("Parcel Counter", xrCurrency(data.parcelCounterSale))}\n`);
-  cmds.push(`${xrRow("Card", xrCurrency(data.cardAmount))}\n`);
-  cmds.push(`${xrRow("Voucher", xrCurrency(data.voucherAmount))}\n`);
+  cmds.push(`${xrRow("Total Sale", xrCurrency(data.totalSales))}\n`);
+  cmds.push(`${xrRow("  Cash", xrCurrency(data.cashAmount))}\n`);
+  cmds.push(`${xrRow("  Card", xrCurrency(data.cardAmount))}\n`);
+  cmds.push(`${xrRow("  Tips", xrCurrency(data.tipsAmount))}\n`);
   cmds.push(`${dashed}\n`);
 
-  // Final Amount — bold + double size, centered
+  cmds.push(`${xrRow("Expenditure", xrCurrency(data.expenditureTotal))}\n`);
+  if (data.vouchers.length > 0) {
+    cmds.push("  Paid To      Type      Amount\n");
+    data.vouchers.forEach((voucher) => {
+      cmds.push(`${voucherRow(voucher)}\n`);
+    });
+  } else {
+    cmds.push("  (No vouchers recorded)\n");
+  }
+  cmds.push(`${dashed}\n`);
+
   cmds.push(
     CENTER,
     BOLD_ON,
     SIZE_2X,
-    "FINAL AMOUNT\n",
-    xrCurrency(data.finalAmount) + "\n",
+    "BALANCE\n",
+    xrCurrency(data.balanceAmount) + "\n",
     SIZE_NORMAL,
     BOLD_OFF,
     LEFT
@@ -233,16 +250,22 @@ export function buildXReportEscpos(data: XReportData): object[] {
   cmds.push(`${dashed}\n`);
 
   cmds.push(`${xrRow("Cash from Notes", xrCurrency(data.cashFromNotes))}\n`);
-  cmds.push(`${xrRow("Cash Amount", xrCurrency(data.cashAmount))}\n`);
-  cmds.push(
-    `Card + Cash = ${xrCurrency(data.cardPlusCash)} (${data.balanced ? "Balanced" : "Mismatch"})\n`
-  );
+  cmds.push(`${xrRow("Expected Cash", xrCurrency(data.expectedCash))}\n`);
+  cmds.push(`${xrRow("Variance", xrCurrency(data.cashVariance))}\n`);
   cmds.push(`${dashed}\n`);
 
   cmds.push(CENTER, BOLD_ON, "*** End of Report ***\n", BOLD_OFF, LEFT);
   cmds.push("\n\n\n", CUT);
 
   return [{ type: "raw", format: "plain", data: cmds.join("") }];
+}
+
+function voucherRow(voucher: XReportVoucherRow): string {
+  const paidTo = (voucher.paidTo || "—").slice(0, 12).padEnd(12, " ");
+  const type = (voucher.type || "").slice(0, 8).padEnd(8, " ");
+  const amount = xrCurrency(voucher.amount);
+  const left = `  ${paidTo}${type}`;
+  return `${left}${amount.padStart(Math.max(1, XR_W - left.length))}`;
 }
 
 // ─── Liquor / Bar KOT ─────────────────────────────────────────────────────────

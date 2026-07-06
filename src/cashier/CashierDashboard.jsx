@@ -901,7 +901,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnPage, setTxnPage] = useState(1);
   const [activeVenueFilter, setActiveVenueFilter] = useState('all');
 
-  // Voucher summary for the currently selected dashboard date (used for Vouchers + Final Amount tiles)
+  // Voucher summary for the currently selected dashboard date (used for Vouchers + Balance tiles)
   const [voucherSummary, setVoucherSummary] = useState({ totalAmount: 0, count: 0 });
 
   function formatBillNumber(txn) {
@@ -913,7 +913,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [txnInitialLoaded, setTxnInitialLoaded] = useState(false);
 
-  // Load voucher total for the same date so the dashboard can show Vouchers + Final Amount tiles
+  // Load voucher total for the same date so the dashboard can show Vouchers + Balance tiles
   const loadVoucherSummary = useCallback(async (dateParam) => {
     if (!dateParam) {
       setVoucherSummary({ totalAmount: 0, count: 0 });
@@ -1118,7 +1118,7 @@ const CashierDashboard = ({ onLogout }) => {
       });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
 
-      // Load voucher total for the same date so the dashboard can show Vouchers + Final Amount tiles
+      // Load voucher total for the same date so the dashboard can show Vouchers + Balance tiles
       loadVoucherSummary(dateParam);
 
       // Only cache today's data + add version stamp
@@ -2140,19 +2140,19 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Total Sales = sum of grandTotal (with GST, after discount — the final bill amount)
   // Voucher Amount = total non-voided vouchers for the selected dashboard date
-  // Final Amount = Total Sales − Voucher Amount (cashier-only "X Report")
+  // Balance = Total Sales − Expenditure (cashier-only "X Report")
   // These use filteredTransactions so they respect the active date/source/method filters
   const dashboardTotalSales = useMemo(() => {
     return filteredTransactions
       .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [filteredTransactions]);
 
-  // Voucher + final amount shown only on the cashier dashboard
+  // Voucher + balance shown only on the cashier dashboard
   const dashboardVoucherAmount = useMemo(() => {
     return Number(voucherSummary?.totalAmount || 0);
   }, [voucherSummary]);
 
-  const dashboardFinalAmount = useMemo(() => {
+  const dashboardBalanceAmount = useMemo(() => {
     return dashboardTotalSales - dashboardVoucherAmount;
   }, [dashboardTotalSales, dashboardVoucherAmount]);
 
@@ -4453,7 +4453,7 @@ const CashierDashboard = ({ onLogout }) => {
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(2)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
-    { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Balance", value: `₹${Number(dashboardBalanceAmount).toFixed(2)}`, change: "Total Sale − Expenditure", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 

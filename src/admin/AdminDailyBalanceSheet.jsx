@@ -304,7 +304,15 @@ export default function AdminDailyBalanceSheet() {
     return name.includes('vgrand') || name.includes('v-grand') || name.includes('vgrand lounge');
   }, [restaurant?.name]);
 
-  const VGRAND_WHATSAPP_NUMBER = '919550237788';
+  const ADMIN_WHATSAPP_NUMBER = '919550237788';
+
+  const ADJUSTMENT_PRESETS = [
+    { label: 'Daily Expenses', sign: 'MINUS' },
+    { label: 'Cash Shortage', sign: 'MINUS' },
+    { label: 'Cash Excess', sign: 'PLUS' },
+    { label: 'Miscellaneous Income', sign: 'PLUS' },
+    { label: 'Salary Advance', sign: 'MINUS' },
+  ];
 
   // ── Load balance sheet ─────────────────────────────────────────────────────
   const loadSheet = useCallback(async () => {
@@ -450,6 +458,12 @@ export default function AdminDailyBalanceSheet() {
     setNewAdj({ label: '', amount: '', sign: 'MINUS' });
     setShowAddAdj(false);
     triggerSave();
+  };
+
+  const applyAdjustmentPreset = (preset) => {
+    if (isAllOutlets) return;
+    setNewAdj({ label: preset.label, amount: '', sign: preset.sign });
+    setShowAddAdj(true);
   };
 
   const handleEditAdjustment = (updated) => {
@@ -690,7 +704,7 @@ export default function AdminDailyBalanceSheet() {
       if (!isNative) {
         const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
         const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
-        const whatsappUrl = `https://wa.me/${VGRAND_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+        const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
         window.open(whatsappUrl, '_blank');
       }
     } catch (err) {
@@ -904,12 +918,26 @@ export default function AdminDailyBalanceSheet() {
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-black text-gray-800">Adjustments</h3>
           {!isLocked && !isAllOutlets && (
-            <button
-              onClick={() => setShowAddAdj(!showAddAdj)}
-              className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2]"
-            >
-              <Plus size={14} /> Add
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {ADJUSTMENT_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => applyAdjustmentPreset(preset)}
+                    className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-[#FFEBEE] hover:text-[#B71C1C]"
+                    title={`Add ${preset.label}`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowAddAdj(!showAddAdj)}
+                className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2]"
+              >
+                <Plus size={14} /> Add
+              </button>
+            </div>
           )}
         </div>
 
@@ -1003,16 +1031,15 @@ export default function AdminDailyBalanceSheet() {
           )
         ) : (
           <>
-            {isVGrand ? (
-              <button
-                onClick={handleWhatsAppShare}
-                disabled={statusLoading || isAllOutlets}
-                className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
-              >
-                {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
-                Send to WhatsApp
-              </button>
-            ) : (
+            <button
+              onClick={handleWhatsAppShare}
+              disabled={statusLoading || isAllOutlets}
+              className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
+              Send to WhatsApp
+            </button>
+            {isAdmin && !isVGrand && (
               <button
                 onClick={handleSubmit}
                 disabled={statusLoading || sheet?.status === 'SUBMITTED' || isAllOutlets}
