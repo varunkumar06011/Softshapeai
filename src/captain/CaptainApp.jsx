@@ -1131,25 +1131,18 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+  const todaySpecials = useMemo(() => {
+    const now = Date.now();
+    return outletFilteredMenuItems.filter(
+      i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CAPTAIN' || i.specialChannel === 'BOTH')
+    );
+  }, [outletFilteredMenuItems]);
+
   const categories = useMemo(() => {
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
     const hasTodaySpecial = todaySpecials.length > 0;
     return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...Array.from(cats)].filter(Boolean);
   }, [outletFilteredMenuItems, todaySpecials]);
-
-
-
-  const todaySpecials = useMemo(() => {
-
-    const now = Date.now();
-
-    return outletFilteredMenuItems.filter(
-
-      i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CAPTAIN' || i.specialChannel === 'BOTH')
-
-    );
-
-  }, [outletFilteredMenuItems]);
 
 
 
