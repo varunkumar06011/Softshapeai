@@ -371,6 +371,20 @@ export default function VoucherModule() {
             </div>
             {showPaidToDropdown && (
               <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {filteredCategories.length > 0 && (
+                  <div className="sticky top-0 z-10 bg-white p-1 border-b border-gray-100">
+                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Expense Categories</p>
+                    {filteredCategories.map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => handlePaidToSelect(c)}
+                        className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {filteredStaff.length > 0 && (
                   <div className="p-1">
                     <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Staff</p>
@@ -382,20 +396,6 @@ export default function VoucherModule() {
                       >
                         {s.name}
                         {s.role && <span className="text-[10px] text-gray-400 ml-2">{s.role}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {filteredCategories.length > 0 && (
-                  <div className="p-1 border-t border-gray-100">
-                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Expense Categories</p>
-                    {filteredCategories.map((c) => (
-                      <button
-                        key={c.value}
-                        onClick={() => handlePaidToSelect(c)}
-                        className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
-                      >
-                        {c.label}
                       </button>
                     ))}
                   </div>
