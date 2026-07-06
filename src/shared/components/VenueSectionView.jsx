@@ -13,9 +13,9 @@
 // Used by Cashier POS and Captain POS for table selection.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
+import React, { useRef, useMemo } from 'react';
 import { getTableSectionLabel, getSectionBadgeColor } from '../../utils/tableHelpers';
-import { calculateTableBill } from '../utils/billing';
+import { calculateTableBill, getBillableItems } from '../utils/billing';
 
 export default function VenueSectionView({
   sectionName,
@@ -177,6 +177,19 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
   const isBusy = !isFree && !isBilling && !isReady;
   const isExtra = table.isExtra;
 
+  // Memoized bill — only recalculates when billable items actually change,
+  // preventing flickering from socket re-renders that don't change items.
+  const billSig = useMemo(() => {
+    const items = getBillableItems(table);
+    return items.map(i => `${i.id ?? i.n}:${i.q ?? i.quantity}:${i.p ?? i.price}`).join('|');
+  }, [table]);
+
+  const billCacheRef = useRef({ sig: null, bill: null });
+  if (billCacheRef.current.sig !== billSig) {
+    billCacheRef.current = { sig: billSig, bill: calculateTableBill(table) };
+  }
+  const bill = billCacheRef.current.bill;
+
   return (
     <button
       onClick={onClick}
@@ -225,7 +238,7 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
           {status}
         </div>
         {!isFree && (
-          <span className={`${compactMode ? 'text-[8px]' : 'text-[10px]'} font-black opacity-60`}>₹{calculateTableBill(table).grandTotal}</span>
+          <span className={`${compactMode ? 'text-[8px]' : 'text-[10px]'} font-black opacity-60`}>₹{bill?.grandTotal ?? 0}</span>
         )}
       </div>
     </button>

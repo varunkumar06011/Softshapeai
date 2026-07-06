@@ -650,6 +650,19 @@ export default function CaptainApp({ onLogout }) {
   const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const lastAnyItemAddedRef = useRef(0);
+  const tableBillCacheRef = useRef(new Map()); // stable bill cache to prevent table view flickering
+
+  const getStableTableBill = useCallback((table) => {
+    if (!table) return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0 };
+    const items = getBillableItems(table);
+    const sig = items.map(i => `${i.id ?? i.n}:${i.q ?? i.quantity}:${i.p ?? i.price}`).join('|');
+    const cacheKey = String(table.backendId ?? table.id ?? table.number ?? '');
+    const cached = tableBillCacheRef.current.get(cacheKey);
+    if (cached && cached.sig === sig) return cached.bill;
+    const bill = calculateTableBill(table);
+    tableBillCacheRef.current.set(cacheKey, { sig, bill });
+    return bill;
+  }, []);
 
 
 
@@ -4132,7 +4145,7 @@ export default function CaptainApp({ onLogout }) {
 
                         {table.status !== TABLE_STATUS.FREE && (
 
-                          <span className="text-[10px] font-black opacity-60">₹{calculateTableBill(table).grandTotal}</span>
+                          <span className="text-[10px] font-black opacity-60">₹{getStableTableBill(table).grandTotal}</span>
 
                         )}
 

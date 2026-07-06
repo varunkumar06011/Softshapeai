@@ -567,6 +567,7 @@ const CashierDashboard = ({ onLogout }) => {
   const lastAnyItemAddedRef = useRef(0); // global 900ms cooldown across all item adds
   const lsWriteTimerRef = useRef(null);
   const lastFetchUpdateRef = useRef({ backendId: null, ts: 0 }); // guards selectedTable against stale activeTables sync
+  const tableBillCacheRef = useRef(new Map()); // stable bill cache to prevent table view flickering
 
   function shallowEqualSelectedTable(prev, next) {
     if (!prev || !next) return prev === next;
@@ -579,6 +580,20 @@ const CashierDashboard = ({ onLogout }) => {
       (prev.kotHistory?.length ?? 0) === (next.kotHistory?.length ?? 0)
     );
   }
+
+  // Stable bill calculation — caches per-table bill to prevent flickering in table view.
+  // Only recalculates when billable items actually change (by signature), not on every re-render.
+  const getStableTableBill = useCallback((table) => {
+    if (!table) return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0 };
+    const items = getBillableItems(table);
+    const sig = items.map(i => `${i.id ?? i.n}:${i.q ?? i.quantity}:${i.p ?? i.price}`).join('|');
+    const cacheKey = String(table.backendId ?? table.id ?? table.number ?? '');
+    const cached = tableBillCacheRef.current.get(cacheKey);
+    if (cached && cached.sig === sig) return cached.bill;
+    const bill = calculateTableBill(table, restaurantConfig);
+    tableBillCacheRef.current.set(cacheKey, { sig, bill });
+    return bill;
+  }, [restaurantConfig]);
 
   // Helper: namespaced cart key so tables never bleed into each other
   const getCartStorageKey = (table) => {
@@ -1975,7 +1990,7 @@ const CashierDashboard = ({ onLogout }) => {
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
         const items = getBillableItems(table);
-        const bill = calculateTableBill(table, restaurantConfig);
+        const bill = getStableTableBill(table);
         return {
           id: `T${table.id}`,
           type: 'Dine-In',
@@ -3773,6 +3788,8 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedOrder(null);
     lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
+    setRawDiscountInput('');
+    setDiscountMode('percent');
 
     if (!table.status || table.status === 'Free' || table.status === 'AVAILABLE') {
       setActiveTab('pos');
@@ -4670,7 +4687,7 @@ const CashierDashboard = ({ onLogout }) => {
                             .map((table, i) => {
                               const isWaitingBill = table.status === 'Waiting Bill';
                               const isPreparing = table.status === 'Preparing';
-                              const bill = calculateTableBill(table, restaurantConfig);
+                              const bill = getStableTableBill(table);
                               const billAmt = bill?.subtotal > 0
                                 ? bill.subtotal
                                 : Math.max(
@@ -4979,7 +4996,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     <span className="text-2xl font-black">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                                     {!isFree && (
-                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table, restaurantConfig).grandTotal}</span>
+                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{getStableTableBill(table).grandTotal}</span>
                                     )}
                                   </div>
                                 );

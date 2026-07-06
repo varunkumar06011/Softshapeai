@@ -110,8 +110,8 @@ function buildBillText({ tableNumber, items, subtotal, discount, cgst, sgst, gra
   lines.push(line);
   const rawSub = Number(subtotal || 0);
   lines.push(`Subtotal:        Rs.${Math.round(rawSub).toFixed(0)}`);
-  if (cgst) lines.push(`CGST:            Rs.${Math.round(Number(cgst)).toFixed(0)}`);
-  if (sgst) lines.push(`SGST:            Rs.${Math.round(Number(sgst)).toFixed(0)}`);
+  if (cgst) lines.push(`CGST:            Rs.${Number(cgst).toFixed(2)}`);
+  if (sgst) lines.push(`SGST:            Rs.${Number(sgst).toFixed(2)}`);
   if (discount && Number(discount.amount || 0) > 0) {
     const discAmt = Math.round(Number(discount.amount || 0));
     lines.push(`Discount (${Math.round(Number(discount.percent || 0)).toFixed(0)}%): -Rs.${discAmt.toFixed(0)}`);
@@ -199,7 +199,7 @@ async function discoverPrintAgentUrls() {
   // 2. Backend-reported URL (from Print Agent registration/heartbeat)
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
+    const timeout = setTimeout(() => controller.abort(), 1000);
     const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
       method: 'GET',
       headers: getAuthHeaders(),
@@ -233,17 +233,19 @@ async function discoverPrintAgentUrls() {
 }
 
 /**
- * Try each candidate Print Agent URL until one succeeds.
+ * Try all candidate Print Agent URLs in parallel and return the first that succeeds.
+ * Each URL gets a 1.5s timeout — if the Print Agent is unreachable, all URLs fail
+ * in parallel so the total wait is ~1.5s instead of 3s × N (sequential).
  * Returns the working URL or null if all fail.
  */
 async function tryPrintAgentUrls(body, jobType) {
   const urls = await discoverPrintAgentUrls();
+  if (urls.length === 0) return null;
 
-  for (const url of urls) {
+  const tryUrl = async (url) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
-
       const res = await fetch(`${url}/print`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -251,28 +253,33 @@ async function tryPrintAgentUrls(body, jobType) {
         signal: controller.signal,
       });
       clearTimeout(timeout);
-
-      if (res.ok) {
-        console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${url}`);
-        // Cache the working URL for future use
-        try {
-          localStorage.setItem('last_working_print_agent_url', url);
-          if (url !== 'http://localhost:3100') {
-            await setPrintAgentUrl(url);
-          }
-        } catch { /* ignore */ }
-        return url;
-      }
+      if (res.ok) return url;
     } catch (err) {
+      clearTimeout(timeout);
       if (err.name !== 'AbortError') {
         console.log(`[printOffline] Print Agent not reachable at ${url}:`, err.message);
       } else {
         console.log(`[printOffline] Print Agent timeout at ${url}`);
       }
     }
+    return null;
+  };
+
+  // Race all URLs in parallel — first success wins, others are ignored.
+  const results = await Promise.all(urls.map(tryUrl));
+  const workingUrl = results.find(Boolean);
+
+  if (workingUrl) {
+    console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${workingUrl}`);
+    try {
+      localStorage.setItem('last_working_print_agent_url', workingUrl);
+      if (workingUrl !== 'http://localhost:3100') {
+        await setPrintAgentUrl(workingUrl);
+      }
+    } catch { /* ignore */ }
   }
 
-  return null;
+  return workingUrl;
 }
 
 // ── Debug log (visible in UI) ─────────────────────────────────────────────────

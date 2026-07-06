@@ -97,27 +97,23 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
   const grandTotal = Math.round(rawGrandTotal);
   const roundOff = Math.round((grandTotal - rawGrandTotal) * 100) / 100;
 
-  // Round everything to whole numbers for display and print consistency
+  // Only round grand total to whole number; CGST/SGST keep 2-decimal precision
   const rawSubtotalRounded = Math.round(subtotal);
   const discountAmountRounded = Math.round(discountAmount);
-  const taxesRounded = Math.round(taxes);
-  const cgstRounded = Math.floor(taxesRounded / 2);
-  const sgstRounded = taxesRounded - cgstRounded;
-  const displayedSubtotalRounded = Math.round(displayedSubtotal);
   const grandTotalRounded = Math.max(0, grandTotal);
 
   return {
-    subtotal: displayedSubtotalRounded,
+    subtotal: Math.round(displayedSubtotal),
     rawSubtotal: rawSubtotalRounded,
-    taxes: taxesRounded,
+    taxes: Math.round(taxes * 100) / 100,
     total: grandTotalRounded,
     grandTotal: grandTotalRounded,
     discountAmount: discountAmountRounded,
     roundOff,
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
-    cgst: cgstRounded,
-    sgst: sgstRounded
+    cgst: Math.round(cgst * 100) / 100,
+    sgst: Math.round(sgst * 100) / 100
   };
 };
 
