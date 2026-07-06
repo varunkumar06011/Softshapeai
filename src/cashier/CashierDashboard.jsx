@@ -128,7 +128,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
     kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
-    activeOrder: isFreeWorkflow ? null : (row.orders?.[0] || row.activeOrder || null),
+    activeOrder: isFreeWorkflow ? null : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null)),
     billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? null),
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
@@ -1298,16 +1298,13 @@ const CashierDashboard = ({ onLogout }) => {
             if (!prev) return prev;
             const before = prev;
             const incomingKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-            const existingKot = prev.kotHistory || [];
-            const existingIds = new Set(existingKot.map(k => String(k.id)));
-            const mergedKotHistory = [...existingKot, ...incomingKotHistory.filter(k => !existingIds.has(String(k.id)))];
             const nextVal = {
               ...prev,
               activeOrder: mergeOrder(order, prev.activeOrder),
               status: prev.status === 'Free' ? 'Occupied' : prev.status,
               workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
-              currentBill: Math.max(Number(prev.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-              kotHistory: mergedKotHistory.length > 0 ? mergedKotHistory : existingKot,
+              currentBill: Number(order.totalAmount ?? prev.currentBill ?? 0),
+              kotHistory: incomingKotHistory,
             };
             validateTableIntegrity('CashierDashboard.onOrderCreated', before, nextVal);
             return nextVal;
@@ -1324,12 +1321,8 @@ const CashierDashboard = ({ onLogout }) => {
               activeOrder: mergeOrder(order, t.activeOrder),
               status: t.status === 'Free' ? 'Occupied' : t.status,
               workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
-              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-              ...(incomingGridKotHistory.length > 0 ? (() => {
-                const existingGridKot = t.kotHistory || [];
-                const gridExistingIds = new Set(existingGridKot.map(k => String(k.id)));
-                return { kotHistory: [...existingGridKot, ...incomingGridKotHistory.filter(k => !gridExistingIds.has(String(k.id)))] };
-              })() : {}),
+              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+              kotHistory: incomingGridKotHistory,
             }
           : t
       );
@@ -1370,10 +1363,7 @@ const CashierDashboard = ({ onLogout }) => {
             if (!prev) return prev;
             const before = prev;
             const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-            const existingKot = prev.kotHistory || [];
-            const existingIds = new Set(existingKot.map(k => String(k.id)));
-            const mergedKotHistory = [...existingKot, ...incomingKotArr.filter(k => !existingIds.has(String(k.id)))];
-            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder), kotHistory: mergedKotHistory.length > 0 ? mergedKotHistory : existingKot };
+            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder), kotHistory: incomingKotArr };
             validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
             return nextVal;
           });
@@ -1388,12 +1378,8 @@ const CashierDashboard = ({ onLogout }) => {
           ? {
               ...t,
               activeOrder: mergeOrder(order, t.activeOrder),
-              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
-              ...(incomingGridKotArr.length > 0 ? (() => {
-                const existingGridKot = t.kotHistory || [];
-                const gridExistingIds = new Set(existingGridKot.map(k => String(k.id)));
-                return { kotHistory: [...existingGridKot, ...incomingGridKotArr.filter(k => !gridExistingIds.has(String(k.id)))] };
-              })() : {}),
+              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+              kotHistory: incomingGridKotArr,
             }
           : t
       );
@@ -1450,7 +1436,7 @@ const CashierDashboard = ({ onLogout }) => {
           : ((isBillPrintedGrid && !isSettledGrid && (incomingStatus === 'Free' || incomingStatus === 'AVAILABLE')) ? 'Waiting Bill' : incomingStatus);
         const incomingBillAmt = table.currentBill ?? table.orders?.[0]?.totalAmount ?? t.currentBill;
         const isIncomingFree = (table.workflowStatus === 'Free' || table.status === 'AVAILABLE' || table.status === 'Free');
-        const resolvedBill = isIncomingFree ? 0 : Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0));
+        const resolvedBill = isIncomingFree ? 0 : Number(incomingBillAmt ?? t.currentBill ?? 0);
         // FREEZE: once bill is printed, hold items steady until settlement
         const isFrozenGrid = isBillPrintedGrid && !isSettledGrid;
         // Preserve billNumber: prefer incoming order's billNumber, fall back to existing
@@ -1497,7 +1483,7 @@ const CashierDashboard = ({ onLogout }) => {
             : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
           // Never flicker bill to 0 unless table is actually free
           const incomingBill = effectiveIsTableFree ? 0 : (table.currentBill ?? prev.currentBill);
-          const stableBill = effectiveIsTableFree ? 0 : Math.max(Number(prev.currentBill ?? 0), Number(incomingBill ?? 0));
+          const stableBill = effectiveIsTableFree ? 0 : Number(incomingBill ?? prev.currentBill ?? 0);
           const protectedStatusSel = (prev.status === 'Waiting Bill' || prev.workflowStatus === 'Waiting Bill')
             && incomingStatusSel !== 'Free' && incomingStatusSel !== 'AVAILABLE'
             ? 'Waiting Bill'
