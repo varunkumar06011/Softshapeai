@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
+import { printLocal } from '../utils/printOffline';
 
 const EXPENSE_CATEGORIES = [
   { value: 'MISCELLANEOUS', label: 'Miscellaneous expenses' },
@@ -216,6 +217,15 @@ export default function ExpenditureModule() {
     }
   };
 
+  const dispatchExpenditurePrint = async (expenditureId) => {
+    const result = await apiFetch(`/api/expenditures/${expenditureId}/print`, { method: 'POST' });
+    if (result?.escposData && result?.eventId) {
+      printLocal({ type: 'EXPENDITURE', escposData: result.escposData, eventId: result.eventId, data: {} })
+        .catch((err) => console.warn('[ExpenditureModule] Local print attempt failed:', err?.message || err));
+    }
+    return result;
+  };
+
   const handleSaveAndPrint = async () => {
     setError('');
     const expenditure = await handleSave();
@@ -223,7 +233,7 @@ export default function ExpenditureModule() {
 
     setPrinting(true);
     try {
-      await apiFetch(`/api/expenditures/${expenditure.id}/print`, { method: 'POST' });
+      await dispatchExpenditurePrint(expenditure.id);
       setSavedExpenditure(null);
     } catch (err) {
       setError('Saved, but print failed — use reprint button below.');
@@ -237,7 +247,7 @@ export default function ExpenditureModule() {
     if (!savedExpenditure) return;
     setPrinting(true);
     try {
-      await apiFetch(`/api/expenditures/${savedExpenditure.id}/print`, { method: 'POST' });
+      await dispatchExpenditurePrint(savedExpenditure.id);
       setSavedExpenditure(null);
     } catch (err) {
       setError(err.message || 'Failed to print expenditure');
@@ -250,7 +260,7 @@ export default function ExpenditureModule() {
     setError('');
     setPrintingId(expenditureId);
     try {
-      await apiFetch(`/api/expenditures/${expenditureId}/print`, { method: 'POST' });
+      await dispatchExpenditurePrint(expenditureId);
     } catch (err) {
       setError(err.message || 'Failed to print expenditure');
     } finally {
