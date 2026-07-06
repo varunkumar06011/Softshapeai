@@ -581,6 +581,8 @@ const CashierDashboard = ({ onLogout }) => {
     );
   }
 
+  const restaurantConfig = useMemo(() => getRestaurantConfig(), []);
+
   // Stable bill calculation — caches per-table bill to prevent flickering in table view.
   // Only recalculates when billable items actually change (by signature), not on every re-render.
   const getStableTableBill = useCallback((table) => {
@@ -645,7 +647,6 @@ const CashierDashboard = ({ onLogout }) => {
       : tables;
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
-  const restaurantConfig = useMemo(() => getRestaurantConfig(), []);
 
   // Refetch sections when the active restaurant/outlet changes
   useEffect(() => {
