@@ -66,7 +66,6 @@ import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKo
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
 import { useSettlementGuards } from '../hooks/useSettlementGuards';
-import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 function getVenueTableLabel(sectionTag, tableNumber) {
   return String(tableNumber);
