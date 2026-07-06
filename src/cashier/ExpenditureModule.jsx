@@ -56,21 +56,35 @@ export default function ExpenditureModule() {
   const [showNarrationSuggestions, setShowNarrationSuggestions] = useState(false);
 
   const loadData = useCallback(async (date = summaryDate) => {
-    try {
-      const [opts, narrations, summary, recent] = await Promise.all([
-        apiFetch('/api/expenditures/paid-to-options'),
-        apiFetch('/api/expenditures/narration-suggestions'),
-        apiFetch(`/api/expenditures/today-summary?date=${date}`),
-        apiFetch(`/api/expenditures?date=${date}&limit=10`),
-      ]);
-      setPaidToOptions(opts || { staff: [] });
-      setNarrationSuggestions(narrations || []);
-      setTodaySummary(summary || null);
-      setRecentExpenditures(recent || []);
-      setApproverOptions(CROSS_OUTLET_APPROVERS);
-    } catch (err) {
-      console.error('[ExpenditureModule] Failed to load data:', err);
-      setApproverOptions(CROSS_OUTLET_APPROVERS);
+    setError('');
+    const errors = [];
+
+    const load = async (label, url, setter) => {
+      try {
+        const data = await apiFetch(url, { timeout: 60000 });
+        setter(data);
+      } catch (err) {
+        console.error(`[ExpenditureModule] ${label} failed:`, err);
+        errors.push(`${label}: ${err.message || 'failed'}`);
+      }
+    };
+
+    await Promise.all([
+      load('paid-to-options', '/api/expenditures/paid-to-options', (d) => setPaidToOptions(d || { staff: [] })),
+      load('narration-suggestions', '/api/expenditures/narration-suggestions', (d) => setNarrationSuggestions(d || [])),
+      load('today-summary', `/api/expenditures/today-summary?date=${date}`, (d) => setTodaySummary(d || null)),
+      load('recent-expenditures', `/api/expenditures?date=${date}&limit=10`, (d) => setRecentExpenditures(d || [])),
+    ]);
+
+    setApproverOptions(CROSS_OUTLET_APPROVERS);
+
+    if (errors.length > 0) {
+      const isTimeout = errors.some((e) => e.toLowerCase().includes('timed out'));
+      setError(
+        isTimeout
+          ? 'Some data took too long to load. Your saved expenditures are safe — please retry in a moment.'
+          : `Could not load: ${errors.join(', ')}`
+      );
     }
   }, [summaryDate]);
 
