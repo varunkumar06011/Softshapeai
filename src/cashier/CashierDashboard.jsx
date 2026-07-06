@@ -3611,7 +3611,11 @@ const CashierDashboard = ({ onLogout }) => {
       ? items.filter(i => i.menuType !== 'LIQUOR')
       : items.filter(i => i.menuType === 'LIQUOR');
     const cats = filtered.map(i => i.category || i.c).filter(Boolean);
-    return ['All', ...new Set(cats)];
+    const now = Date.now();
+    const hasTodaySpecial = activeOutlet === 'restaurant' && menuItems.some(
+      item => item.isSpecial && item.active && (!item.expiresAt || now < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH')
+    );
+    return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...new Set(cats)];
   }, [selectedMenuType, activeOutlet, menuItems, barMenuItems]);
 
   const todaySpecials = useMemo(() => {
@@ -3730,7 +3734,16 @@ const CashierDashboard = ({ onLogout }) => {
         if (!itemMatchesQuery(item, q)) return false;
       } else {
         // 3. Category filter (only active if no search query)
-        if (selectedCategory !== 'All' && (item.c || item.category) !== selectedCategory) return false;
+        if (selectedCategory !== 'All') {
+          if (selectedCategory === 'Today Special') {
+            const now = Date.now();
+            if (!(item.isSpecial && item.active && (!item.expiresAt || now < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH'))) {
+              return false;
+            }
+          } else if ((item.c || item.category) !== selectedCategory) {
+            return false;
+          }
+        }
       }
 
       return true;

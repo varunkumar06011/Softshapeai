@@ -1133,9 +1133,9 @@ export default function CaptainApp({ onLogout }) {
 
   const categories = useMemo(() => {
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
-
-    return ['All', ...Array.from(cats)].filter(Boolean);
-  }, [outletFilteredMenuItems]);
+    const hasTodaySpecial = todaySpecials.length > 0;
+    return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...Array.from(cats)].filter(Boolean);
+  }, [outletFilteredMenuItems, todaySpecials]);
 
 
 
@@ -1322,10 +1322,16 @@ export default function CaptainApp({ onLogout }) {
 
   const filteredMenu = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();
+    const isTodaySpecialCategory = activeCategory === 'Today Special';
     if (!q) {
       // No search — apply category and diet filters normally
       return outletFilteredMenuItems.filter(item => {
-        if (activeCategory !== 'All' && item.c !== activeCategory) return false;
+        if (activeCategory !== 'All') {
+          if (isTodaySpecialCategory) {
+            return item.isSpecial && item.active && (!item.expiresAt || Date.now() < item.expiresAt) && (item.specialChannel === 'CAPTAIN' || item.specialChannel === 'BOTH');
+          }
+          if (item.c !== activeCategory) return false;
+        }
         if (activeDiet !== 'All' && item.t !== activeDiet) return false;
         return true;
       });
@@ -1334,9 +1340,13 @@ export default function CaptainApp({ onLogout }) {
     // Use shared filterMenuItems for consistent search behavior across all terminals
     const baseResults = filterMenuItems(outletFilteredMenuItems, {
       query: searchQuery,
-      category: activeCategory,
+      category: isTodaySpecialCategory ? 'All' : activeCategory,
       diet: activeDiet,
     });
+
+    if (isTodaySpecialCategory) {
+      return baseResults.filter(item => item.isSpecial && item.active && (!item.expiresAt || Date.now() < item.expiresAt) && (item.specialChannel === 'CAPTAIN' || item.specialChannel === 'BOTH'));
+    }
 
     return baseResults.sort((a, b) => {
       const an = (a.n || '').toLowerCase();

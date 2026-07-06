@@ -289,7 +289,7 @@ export default function AdminDailyBalanceSheet() {
 
   const isLocked = sheet?.status === 'LOCKED';
   const isAdmin = user?.role === 'admin' || user?.role === 'owner';
-  const isAllOutlets = outletId === 'all';
+  const isAllOutlets = outletId === 'all' && accessibleOutlets.length > 1;
 
   // VGrand admin: replace Submit with "Send to WhatsApp" (PDF share)
   const isVGrand = useMemo(() => {
