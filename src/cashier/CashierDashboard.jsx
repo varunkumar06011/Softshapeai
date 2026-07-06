@@ -513,6 +513,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
+  const [tipInput, setTipInput] = useState('');
+  const [selectedSettleMethod, setSelectedSettleMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
   const isSubmittingPaymentRef = useRef(false);
@@ -1003,6 +1005,7 @@ const CashierDashboard = ({ onLogout }) => {
           cgst,
           sgst,
           roundOff: Number(txn.roundOff ?? 0),
+          tipAmount: Number(txn.tipAmount ?? 0),
           time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
           timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -1768,6 +1771,7 @@ const CashierDashboard = ({ onLogout }) => {
       discountAmount: txn.discountAmount != null ? Number(txn.discountAmount) : 0,
       cgst: txn.cgst != null ? Number(txn.cgst) : 0,
       sgst: txn.sgst != null ? Number(txn.sgst) : 0,
+      tipAmount: Number(txn.tipAmount ?? 0),
       time: (() => { try { const d = new Date(paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
       date: (() => { try { const d = new Date(paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
       timestamp: (() => { try { const d = new Date(paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -2940,7 +2944,7 @@ const CashierDashboard = ({ onLogout }) => {
     })();
   };
 
-  const handlePayment = async (method) => {
+  const handlePayment = async (method, tipAmount = 0) => {
     if (!selectedTable || !method) return;
     if (isSubmittingPaymentRef.current) return;
     isSubmittingPaymentRef.current = true;
@@ -3120,6 +3124,7 @@ const CashierDashboard = ({ onLogout }) => {
             settleRequestId,
             {
               paymentMethod: method,
+              tipAmount: Number(tipAmount) || 0,
               discountPercent: selectedTable.isExtra
                 ? (discountPercent || selectedTable.discountPercent || 0)
                 : discountPercent,
@@ -3217,6 +3222,7 @@ const CashierDashboard = ({ onLogout }) => {
               cgst: Number(txn.cgst ?? 0),
               sgst: Number(txn.sgst ?? 0),
               roundOff: Number(txn.roundOff ?? 0),
+              tipAmount: Number(txn.tipAmount ?? 0),
               time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -3292,6 +3298,7 @@ const CashierDashboard = ({ onLogout }) => {
             sgst: Number(activeSgst),
             grandTotal: Number(activeGrandTotal),
             roundOff: Number(activeOrderCalc.roundOff ?? 0),
+            tipAmount: Number(tipAmount) || 0,
             sectionId: walkinSectionId,
             sectionTag: walkinSectionTag,
             billNumber: null,
@@ -3327,6 +3334,7 @@ const CashierDashboard = ({ onLogout }) => {
               cgst: Number(txn.cgst ?? 0),
               sgst: Number(txn.sgst ?? 0),
               roundOff: Number(txn.roundOff ?? 0),
+              tipAmount: Number(txn.tipAmount ?? 0),
               time: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               date: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: KOLKATA_TIME_ZONE }); } catch { return '—'; } })(),
               timestamp: (() => { try { const d = new Date(txn.paidAt); return isNaN(d.getTime()) ? 0 : d.getTime(); } catch { return 0; } })(),
@@ -5092,6 +5100,22 @@ const CashierDashboard = ({ onLogout }) => {
                             );
                           })}
                         </div>
+                        {/* Tips summary — separate from sales */}
+                        {(() => {
+                          const tipTxns = filteredTransactions.filter(t => Number(t.tipAmount ?? 0) > 0);
+                          const totalTips = tipTxns.reduce((sum, t) => sum + Number(t.tipAmount ?? 0), 0);
+                          if (totalTips <= 0) return null;
+                          return (
+                            <div className="mx-3 mt-2 mb-0 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-amber-600">Tips Collected</span>
+                                <span className="text-sm font-black text-gray-900">₹{totalTips.toFixed(2)}</span>
+                                <span className="text-[9px] font-bold text-gray-400">{tipTxns.length} tip transactions</span>
+                              </div>
+                              <Wallet size={20} className="text-amber-500" />
+                            </div>
+                          );
+                        })()}
                         {/* Date filter tabs */}
                         <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
                           {[
@@ -5295,6 +5319,12 @@ const CashierDashboard = ({ onLogout }) => {
                                                   <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
                                                   <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                                 </div>
+                                                {Number(txn.tipAmount ?? 0) > 0 && (
+                                                <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                                                  <span className="text-xs font-black uppercase text-amber-600">Tip</span>
+                                                  <span className="text-sm font-black text-amber-700">₹{Number(txn.tipAmount).toFixed(2)}</span>
+                                                </div>
+                                                )}
                                               </div>
                                             </>
                                           ) : (
@@ -6732,7 +6762,7 @@ const CashierDashboard = ({ onLogout }) => {
         );
       })()}
 
-      {/* SETTLE CONFIRM — Cash default */}
+      {/* SETTLE — Payment Method Picker + Tip Input */}
       {showSettleConfirm && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
@@ -6742,22 +6772,70 @@ const CashierDashboard = ({ onLogout }) => {
                 <p className="text-3xl font-black text-gray-900 mt-1 tabular-nums">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : 0).toFixed(0)}</p>
               </div>
               <button
-                onClick={() => setShowSettleConfirm(false)}
+                onClick={() => { setShowSettleConfirm(false); setTipInput(''); setSelectedSettleMethod(null); }}
                 className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
               >
                 <X size={20} />
               </button>
             </div>
             <div className="p-6">
+              <p className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Select Payment Method</p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {[
+                  { label: 'Cash', method: 'CASH', icon: Banknote, color: 'green' },
+                  { label: 'Card', method: 'CARD', icon: CreditCard, color: 'purple' },
+                  { label: 'UPI', method: 'UPI', icon: Smartphone, color: 'blue' },
+                  { label: 'Other', method: 'OTHER', icon: Wallet, color: 'orange' },
+                ].map(({ label, method, icon: Icon, color }) => (
+                  <button
+                    key={method}
+                    onClick={() => setSelectedSettleMethod(method)}
+                    className={`flex flex-col items-center gap-2 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 ${
+                      selectedSettleMethod === method
+                        ? color === 'green' ? 'bg-green-50 border-green-500 text-green-700'
+                          : color === 'purple' ? 'bg-purple-50 border-purple-500 text-purple-700'
+                          : color === 'blue' ? 'bg-blue-50 border-blue-500 text-blue-700'
+                          : 'bg-orange-50 border-orange-500 text-orange-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <Icon size={24} />
+                    <span className="text-sm font-black uppercase tracking-wider">{label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mb-4">
+                <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip (Optional)</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-lg">₹</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="1"
+                    value={tipInput}
+                    onChange={(e) => setTipInput(e.target.value)}
+                    placeholder="0"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 text-lg font-black text-gray-900 tabular-nums focus:outline-none focus:border-[#E53935] transition-colors"
+                  />
+                </div>
+              </div>
+
               <button
-                onClick={() => !isPrintingBill && handlePayment(selectedPaymentMethod)}
-                disabled={isPrintingBill}
-                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${!isPrintingBill
+                onClick={() => {
+                  if (!selectedSettleMethod || isPrintingBill) return;
+                  handlePayment(selectedSettleMethod, Number(tipInput) || 0);
+                  setTipInput('');
+                  setSelectedSettleMethod(null);
+                }}
+                disabled={!selectedSettleMethod || isPrintingBill}
+                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill
                   ? 'bg-[#E53935] text-white shadow-lg shadow-red-150 hover:bg-[#c62828] border border-red-750'
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
-                {isPrintingBill ? 'Processing...' : 'Confirm Settlement'}
+                {isPrintingBill ? 'Processing...' : 'Settle'}
               </button>
             </div>
           </div>

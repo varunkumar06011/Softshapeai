@@ -143,6 +143,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
         captainId: txn.captainId || 'CASHIER',
         captainName: txn.captainName || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
         method: txn.method || 'OTHER',
+        tipAmount: Number(txn.tipAmount ?? 0),
         tableNumber: txn.tableNumber ? formatTxnTableLabel(txn.tableNumber, txn.sectionTag) : null,
         source: (() => {
           const direct = resolveSource(txn);
@@ -411,6 +412,12 @@ export default function AdminTransactions({ onStatsRefresh }) {
                                   <span className="text-xs font-black uppercase text-gray-500">Total</span>
                                   <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</span>
                                 </div>
+                                {Number(txn.tipAmount ?? 0) > 0 && (
+                                <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200">
+                                  <span className="text-xs font-black uppercase text-amber-600">Tip</span>
+                                  <span className="text-sm font-black text-amber-700">₹{Number(txn.tipAmount).toFixed(2)}</span>
+                                </div>
+                                )}
                               </div>
                             ) : (
                               <p className="text-xs text-gray-400 py-3">No item details available.</p>

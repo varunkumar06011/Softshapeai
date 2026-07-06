@@ -25,7 +25,7 @@ import {
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
   RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, Star, AlertTriangle,
-  ArrowUpDown,
+  ArrowUpDown, Wallet,
 } from 'lucide-react';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
 import {
@@ -871,13 +871,17 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
       { key: 'date', label: 'Date' },
       { key: 'CASH', label: 'Cash', format: 'money' },
       { key: 'CARD', label: 'Card', format: 'money' },
+      { key: 'UPI', label: 'UPI', format: 'money' },
+      { key: 'OTHER', label: 'Other', format: 'money' },
       { key: 'total', label: 'Total', format: 'money' },
     ];
     const rows = (data.byDay || []).map((d) => ({
       date: d.date,
       CASH: d.CASH || 0,
       CARD: d.CARD || 0,
-      total: (d.CASH || 0) + (d.CARD || 0),
+      UPI: d.UPI || 0,
+      OTHER: d.OTHER || 0,
+      total: (d.CASH || 0) + (d.CARD || 0) + (d.UPI || 0) + (d.OTHER || 0),
     }));
     downloadPDF({ title: 'Payment Method Breakdown', dateRange: dateRangeText, headers, rows, filename: 'Payment-Methods' });
   };
@@ -888,12 +892,16 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
         { key: 'date', label: 'Date' },
         { key: 'CASH', label: 'Cash', format: 'money' },
         { key: 'CARD', label: 'Card', format: 'money' },
+        { key: 'UPI', label: 'UPI', format: 'money' },
+        { key: 'OTHER', label: 'Other', format: 'money' },
         { key: 'total', label: 'Total', format: 'money' },
       ], rows: (data.byDay || []).map((d) => ({
         date: d.date,
         CASH: d.CASH || 0,
         CARD: d.CARD || 0,
-        total: (d.CASH || 0) + (d.CARD || 0),
+        UPI: d.UPI || 0,
+        OTHER: d.OTHER || 0,
+        total: (d.CASH || 0) + (d.CARD || 0) + (d.UPI || 0) + (d.OTHER || 0),
       })) }],
     });
   };
@@ -903,10 +911,11 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
   if (error) return <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalTransactions === 0) return <EmptyCard />;
 
-  const methodIcons = { CASH: Banknote, CARD: CreditCard };
+  const methodIcons = { CASH: Banknote, CARD: CreditCard, UPI: Smartphone, OTHER: Wallet };
   const methodMeta = data.methods || [];
   const byDay = data.byDay || [];
   const daysCount = byDay.length;
+  const totalTips = data.summary?.totalTips || 0;
 
   return (
     <div className="space-y-6">
@@ -935,6 +944,19 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
           );
         })}
       </div>
+      {totalTips > 0 && (
+        <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
+              <Wallet size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Total Tips Collected</p>
+              <p className="text-xl font-black text-gray-900"><Money value={totalTips} /></p>
+            </div>
+          </div>
+        </div>
+      )}
       {daysCount > 1 && (
         <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Daily Payment Trend</h3>
@@ -946,7 +968,9 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
                 <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), '']} />
                 <Bar dataKey="CASH" stackId="a" fill="#B71C1C" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
-                <Bar dataKey="CARD" stackId="a" fill="#EF9A9A" radius={[4,4,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="CARD" stackId="a" fill="#EF9A9A" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="UPI" stackId="a" fill="#90CAF9" radius={[0,0,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                <Bar dataKey="OTHER" stackId="a" fill="#FFCC80" radius={[4,4,0,0]} barSize={24} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -961,17 +985,21 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
                 <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Date</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Cash</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Card</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">UPI</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Other</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Total</th>
               </tr>
             </thead>
             <tbody>
               {byDay.map((d) => {
-                const total = (d.CASH || 0) + (d.CARD || 0);
+                const total = (d.CASH || 0) + (d.CARD || 0) + (d.UPI || 0) + (d.OTHER || 0);
                 return (
                   <tr key={d.date} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
                     <td className="px-3 py-3 font-bold text-gray-900">{d.date}</td>
                     <td className="px-3 py-3 text-right text-gray-700"><Money value={d.CASH} /></td>
                     <td className="px-3 py-3 text-right text-gray-700"><Money value={d.CARD} /></td>
+                    <td className="px-3 py-3 text-right text-gray-700"><Money value={d.UPI} /></td>
+                    <td className="px-3 py-3 text-right text-gray-700"><Money value={d.OTHER} /></td>
                     <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={total} /></td>
                   </tr>
                 );
