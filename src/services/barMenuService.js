@@ -299,6 +299,7 @@ export function mapBarMenuItems(items, restaurantItems = []) {
       isBottleItem: item.isBottleItem,
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       venuePrices: item.venuePrices || {},
+      gstEnabled: item.gstEnabled !== false,
     };
   });
 }

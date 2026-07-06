@@ -759,7 +759,9 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
         img: item.img || item.imageUrl || (activeMenuType === 'liquor' ? DEFAULT_LIQUOR_IMG : DEFAULT_FOOD_IMG),
 
-        menuType: item.menuType
+        menuType: item.menuType,
+
+        gstEnabled: item.gstEnabled
 
       }];
 
