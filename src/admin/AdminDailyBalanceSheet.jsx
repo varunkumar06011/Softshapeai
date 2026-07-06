@@ -289,6 +289,7 @@ export default function AdminDailyBalanceSheet() {
 
   const isLocked = sheet?.status === 'LOCKED';
   const isAdmin = user?.role === 'admin' || user?.role === 'owner';
+  const isAllOutlets = outletId === 'all';
 
   // VGrand admin: replace Submit with "Send to WhatsApp" (PDF share)
   const isVGrand = useMemo(() => {
@@ -304,7 +305,7 @@ export default function AdminDailyBalanceSheet() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (outletId !== 'all') params.set('outletId', outletId);
+      params.set('outletId', outletId);
       const data = await apiFetch(`/api/balance-sheet/${selectedDate}?${params.toString()}`);
       setSheet(data);
     } catch (err) {
@@ -421,12 +422,14 @@ export default function AdminDailyBalanceSheet() {
   }, [isLocked, sheet, overrides, adjustments, selectedDate]);
 
   const handleFieldChange = (field, value) => {
+    if (isAllOutlets) return;
     setOverrides((prev) => ({ ...prev, [field]: value }));
     triggerSave();
   };
 
   // ── Adjustment handlers ────────────────────────────────────────────────────
   const handleAddAdjustment = async () => {
+    if (isAllOutlets) return;
     if (!newAdj.label.trim() || !newAdj.amount) return;
     const adj = {
       id: `temp-${Date.now()}`,
@@ -443,11 +446,13 @@ export default function AdminDailyBalanceSheet() {
   };
 
   const handleEditAdjustment = (updated) => {
+    if (isAllOutlets) return;
     setAdjustments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     triggerSave();
   };
 
   const handleDeleteAdjustment = (adj) => {
+    if (isAllOutlets) return;
     setAdjustments((prev) => prev.filter((a) => a.id !== adj.id));
     triggerSave();
   };
@@ -765,6 +770,11 @@ export default function AdminDailyBalanceSheet() {
             <Lock size={12} /> Locked
           </span>
         )}
+        {isAllOutlets && (
+          <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+            All Outlets — Read-only
+          </span>
+        )}
       </div>
 
       {error && (
@@ -782,7 +792,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={Number(sheet?.acBarSaleComputed) || 0}
             overrideValue={overrides.acBarSaleOverride}
             isManual={overrides.acBarSaleOverride != null}
-            isLocked={isLocked}
+            isLocked={isLocked || isAllOutlets}
             onChange={(v) => handleFieldChange('acBarSaleOverride', v)}
           />
           <SalesTile
@@ -790,7 +800,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.nonAcBarSaleOverride}
             isManual={true}
-            isLocked={isLocked}
+            isLocked={isLocked || isAllOutlets}
             onChange={(v) => handleFieldChange('nonAcBarSaleOverride', v)}
           />
           <SalesTile
@@ -798,7 +808,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={Number(sheet?.familyWingSaleComputed) || 0}
             overrideValue={overrides.familyWingSaleOverride}
             isManual={overrides.familyWingSaleOverride != null}
-            isLocked={isLocked}
+            isLocked={isLocked || isAllOutlets}
             onChange={(v) => handleFieldChange('familyWingSaleOverride', v)}
           />
           <SalesTile
@@ -806,7 +816,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.parcelSaleOverride}
             isManual={true}
-            isLocked={isLocked}
+            isLocked={isLocked || isAllOutlets}
             onChange={(v) => handleFieldChange('parcelSaleOverride', v)}
           />
           <SalesTile
@@ -814,7 +824,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.swiggySale}
             isManual={true}
-            isLocked={isLocked}
+            isLocked={isLocked || isAllOutlets}
             onChange={(v) => handleFieldChange('swiggySale', v)}
           />
           <SalesTile
@@ -822,7 +832,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.zomatoSale}
             isManual={true}
-            isLocked={isLocked}
+            isLocked={isLocked || isAllOutlets}
             onChange={(v) => handleFieldChange('zomatoSale', v)}
           />
         </div>
@@ -886,7 +896,7 @@ export default function AdminDailyBalanceSheet() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-black text-gray-800">Adjustments</h3>
-          {!isLocked && (
+          {!isLocked && !isAllOutlets && (
             <button
               onClick={() => setShowAddAdj(!showAddAdj)}
               className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2]"
@@ -939,7 +949,7 @@ export default function AdminDailyBalanceSheet() {
             <AdjustmentPill
               key={adj.id}
               adj={adj}
-              isLocked={isLocked}
+              isLocked={isLocked || isAllOutlets}
               onEdit={handleEditAdjustment}
               onDelete={handleDeleteAdjustment}
               onDragStart={handleDragStart}
@@ -989,7 +999,7 @@ export default function AdminDailyBalanceSheet() {
             {isVGrand ? (
               <button
                 onClick={handleWhatsAppShare}
-                disabled={statusLoading}
+                disabled={statusLoading || isAllOutlets}
                 className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
@@ -998,7 +1008,7 @@ export default function AdminDailyBalanceSheet() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={statusLoading || sheet?.status === 'SUBMITTED'}
+                disabled={statusLoading || sheet?.status === 'SUBMITTED' || isAllOutlets}
                 className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -1008,7 +1018,7 @@ export default function AdminDailyBalanceSheet() {
             {isAdmin && sheet?.status === 'SUBMITTED' && (
               <button
                 onClick={handleLock}
-                disabled={statusLoading}
+                disabled={statusLoading || isAllOutlets}
                 className="flex items-center justify-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}

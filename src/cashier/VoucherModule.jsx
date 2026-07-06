@@ -21,13 +21,12 @@ const EXPENSE_CATEGORIES = [
   { value: 'OTHER', label: 'Other' },
 ];
 
-const APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
-// Fallback hardcoded approvers used when the backend endpoint fails or returns empty.
-
 export default function VoucherModule() {
+  const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
+
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
-  const [approverOptions, setApproverOptions] = useState([]);
+  const [approverOptions, setApproverOptions] = useState(CROSS_OUTLET_APPROVERS);
 
   const [paidToType, setPaidToType] = useState('STAFF');
   const [paidToSearch, setPaidToSearch] = useState('');
@@ -58,22 +57,20 @@ export default function VoucherModule() {
 
   const loadData = useCallback(async (date = summaryDate) => {
     try {
-      const [opts, narrations, summary, recent, approvers] = await Promise.all([
+      const [opts, narrations, summary, recent] = await Promise.all([
         apiFetch('/api/vouchers/paid-to-options'),
         apiFetch('/api/vouchers/narration-suggestions'),
         apiFetch(`/api/vouchers/today-summary?date=${date}`),
         apiFetch(`/api/vouchers?date=${date}&limit=10`),
-        apiFetch('/api/vouchers/approver-options').catch(() => []),
       ]);
       setPaidToOptions(opts || { staff: [] });
       setNarrationSuggestions(narrations || []);
       setTodaySummary(summary || null);
       setRecentVouchers(recent || []);
-      const approverNames = (approvers || []).map((a) => a.name).filter(Boolean);
-      setApproverOptions(approverNames.length > 0 ? approverNames : APPROVERS);
+      setApproverOptions(CROSS_OUTLET_APPROVERS);
     } catch (err) {
       console.error('[VoucherModule] Failed to load data:', err);
-      setApproverOptions(APPROVERS);
+      setApproverOptions(CROSS_OUTLET_APPROVERS);
     }
   }, [summaryDate]);
 
@@ -167,11 +164,16 @@ export default function VoucherModule() {
       const body = {
         paidToType,
         paidToName: paidToName.trim() || paidToSearch.trim(),
-        employeeId: paidToType === 'STAFF' ? (selectedEmployee?.employeeId || selectedEmployee?.id) : undefined,
+        employeeId: paidToType === 'STAFF'
+          ? (selectedEmployee?.id === 'NEW'
+              ? undefined
+              : (selectedEmployee?.employeeId || selectedEmployee?.id))
+          : undefined,
+        createEmployeeIfMissing: paidToType === 'STAFF' && selectedEmployee?.id === 'NEW',
         amount: parseFloat(amount),
         narration: narration.trim() || undefined,
         category: paidToType === 'STAFF' ? undefined : selectedCategory,
-        approvedByName: selectedApprover || undefined,
+        approvedByName: selectedApprover || approverSearch.trim() || undefined,
         idempotencyKey,
         voucherDate: summaryDate,
       };
@@ -398,8 +400,16 @@ export default function VoucherModule() {
                     ))}
                   </div>
                 )}
-                {filteredStaff.length === 0 && filteredCategories.length === 0 && (
-                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No staff or category found</p>
+                {paidToSearch.trim() && filteredStaff.length === 0 && (
+                  <div className="p-1 border-t border-gray-100">
+                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">New staff</p>
+                    <button
+                      onClick={() => handlePaidToSelect({ id: 'NEW', name: paidToSearch.trim(), role: 'NEW STAFF', type: 'STAFF' })}
+                      className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
+                    >
+                      Add as staff: {paidToSearch.trim()}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -480,7 +490,7 @@ export default function VoucherModule() {
                     </button>
                   ))
                 ) : (
-                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No approvers found</p>
+                  <p className="px-3 py-3 text-xs text-gray-400 text-center">No matching approver</p>
                 )}
               </div>
             )}
