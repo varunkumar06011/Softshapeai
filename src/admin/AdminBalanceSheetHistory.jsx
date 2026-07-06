@@ -3,6 +3,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Store, Loader2, Lock,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import { formatCurrency } from '../utils/formatCurrency';
 
 function getTodayIST() {
   const now = new Date();
@@ -61,8 +62,6 @@ export default function AdminBalanceSheetHistory({ onSelectDate }) {
     const d = new Date(dateStr + 'T00:00:00');
     return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
-
-  const formatCurrency = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
   const totalSales = (s) => {
     const ac = Number(s.acBarSaleOverride ?? s.acBarSaleComputed ?? 0);

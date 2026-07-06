@@ -7,6 +7,7 @@ import {
   Package, RefreshCw, Smartphone, Star, TrendingUp, Users,
 } from 'lucide-react';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { formatCurrency } from '../utils/formatCurrency';
 import { API_BASE, apiFetch } from '../services/apiConfig';
 import { getAuthHeaders } from '../services/apiConfig';
 import {
@@ -17,7 +18,7 @@ import { downloadPDF, downloadExcel } from './reportDownloads.js';
 
 function Money({ value }) {
   if (value == null) return '—';
-  return '₹' + Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  return formatCurrency(value, { maximumFractionDigits: 2 });
 }
 
 function StatCard({ label, value, sub, icon: Icon, color }) {
@@ -397,7 +398,7 @@ export default function OperationsDashboard({ dateFilter, outletId, onDownloadRe
                 <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), 'Revenue']} />
+                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => [formatCurrency(v), 'Revenue']} />
                 <Bar dataKey="revenue" fill="url(#odCatBarGrad)" radius={[8, 8, 0, 0]} barSize={32} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>

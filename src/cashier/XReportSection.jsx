@@ -263,7 +263,6 @@ export default function XReportSection() {
 
   const inputClass = "w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums";
   const labelClass = "text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1";
-  const readOnlyClass = `${inputClass} bg-gray-100 cursor-not-allowed text-gray-600`;
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -295,7 +294,7 @@ export default function XReportSection() {
 
         {!loading && (
           <div className="flex flex-col gap-4">
-            {/* Total Sale + auto Cash/Card breakdown + manual Tips */}
+            {/* Total Sale + manual Cash/Card/Tips entry */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <div className="flex justify-between items-center pb-2 border-b border-gray-200 mb-2">
                 <span className="text-sm font-black text-gray-700 uppercase tracking-wide">Total Sale</span>
@@ -303,13 +302,31 @@ export default function XReportSection() {
               </div>
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">From that:</p>
               <div className="flex flex-col gap-2 pl-2">
-                <div className="flex justify-between items-center py-1">
+                <div className="flex justify-between items-center py-1 gap-3">
                   <span className="text-sm font-bold text-gray-600">Cash</span>
-                  <span className={readOnlyClass + " w-32 md:w-40 text-right"}>₹{round2(Number(report.cashAmount || 0)).toFixed(2)}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={report.cashAmount === 0 ? '' : report.cashAmount}
+                    onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
                 </div>
-                <div className="flex justify-between items-center py-1">
+                <div className="flex justify-between items-center py-1 gap-3">
                   <span className="text-sm font-bold text-gray-600">Card</span>
-                  <span className={readOnlyClass + " w-32 md:w-40 text-right"}>₹{round2(Number(report.cardAmount || 0)).toFixed(2)}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={report.cardAmount === 0 ? '' : report.cardAmount}
+                    onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
                 </div>
                 <div className="flex justify-between items-center py-1 gap-3">
                   <span className="text-sm font-bold text-gray-600">Tips</span>

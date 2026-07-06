@@ -4,10 +4,10 @@ import {
   Search,
   Loader2,
   Check,
-  Printer,
   X,
   Filter,
   Download,
+  Plus,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 
@@ -22,6 +22,9 @@ export default function AdminVouchers() {
     type: '',
   });
   const [actionLoading, setActionLoading] = useState({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ paidToName: '', paidToType: 'MISCELLANEOUS', amount: '', narration: '', voucherDate: today });
+  const [creating, setCreating] = useState(false);
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
@@ -87,13 +90,39 @@ export default function AdminVouchers() {
     .filter((v) => v.status !== 'VOIDED')
     .reduce((sum, v) => sum + Number(v.amount), 0);
 
+  const handleCreate = async () => {
+    if (!createForm.paidToName.trim() || !createForm.amount) return;
+    setCreating(true);
+    try {
+      await apiFetch('/api/vouchers', {
+        method: 'POST',
+        body: JSON.stringify({
+          paidToName: createForm.paidToName.trim(),
+          paidToType: createForm.paidToType,
+          amount: parseFloat(createForm.amount),
+          narration: createForm.narration.trim(),
+          voucherDate: createForm.voucherDate,
+          category: createForm.paidToType,
+        }),
+      });
+      setCreateForm({ paidToName: '', paidToType: 'MISCELLANEOUS', amount: '', narration: '', voucherDate: today });
+      setShowCreateModal(false);
+      loadVouchers();
+    } catch (err) {
+      console.error('[AdminVouchers] Create failed:', err);
+      alert(err.message || 'Failed to create expenditure entry');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
           <Wallet size={22} className="text-[#E53935]" />
-          Vouchers
+          Expenditure
         </h2>
         <button
           onClick={handleExport}
@@ -105,9 +134,9 @@ export default function AdminVouchers() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-3">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Vouchers</p>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Entries</p>
           <p className="text-xl font-black text-gray-900">{vouchers.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-3">
@@ -117,6 +146,14 @@ export default function AdminVouchers() {
         <div className="bg-white rounded-xl border border-gray-200 p-3">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Voided</p>
           <p className="text-xl font-black text-red-600">{vouchers.filter((v) => v.status === 'VOIDED').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center justify-center">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 text-xs font-black uppercase text-[#E53935] hover:text-[#C62828]"
+          >
+            <Plus size={16} /> New Entry
+          </button>
         </div>
       </div>
 
@@ -242,14 +279,6 @@ export default function AdminVouchers() {
                             <X size={14} />
                           </button>
                         )}
-                        <button
-                          onClick={() => handleAction(v.id, 'print')}
-                          disabled={actionLoading[v.id]}
-                          title="Reprint"
-                          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
-                        >
-                          <Printer size={14} />
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -259,6 +288,91 @@ export default function AdminVouchers() {
           </div>
         )}
       </div>
+
+      {/* Create Expenditure Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-gray-900">New Expenditure</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-700">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-500">Paid To</label>
+                <input
+                  type="text"
+                  value={createForm.paidToName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, paidToName: e.target.value }))}
+                  placeholder="Recipient name"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Category</label>
+                <select
+                  value={createForm.paidToType}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, paidToType: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                >
+                  <option value="MISCELLANEOUS">Miscellaneous</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                  <option value="KITCHEN">Kitchen</option>
+                  <option value="ENTERTAINMENT">Entertainment</option>
+                  <option value="STAFF">Staff</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Amount (₹)</label>
+                <input
+                  type="number"
+                  value={createForm.amount}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, amount: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Date</label>
+                <input
+                  type="date"
+                  value={createForm.voucherDate}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, voucherDate: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Narration</label>
+                <textarea
+                  value={createForm.narration}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, narration: e.target.value }))}
+                  placeholder="Optional notes"
+                  rows={2}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#E53935]"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={creating || !createForm.paidToName.trim() || !createForm.amount}
+                className="px-4 py-2 rounded-lg bg-[#E53935] text-white text-sm font-black hover:bg-[#C62828] disabled:opacity-50"
+              >
+                {creating ? <Loader2 size={16} className="animate-spin" /> : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

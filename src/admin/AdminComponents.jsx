@@ -6984,9 +6984,11 @@ export function KitchenInventory() {
 
     const hasScaleColumn = header === 'S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE';
 
-    if (header !== 'S.NO,INGREDIENT,CATEGORY,PRICE' && !hasStockColumn && !hasScaleColumn) {
+    const hasReorderColumn = header === 'S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE,REORDER';
 
-      alert(`Invalid CSV format.\nExpected header: S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE\nGot: ${header}`);
+    if (header !== 'S.NO,INGREDIENT,CATEGORY,PRICE' && !hasStockColumn && !hasScaleColumn && !hasReorderColumn) {
+
+      alert(`Invalid CSV format.\nExpected header: S.NO,INGREDIENT,CATEGORY,PRICE,STOCK,SCALE,REORDER\nGot: ${header}`);
 
       return;
 
@@ -7010,7 +7012,7 @@ export function KitchenInventory() {
 
       if (cols.length < 4) { skipped++; continue; }
 
-      const [, rawIngredient, rawCategory, price, stock, rawScale] = cols.map(c => c.trim());
+      const [, rawIngredient, rawCategory, price, stock, rawScale, rawReorder] = cols.map(c => c.trim());
       const ingredient = toTitleCase(rawIngredient);
 
       if (!ingredient) { skipped++; continue; }
@@ -7021,9 +7023,16 @@ export function KitchenInventory() {
 
       const unit     = (rawScale    === 'N/A' || rawScale    === '' || rawScale    == null) ? '' : rawScale;
 
-      const currentStock = ((hasStockColumn || hasScaleColumn) && stock !== 'N/A' && stock !== '') ? parseFloat(stock) || 0 : 0;
+      const currentStock = ((hasStockColumn || hasScaleColumn || hasReorderColumn) && stock !== 'N/A' && stock !== '') ? parseFloat(stock) || 0 : 0;
 
-      rows.push({ ingredient, unit, prize, currentStock, category, rowNum: i + 1 });
+      let reorderLevel = 0;
+      if (hasReorderColumn && rawReorder !== undefined && rawReorder !== 'N/A' && rawReorder !== '') {
+        reorderLevel = parseFloat(rawReorder) || 0;
+      } else if (currentStock > 0) {
+        reorderLevel = Math.max(Math.round(currentStock * 0.15 * 100) / 100, 1);
+      }
+
+      rows.push({ ingredient, unit, prize, currentStock, category, reorderLevel, rowNum: i + 1 });
 
     }
 
@@ -7051,7 +7060,7 @@ export function KitchenInventory() {
 
       const batch = rows.slice(b, b + BATCH);
 
-      await Promise.all(batch.map(async ({ ingredient, unit, prize, currentStock, category, rowNum }) => {
+      await Promise.all(batch.map(async ({ ingredient, unit, prize, currentStock, category, reorderLevel, rowNum }) => {
 
         try {
 
@@ -7061,7 +7070,7 @@ export function KitchenInventory() {
 
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
-            body: JSON.stringify({ restaurantId, name: ingredient, unit, prize, currentStock, category, reorderLevel: 0 }),
+            body: JSON.stringify({ restaurantId, name: ingredient, unit, prize, currentStock, category, reorderLevel }),
 
           });
 
@@ -7449,9 +7458,15 @@ export function KitchenInventory() {
 
                 <option value="self">This Outlet</option>
 
-                <option value="combined">All Outlets (Combined)</option>
+                <option value="combined">All Outlets (Shared)</option>
 
               </select>
+
+              {outletFilter === 'combined' && (
+
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">Read-only</span>
+
+              )}
 
             </div>
 
@@ -7481,7 +7496,7 @@ export function KitchenInventory() {
 
               if (items.length === 0) return;
 
-              const headers = ['S.NO', 'INGREDIENT', 'CATEGORY', 'PRICE', 'STOCK', 'SCALE'];
+              const headers = ['S.NO', 'INGREDIENT', 'CATEGORY', 'PRICE', 'STOCK', 'SCALE', 'REORDER'];
 
               const rows = items.map((item, index) => {
 
@@ -7493,6 +7508,8 @@ export function KitchenInventory() {
 
                 const stockCell    = Number(item.currentStock || 0).toFixed(2);
 
+                const reorderCell  = Number(item.reorderLevel || 0).toFixed(2);
+
                 const categoryCell = (item.category && item.category.trim() !== '') ? item.category.trim() : 'N/A';
 
                 const safeName     = item.name.includes(',')         ? `"${item.name}"`     : item.name;
@@ -7501,7 +7518,7 @@ export function KitchenInventory() {
 
                 const safeCategory = categoryCell.includes(',')      ? `"${categoryCell}"` : categoryCell;
 
-                return [index + 1, safeName, safeCategory, priceCell, stockCell, safeScale].join(',');
+                return [index + 1, safeName, safeCategory, priceCell, stockCell, safeScale, reorderCell].join(',');
 
               });
 
@@ -12717,6 +12734,8 @@ export function Inventory() {
   const socket = useSocket(getCurrentRestaurantId());
 
   const [popup, setPopup] = useState(null);
+  const [outletFilter, setOutletFilter] = useState('self');
+  const [accessibleOutlets, setAccessibleOutlets] = useState([]);
 
 
 
@@ -12747,6 +12766,15 @@ export function Inventory() {
     setPopup({ message, type });
 
   };
+
+
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      if (raw) setAccessibleOutlets(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
 
 
 
@@ -12794,9 +12822,18 @@ export function Inventory() {
 
     try {
 
-      const data = await fetchBarInventory();
-
-      setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
+      if (outletFilter === 'combined') {
+        const res = await fetch(apiUrl(`/api/bar/inventory/combined?restaurantId=${getCurrentRestaurantId()}`), {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch combined inventory');
+        const data = await res.json();
+        setInventory(Array.isArray(data) ? data : []);
+      } else {
+        const data = await fetchBarInventory();
+        setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
+      }
 
     } catch (err) {
 
@@ -12812,7 +12849,7 @@ export function Inventory() {
 
     }
 
-  }, []);
+  }, [outletFilter]);
 
 
 
@@ -13488,7 +13525,7 @@ export function Inventory() {
 
 
 
-      <div className="flex gap-4">
+      <div className="flex gap-4 flex-wrap">
 
         <input
 
@@ -13500,9 +13537,35 @@ export function Inventory() {
 
           onChange={(e) => setSearchTerm(e.target.value)}
 
-          className="flex-1 px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none"
+          className="flex-1 min-w-[200px] px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none"
 
         />
+
+        {accessibleOutlets.length > 1 && (
+
+          <select
+
+            value={outletFilter}
+
+            onChange={(e) => setOutletFilter(e.target.value)}
+
+            className="px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm font-bold"
+
+          >
+
+            <option value="self">This Outlet</option>
+
+            <option value="combined">All Outlets (Summed)</option>
+
+          </select>
+
+        )}
+
+        {outletFilter === 'combined' && (
+
+          <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">Read-only</span>
+
+        )}
 
         <select
 

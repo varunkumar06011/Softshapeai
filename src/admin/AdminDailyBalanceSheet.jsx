@@ -279,6 +279,8 @@ export default function AdminDailyBalanceSheet() {
   const [logoBase64, setLogoBase64] = useState(null);
   const saveTimerRef = useRef(null);
   const dragItemRef = useRef(null);
+  const saveSeqRef = useRef(0);
+  const lastAppliedSeqRef = useRef(0);
 
   // Preload logo for PDF branding
   useEffect(() => {
@@ -361,16 +363,28 @@ export default function AdminDailyBalanceSheet() {
   const [adjustments, setAdjustments] = useState([]);
 
   useEffect(() => {
-    if (sheet) {
-      setOverrides({
-        openingBalance: Number(sheet.openingBalance) || 0,
-        acBarSaleOverride: sheet.acBarSaleOverride != null ? Number(sheet.acBarSaleOverride) : null,
-        nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : 0,
-        familyWingSaleOverride: sheet.familyWingSaleOverride != null ? Number(sheet.familyWingSaleOverride) : null,
-        parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : 0,
-        swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : 0,
-        zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : 0,
-      });
+    if (!sheet) return;
+
+    // Detect whether this sheet update came from our own save response
+    const isSaveResponse = sheet.__saveSeq !== undefined;
+    // Ignore stale save responses (a newer save was issued before this one resolved)
+    if (isSaveResponse && sheet.__saveSeq < saveSeqRef.current) {
+      return;
+    }
+    lastAppliedSeqRef.current = saveSeqRef.current;
+
+    setOverrides({
+      openingBalance: Number(sheet.openingBalance) || 0,
+      acBarSaleOverride: sheet.acBarSaleOverride != null ? Number(sheet.acBarSaleOverride) : null,
+      nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : 0,
+      familyWingSaleOverride: sheet.familyWingSaleOverride != null ? Number(sheet.familyWingSaleOverride) : null,
+      parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : 0,
+      swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : 0,
+      zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : 0,
+    });
+    // Only overwrite local adjustments from server data on fresh fetches
+    // (date change, initial load, external refresh) — not from our own save echoes.
+    if (!isSaveResponse) {
       setAdjustments(sheet.adjustments || []);
     }
   }, [sheet]);
@@ -407,6 +421,7 @@ export default function AdminDailyBalanceSheet() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       setSaving(true);
+      const thisSeq = ++saveSeqRef.current;
       try {
         const body = {
           openingBalance: overrides.openingBalance,
@@ -427,7 +442,10 @@ export default function AdminDailyBalanceSheet() {
           method: 'PUT',
           body: JSON.stringify(body),
         });
-        setSheet(updated);
+        // Only apply if no newer save has been issued since this one started
+        if (thisSeq === saveSeqRef.current) {
+          setSheet({ ...updated, __saveSeq: thisSeq });
+        }
       } catch (err) {
         console.error('[BalanceSheet] Save failed:', err);
       } finally {
@@ -753,6 +771,24 @@ export default function AdminDailyBalanceSheet() {
           {selectedDate === today && (
             <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[10px] font-bold text-[#B71C1C]">TODAY</span>
           )}
+          <div className="flex items-center gap-1 ml-1">
+            <input
+              type="month"
+              value={selectedDate.slice(0, 7)}
+              onChange={(e) => {
+                const ym = e.target.value;
+                if (!ym) return;
+                const firstOfMonth = ym + '-01';
+                const todayIst = getTodayIST();
+                if (firstOfMonth > todayIst) return;
+                const lastDay = new Date(parseInt(ym.slice(0, 4)), parseInt(ym.slice(5, 7)), 0).getDate();
+                const lastOfMonth = ym + '-' + String(lastDay).padStart(2, '0');
+                setSelectedDate(lastOfMonth > todayIst ? todayIst : lastOfMonth);
+              }}
+              max={today.slice(0, 7)}
+              className="rounded-lg border border-gray-200 px-2 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

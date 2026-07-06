@@ -32,6 +32,7 @@ import {
   Sparkles,
   AlertCircle,
   Store,
+  Users,
   ChevronDown,
   CheckCircle,
   ArrowRight,
@@ -76,6 +77,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   const [spireListening, setSpireListening] = useState(false);
   const [dishModalOpen, setDishModalOpen] = useState(false);
   const [showOutletSwitcher, setShowOutletSwitcher] = useState(false);
+  const [hrExpanded, setHrExpanded] = useState(false);
   const spireMessagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -447,11 +449,32 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
           </div>
 
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-            {visibleRoutes.map((r) => (
-              <button key={r.key} onClick={() => { navigate(`/admin/dashboard/${r.key}`); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === r.key ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
-                <r.icon size={16} /> {r.label}
-              </button>
-            ))}
+            {(() => {
+              const hrRoutes = visibleRoutes.filter(r => r.group === 'hr');
+              const nonHrRoutes = visibleRoutes.filter(r => !r.group);
+              const isHrActive = hrRoutes.some(r => r.key === page);
+
+              return (<>
+                {nonHrRoutes.map((r) => (
+                  <button key={r.key} onClick={() => { navigate(`/admin/dashboard/${r.key}`); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === r.key ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
+                    <r.icon size={16} /> {r.label}
+                  </button>
+                ))}
+                {hrRoutes.length > 0 && (
+                  <>
+                    <button onClick={() => setHrExpanded(prev => !prev)} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${isHrActive ? "bg-white/10" : "text-white hover:bg-white/10"}`}>
+                      <Users size={16} /> HR
+                      <ChevronDown size={14} className={`ml-auto transition-transform ${hrExpanded || isHrActive ? "rotate-180" : ""}`} />
+                    </button>
+                    {(hrExpanded || isHrActive) && hrRoutes.map((r) => (
+                      <button key={r.key} onClick={() => { navigate(`/admin/dashboard/${r.key}`); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm pl-8 ${page === r.key ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
+                        <r.icon size={14} /> {r.label}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </>);
+            })()}
           </div>
         </div>
 

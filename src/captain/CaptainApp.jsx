@@ -486,7 +486,7 @@ export default function CaptainApp({ onLogout }) {
     shouldSkipTableUpdate: (t) => isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current),
   });
 
-  const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading } = useMenuSync();
+  const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading, refreshMenu } = useMenuSync();
 
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
 
@@ -1154,8 +1154,16 @@ export default function CaptainApp({ onLogout }) {
 
   const categories = useMemo(() => {
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
-    return ['All', 'Today Special', ...Array.from(cats)].filter(Boolean);
-  }, [outletFilteredMenuItems]);
+    const hasSpecials = todaySpecials.length > 0;
+    return ['All', ...(hasSpecials ? ['Today Special'] : []), ...Array.from(cats)].filter(Boolean);
+  }, [outletFilteredMenuItems, todaySpecials]);
+
+  // If Today Special was selected but specials are no longer available, reset to All
+  useEffect(() => {
+    if (activeCategory === 'Today Special' && todaySpecials.length === 0) {
+      setActiveCategory('All');
+    }
+  }, [activeCategory, todaySpecials]);
 
 
 
@@ -1463,6 +1471,8 @@ export default function CaptainApp({ onLogout }) {
       }
       refetchRestaurantTables();
       refetchBarTables();
+      // Also refresh menu to catch any specials pushed while socket was suspended
+      refreshMenu();
     };
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
@@ -1470,7 +1480,7 @@ export default function CaptainApp({ onLogout }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
     };
-  }, [refetchRestaurantTables, refetchBarTables]);
+  }, [refetchRestaurantTables, refetchBarTables, refreshMenu]);
 
   useEffect(() => {
     // Show the Live Sync indicator whenever the global menu broadcasts an update
@@ -4588,11 +4598,19 @@ export default function CaptainApp({ onLogout }) {
 
         <div className="text-4xl mb-3">🔍</div>
 
-        <p className="text-sm font-black text-gray-700 uppercase tracking-widest">No Exact Search Found</p>
+        <p className="text-sm font-black text-gray-700 uppercase tracking-widest">
+
+          {activeCategory === 'Today Special' ? 'No Active Specials' : 'No Exact Search Found'}
+
+        </p>
 
         <p className="text-xs font-bold text-gray-400 mt-1">
 
-          {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'No items in this category.'}
+          {activeCategory === 'Today Special'
+
+            ? 'No today specials are currently active. Check back later or contact admin.'
+
+            : searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'No items in this category.'}
 
         </p>
 
