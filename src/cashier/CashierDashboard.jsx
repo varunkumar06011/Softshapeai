@@ -55,7 +55,7 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { authService } from '../services/authService';
 import ItemAnalytics from './ItemAnalytics';
-import VoucherModule from './VoucherModule';
+import ExpenditureModule from './ExpenditureModule';
 import XReportSection from './XReportSection';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders, apiFetch } from '../services/apiConfig';
@@ -567,7 +567,6 @@ const CashierDashboard = ({ onLogout }) => {
   const lastAnyItemAddedRef = useRef(0); // global 900ms cooldown across all item adds
   const lsWriteTimerRef = useRef(null);
   const lastFetchUpdateRef = useRef({ backendId: null, ts: 0 }); // guards selectedTable against stale activeTables sync
-  const tableBillCacheRef = useRef(new Map()); // stable bill cache to prevent table view flickering
 
   function shallowEqualSelectedTable(prev, next) {
     if (!prev || !next) return prev === next;
@@ -580,22 +579,6 @@ const CashierDashboard = ({ onLogout }) => {
       (prev.kotHistory?.length ?? 0) === (next.kotHistory?.length ?? 0)
     );
   }
-
-  const restaurantConfig = useMemo(() => getRestaurantConfig(), []);
-
-  // Stable bill calculation — caches per-table bill to prevent flickering in table view.
-  // Only recalculates when billable items actually change (by signature), not on every re-render.
-  const getStableTableBill = useCallback((table) => {
-    if (!table) return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0 };
-    const items = getBillableItems(table);
-    const sig = items.map(i => `${i.id ?? i.n}:${i.q ?? i.quantity}:${i.p ?? i.price}`).join('|');
-    const cacheKey = String(table.backendId ?? table.id ?? table.number ?? '');
-    const cached = tableBillCacheRef.current.get(cacheKey);
-    if (cached && cached.sig === sig) return cached.bill;
-    const bill = calculateTableBill(table, restaurantConfig);
-    tableBillCacheRef.current.set(cacheKey, { sig, bill });
-    return bill;
-  }, [restaurantConfig]);
 
   // Helper: namespaced cart key so tables never bleed into each other
   const getCartStorageKey = (table) => {
@@ -647,6 +630,7 @@ const CashierDashboard = ({ onLogout }) => {
       : tables;
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
+  const restaurantConfig = useMemo(() => getRestaurantConfig(), []);
 
   // Refetch sections when the active restaurant/outlet changes
   useEffect(() => {
@@ -901,8 +885,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnPage, setTxnPage] = useState(1);
   const [activeVenueFilter, setActiveVenueFilter] = useState('all');
 
-  // Voucher summary for the currently selected dashboard date (used for Vouchers + Balance tiles)
-  const [voucherSummary, setVoucherSummary] = useState({ totalAmount: 0, count: 0 });
+  // Expenditure summary for the currently selected dashboard date (used for Expenditures + Final Amount tiles)
+  const [expenditureSummary, setExpenditureSummary] = useState({ totalAmount: 0, count: 0 });
 
   function formatBillNumber(txn) {
     // Bill No column: prefer billNumber ("1", "2"...), fall back to plain txnNumber (no TXN- prefix)
@@ -913,18 +897,18 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [txnInitialLoaded, setTxnInitialLoaded] = useState(false);
 
-  // Load voucher total for the same date so the dashboard can show Vouchers + Balance tiles
-  const loadVoucherSummary = useCallback(async (dateParam) => {
+  // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles
+  const loadExpenditureSummary = useCallback(async (dateParam) => {
     if (!dateParam) {
-      setVoucherSummary({ totalAmount: 0, count: 0 });
+      setExpenditureSummary({ totalAmount: 0, count: 0 });
       return;
     }
     try {
-      const summary = await apiFetch(`/api/vouchers/today-summary?date=${dateParam}`);
-      setVoucherSummary(summary || { totalAmount: 0, count: 0 });
+      const summary = await apiFetch(`/api/expenditures/today-summary?date=${dateParam}`);
+      setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
     } catch (err) {
-      console.error('[VoucherSummary] Failed to load:', err);
-      setVoucherSummary({ totalAmount: 0, count: 0 });
+      console.error('[ExpenditureSummary] Failed to load:', err);
+      setExpenditureSummary({ totalAmount: 0, count: 0 });
     }
   }, []);
 
@@ -1118,8 +1102,8 @@ const CashierDashboard = ({ onLogout }) => {
       });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
 
-      // Load voucher total for the same date so the dashboard can show Vouchers + Balance tiles
-      loadVoucherSummary(dateParam);
+      // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles
+      loadExpenditureSummary(dateParam);
 
       // Only cache today's data + add version stamp
       if (filter === 'today') {
@@ -1154,7 +1138,7 @@ const CashierDashboard = ({ onLogout }) => {
         setTxnsLoading(false);
       }
     }
-  }, [activeOutlet, txnCustomDate, txnInitialLoaded, loadVoucherSummary]);
+  }, [activeOutlet, txnCustomDate, txnInitialLoaded, loadExpenditureSummary]);
 
   // Venue filter sections — sections filtered by current outlet, for venue filter pills
   const venueFilterSections = useMemo(() => {
@@ -1991,7 +1975,7 @@ const CashierDashboard = ({ onLogout }) => {
       .filter((table) => table.status && table.status !== 'Free')
       .map((table) => {
         const items = getBillableItems(table);
-        const bill = getStableTableBill(table);
+        const bill = calculateTableBill(table, restaurantConfig);
         return {
           id: `T${table.id}`,
           type: 'Dine-In',
@@ -2139,22 +2123,22 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   // Total Sales = sum of grandTotal (with GST, after discount — the final bill amount)
-  // Voucher Amount = total non-voided vouchers for the selected dashboard date
-  // Balance = Total Sales − Expenditure (cashier-only "X Report")
+  // Expenditure Amount = total non-voided expenditures for the selected dashboard date
+  // Final Amount = Total Sales − Expenditure Amount (cashier-only "X Report")
   // These use filteredTransactions so they respect the active date/source/method filters
   const dashboardTotalSales = useMemo(() => {
     return filteredTransactions
       .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
   }, [filteredTransactions]);
 
-  // Voucher + balance shown only on the cashier dashboard
-  const dashboardVoucherAmount = useMemo(() => {
-    return Number(voucherSummary?.totalAmount || 0);
-  }, [voucherSummary]);
+  // Expenditure + final amount shown only on the cashier dashboard
+  const dashboardExpenditureAmount = useMemo(() => {
+    return Number(expenditureSummary?.totalAmount || 0);
+  }, [expenditureSummary]);
 
-  const dashboardBalanceAmount = useMemo(() => {
-    return dashboardTotalSales - dashboardVoucherAmount;
-  }, [dashboardTotalSales, dashboardVoucherAmount]);
+  const dashboardFinalAmount = useMemo(() => {
+    return dashboardTotalSales - dashboardExpenditureAmount;
+  }, [dashboardTotalSales, dashboardExpenditureAmount]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -3789,8 +3773,6 @@ const CashierDashboard = ({ onLogout }) => {
     setSelectedOrder(null);
     lastConfirmedItemsRef.current = [];
     setExpandedNoteItemId(null);
-    setRawDiscountInput('');
-    setDiscountMode('percent');
 
     if (!table.status || table.status === 'Free' || table.status === 'AVAILABLE') {
       setActiveTab('pos');
@@ -4452,8 +4434,8 @@ const CashierDashboard = ({ onLogout }) => {
 
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(2)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
-    { label: "Balance", value: `₹${Number(dashboardBalanceAmount).toFixed(2)}`, change: "Total Sale − Expenditure", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Expenditures", value: `₹${Number(dashboardExpenditureAmount).toFixed(2)}`, change: `${expenditureSummary?.count || 0} expenditures ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
+    { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Expenditures", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
@@ -4480,7 +4462,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'tables', label: 'Tables', icon: Table2 },
             { id: 'history', label: 'Past Transactions', icon: History },
             { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
-            { id: 'vouchers', label: 'Vouchers', icon: Receipt },
+            { id: 'vouchers', label: 'Expenditures', icon: Receipt },
             { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
           ].map((item) => (
@@ -4688,7 +4670,7 @@ const CashierDashboard = ({ onLogout }) => {
                             .map((table, i) => {
                               const isWaitingBill = table.status === 'Waiting Bill';
                               const isPreparing = table.status === 'Preparing';
-                              const bill = getStableTableBill(table);
+                              const bill = calculateTableBill(table, restaurantConfig);
                               const billAmt = bill?.subtotal > 0
                                 ? bill.subtotal
                                 : Math.max(
@@ -4997,7 +4979,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     <span className="text-2xl font-black">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
                                     <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
                                     {!isFree && (
-                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{getStableTableBill(table).grandTotal}</span>
+                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table, restaurantConfig).grandTotal}</span>
                                     )}
                                   </div>
                                 );
@@ -5369,7 +5351,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'vouchers' && (
-                      <VoucherModule />
+                      <ExpenditureModule />
                     )}
 
                     {activeTab === 'xreport' && (

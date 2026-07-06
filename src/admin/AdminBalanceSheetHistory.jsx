@@ -123,7 +123,7 @@ export default function AdminBalanceSheetHistory({ onSelectDate }) {
                 <th className="px-3 py-2">Date</th>
                 {outletId === 'all' && <th className="px-3 py-2">Outlet</th>}
                 <th className="px-3 py-2 text-right">Total Sales</th>
-                <th className="px-3 py-2 text-right">Vouchers</th>
+                <th className="px-3 py-2 text-right">Expenditures</th>
                 <th className="px-3 py-2 text-right">Closing Balance</th>
                 <th className="px-3 py-2 text-center">Status</th>
               </tr>
@@ -138,7 +138,7 @@ export default function AdminBalanceSheetHistory({ onSelectDate }) {
                   <td className="px-3 py-2 font-bold text-gray-800">{formatDate(s.reportDate)}</td>
                   {outletId === 'all' && <td className="px-3 py-2 text-gray-600">{s.outletName || '—'}</td>}
                   <td className="px-3 py-2 text-right font-bold text-gray-800">{formatCurrency(totalSales(s))}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(s.totalVouchers)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(s.totalExpenditures)}</td>
                   <td className="px-3 py-2 text-right font-black text-gray-900">{formatCurrency(s.closingBalance)}</td>
                   <td className="px-3 py-2 text-center">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${

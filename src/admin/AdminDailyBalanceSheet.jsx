@@ -17,18 +17,18 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function calculateBalance(sales, totalVouchers, adjustments) {
+function calculateBalance(sales, totalExpenditures, adjustments) {
   const totalSales = round2(sales.acBar) + round2(sales.nonAcBar) + round2(sales.familyWing) + round2(sales.parcel) + round2(sales.swiggy) + round2(sales.zomato);
   const afterSales = round2(totalSales);
-  const afterVouchers = round2(afterSales - totalVouchers);
+  const afterExpenditures = round2(afterSales - totalExpenditures);
 
   const sorted = [...adjustments].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const steps = [
     { label: '+ Total Sales', value: afterSales },
-    { label: '- Vouchers', value: afterVouchers },
+    { label: '- Expenditures', value: afterExpenditures },
   ];
 
-  let running = afterVouchers;
+  let running = afterExpenditures;
   for (const adj of sorted) {
     const amt = round2(Number(adj.amount) || 0);
     if (adj.sign === 'PLUS') running = round2(running + amt);
@@ -36,7 +36,7 @@ function calculateBalance(sales, totalVouchers, adjustments) {
     steps.push({ label: `${adj.sign === 'PLUS' ? '+' : '−'} ${adj.label}`, value: running });
   }
 
-  return { afterSales, afterVouchers, closingBalance: running, steps };
+  return { afterSales, afterExpenditures, closingBalance: running, steps };
 }
 
 // ── Helper: get today's date in IST ───────────────────────────────────────────
@@ -268,9 +268,9 @@ export default function AdminDailyBalanceSheet() {
     return () => clearInterval(timer);
   }, []);
   const [sheet, setSheet] = useState(null);
-  const [vouchers, setVouchers] = useState([]);
+  const [expenditures, setExpenditures] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [vouchersLoading, setVouchersLoading] = useState(false);
+  const [expendituresLoading, setExpendituresLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showAddAdj, setShowAddAdj] = useState(false);
@@ -331,22 +331,22 @@ export default function AdminDailyBalanceSheet() {
     }
   }, [selectedDate, outletId]);
 
-  // ── Load vouchers for the date ─────────────────────────────────────────────
-  const loadVouchers = useCallback(async () => {
-    setVouchersLoading(true);
+  // ── Load expenditures for the date ─────────────────────────────────────────
+  const loadExpenditures = useCallback(async () => {
+    setExpendituresLoading(true);
     try {
       const params = new URLSearchParams({ date: selectedDate, limit: '500', outletId });
-      const data = await apiFetch(`/api/vouchers?${params.toString()}`);
-      setVouchers(data || []);
+      const data = await apiFetch(`/api/expenditures?${params.toString()}`);
+      setExpenditures(data || []);
     } catch {
-      setVouchers([]);
+      setExpenditures([]);
     } finally {
-      setVouchersLoading(false);
+      setExpendituresLoading(false);
     }
   }, [selectedDate, outletId]);
 
   useEffect(() => { loadSheet(); }, [loadSheet]);
-  useEffect(() => { loadVouchers(); }, [loadVouchers]);
+  useEffect(() => { loadExpenditures(); }, [loadExpenditures]);
 
   // ── Local state mirrors for editable fields ────────────────────────────────
   const [overrides, setOverrides] = useState({
@@ -394,12 +394,12 @@ export default function AdminDailyBalanceSheet() {
     computedSales.zomato
   );
 
-  const totalVouchers = Number(sheet?.totalVouchers) || 0;
+  const totalExpenditures = Number(sheet?.totalExpenditures) || 0;
 
   // ── Live balance calculation ───────────────────────────────────────────────
   const balanceCalc = useMemo(() => {
-    return calculateBalance(computedSales, totalVouchers, adjustments);
-  }, [computedSales, totalVouchers, adjustments]);
+    return calculateBalance(computedSales, totalExpenditures, adjustments);
+  }, [computedSales, totalExpenditures, adjustments]);
 
   // ── Debounced autosave ─────────────────────────────────────────────────────
   const triggerSave = useCallback(() => {
@@ -525,21 +525,21 @@ export default function AdminDailyBalanceSheet() {
     finally { setStatusLoading(false); }
   };
 
-  // ── Voucher grouping ───────────────────────────────────────────────────────
-  const voucherGroups = useMemo(() => {
+  // ── Expenditure grouping ──────────────────────────────────────────────────
+  const expenditureGroups = useMemo(() => {
     const groups = {};
-    for (const v of vouchers) {
+    for (const v of expenditures) {
       if (v.status === 'VOIDED') continue;
       const cat = v.category || v.paidToType || 'Other';
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(v);
     }
     return groups;
-  }, [vouchers]);
+  }, [expenditures]);
 
-  const voucherSubtotal = useMemo(() => {
-    return vouchers.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
-  }, [vouchers]);
+  const expenditureSubtotal = useMemo(() => {
+    return expenditures.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
+  }, [expenditures]);
 
   // ── Generate PDF in admin panel theme ────────────────────────────────────────
   const generateBalanceSheetPDF = useCallback((logoDataUrl) => {
@@ -607,22 +607,21 @@ export default function AdminDailyBalanceSheet() {
     });
     y = (doc.lastAutoTable?.finalY || y) + 8;
 
-    // Vouchers
-    if (vouchers.length > 0) {
+    // Expenditures
+    if (expenditures.length > 0) {
       doc.setFontSize(13);
       doc.setFont('helvetica', 'bold');
-      doc.text('Vouchers', margin, y);
+      doc.text('Expenditures', margin, y);
       y += 6;
 
-      const voucherRows = Object.entries(voucherGroups).map(([cat, vlist]) => [
+      const expenditureRows = Object.entries(expenditureGroups).map(([cat, vlist]) => [
         cat,
         `₹${vlist.reduce((s, v) => s + Number(v.amount), 0).toLocaleString('en-IN')}`,
       ]);
-
       doc.autoTable({
         startY: y,
         head: [['Category', 'Amount']],
-        body: voucherRows,
+        body: expenditureRows,
         theme: 'grid',
         headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
         styles: { fontSize: 10, cellPadding: 2 },
@@ -676,7 +675,7 @@ export default function AdminDailyBalanceSheet() {
     doc.text('Softshape AI can make mistakes. Please cross-check important information before relying on it.', margin, y + 5);
 
     return doc;
-  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, vouchers.length, voucherGroups, adjustments, balanceCalc.closingBalance]);
+  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, expenditures.length, expenditureGroups, adjustments, balanceCalc.closingBalance]);
 
   // ── WhatsApp share: generate PDF + open chat with VGrand admin ───────────────
   const handleWhatsAppShare = async () => {
@@ -865,30 +864,30 @@ export default function AdminDailyBalanceSheet() {
             </span>
           </div>
           <div className="mt-1 text-xs text-gray-500">
-            Vouchers (₹{voucherSubtotal.toLocaleString('en-IN')}) are deducted automatically from Total Sales in the running total below.
+            Expenditures (₹{expenditureSubtotal.toLocaleString('en-IN')}) are deducted automatically from Total Sales in the running total below.
           </div>
         </div>
       </div>
 
-      {/* ── Vouchers section ──────────────────────────────────────────────── */}
+      {/* ── Expenditures section ──────────────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-black text-gray-800">Vouchers</h3>
+          <h3 className="text-sm font-black text-gray-800">Expenditures</h3>
           <span className="text-sm font-bold text-gray-500">
-            Total: ₹{voucherSubtotal.toLocaleString('en-IN')}
+            Total: ₹{expenditureSubtotal.toLocaleString('en-IN')}
           </span>
         </div>
-        {vouchersLoading ? (
+        {expendituresLoading ? (
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Loader2 size={14} className="animate-spin" /> Loading vouchers...
+            <Loader2 size={14} className="animate-spin" /> Loading expenditures...
           </div>
-        ) : Object.keys(voucherGroups).length === 0 ? (
+        ) : Object.keys(expenditureGroups).length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
-            No vouchers for this date
+            No expenditures for this date
           </div>
         ) : (
           <div className="space-y-2">
-            {Object.entries(voucherGroups).map(([cat, vlist]) => (
+            {Object.entries(expenditureGroups).map(([cat, vlist]) => (
               <div key={cat} className="rounded-lg border border-gray-200 p-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-bold text-gray-600">{cat}</span>
@@ -900,7 +899,7 @@ export default function AdminDailyBalanceSheet() {
                   {vlist.map((v) => (
                     <div key={v.id} className="flex items-center justify-between text-xs text-gray-600">
                       <span>
-                        {v.voucherNo}. {v.paidToName}
+                        {v.expenditureNo}. {v.paidToName}
                         {v.narration ? ` — ${v.narration}` : ''}
                       </span>
                       <span>₹{Number(v.amount).toLocaleString('en-IN')}</span>

@@ -25,11 +25,6 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function formatCurrency(value) {
-  const amount = round2(Number(value || 0));
-  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
 export default function XReportSection() {
   const { user, restaurant } = useAuth();
   const [reportDate, setReportDate] = useState(getTodayDate());
@@ -37,11 +32,11 @@ export default function XReportSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [savedMsg, setSavedMsg] = useState(null);
+  const [expenditures, setExpenditures] = useState([]);
 
   const [report, setReport] = useState({
     totalSales: 0,
-    voucherAmount: 0,
-    parcelCounterSale: 0,
+    expenditureAmount: 0,
     cardAmount: 0,
     cashAmount: 0,
     tipsAmount: 0,
@@ -53,25 +48,21 @@ export default function XReportSection() {
     notes10: 0,
   });
 
-  const [vouchers, setVouchers] = useState([]);
-  const [vouchersLoading, setVouchersLoading] = useState(false);
-  const [vouchersError, setVouchersError] = useState(null);
-
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  const expenditureTotal = round2(Number(report.voucherAmount || 0));
-  const balanceAmount = round2(Number(report.totalSales || 0) - expenditureTotal);
-  const expectedCash = round2(Number(report.cashAmount || 0));
-  const cashVariance = round2(cashFromNotes - expectedCash);
+  // Balance = Total Sale - Expenditure (Total)
+  const finalAmount = round2(Number(report.totalSales) - Number(report.expenditureAmount || 0));
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch(`/api/xreports/${date}`);
+      const [data, expenditures] = await Promise.all([
+        apiFetch(`/api/xreports/${date}`),
+        apiFetch(`/api/expenditures?date=${date}`),
+      ]);
       setReport({
         totalSales: Number(data.totalSales) || 0,
-        voucherAmount: Number(data.voucherAmount) || 0,
-        parcelCounterSale: Number(data.parcelCounterSale) || 0,
+        expenditureAmount: Number(data.expenditureAmount) || 0,
         cardAmount: Number(data.cardAmount) || 0,
         cashAmount: Number(data.cashAmount) || 0,
         tipsAmount: Number(data.tipsAmount) || 0,
@@ -82,6 +73,7 @@ export default function XReportSection() {
         notes20: data.notes20 || 0,
         notes10: data.notes10 || 0,
       });
+      setExpenditures((vouchers || []).filter((v) => v.status !== 'VOIDED'));
     } catch (err) {
       setError(err.message || 'Failed to load X Report');
     } finally {
@@ -89,26 +81,9 @@ export default function XReportSection() {
     }
   }, []);
 
-  const loadVouchers = useCallback(async (date) => {
-    setVouchersLoading(true);
-    setVouchersError(null);
-    try {
-      const params = new URLSearchParams({ date, limit: '300' });
-      const data = await apiFetch(`/api/vouchers?${params.toString()}`);
-      const filtered = (data || []).filter((voucher) => voucher.status !== 'VOIDED');
-      setVouchers(filtered);
-    } catch (err) {
-      setVouchersError(err.message || 'Failed to load expenditure vouchers');
-      setVouchers([]);
-    } finally {
-      setVouchersLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     loadReport(reportDate);
-    loadVouchers(reportDate);
-  }, [reportDate, loadReport, loadVouchers]);
+  }, [reportDate, loadReport]);
 
   const handleFieldChange = (field, value) => {
     setReport(prev => ({ ...prev, [field]: value }));
@@ -124,8 +99,9 @@ export default function XReportSection() {
         body: JSON.stringify({
           reportDate,
           totalSales: Number(report.totalSales),
-          voucherAmount: Number(report.voucherAmount || 0),
-          parcelCounterSale: Number(report.parcelCounterSale || 0),
+          expenditureAmount: Number(report.expenditureAmount || 0),
+          cardAmount: Number(report.cardAmount || 0),
+          cashAmount: Number(report.cashAmount || 0),
           tipsAmount: Number(report.tipsAmount || 0),
           notes500: Number(report.notes500 || 0),
           notes200: Number(report.notes200 || 0),
@@ -149,15 +125,8 @@ export default function XReportSection() {
     const W = 32;
     const center = (s) => ' '.repeat(Math.max(0, Math.floor((W - s.length) / 2))) + s;
     const line = '─'.repeat(W);
-    const row = (label, value) => `${label}${String(value).padStart(Math.max(1, W - label.length))}`;
-    const voucherRow = (paidTo, type, amount) => {
-      const name = (paidTo || '—').toString().slice(0, 12).padEnd(12, ' ');
-      const typeLabel = (type || '').toString().slice(0, 8).padEnd(8, ' ');
-      const amountStr = formatCurrency(amount);
-      const left = `  ${name}${typeLabel}`;
-      return `${left}${amountStr.padStart(Math.max(1, W - left.length))}`;
-    };
-    const denomLine = (label, qty, amount) => `  ${label} × ${qty}${String('₹' + amount.toFixed(0)).padStart(Math.max(1, W - label.length - String(qty).length - 5))}`;
+    const row = (label, value) => `${label}${String(value).padStart(W - label.length)}`;
+    const count = (label, qty, amount) => `  ${label} × ${qty}${String('₹' + amount.toFixed(0)).padStart(W - label.length - qty.length - 5)}`;
 
     const restaurantName = restaurant?.name || '';
     const cashierName = user?.name || '';
@@ -168,37 +137,35 @@ export default function XReportSection() {
     lines.push(center(`Date: ${reportDate}`));
     if (cashierName) lines.push(center(`Cashier: ${cashierName}`));
     lines.push(line);
-    lines.push(row('Total Sale', formatCurrency(report.totalSales)));
-    lines.push(row('  Cash', formatCurrency(report.cashAmount)));
-    lines.push(row('  Card', formatCurrency(report.cardAmount)));
-    lines.push(row('  Tips', formatCurrency(report.tipsAmount)));
+    lines.push(row('Total Sale', '₹' + round2(Number(report.totalSales)).toFixed(2)));
+    lines.push(row('  Cash', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
+    lines.push(row('  Card', '₹' + round2(Number(report.cardAmount || 0)).toFixed(2)));
+    lines.push(row('  Tips', '₹' + round2(Number(report.tipsAmount || 0)).toFixed(2)));
     lines.push(line);
-    lines.push(row('Expenditure', formatCurrency(expenditureTotal)));
-    if (vouchers.length > 0) {
-      lines.push('  Paid To      Type      Amount');
-      vouchers.forEach((voucher) => {
-        const paidTo = voucher.paidToName || voucher.employee?.name || '—';
-        const type = voucher.paidToType === 'STAFF' ? 'Staff' : (voucher.category || 'Other');
-        lines.push(voucherRow(paidTo, type, voucher.amount));
+    lines.push(row('Expenditure (Total)', '₹' + round2(Number(report.expenditureAmount || 0)).toFixed(2)));
+    if (expenditures.length > 0) {
+      lines.push(`  ${'Paid To'.padEnd(14)}${'Type'.padEnd(9)}Amt`);
+      expenditures.forEach((v) => {
+        const name = (v.paidToName || '').slice(0, 14).padEnd(14);
+        const type = (v.category || v.paidToType || '').slice(0, 9).padEnd(9);
+        const amt = ('₹' + Number(v.amount).toFixed(2)).padStart(W - 2 - 14 - 9);
+        lines.push(`  ${name}${type}${amt}`);
       });
-    } else {
-      lines.push('  (No vouchers recorded)');
     }
     lines.push(line);
     lines.push(center('BALANCE'));
-    lines.push(center(formatCurrency(balanceAmount)));
+    lines.push(center('₹' + finalAmount.toFixed(2)));
+    lines.push(center('(Total Sale − Expenditure)'));
     lines.push(line);
     lines.push('Denomination breakdown:');
     DENOMINATIONS.forEach(d => {
       const qty = report[d.key] || 0;
       if (qty > 0) {
-        lines.push(denomLine(d.label, qty, qty * d.value));
+        lines.push(count(d.label, qty, qty * d.value));
       }
     });
     lines.push(line);
-    lines.push(row('Cash from Notes', formatCurrency(cashFromNotes)));
-    lines.push(row('Expected Cash', formatCurrency(expectedCash)));
-    lines.push(row('Variance', formatCurrency(cashVariance)));
+    lines.push(row('Cash from Notes', '₹' + round2(cashFromNotes).toFixed(2)));
     lines.push(line);
     lines.push(center('*** End of Report ***'));
     lines.push('\n\n\n');
@@ -210,15 +177,18 @@ export default function XReportSection() {
     cashierName: user?.name || '',
     reportDate,
     totalSales: round2(Number(report.totalSales)),
-    cashAmount: expectedCash,
     cardAmount: round2(Number(report.cardAmount || 0)),
+    cashAmount: round2(Number(report.cashAmount || 0)),
     tipsAmount: round2(Number(report.tipsAmount || 0)),
-    expenditureTotal,
-    balanceAmount,
-    vouchers: vouchers.map((voucher) => ({
-      paidTo: voucher.paidToName || voucher.employee?.name || '—',
-      type: voucher.paidToType === 'STAFF' ? 'Staff' : (voucher.category || 'Other'),
-      amount: Number(voucher.amount) || 0,
+    expenditureAmount: round2(Number(report.expenditureAmount || 0)),
+    finalAmount,
+    expenditures: expenditures.map((v) => ({
+      paidToName: v.paidToName,
+      paidToType: v.paidToType,
+      category: v.category,
+      narration: v.narration,
+      approvedByName: v.approvedByName || v.approvedBy?.name || null,
+      amount: Number(v.amount),
     })),
     denominations: DENOMINATIONS.map(d => ({
       label: d.label,
@@ -226,8 +196,6 @@ export default function XReportSection() {
       amount: (report[d.key] || 0) * d.value,
     })),
     cashFromNotes: round2(cashFromNotes),
-    expectedCash,
-    cashVariance,
   });
 
   const handlePrint = async () => {
@@ -317,103 +285,82 @@ export default function XReportSection() {
 
         {!loading && (
           <div className="flex flex-col gap-4">
-            {/* Total Sale */}
+            {/* Total Sale + auto Cash/Card breakdown + manual Tips */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-1">Total Sale</p>
-                  <p className="text-xs text-gray-500">Auto-computed from todays paid bills</p>
-                </div>
-                <div className="text-3xl font-black text-gray-900 tabular-nums">{formatCurrency(report.totalSales)}</div>
+              <div className="flex justify-between items-center pb-2 border-b border-gray-200 mb-2">
+                <span className="text-sm font-black text-gray-700 uppercase tracking-wide">Total Sale</span>
+                <span className="text-lg font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
               </div>
-              <div className="mt-4 bg-white rounded-lg border border-gray-100 p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-3">From that:</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-bold uppercase text-gray-500">Cash (auto)</span>
-                    <span className="text-xl font-black text-emerald-700 tabular-nums">{formatCurrency(report.cashAmount)}</span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-bold uppercase text-gray-500">Card / UPI (auto)</span>
-                    <span className="text-xl font-black text-blue-700 tabular-nums">{formatCurrency(report.cardAmount)}</span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-bold uppercase text-gray-500" htmlFor="tips-input">Tips (manual)</label>
-                    <input
-                      id="tips-input"
-                      type="number"
-                      value={report.tipsAmount === 0 ? '' : report.tipsAmount}
-                      onChange={(e) => handleFieldChange('tipsAmount', e.target.value === '' ? 0 : Number(e.target.value))}
-                      onWheel={(e) => e.target.blur()}
-                      className={inputClass}
-                      placeholder="0.00"
-                      step="0.01"
-                    />
-                  </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">From that:</p>
+              <div className="flex flex-col gap-2 pl-2">
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm font-bold text-gray-600">Cash</span>
+                  <span className={readOnlyClass + " w-32 md:w-40 text-right"}>₹{round2(Number(report.cashAmount || 0)).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm font-bold text-gray-600">Card</span>
+                  <span className={readOnlyClass + " w-32 md:w-40 text-right"}>₹{round2(Number(report.cardAmount || 0)).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1 gap-3">
+                  <span className="text-sm font-bold text-gray-600">Tips</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={report.tipsAmount === 0 ? '' : report.tipsAmount}
+                    onChange={(e) => handleFieldChange('tipsAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
                 </div>
               </div>
             </div>
 
-            {/* Expenditure */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-1">Expenditure</p>
-                  <p className="text-xs text-gray-500">Vouchers paid on {reportDate}</p>
-                </div>
-                <div className="text-2xl font-black text-red-700 tabular-nums">{formatCurrency(expenditureTotal)}</div>
+            {/* Expenditure — auto total + itemized voucher table */}
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-black text-gray-700 uppercase tracking-wide">Expenditure</span>
+                <span className="text-lg font-black text-purple-900 tabular-nums">₹{round2(Number(report.expenditureAmount || 0)).toFixed(2)}</span>
               </div>
-              {vouchersError && (
-                <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-[11px] font-semibold text-red-600">
-                  {vouchersError}
-                </div>
-              )}
-              {vouchersLoading ? (
-                <div className="text-center py-6 text-sm text-gray-400">Loading vouchers…</div>
-              ) : vouchers.length === 0 ? (
-                <div className="text-center py-6 text-sm text-gray-400">No expenditure vouchers recorded for this date.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs">
+              {expenditures.length > 0 ? (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-500">
-                        <th className="py-2 pr-3">Paid To</th>
-                        <th className="py-2 pr-3">Type</th>
-                        <th className="py-2 pr-3">Narration</th>
-                        <th className="py-2 pr-3">Approved By</th>
-                        <th className="py-2 text-right">Amount</th>
+                      <tr className="text-left text-[10px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-200">
+                        <th className="py-1.5 pr-2">Paid To</th>
+                        <th className="py-1.5 pr-2">Type</th>
+                        <th className="py-1.5 pr-2">Narration</th>
+                        <th className="py-1.5 pr-2">Approved By</th>
+                        <th className="py-1.5 text-right">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {vouchers.map((voucher) => (
-                        <tr key={voucher.id || voucher.voucherNo} className="border-t border-gray-100">
-                          <td className="py-2 pr-3 font-semibold text-gray-900 whitespace-nowrap">{voucher.paidToName || voucher.employee?.name || '—'}</td>
-                          <td className="py-2 pr-3 text-[11px] font-bold text-gray-500 whitespace-nowrap">
-                            {voucher.paidToType === 'STAFF' ? 'Staff' : (voucher.category || 'Other')}
-                          </td>
-                          <td className="py-2 pr-3 text-[11px] text-gray-600 max-w-[200px] truncate" title={voucher.narration || ''}>
-                            {voucher.narration || '—'}
-                          </td>
-                          <td className="py-2 pr-3 text-[11px] font-semibold text-gray-600 whitespace-nowrap">
-                            {voucher.approvedByName || voucher.approvedBy?.name || '—'}
-                          </td>
-                          <td className="py-2 text-right font-black text-gray-900 tabular-nums">{formatCurrency(voucher.amount)}</td>
+                      {expenditures.map((v) => (
+                        <tr key={v.id} className="border-b border-gray-100">
+                          <td className="py-1.5 pr-2 font-semibold text-gray-800">{v.paidToName}</td>
+                          <td className="py-1.5 pr-2 text-gray-500">{v.category || v.paidToType}</td>
+                          <td className="py-1.5 pr-2 text-gray-500">{v.narration || '—'}</td>
+                          <td className="py-1.5 pr-2 text-gray-500">{v.approvedByName || v.approvedBy?.name || '—'}</td>
+                          <td className="py-1.5 text-right font-bold text-gray-900 tabular-nums">₹{Number(v.amount).toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+              ) : (
+                <p className="text-xs font-semibold text-gray-400 mt-2">No vouchers for this date.</p>
               )}
             </div>
 
-            {/* Balance */}
-            <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-6 text-center shadow-lg">
-              <p className="text-[11px] font-black uppercase tracking-[0.4em] text-white/70">Balance</p>
-              <p className="text-xs text-white/70 mb-2">Total Sale − Expenditure</p>
-              <p className="text-4xl font-black tabular-nums">{formatCurrency(balanceAmount)}</p>
+            {/* Balance — standout block */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 flex flex-col items-center justify-center gap-1">
+              <span className="text-xs font-black uppercase tracking-widest text-blue-700">Balance</span>
+              <span className="text-3xl md:text-4xl font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Total Sale − Expenditure</span>
             </div>
 
-            {/* Denomination count & reconciliation */}
+            {/* Denomination Count */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Cash Denomination Count</h3>
               <p className="text-[10px] font-bold text-gray-500 mb-3">Enter note counts — leave empty if none</p>
@@ -433,19 +380,9 @@ export default function XReportSection() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2 text-sm font-black">
-                <div className="bg-white rounded-lg border border-gray-200 p-3">
-                  <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Cash from Notes</p>
-                  <p className="text-xl text-gray-900 tabular-nums">{formatCurrency(cashFromNotes)}</p>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-3">
-                  <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Expected Cash (auto)</p>
-                  <p className="text-xl text-gray-900 tabular-nums">{formatCurrency(report.cashAmount)}</p>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-3">
-                  <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Variance</p>
-                  <p className={`text-xl tabular-nums ${cashVariance === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{formatCurrency(cashVariance)}</p>
-                </div>
+              <div className="mt-3 flex justify-between items-center pt-3 border-t border-gray-200">
+                <span className="text-xs font-black uppercase text-gray-600">Cash from Notes</span>
+                <span className="text-sm font-black text-gray-900 tabular-nums">₹{round2(cashFromNotes).toFixed(2)}</span>
               </div>
             </div>
 

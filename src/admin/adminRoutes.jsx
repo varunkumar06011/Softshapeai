@@ -24,7 +24,7 @@ const Inventory       = lazy(() => import('./AdminComponents').then(m => ({ defa
 const KitchenInventory = lazy(() => import('./AdminComponents').then(m => ({ default: m.KitchenInventory })));
 const StaffManagement = lazy(() => import('./AdminComponents').then(m => ({ default: m.StaffManagement })));
 const Attendance      = lazy(() => import('./AdminComponents').then(m => ({ default: m.Attendance })));
-const AdminVouchers   = lazy(() => import('./AdminVouchers'));
+const AdminExpenditures = lazy(() => import('./AdminExpenditures'));
 const AdminDailyBalanceSheet = lazy(() => import('./AdminDailyBalanceSheet'));
 const SurveillanceDashboard = lazy(() => import('./SurveillanceDashboard'));
 const TodaySpecials   = lazy(() => import('./TodaySpecials'));
@@ -119,7 +119,7 @@ export const adminRoutes = [
   { key: 'staff',             label: 'Staff',                  icon: Users,               roles: ['admin','owner'], element: <StaffManagement /> },
   { key: 'captains',          label: 'Captain Analytics',      icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <CaptainPerformanceDashboard /> },
   { key: 'payroll',           label: 'Payroll',                icon: DollarSign,          roles: ['admin','owner'], element: <Payroll />,                       props: (ctx) => ({ onPayslip: () => {} }) },
-  { key: 'vouchers',          label: 'Vouchers',               icon: Wallet,              roles: ['admin','owner'], element: <AdminVouchers /> },
+  { key: 'vouchers',          label: 'Expenditures',          icon: Wallet,              roles: ['admin','owner'], element: <AdminExpenditures /> },
   { key: 'attendance',        label: 'Attendance',             icon: Users,               roles: ['admin','owner'], element: <Attendance /> },
   { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner'], element: <InventorySection /> },
   { key: 'marketing',         label: 'Marketing AI',           icon: Megaphone,           roles: ['admin','owner'], element: <Marketing />,                     props: (ctx) => ({ upload: ctx.mUpload, setUpload: ctx.setMUpload, uploadRef: ctx.mUploadRef, generated: ctx.mGenerated, setGenerated: ctx.setMGenerated, posted: ctx.mPosted, setPosted: ctx.setMPosted }) },

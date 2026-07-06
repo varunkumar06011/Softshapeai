@@ -14,7 +14,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
-import { disconnectSocket } from '../hooks/useSocket';
 
 // Resolves the backend base URL from Vite env vars
 function getApiBase() {
@@ -127,7 +126,12 @@ export const authService = {
       // ignore network errors on logout
     }
     const restaurantId = this.getRestaurantId();
-    disconnectSocket();
+    try {
+      const { disconnectSocket } = await import('../hooks/useSocket');
+      disconnectSocket();
+    } catch {
+      // ignore — socket may not be initialized
+    }
     localStorage.removeItem('ss_token');
     localStorage.removeItem('ss_preauth_token');
     localStorage.removeItem('ss_user');

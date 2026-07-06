@@ -166,9 +166,12 @@ export interface XReportDenomination {
   amount: number;
 }
 
-export interface XReportVoucherRow {
-  paidTo: string;
-  type: string;
+export interface XReportExpenditureRow {
+  paidToName: string;
+  paidToType: string;
+  category?: string | null;
+  narration?: string | null;
+  approvedByName?: string | null;
   amount: number;
 }
 
@@ -177,16 +180,14 @@ export interface XReportData {
   cashierName?: string;
   reportDate: string;
   totalSales: number;
-  cashAmount: number;
   cardAmount: number;
+  cashAmount: number;
   tipsAmount: number;
-  expenditureTotal: number;
-  balanceAmount: number;
-  vouchers: XReportVoucherRow[];
+  expenditureAmount: number;
+  finalAmount: number;
+  expenditures: XReportExpenditureRow[];
   denominations: XReportDenomination[];
   cashFromNotes: number;
-  expectedCash: number;
-  cashVariance: number;
 }
 
 const XR_W = 32;
@@ -210,31 +211,44 @@ export function buildXReportEscpos(data: XReportData): object[] {
   if (data.cashierName) cmds.push(CENTER, `Cashier: ${data.cashierName}\n`, LEFT);
   cmds.push(`${dashed}\n`);
 
-  cmds.push(`${xrRow("Total Sale", xrCurrency(data.totalSales))}\n`);
+  // Total Sale + indented Cash/Card/Tips breakdown
+  cmds.push(BOLD_ON, `${xrRow("Total Sale", xrCurrency(data.totalSales))}\n`, BOLD_OFF);
   cmds.push(`${xrRow("  Cash", xrCurrency(data.cashAmount))}\n`);
   cmds.push(`${xrRow("  Card", xrCurrency(data.cardAmount))}\n`);
   cmds.push(`${xrRow("  Tips", xrCurrency(data.tipsAmount))}\n`);
   cmds.push(`${dashed}\n`);
 
-  cmds.push(`${xrRow("Expenditure", xrCurrency(data.expenditureTotal))}\n`);
-  if (data.vouchers.length > 0) {
-    cmds.push("  Paid To      Type      Amount\n");
-    data.vouchers.forEach((voucher) => {
-      cmds.push(`${voucherRow(voucher)}\n`);
+  // Expenditure total + itemized expenditure rows (two lines per entry: Paid
+  // To/Type/Amount, then Narration — Approved By)
+  cmds.push(BOLD_ON, `${xrRow("Expenditure (Total)", xrCurrency(data.expenditureAmount))}\n`, BOLD_OFF);
+  if (data.expenditures.length > 0) {
+    cmds.push(`  ${"Paid To".padEnd(16)}${"Type".padEnd(10)}Amt\n`);
+    cmds.push(`  ${"-".repeat(XR_W - 2)}\n`);
+    data.expenditures.forEach((v) => {
+      const name = (v.paidToName || "").slice(0, 16).padEnd(16);
+      const type = (v.category || v.paidToType || "").slice(0, 10).padEnd(10);
+      const amt = xrCurrency(v.amount).padStart(Math.max(1, XR_W - 2 - 16 - 10));
+      cmds.push(`  ${name}${type}${amt}\n`);
+      const approver = v.approvedByName ? `Appvd: ${v.approvedByName}` : "";
+      const narration = v.narration ? v.narration : "";
+      if (narration || approver) {
+        const line2 = [narration, approver].filter(Boolean).join(" — ");
+        cmds.push(`    ${line2.slice(0, XR_W - 4)}\n`);
+      }
     });
-  } else {
-    cmds.push("  (No vouchers recorded)\n");
   }
   cmds.push(`${dashed}\n`);
 
+  // BALANCE — bold + double size, centered
   cmds.push(
     CENTER,
     BOLD_ON,
     SIZE_2X,
     "BALANCE\n",
-    xrCurrency(data.balanceAmount) + "\n",
+    xrCurrency(data.finalAmount) + "\n",
     SIZE_NORMAL,
     BOLD_OFF,
+    "(Total Sale - Expenditure)\n",
     LEFT
   );
   cmds.push(`${dashed}\n`);
@@ -250,22 +264,12 @@ export function buildXReportEscpos(data: XReportData): object[] {
   cmds.push(`${dashed}\n`);
 
   cmds.push(`${xrRow("Cash from Notes", xrCurrency(data.cashFromNotes))}\n`);
-  cmds.push(`${xrRow("Expected Cash", xrCurrency(data.expectedCash))}\n`);
-  cmds.push(`${xrRow("Variance", xrCurrency(data.cashVariance))}\n`);
   cmds.push(`${dashed}\n`);
 
   cmds.push(CENTER, BOLD_ON, "*** End of Report ***\n", BOLD_OFF, LEFT);
   cmds.push("\n\n\n", CUT);
 
   return [{ type: "raw", format: "plain", data: cmds.join("") }];
-}
-
-function voucherRow(voucher: XReportVoucherRow): string {
-  const paidTo = (voucher.paidTo || "—").slice(0, 12).padEnd(12, " ");
-  const type = (voucher.type || "").slice(0, 8).padEnd(8, " ");
-  const amount = xrCurrency(voucher.amount);
-  const left = `  ${paidTo}${type}`;
-  return `${left}${amount.padStart(Math.max(1, XR_W - left.length))}`;
 }
 
 // ─── Liquor / Bar KOT ─────────────────────────────────────────────────────────

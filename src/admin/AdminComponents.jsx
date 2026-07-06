@@ -5341,7 +5341,7 @@ export function Payroll() {
       }
 
       // Save presentDays/otDays on PayrollRecord. advanceAmount is read-only and
-      // derived from vouchers + manual advances, so we do not send it to the backend.
+      // derived from expenditures + manual advances, so we do not send it to the backend.
       // Also recalculate when base salary changes so the salary reflects the new amount.
       if (vals.baseSalary !== undefined || vals.presentDays !== undefined || vals.otDays !== undefined || dateMode === 'range' || autoCountMap[employeeId]) {
         await apiFetch('/api/payroll/records', {
@@ -6325,8 +6325,8 @@ export function Payroll() {
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-gray-900">₹{Number(h.amount).toLocaleString()}</span>
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${h.type === 'VOUCHER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {h.type === 'VOUCHER' ? 'Voucher' : 'Manual'}
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${h.type === 'EXPENDITURE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {h.type === 'EXPENDITURE' ? 'Expenditure' : 'Manual'}
                         </span>
                         <span className="text-xs text-gray-400">{h.date}</span>
                       </div>
