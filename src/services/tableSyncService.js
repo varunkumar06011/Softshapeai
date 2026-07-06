@@ -221,6 +221,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     kotHistory: mergedKotHistory,
     currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
     activeOrder: isFreeWorkflow ? null : activeOrder,
+    discount: isFreeWorkflow ? null : (row.discount != null ? Number(row.discount) : null),
     updatedAt: isStale && existing ? existing.updatedAt : (row.updatedAt || existing?.updatedAt || null),
   };
 

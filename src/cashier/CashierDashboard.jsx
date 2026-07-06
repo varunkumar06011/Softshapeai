@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText
+  Maximize2, Minimize2, Eye, Receipt, FileText, Percent
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -2135,6 +2135,11 @@ const CashierDashboard = ({ onLogout }) => {
   const dashboardVoucherAmount = useMemo(() => {
     return Number(voucherSummary?.totalAmount || 0);
   }, [voucherSummary]);
+
+  const dashboardTotalDiscount = useMemo(() => {
+    return filteredTransactions
+      .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+  }, [filteredTransactions]);
 
   const dashboardFinalAmount = useMemo(() => {
     return dashboardTotalSales - dashboardVoucherAmount;
@@ -4461,9 +4466,9 @@ const CashierDashboard = ({ onLogout }) => {
 
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discounts", value: `₹${Number(dashboardTotalDiscount).toFixed(2)}`, change: `${filteredTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted bills ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Percent, color: "text-red-600", bg: "bg-red-50" },
     { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(2)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
   return (
