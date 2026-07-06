@@ -419,13 +419,14 @@ export default function AdminDailyBalanceSheet() {
   }, [computedSales, totalExpenditures, adjustments]);
 
   // ── Debounced autosave ─────────────────────────────────────────────────────
-  const triggerSave = useCallback(() => {
+  const triggerSave = useCallback((adjustmentsOverride) => {
     if (isLocked || !sheet) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       setSaving(true);
       const thisSeq = ++saveSeqRef.current;
       try {
+        const adjustmentsToSave = adjustmentsOverride || adjustments;
         const body = {
           openingBalance: overrides.openingBalance,
           acBarSaleOverride: overrides.acBarSaleOverride,
@@ -434,7 +435,7 @@ export default function AdminDailyBalanceSheet() {
           parcelSaleOverride: overrides.parcelSaleOverride,
           swiggySale: overrides.swiggySale,
           zomatoSale: overrides.zomatoSale,
-          adjustments: adjustments.map((a, i) => ({
+          adjustments: adjustmentsToSave.map((a, i) => ({
             label: a.label,
             amount: Number(a.amount),
             sign: a.sign,
@@ -469,7 +470,7 @@ export default function AdminDailyBalanceSheet() {
   };
 
   // ── Adjustment handlers ────────────────────────────────────────────────────
-  const handleAddAdjustment = async () => {
+  const handleAddAdjustment = () => {
     if (!newAdj.label.trim() || !newAdj.amount) return;
     const adj = {
       id: `temp-${Date.now()}`,
@@ -482,7 +483,7 @@ export default function AdminDailyBalanceSheet() {
     setAdjustments(updated);
     setNewAdj({ label: '', amount: '', sign: 'MINUS' });
     setShowAddAdj(false);
-    triggerSave();
+    triggerSave(updated);
   };
 
   const applyAdjustmentPreset = (preset) => {
@@ -492,13 +493,15 @@ export default function AdminDailyBalanceSheet() {
 
   const handleEditAdjustment = (updated) => {
     const safe = { ...updated, amount: Math.max(0, Number(updated.amount)) };
-    setAdjustments((prev) => prev.map((a) => (a.id === safe.id ? safe : a)));
-    triggerSave();
+    const next = adjustments.map((a) => (a.id === safe.id ? safe : a));
+    setAdjustments(next);
+    triggerSave(next);
   };
 
   const handleDeleteAdjustment = (adj) => {
-    setAdjustments((prev) => prev.filter((a) => a.id !== adj.id));
-    triggerSave();
+    const next = adjustments.filter((a) => a.id !== adj.id);
+    setAdjustments(next);
+    triggerSave(next);
   };
 
   // ── Drag reorder ───────────────────────────────────────────────────────────
@@ -515,7 +518,7 @@ export default function AdminDailyBalanceSheet() {
     const reindexed = reordered.map((a, i) => ({ ...a, sortOrder: i }));
     setAdjustments(reindexed);
     dragItemRef.current = null;
-    triggerSave();
+    triggerSave(reindexed);
   };
 
   // ── Status transitions ─────────────────────────────────────────────────────
