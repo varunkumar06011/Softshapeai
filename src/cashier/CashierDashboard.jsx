@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Percent
+  Maximize2, Minimize2, Eye, Receipt, FileText
 } from 'lucide-react';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
@@ -66,6 +66,7 @@ import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKo
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
 import { useSettlementGuards } from '../hooks/useSettlementGuards';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 
 function getVenueTableLabel(sectionTag, tableNumber) {
   return String(tableNumber);
@@ -2136,11 +2137,6 @@ const CashierDashboard = ({ onLogout }) => {
     return Number(voucherSummary?.totalAmount || 0);
   }, [voucherSummary]);
 
-  const dashboardTotalDiscount = useMemo(() => {
-    return filteredTransactions
-      .reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
-  }, [filteredTransactions]);
-
   const dashboardFinalAmount = useMemo(() => {
     return dashboardTotalSales - dashboardVoucherAmount;
   }, [dashboardTotalSales, dashboardVoucherAmount]);
@@ -2471,28 +2467,27 @@ const CashierDashboard = ({ onLogout }) => {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
-        const offlineBillData = {
-          tableNumber: selectedTable.number,
-          items: billItems,
-          subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-          discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
-          cgst: billCalc.cgst,
-          sgst: billCalc.sgst,
-          grandTotal: billCalc.grandTotal,
-          roundOff: billCalc.roundOff ?? 0,
-          billNumber: 'PENDING',
-          restaurant: {
-            name: restaurant?.name || undefined,
-            receiptHeader: restaurant?.receiptHeader || undefined,
-            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-            address: restaurant?.address || undefined,
-            phone: restaurant?.phone || undefined,
-          },
-        };
         const result = await printLocal({
           jobType: 'FINAL_BILL',
           eventId: billEventId,
-          data: offlineBillData,
+          data: {
+            tableNumber: selectedTable.number,
+            items: billItems,
+            subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+            cgst: billCalc.cgst,
+            sgst: billCalc.sgst,
+            grandTotal: billCalc.grandTotal,
+            roundOff: billCalc.roundOff ?? 0,
+            billNumber: 'PENDING',
+            restaurant: {
+              name: restaurant?.name || undefined,
+              receiptHeader: restaurant?.receiptHeader || undefined,
+              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+              address: restaurant?.address || undefined,
+              phone: restaurant?.phone || undefined,
+            },
+          },
         });
         localPrinted = result?.printed || false;
         if (localPrinted) {
@@ -2516,8 +2511,8 @@ const CashierDashboard = ({ onLogout }) => {
           .filter(Boolean)
           .join(',');
         const response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId, billData: offlineBillData })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId, billData: offlineBillData });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
         if (response?.offline) {
           addNotification('Offline', `Bill queued — will sync when online. Ref: ${response.billNumber}`, 'warning');
           // If local print didn't succeed above, try again with the offline bill number
@@ -3161,45 +3156,6 @@ const CashierDashboard = ({ onLogout }) => {
               offline: true,
               status: 'pending',
             });
-
-            // Print settlement receipt locally when offline
-            try {
-              const { printLocal } = await import('../utils/printOffline');
-              const settleBillItems = getBillableItems(selectedTable)
-                .filter(i => Number(i.quantity ?? i.q ?? 1) > 0);
-              const settleReceiptData = {
-                tableNumber: selectedTable?.number,
-                items: settleBillItems,
-                subtotal: Number(activeSubtotal),
-                discount: discountPercent > 0 ? { percent: discountPercent, amount: Number(activeDiscountAmount) } : null,
-                cgst: Number(activeCgst),
-                sgst: Number(activeSgst),
-                grandTotal: Number(activeGrandTotal),
-                roundOff: Number(activeOrderCalc.roundOff ?? 0),
-                billNumber: settleData?.transaction?.id || `OFFLINE-${settleRequestId.slice(0, 8).toUpperCase()}`,
-                paymentMethod: method,
-                restaurant: {
-                  name: restaurant?.name || undefined,
-                  receiptHeader: restaurant?.receiptHeader || undefined,
-                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-                  address: restaurant?.address || undefined,
-                  phone: restaurant?.phone || undefined,
-                },
-              };
-              const settleResult = await printLocal({
-                jobType: 'FINAL_BILL',
-                eventId: `${settleRequestId}-settle-bill`,
-                data: settleReceiptData,
-              });
-              if (settleResult?.printed) {
-                addNotification('Receipt Printed', 'Settlement receipt printed to local printer.', 'success');
-              } else if (settleResult?.queued) {
-                addNotification('Receipt Queued', 'Settlement receipt queued — will print when printer is available.', 'warning');
-              }
-            } catch (printErr) {
-              console.warn('[Settlement] Offline receipt print failed:', printErr.message);
-            }
-
             // Mark as settled locally to prevent retries
             setSettledOrderIds(prev => new Set([...prev, orderId]));
             if (selectedTable?.backendId) {
@@ -4479,9 +4435,9 @@ const CashierDashboard = ({ onLogout }) => {
 
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Discounts", value: `₹${Number(dashboardTotalDiscount).toFixed(2)}`, change: `${filteredTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted bills ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Percent, color: "text-red-600", bg: "bg-red-50" },
     { label: "Vouchers", value: `₹${Number(dashboardVoucherAmount).toFixed(2)}`, change: `${voucherSummary?.count || 0} vouchers ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Vouchers", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
   return (

@@ -130,59 +130,6 @@ function getBackoffDelay(attempts) {
   return base + jitter;
 }
 
-// ── Offline ID mapping ───────────────────────────────────────────────────────
-// Maps temporary offline order IDs (e.g. "offline-1709123456789") to real server
-// order IDs returned after a successful create-order sync. This allows subsequent
-// actions (update-items, settle, cancel-items, print-bill) that reference the
-// offline ID to be patched with the real ID before being sent to the backend.
-
-async function loadOfflineIdMap() {
-  try {
-    const map = await getSyncMeta('offlineIdMap');
-    return new Map(map ? Object.entries(map) : []);
-  } catch {
-    return new Map();
-  }
-}
-
-async function saveOfflineIdMap(map) {
-  try {
-    await setSyncMeta('offlineIdMap', Object.fromEntries(map));
-  } catch (e) {
-    console.warn('[SyncEngine] Failed to save offline ID map:', e.message);
-  }
-}
-
-function patchActionWithRealId(action, offlineIdMap) {
-  let patched = false;
-  const patchedAction = { ...action, body: { ...action.body } };
-
-  // Patch entityId
-  if (offlineIdMap.has(patchedAction.entityId)) {
-    patchedAction.entityId = offlineIdMap.get(patchedAction.entityId);
-    patched = true;
-  }
-
-  // Patch URL (e.g. /api/orders/offline-xxx/items → /api/orders/real-uuid/items)
-  if (patchedAction.url) {
-    for (const [offlineId, realId] of offlineIdMap) {
-      if (patchedAction.url.includes(offlineId)) {
-        patchedAction.url = patchedAction.url.replace(offlineId, realId);
-        patched = true;
-        break;
-      }
-    }
-  }
-
-  // Patch body.orderId if present
-  if (patchedAction.body?.orderId && offlineIdMap.has(patchedAction.body.orderId)) {
-    patchedAction.body.orderId = offlineIdMap.get(patchedAction.body.orderId);
-    patched = true;
-  }
-
-  return { action: patchedAction, patched };
-}
-
 // ── Bulk sync via /api/orders/offline-sync ───────────────────────────────────
 
 async function bulkSync(actions) {
@@ -285,79 +232,15 @@ export async function syncPendingActions() {
 
     console.log(`[SyncEngine] Syncing ${actions.length} pending action(s)`);
 
-    // Load existing offline ID map (from previous syncs)
-    const offlineIdMap = await loadOfflineIdMap();
-
-    // Patch all actions with real IDs from previous syncs
-    for (let i = 0; i < actions.length; i++) {
-      const { action: patchedAction, patched } = patchActionWithRealId(actions[i], offlineIdMap);
-      if (patched) {
-        await updatePendingAction(actions[i].id, {
-          url: patchedAction.url,
-          entityId: patchedAction.entityId,
-          body: patchedAction.body,
-        });
-        actions[i] = patchedAction;
-      }
+    // Try bulk sync first (more efficient, handles per-entity ordering server-side)
+    let results;
+    try {
+      results = await bulkSync(actions);
+    } catch (bulkErr) {
+      console.warn('[SyncEngine] Bulk sync failed, falling back to individual sync:', bulkErr.message);
+      // Fallback: sync individually, grouped by entity
+      results = await syncIndividually(actions);
     }
-
-    // Two-phase sync: create-order actions first, then the rest
-    const createActions = actions.filter(a => a.actionType === 'create-order');
-    const otherActions = actions.filter(a => a.actionType !== 'create-order');
-
-    let createResults = [];
-    if (createActions.length > 0) {
-      console.log(`[SyncEngine] Phase 1: Syncing ${createActions.length} create-order action(s)`);
-      try {
-        createResults = await bulkSync(createActions);
-      } catch (bulkErr) {
-        console.warn('[SyncEngine] Phase 1 bulk sync failed, falling back to individual:', bulkErr.message);
-        createResults = await syncIndividually(createActions);
-      }
-
-      // Build ID mapping from successful create-order results
-      const createResultMap = new Map((createResults || []).map(r => [r.requestId, r]));
-      for (const action of createActions) {
-        const result = createResultMap.get(action.requestId);
-        if (result && (result.status === 'success' || result.status === 'skipped')) {
-          const realOrderId = result.data?.order?.id || result.data?.id || result.data?.orderId;
-          const offlineOrderId = action.body?.offlineOrderId;
-          if (realOrderId && offlineOrderId) {
-            offlineIdMap.set(offlineOrderId, realOrderId);
-            console.log(`[SyncEngine] Mapped ${offlineOrderId} → ${realOrderId}`);
-          }
-        }
-      }
-      await saveOfflineIdMap(offlineIdMap);
-
-      // Patch other actions with newly discovered real IDs
-      for (let i = 0; i < otherActions.length; i++) {
-        const { action: patchedAction, patched } = patchActionWithRealId(otherActions[i], offlineIdMap);
-        if (patched) {
-          await updatePendingAction(otherActions[i].id, {
-            url: patchedAction.url,
-            entityId: patchedAction.entityId,
-            body: patchedAction.body,
-          });
-          otherActions[i] = patchedAction;
-        }
-      }
-    }
-
-    // Phase 2: Sync remaining actions
-    let otherResults = [];
-    if (otherActions.length > 0) {
-      console.log(`[SyncEngine] Phase 2: Syncing ${otherActions.length} remaining action(s)`);
-      try {
-        otherResults = await bulkSync(otherActions);
-      } catch (bulkErr) {
-        console.warn('[SyncEngine] Phase 2 bulk sync failed, falling back to individual:', bulkErr.message);
-        otherResults = await syncIndividually(otherActions);
-      }
-    }
-
-    // Combine results from both phases
-    const results = [...(createResults || []), ...(otherResults || [])];
 
     // Build a result map by requestId so out-of-order bulk-sync results cannot be
     // misapplied to the wrong action (backend processes entity groups concurrently).
