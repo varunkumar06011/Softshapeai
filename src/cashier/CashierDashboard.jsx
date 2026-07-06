@@ -128,6 +128,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder: isFreeWorkflow ? null : (row.orders?.[0] || row.activeOrder || null),
+    billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? null),
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
 };
@@ -1244,13 +1245,13 @@ const CashierDashboard = ({ onLogout }) => {
     socket.on('disconnect', onDisconnect);
 
     const onBillingRequested = (payload) => {
-      const { table, order } = payload;
+      const { table, order, billNumber } = payload;
       if (!table) return;
       if (shouldBlockTableUpdate(table.id, table.status)) return;
 
-      // Route table status update to the correct array
+      // Route table status update to the correct array — include billNumber if provided
       const updateTableStatus = (prev) => prev.map(t =>
-        t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+        t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill', billNumber: billNumber ?? t.billNumber } : t
       );
       setActiveTables(updateTableStatus, { skipPersist: true });
 
@@ -1451,12 +1452,15 @@ const CashierDashboard = ({ onLogout }) => {
         const resolvedBill = isIncomingFree ? 0 : Math.max(Number(t.currentBill ?? 0), Number(incomingBillAmt ?? 0));
         // FREEZE: once bill is printed, hold items steady until settlement
         const isFrozenGrid = isBillPrintedGrid && !isSettledGrid;
+        // Preserve billNumber: prefer incoming order's billNumber, fall back to existing
+        const incomingBillNumber = incomingOrder?.billNumber ?? t.billNumber ?? null;
         return {
           ...t,
           kotHistory: mergedKotHistory,
           currentBill: resolvedBill,
           status: protectedStatus,
           workflowStatus: protectedStatus,
+          billNumber: incomingBillNumber,
           activeOrder: isFrozenGrid ? t.activeOrder : (incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder),
         };
       });
@@ -1499,12 +1503,16 @@ const CashierDashboard = ({ onLogout }) => {
             : incomingStatusSel;
           // FREEZE: once bill is printed, hold items steady until settlement
           const isFrozenSel = isBillPrinted && !isTableSettled;
+          // Preserve billNumber: prefer incoming order's billNumber, fall back to existing
+          const incomingOrderSel = incomingHasOrdersSel ? table.orders[0] : null;
+          const selBillNumber = incomingOrderSel?.billNumber ?? prev.billNumber ?? null;
           const nextVal = {
             ...prev,
             kotHistory: shouldClearKotHistory ? [] : mergedKotHistory,
             currentBill: stableBill,
             status: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
             workflowStatus: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
+            billNumber: effectiveIsTableFree && isTableSettled ? null : selBillNumber,
             activeOrder: (effectiveIsTableFree && isTableSettled)
               ? null
               : (isFrozenSel ? prev.activeOrder : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder)),
@@ -1575,7 +1583,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (!isExtraTable) {
         const clearTable = (prev) => prev.map(t =>
           t.backendId === tableId
-            ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+            ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null, billNumber: null }
             : t
         );
         setActiveTables(clearTable, { skipPersist: true });
@@ -2564,6 +2572,21 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
+      // Store billNumber from print-bill response onto table state
+      const printedBillNumber = response?.billNumber || null;
+      if (printedBillNumber) {
+        setSelectedTable(prev => prev ? { ...prev, billNumber: printedBillNumber } : prev);
+        if (selectedTable.isExtra) {
+          setExtraTables(prev => prev.map(et =>
+            et.id === selectedTable.id ? { ...et, billNumber: printedBillNumber } : et
+          ));
+        } else {
+          setActiveTables(prev => prev.map(t =>
+            t.backendId === selectedTable.backendId ? { ...t, billNumber: printedBillNumber } : t
+          ));
+        }
+      }
+
       // Update localStorage cache for the table status
       const tableIdForCache = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
       if (!selectedTable.isExtra && tableIdForCache) {
@@ -3005,7 +3028,8 @@ const CashierDashboard = ({ onLogout }) => {
                   kotHistory: [],
                   currentBill: 0,
                   guests: 0,
-                  time: null
+                  time: null,
+                  billNumber: null,
                 }
               : t
           )
@@ -3077,7 +3101,7 @@ const CashierDashboard = ({ onLogout }) => {
           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
           const updated = cached.map(t =>
             t.backendId === selectedTable.backendId
-              ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+              ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null, billNumber: null }
               : t
           );
           localStorage.setItem(cacheKey, JSON.stringify(updated));
@@ -4725,6 +4749,11 @@ const CashierDashboard = ({ onLogout }) => {
                                         {table.captainName}
                                       </p>
                                     )}
+                                    {isWaitingBill && table.billNumber && (
+                                      <p className={`text-[10px] font-black uppercase tracking-wider mb-1 ${textColor}`}>
+                                        Bill #{table.billNumber}
+                                      </p>
+                                    )}
                                     <p className="text-xl font-black text-gray-900">
                                       ₹{billAmt > 0 ? billAmt.toFixed(2) : '—'}
                                     </p>
@@ -6357,8 +6386,13 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       onClick={() => { if (isPrintingBill) return; setShowSettleConfirm(true); }}
                       disabled={isSettling}
-                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
+                      {(selectedTable?.billNumber || selectedTable?.activeOrder?.billNumber) && (
+                        <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">
+                          #{selectedTable?.billNumber || selectedTable?.activeOrder?.billNumber}
+                        </span>
+                      )}
                       Settlement
                     </button>
                   ) : (
