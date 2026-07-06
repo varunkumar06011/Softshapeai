@@ -2461,33 +2461,11 @@ const CashierDashboard = ({ onLogout }) => {
         : Math.random().toString(36).slice(2) + Date.now().toString(36));
       const billEventId = `${billRequestId}-bill`;
       let localPrinted = false;
-      let offlineBillData = null;
 
       try {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
-<<<<<<< HEAD
-=======
-        offlineBillData = {
-          tableNumber: selectedTable.number,
-          items: billItems,
-          subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-          discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
-          cgst: billCalc.cgst,
-          sgst: billCalc.sgst,
-          grandTotal: billCalc.grandTotal,
-          roundOff: billCalc.roundOff ?? 0,
-          billNumber: 'PENDING',
-          restaurant: {
-            name: restaurant?.name || undefined,
-            receiptHeader: restaurant?.receiptHeader || undefined,
-            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-            address: restaurant?.address || undefined,
-            phone: restaurant?.phone || undefined,
-          },
-        };
->>>>>>> f8dfb13 (Fix daily balance sheet next-day arrow and final bill offlineBillData scope)
         const result = await printLocal({
           jobType: 'FINAL_BILL',
           eventId: billEventId,
