@@ -1131,14 +1131,6 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  const categories = useMemo(() => {
-    const cats = new Set(outletFilteredMenuItems.map(i => i.c));
-    const hasTodaySpecial = todaySpecials.length > 0;
-    return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...Array.from(cats)].filter(Boolean);
-  }, [outletFilteredMenuItems, todaySpecials]);
-
-
-
   const todaySpecials = useMemo(() => {
 
     const now = Date.now();
@@ -1150,6 +1142,14 @@ export default function CaptainApp({ onLogout }) {
     );
 
   }, [outletFilteredMenuItems]);
+
+
+
+  const categories = useMemo(() => {
+    const cats = new Set(outletFilteredMenuItems.map(i => i.c));
+    const hasTodaySpecial = todaySpecials.length > 0;
+    return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...Array.from(cats)].filter(Boolean);
+  }, [outletFilteredMenuItems, todaySpecials]);
 
 
 
