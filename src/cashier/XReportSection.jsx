@@ -307,7 +307,7 @@ export default function XReportSection() {
                   <input
                     type="number"
                     min="0"
-                    value={report.cashAmount === 0 ? '' : report.cashAmount}
+                    value={report.cashAmount}
                     onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
@@ -320,7 +320,7 @@ export default function XReportSection() {
                   <input
                     type="number"
                     min="0"
-                    value={report.cardAmount === 0 ? '' : report.cardAmount}
+                    value={report.cardAmount}
                     onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
@@ -333,7 +333,7 @@ export default function XReportSection() {
                   <input
                     type="number"
                     min="0"
-                    value={report.tipsAmount === 0 ? '' : report.tipsAmount}
+                    value={report.tipsAmount}
                     onChange={(e) => handleFieldChange('tipsAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"

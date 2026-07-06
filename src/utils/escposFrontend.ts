@@ -192,6 +192,14 @@ export interface XReportData {
 
 const XR_W = 42;
 
+function shortExpenditureType(categoryOrType?: string | null): string {
+  const t = (categoryOrType || '').toUpperCase();
+  if (t === 'STAFF') return 'STAFF';
+  if (t === 'KITCHEN') return 'KTCH';
+  if (t === 'MISCELLANEOUS' || t === 'OTHER') return 'MISC';
+  return t.slice(0, 6);
+}
+
 function xrRow(label: string, value: string): string {
   return `${label}${value.padStart(Math.max(1, XR_W - label.length))}`;
 }
@@ -228,18 +236,20 @@ export function buildXReportEscpos(data: XReportData): object[] {
   cmds.push(BOLD_ON, xrRow('Expenditure (Total)', xrCurrency(data.expenditureAmount)), BOLD_OFF);
   cmds.push('\n');
   if (data.expenditures.length > 0) {
-    cmds.push(`  ${'Paid To'.padEnd(16)}${'Type'.padEnd(10)}Amt\n`);
+    cmds.push(`  ${'Paid To'.padEnd(18)}${'Type'.padEnd(6)}Amt\n`);
     cmds.push(`  ${'-'.repeat(XR_W - 2)}\n`);
     data.expenditures.forEach((v) => {
-      const name = (v.paidToName || '').slice(0, 16).padEnd(16);
-      const type = (v.category || v.paidToType || '').slice(0, 10).padEnd(10);
-      const amt = ('Rs.' + Number(v.amount).toFixed(2)).padStart(XR_W - 2 - 16 - 10);
+      const name = (v.paidToName || '').slice(0, 18).padEnd(18);
+      const type = shortExpenditureType(v.category || v.paidToType).slice(0, 6).padEnd(6);
+      const amt = ('Rs.' + Number(v.amount).toFixed(2)).padStart(XR_W - 2 - 18 - 6);
       cmds.push(`  ${name}${type}${amt}\n`);
       const approver = v.approvedByName ? `Appvd: ${v.approvedByName}` : '';
       const narration = v.narration ? v.narration : '';
       if (narration || approver) {
-        const line2 = [narration, approver].filter(Boolean).join(' — ');
-        cmds.push(`    ${line2.slice(0, XR_W - 4)}\n`);
+        const line2 = [narration, approver].filter(Boolean).join(' - ');
+        const line2Max = 38;
+        const line2Text = line2.length > line2Max ? line2.slice(0, line2Max - 3) + '...' : line2;
+        cmds.push(`    ${line2Text}\n`);
       }
     });
   }

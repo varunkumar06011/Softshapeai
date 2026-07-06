@@ -51,6 +51,7 @@ import { sendSpireMessage } from '../services/spireAgent';
 
 import { adminRoutes, managerRoutes, isRouteEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
 import AdminRouteGuard from './AdminRouteGuard';
+import SortableSidebar from './components/SortableSidebar';
 
 const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   const role = roleProp?.toLowerCase() || 'admin';
@@ -78,11 +79,45 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   const [dishModalOpen, setDishModalOpen] = useState(false);
   const [showOutletSwitcher, setShowOutletSwitcher] = useState(false);
   const [hrExpanded, setHrExpanded] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin-sidebar-width');
+      return saved ? Math.max(200, Math.min(460, parseInt(saved, 10))) : 280;
+    } catch {
+      return 280;
+    }
+  });
+  const isResizingRef = useRef(false);
   const spireMessagesEndRef = useRef(null);
 
   useEffect(() => {
     preloadAdminSections();
   }, []);
+
+  // Resize sidebar width
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingRef.current) return;
+      const newWidth = Math.max(200, Math.min(460, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        try {
+          localStorage.setItem('admin-sidebar-width', String(sidebarWidth));
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [sidebarWidth]);
 
   useEffect(() => {
     if (spireOpen) {
@@ -116,7 +151,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   const [dashboardScope, setDashboardScope] = useState('current'); // 'current' | 'all'
 
   const { setTables } = useTableSync();
-  const { restaurant, setRestaurant, setAuth } = useAuth();
+  const { user, restaurant, setRestaurant, setAuth } = useAuth();
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
@@ -431,7 +466,10 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
         <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      <aside className={`fixed left-0 top-0 z-[60] flex h-[100dvh] w-[240px] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside
+        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ width: sidebarWidth }}
+      >
         <div className="flex flex-col flex-grow overflow-hidden p-4">
           <div className="flex items-center justify-between flex-shrink-0 mb-2">
             <div className="bg-white p-4 rounded-[32px] shadow-2xl border border-white/10 aspect-square w-40 flex items-center justify-center">
@@ -449,32 +487,14 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
           </div>
 
           <div className="mt-6 flex-grow overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-            {(() => {
-              const hrRoutes = visibleRoutes.filter(r => r.group === 'hr');
-              const nonHrRoutes = visibleRoutes.filter(r => !r.group);
-              const isHrActive = hrRoutes.some(r => r.key === page);
-
-              return (<>
-                {nonHrRoutes.map((r) => (
-                  <button key={r.key} onClick={() => { navigate(`/admin/dashboard/${r.key}`); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${page === r.key ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
-                    <r.icon size={16} /> {r.label}
-                  </button>
-                ))}
-                {hrRoutes.length > 0 && (
-                  <>
-                    <button onClick={() => setHrExpanded(prev => !prev)} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${isHrActive ? "bg-white/10" : "text-white hover:bg-white/10"}`}>
-                      <Users size={16} /> HR
-                      <ChevronDown size={14} className={`ml-auto transition-transform ${hrExpanded || isHrActive ? "rotate-180" : ""}`} />
-                    </button>
-                    {(hrExpanded || isHrActive) && hrRoutes.map((r) => (
-                      <button key={r.key} onClick={() => { navigate(`/admin/dashboard/${r.key}`); setIsSidebarOpen(false); }} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm pl-8 ${page === r.key ? "bg-white text-[#B71C1C]" : "text-white hover:bg-white/10"}`}>
-                        <r.icon size={14} /> {r.label}
-                      </button>
-                    ))}
-                  </>
-                )}
-              </>);
-            })()}
+            <SortableSidebar
+              visibleRoutes={visibleRoutes}
+              activePage={page}
+              onNavigate={(key) => { navigate(`/admin/dashboard/${key}`); setIsSidebarOpen(false); }}
+              hrExpanded={hrExpanded}
+              onToggleHr={() => setHrExpanded(prev => !prev)}
+              userId={user?.id}
+            />
           </div>
         </div>
 
@@ -487,9 +507,16 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
             <LogOut size={14} className="flex-shrink-0 cursor-pointer hover:text-[#EF9A9A]" onClick={onLogout} />
           </div>
         </div>
+
+        {/* Resize handle */}
+        <div
+          className="absolute top-0 right-0 h-full w-3 cursor-col-resize z-50 hover:bg-white/20 active:bg-white/40 transition-colors hidden md:block"
+          onMouseDown={() => { isResizingRef.current = true; }}
+          title="Drag to resize sidebar"
+        />
       </aside>
 
-      <div className="flex flex-col md:ml-[240px] h-[100dvh] overflow-hidden">
+      <div className="flex flex-col h-[100dvh] overflow-hidden md:ml-[var(--sidebar-width)]" style={{ ['--sidebar-width']: `${sidebarWidth}px` }}>
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6 shadow-sm">
           <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
             <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">

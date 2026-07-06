@@ -134,7 +134,8 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
 
   const handleBlur = () => {
     if (isLocked) return;
-    const numVal = localValue === '' ? null : Number(localValue);
+    let numVal = localValue === '' ? null : Number(localValue);
+    if (numVal != null && numVal < 0) numVal = 0; // no negative sales
     if (isManual) {
       // Manual fields stay manual; empty means 0
       onChange(numVal ?? 0);
@@ -164,6 +165,7 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
       </div>
       <input
         type="number"
+        min="0"
         value={localValue}
         onChange={(e) => setLocalValue(e.target.value)}
         onBlur={handleBlur}
@@ -211,6 +213,7 @@ function AdjustmentPill({ adj, isLocked, onEdit, onDelete, onDragStart, onDragOv
         </button>
         <input
           type="number"
+          min="0"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           className="w-20 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
@@ -444,7 +447,13 @@ export default function AdminDailyBalanceSheet() {
         });
         // Only apply if no newer save has been issued since this one started
         if (thisSeq === saveSeqRef.current) {
-          setSheet({ ...updated, __saveSeq: thisSeq });
+          if (outletId === 'all') {
+            // All-Outlets view is an aggregate; the backend saves against the active outlet,
+            // so reload the aggregate to keep the view consistent.
+            loadSheet();
+          } else {
+            setSheet({ ...updated, __saveSeq: thisSeq });
+          }
         }
       } catch (err) {
         console.error('[BalanceSheet] Save failed:', err);
@@ -452,22 +461,20 @@ export default function AdminDailyBalanceSheet() {
         setSaving(false);
       }
     }, 800);
-  }, [isLocked, sheet, overrides, adjustments, selectedDate]);
+  }, [isLocked, sheet, overrides, adjustments, selectedDate, outletId, loadSheet]);
 
   const handleFieldChange = (field, value) => {
-    if (isAllOutlets) return;
     setOverrides((prev) => ({ ...prev, [field]: value }));
     triggerSave();
   };
 
   // ── Adjustment handlers ────────────────────────────────────────────────────
   const handleAddAdjustment = async () => {
-    if (isAllOutlets) return;
     if (!newAdj.label.trim() || !newAdj.amount) return;
     const adj = {
       id: `temp-${Date.now()}`,
       label: newAdj.label.trim(),
-      amount: Number(newAdj.amount),
+      amount: Math.max(0, Number(newAdj.amount)),
       sign: newAdj.sign,
       sortOrder: adjustments.length,
     };
@@ -479,19 +486,17 @@ export default function AdminDailyBalanceSheet() {
   };
 
   const applyAdjustmentPreset = (preset) => {
-    if (isAllOutlets) return;
     setNewAdj({ label: preset.label, amount: '', sign: preset.sign });
     setShowAddAdj(true);
   };
 
   const handleEditAdjustment = (updated) => {
-    if (isAllOutlets) return;
-    setAdjustments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    const safe = { ...updated, amount: Math.max(0, Number(updated.amount)) };
+    setAdjustments((prev) => prev.map((a) => (a.id === safe.id ? safe : a)));
     triggerSave();
   };
 
   const handleDeleteAdjustment = (adj) => {
-    if (isAllOutlets) return;
     setAdjustments((prev) => prev.filter((a) => a.id !== adj.id));
     triggerSave();
   };
@@ -695,11 +700,24 @@ export default function AdminDailyBalanceSheet() {
     return doc;
   }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, expenditures.length, expenditureGroups, adjustments, balanceCalc.closingBalance]);
 
-  // ── WhatsApp share: generate PDF + open chat with VGrand admin ───────────────
+  // ── WhatsApp share: open chat immediately, then generate PDF ───────────────
   const handleWhatsAppShare = async () => {
     setStatusLoading(true);
     setError(null);
     try {
+      const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
+      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
+      const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
+
+      // Open WhatsApp first (before async PDF work) so the browser does not block the popup
+      if (!isNative) {
+        const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+        if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
+          setError('WhatsApp was blocked by the browser. Please allow popups for this site, or use the downloaded PDF to share manually.');
+        }
+      }
+
       let logoDataUrl = logoBase64;
       if (!logoDataUrl) {
         try {
@@ -712,18 +730,9 @@ export default function AdminDailyBalanceSheet() {
       const doc = generateBalanceSheetPDF(logoDataUrl);
       const blob = doc.output('blob');
       const filename = `Daily-Balance-Sheet-${selectedDate}.pdf`;
-      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
 
       // Share / download the PDF
       await shareOrDownloadPDF(blob, filename);
-
-      // In browser, also open WhatsApp web with the fixed number
-      if (!isNative) {
-        const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-        const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
-        const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-        window.open(whatsappUrl, '_blank');
-      }
     } catch (err) {
       setError(err.message || 'Failed to generate PDF for WhatsApp');
     } finally {
@@ -828,7 +837,7 @@ export default function AdminDailyBalanceSheet() {
         )}
         {isAllOutlets && (
           <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-            All Outlets — Read-only
+            All Outlets
           </span>
         )}
       </div>
@@ -848,7 +857,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={Number(sheet?.acBarSaleComputed) || 0}
             overrideValue={overrides.acBarSaleOverride}
             isManual={overrides.acBarSaleOverride != null}
-            isLocked={isLocked || isAllOutlets}
+            isLocked={isLocked}
             onChange={(v) => handleFieldChange('acBarSaleOverride', v)}
           />
           <SalesTile
@@ -856,7 +865,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.nonAcBarSaleOverride}
             isManual={true}
-            isLocked={isLocked || isAllOutlets}
+            isLocked={isLocked}
             onChange={(v) => handleFieldChange('nonAcBarSaleOverride', v)}
           />
           <SalesTile
@@ -864,7 +873,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={Number(sheet?.familyWingSaleComputed) || 0}
             overrideValue={overrides.familyWingSaleOverride}
             isManual={overrides.familyWingSaleOverride != null}
-            isLocked={isLocked || isAllOutlets}
+            isLocked={isLocked}
             onChange={(v) => handleFieldChange('familyWingSaleOverride', v)}
           />
           <SalesTile
@@ -872,7 +881,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.parcelSaleOverride}
             isManual={true}
-            isLocked={isLocked || isAllOutlets}
+            isLocked={isLocked}
             onChange={(v) => handleFieldChange('parcelSaleOverride', v)}
           />
           <SalesTile
@@ -880,7 +889,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.swiggySale}
             isManual={true}
-            isLocked={isLocked || isAllOutlets}
+            isLocked={isLocked}
             onChange={(v) => handleFieldChange('swiggySale', v)}
           />
           <SalesTile
@@ -888,7 +897,7 @@ export default function AdminDailyBalanceSheet() {
             computedValue={null}
             overrideValue={overrides.zomatoSale}
             isManual={true}
-            isLocked={isLocked || isAllOutlets}
+            isLocked={isLocked}
             onChange={(v) => handleFieldChange('zomatoSale', v)}
           />
         </div>
@@ -952,28 +961,29 @@ export default function AdminDailyBalanceSheet() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-black text-gray-800">Adjustments</h3>
-          {!isLocked && !isAllOutlets && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                {ADJUSTMENT_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => applyAdjustmentPreset(preset)}
-                    className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-[#FFEBEE] hover:text-[#B71C1C]"
-                    title={`Add ${preset.label}`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowAddAdj(!showAddAdj)}
-                className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2]"
-              >
-                <Plus size={14} /> Add
-              </button>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1">
+              {ADJUSTMENT_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  onClick={() => applyAdjustmentPreset(preset)}
+                  disabled={isLocked}
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-[#FFEBEE] hover:text-[#B71C1C] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={isLocked ? 'Unlock sheet to add' : `Add ${preset.label}`}
+                >
+                  {preset.label}
+                </button>
+              ))}
             </div>
-          )}
+            <button
+              onClick={() => setShowAddAdj(!showAddAdj)}
+              disabled={isLocked}
+              className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] disabled:opacity-40 disabled:cursor-not-allowed"
+              title={isLocked ? 'Unlock sheet to add adjustments' : 'Add adjustment'}
+            >
+              <Plus size={14} /> Add Adjustment
+            </button>
+          </div>
         </div>
 
         {showAddAdj && (
@@ -994,6 +1004,7 @@ export default function AdminDailyBalanceSheet() {
               </button>
               <input
                 type="number"
+                min="0"
                 value={newAdj.amount}
                 onChange={(e) => setNewAdj({ ...newAdj, amount: e.target.value })}
                 placeholder="Amount"
@@ -1019,7 +1030,7 @@ export default function AdminDailyBalanceSheet() {
             <AdjustmentPill
               key={adj.id}
               adj={adj}
-              isLocked={isLocked || isAllOutlets}
+              isLocked={isLocked}
               onEdit={handleEditAdjustment}
               onDelete={handleDeleteAdjustment}
               onDragStart={handleDragStart}
@@ -1068,7 +1079,7 @@ export default function AdminDailyBalanceSheet() {
           <>
             <button
               onClick={handleWhatsAppShare}
-              disabled={statusLoading || isAllOutlets}
+              disabled={statusLoading}
               className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
             >
               {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
@@ -1077,7 +1088,7 @@ export default function AdminDailyBalanceSheet() {
             {isAdmin && !isVGrand && (
               <button
                 onClick={handleSubmit}
-                disabled={statusLoading || sheet?.status === 'SUBMITTED' || isAllOutlets}
+                disabled={statusLoading || sheet?.status === 'SUBMITTED'}
                 className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -1087,7 +1098,7 @@ export default function AdminDailyBalanceSheet() {
             {isAdmin && sheet?.status === 'SUBMITTED' && (
               <button
                 onClick={handleLock}
-                disabled={statusLoading || isAllOutlets}
+                disabled={statusLoading}
                 className="flex items-center justify-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700"
               >
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}

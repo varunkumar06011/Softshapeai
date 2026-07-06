@@ -28,11 +28,12 @@ import {
 
   UtensilsCrossed, MessageSquare, Check, X, AlertCircle, Loader2, Zap,
 
-  FileText, History, Bell, RefreshCw, Star, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
+  FileText, History, Bell, RefreshCw, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
 
   Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp
 
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -844,6 +845,16 @@ export default function CaptainApp({ onLogout }) {
   // Menu scroll state for collapsible sticky header
   const [isMenuScrolled, setIsMenuScrolled] = useState(false);
   const menuScrollRef = useRef(null);
+
+  // Reset scroll state when switching tables or views so the menu header is always visible initially
+  useEffect(() => {
+    setIsMenuScrolled(false);
+    setIsHeaderVisible(true);
+    lastScrollYRef.current = 0;
+    if (menuScrollRef.current) {
+      menuScrollRef.current.scrollTop = 0;
+    }
+  }, [activeTableId, view]);
 
   // Cancel-item state
 
@@ -4748,7 +4759,7 @@ export default function CaptainApp({ onLogout }) {
 
                               <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
 
-                                <Star size={6} className="fill-white" /> Special
+                                <StarIcon size={6} className="fill-white" /> Special
 
                               </div>
 
@@ -5385,7 +5396,7 @@ export default function CaptainApp({ onLogout }) {
 
                       <div className="flex items-center gap-2 mb-4">
 
-                        <Star size={16} className="text-amber-500 fill-amber-500" />
+                        <StarIcon size={16} className="text-amber-500 fill-amber-500" />
 
                         <h4 className="text-[11px] font-black uppercase tracking-widest text-[#E53935]">Today Specials</h4>
 

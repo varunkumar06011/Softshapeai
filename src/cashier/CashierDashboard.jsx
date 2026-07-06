@@ -29,8 +29,9 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Star
+  Maximize2, Minimize2, Eye, Receipt, FileText
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber } from '../services/orderApi';
@@ -235,7 +236,7 @@ const HighlightedText = ({ text, highlight }) => {
     const char = text[i];
     if (qIdx < q.length && char.toLowerCase() === q[qIdx]) {
       parts.push(
-        <mark key={i} className="bg-yellow-100 text-[#E53935] font-black rounded-sm px-0.5">
+        <mark key={i} className="bg-yellow-100 text-[#5C85BB] font-black rounded-sm px-0.5">
           {char}
         </mark>
       );
@@ -2188,11 +2189,15 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       const rid = getCurrentRestaurantId();
 
-      // Use backend billNumber filter instead of fetching 500 txns and filtering client-side
+      // Use backend filters (billNumber + tableNumber) instead of fetching all txns and filtering client-side
       const params = new URLSearchParams();
       params.set('date', billFinderDate);
       if (billFinderBillNo.trim()) {
         params.set('billNumber', billFinderBillNo.trim());
+      }
+      const tableNum = parseInt(billFinderTableNo.trim(), 10);
+      if (!isNaN(tableNum)) {
+        params.set('tableNumber', String(tableNum));
       }
       params.set('limit', '500');
 
@@ -4448,12 +4453,12 @@ const CashierDashboard = ({ onLogout }) => {
   ];
 
   return (
-    <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#FFF5F5] font-sans overflow-hidden text-[#1A1A1A]">
+    <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#F6F9FC] font-sans overflow-hidden text-[#2C3E50]">
       <OfflineStatusBar />
       <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
       {/* SIDEBAR / BOTTOM BAR */}
-      <aside className="w-full sm:w-20 lg:w-56 h-16 sm:h-auto bg-white border-t sm:border-t-0 sm:border-r border-[#FFCDD2] flex sm:flex-col z-30 transition-all shrink-0">
-        <div className="hidden sm:flex p-3 lg:p-4 border-b border-[#FFCDD2] items-center justify-center shrink-0 bg-white">
+      <aside className="w-full sm:w-20 lg:w-64 h-16 sm:h-auto bg-[#F4F0FF] border-t sm:border-t-0 sm:border-r border-[#D4D8E8] flex sm:flex-col z-30 transition-all shrink-0">
+        <div className="hidden sm:flex p-3 lg:p-4 border-b border-[#D4D8E8] items-center justify-center shrink-0 bg-[#F4F0FF]">
           <div className="bg-white p-1.5 lg:p-3 rounded-2xl lg:rounded-[24px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-14 lg:w-32 flex items-center justify-center">
             <img
               src="/logo softshape.ai.png"
@@ -4469,7 +4474,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'pos', label: 'POS Billing', icon: ShoppingCart },
             { id: 'tables', label: 'Tables', icon: Table2 },
             { id: 'history', label: 'Past Transactions', icon: History },
-            { id: 'analytics', label: 'Item Analytics', icon: BarChart3 },
+            { id: 'analytics', label: 'Analytics', icon: BarChart3 },
             { id: 'vouchers', label: 'Expenditures', icon: Receipt },
             { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
@@ -4477,22 +4482,25 @@ const CashierDashboard = ({ onLogout }) => {
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
-              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-3 px-5 sm:px-3 py-2.5 sm:py-2.5 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 ${activeTab === item.id
-                ? 'bg-[#E53935] text-white font-black shadow-lg shadow-red-500/15 scale-[1.01]'
-                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+              className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 text-center sm:text-left ${activeTab === item.id
+                ? 'bg-[#5C85BB] text-white font-black shadow-lg shadow-[#5C85BB]/20 scale-[1.01]'
+                : 'text-[#5C85BB]/80 hover:bg-[#5C85BB]/10 hover:text-[#5C85BB]'
                 }`}
             >
               <item.icon size={22} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
-              <span className="text-[10px] sm:hidden font-bold leading-none mt-1">{item.label.split(' ')[0]}</span>
-              <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider">{item.label}</span>
+              <span className="text-[10px] sm:hidden font-bold leading-none mt-1">{item.label}</span>
+              <span className="hidden sm:block text-xs lg:text-sm font-black uppercase tracking-wider whitespace-nowrap">{item.label}</span>
+              {activeTab === item.id && (
+                <span className="hidden sm:block absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full" />
+              )}
             </button>
           ))}
         </nav>
 
-        <div className="hidden sm:block p-3 border-t border-gray-100 mt-auto pb-6">
-          <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-gray-450 hover:text-red-650 hover:bg-red-50 transition-all hover:scale-[1.02] active:scale-98">
-            <LogOut size={22} className="text-gray-405 group-hover:text-red-600" />
-            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-gray-500 group-hover:text-red-600">Logout</span>
+        <div className="hidden sm:block p-3 border-t border-[#D4D8E8] mt-auto pb-6">
+          <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-[#5C85BB]/80 hover:text-[#5C85BB] hover:bg-[#5C85BB]/10 transition-all hover:scale-[1.02] active:scale-98">
+            <LogOut size={22} className="group-hover:text-[#5C85BB]" />
+            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-[#5C85BB]/80 group-hover:text-[#5C85BB]">Logout</span>
           </button>
         </div>
       </aside>
@@ -4500,7 +4508,7 @@ const CashierDashboard = ({ onLogout }) => {
       {/* MAIN VIEW */}
       <div className="flex-grow flex flex-col min-w-0 overflow-hidden">
         {/* COMPACT TOP BAR */}
-        <header className="h-18 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
+        <header className="h-18 bg-[#F4F0FF] border-b border-[#D4D8E8] px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
 
             <div className="flex items-center gap-2.5 text-gray-500">
@@ -4516,7 +4524,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <p className="text-[10px] text-gray-400 font-black uppercase mt-1">{user?.role === 'OWNER' || user?.role === 'ADMIN' ? user.role : 'Cashier'}</p>
               </div>
               <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-base shadow-inner border border-gray-200">🤵</div>
-              <button onClick={onLogout} className="sm:hidden ml-2 p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50"><LogOut size={20} /></button>
+              <button onClick={onLogout} className="sm:hidden ml-2 p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-[#5C85BB] hover:bg-[#5C85BB]/10"><LogOut size={20} /></button>
             </div>
           </div>
         </header>
@@ -4592,13 +4600,14 @@ const CashierDashboard = ({ onLogout }) => {
                     {/* Stats Row */}
                     <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
                       {stats.map((stat, i) => (
-                        <div key={i} className="min-w-[75vw] sm:min-w-0 snap-start shrink-0 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
-                          <div className={`w-9 h-9 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center shrink-0`}>
-                            <stat.icon size={18} />
+                        <div key={i} className="min-w-[75vw] sm:min-w-0 snap-start shrink-0 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4">
+                          <div className={`w-12 h-12 ${stat.bg} ${stat.color} rounded-2xl flex items-center justify-center shrink-0 shadow-inner`}>
+                            <stat.icon size={24} strokeWidth={2.5} />
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-widest">{stat.label}</p>
-                            <p className={`text-lg sm:text-xl font-black ${stat.color} leading-none mt-0.5`}>{stat.value}</p>
+                            <p className={`text-xl sm:text-2xl font-black ${stat.color} leading-none mt-1`}>{stat.value}</p>
+                            <p className="text-[10px] font-bold text-gray-400 mt-1 truncate">{stat.change}</p>
                           </div>
                         </div>
                       ))}
@@ -4607,7 +4616,7 @@ const CashierDashboard = ({ onLogout }) => {
                     {settlementBreakdown.count > 0 && (
                       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                         <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-3 flex items-center gap-2">
-                          <Banknote size={16} className="text-[#E53935]" />
+                          <Banknote size={16} className="text-[#5C85BB]" />
                           Settlement Breakdown
                           <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{settlementBreakdown.count} transactions</span>
                         </h3>
@@ -4631,9 +4640,9 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
                       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                         <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
-                          <Table2 size={18} className="text-[#E53935]" />
+                          <Table2 size={18} className="text-[#5C85BB]" />
                           Live Floor Status
-                          <span className="bg-[#E53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
+                          <span className="bg-[#5C85BB] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
                             {dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length} Running
                           </span>
                           {!socketConnected && (
@@ -4644,7 +4653,7 @@ const CashierDashboard = ({ onLogout }) => {
                           )}
                         </h3>
                         <div className="flex gap-4">
-                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#E53935]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#5C85BB]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
                           <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
                           <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preparing</span></div>
                         </div>
@@ -4687,9 +4696,9 @@ const CashierDashboard = ({ onLogout }) => {
                                     Number(table.orders?.[0]?.totalAmount || 0)
                                   );
 
-                              let cardBg = 'bg-red-50 border-[#E53935]';
-                              let textColor = 'text-[#E53935]';
-                              let badgeCls = 'bg-red-100 text-red-700';
+                              let cardBg = 'bg-[#5C85BB]/10 border-[#5C85BB]';
+                              let textColor = 'text-[#5C85BB]';
+                              let badgeCls = 'bg-[#5C85BB]/10 text-[#5C85BB]';
                               let statusLabel = 'Occupied';
                               let pulseClass = '';
 
@@ -4758,7 +4767,7 @@ const CashierDashboard = ({ onLogout }) => {
                               key={outlet}
                               onClick={() => setActiveOutlet(outlet)}
                               className={`px-3 py-1.5 rounded-md text-xs font-black uppercase tracking-wider transition-all ${activeOutlet === outlet
-                                ? 'bg-[#E53935] text-white shadow-sm'
+                                ? 'bg-[#5C85BB] text-white shadow-sm'
                                 : 'text-gray-500 hover:text-gray-700'
                                 }`}
                             >
@@ -4776,7 +4785,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           onClick={() => setActiveVenueFilter('all')}
                           className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${activeVenueFilter === 'all'
-                            ? 'bg-[#E53935] text-white shadow-sm'
+                            ? 'bg-[#5C85BB] text-white shadow-sm'
                             : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
                             }`}
                         >
@@ -4789,7 +4798,7 @@ const CashierDashboard = ({ onLogout }) => {
                               key={sourceKey}
                               onClick={() => setActiveVenueFilter(sourceKey)}
                               className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${activeVenueFilter === sourceKey
-                                ? 'bg-[#E53935] text-white shadow-sm'
+                                ? 'bg-[#5C85BB] text-white shadow-sm'
                                 : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
                                 }`}
                             >
@@ -4818,7 +4827,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     key={sourceKey}
                                     onClick={() => handleTabSwitch(sourceKey)}
                                     className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === sourceKey
-                                        ? 'bg-[#E53935] text-white border-[#E53935]'
+                                        ? 'bg-[#5C85BB] text-white border-[#5C85BB]'
                                         : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
                                       }`}
                                   >
@@ -4828,7 +4837,7 @@ const CashierDashboard = ({ onLogout }) => {
                               })
                             : (
                               <div className="flex items-center gap-3 py-4">
-                                <div className="inline-block w-6 h-6 border-3 border-gray-200 border-t-[#E53935] rounded-full animate-spin"></div>
+                                <div className="inline-block w-6 h-6 border-3 border-gray-200 border-t-[#5C85BB] rounded-full animate-spin"></div>
                                 <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Loading sections...</p>
                               </div>
                             )}
@@ -4858,25 +4867,29 @@ const CashierDashboard = ({ onLogout }) => {
                                 const isExtra = table.isExtra;
                                 const hasExtra = false; // Always show + button to allow multiple extra tables
 
-                                let containerClass = 'bg-white border border-gray-200 text-gray-500 hover:border-gray-400 shadow-sm';
+                                let containerClass = 'bg-white border border-[#84BFB1] text-[#84BFB1] hover:border-[#84BFB1] hover:shadow-md';
                                 let statusText = 'Open';
+                                let statusClass = 'text-[#84BFB1] bg-[#84BFB1]/10';
 
                                 if (isExtra) {
-                                  containerClass = 'bg-blue-50 border-2 border-dashed border-blue-400 text-blue-600 hover:border-blue-500 shadow-sm';
+                                  containerClass = 'bg-blue-50 border-2 border-dashed border-blue-400 text-blue-600 hover:border-blue-500 hover:shadow-md';
                                   statusText = 'Extra';
+                                  statusClass = 'text-blue-600 bg-blue-100';
                                 } else if (isWaitingBill) {
-                                  containerClass = 'bg-amber-50 border border-amber-400 text-amber-600 shadow-md animate-pulse';
+                                  containerClass = 'bg-amber-50 border border-amber-400 text-amber-700 shadow-md animate-pulse';
                                   statusText = 'Bill';
+                                  statusClass = 'text-amber-700 bg-amber-200';
                                 } else if (isBusy) {
-                                  containerClass = 'bg-red-50 border border-[#E53935] text-[#E53935] shadow-md';
+                                  containerClass = 'bg-[#F39B7F]/10 border border-[#F39B7F] text-[#F39B7F] shadow-md';
                                   statusText = 'Busy';
+                                  statusClass = 'text-[#F39B7F] bg-[#F39B7F]/10';
                                 }
 
                                 return (
                                   <div
                                     key={isExtra ? `extra-${table.id}` : (table.backendId || table.id)}
                                     onClick={() => handleTableSelect(table)}
-                                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative ${containerClass}`}
+                                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative shadow-sm ${containerClass}`}
                                   >
                                     {/* Add Extra (+) button — top-left, only on non-extra tables */}
                                     {!isExtra && (
@@ -4984,10 +4997,10 @@ const CashierDashboard = ({ onLogout }) => {
                                         {table.captainName.split(' ')[0]}
                                       </div>
                                     )}
-                                    <span className="text-2xl font-black">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
-                                    <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider leading-tight mt-1">{statusText}</span>
+                                    <span className="text-3xl font-black leading-none">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
+                                    <span className={`mt-1.5 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-black uppercase tracking-wider ${statusClass}`}>{statusText}</span>
                                     {!isFree && (
-                                      <span className="text-[9px] font-black opacity-60 mt-0.5">₹{calculateTableBill(table, restaurantConfig).grandTotal}</span>
+                                      <span className="text-xs md:text-sm font-black opacity-70 mt-1">₹{calculateTableBill(table, restaurantConfig).grandTotal}</span>
                                     )}
                                   </div>
                                 );
@@ -5068,12 +5081,12 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
                         {/* Total Amount Summary */}
                         <div className="m-3 mb-2">
-                          <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] border border-red-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Revenue (Pre-tax)</span>
+                          <div className="bg-gradient-to-br from-[#5C85BB] to-[#4A6A9A] border border-blue-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
                               ₹{filteredTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
                             </span>
-                            <span className="text-[10px] font-bold text-red-100">
+                            <span className="text-[10px] font-bold text-blue-100">
                               {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(2)}
                             </span>
                           </div>
@@ -5128,7 +5141,7 @@ const CashierDashboard = ({ onLogout }) => {
                               key={f.key}
                               onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                               className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key && !txnCustomDate
-                                ? 'bg-[#E53935] text-white shadow-sm'
+                                ? 'bg-[#5C85BB] text-white shadow-sm'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                                 }`}
                             >
@@ -5149,7 +5162,7 @@ const CashierDashboard = ({ onLogout }) => {
                             }}
                             className={`px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold border-2 outline-none transition-colors cursor-pointer ${
                               txnCustomDate
-                                ? 'border-[#E53935] text-[#E53935] bg-red-50'
+                                ? 'border-[#5C85BB] text-[#5C85BB] bg-[#5C85BB]/10'
                                 : 'border-gray-200 text-gray-600 bg-white hover:border-gray-400'
                             }`}
                           />
@@ -5192,7 +5205,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {txnsLoading && !txnInitialLoaded && filteredTransactions.length > 0 && (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
                               <div className="flex flex-col items-center gap-2">
-                                <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+                                <div className="w-7 h-7 border-2 border-[#5C85BB] border-t-transparent rounded-full animate-spin" />
                                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
                               </div>
                             </div>
@@ -5213,7 +5226,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 <tr>
                                   <td colSpan={6} className="p-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2 py-8">
-                                      <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+                                      <div className="w-7 h-7 border-2 border-[#5C85BB] border-t-transparent rounded-full animate-spin" />
                                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
                                     </div>
                                   </td>
@@ -5226,7 +5239,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
                                     >
                                       <td className="p-4">
-                                        <span className="text-xs md:text-sm font-black text-[#E53935]">{txn.displayId || '—'}</span>
+                                        <span className="text-xs md:text-sm font-black text-[#5C85BB]">{txn.displayId || '—'}</span>
                                       </td>
                                       <td className="p-4">
                                         <span className="text-xs md:text-sm font-black text-gray-900">
@@ -5289,7 +5302,7 @@ const CashierDashboard = ({ onLogout }) => {
                                                 ))}
                                                 <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
                                                   <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                                  <span className="text-sm font-black text-[#5C85BB]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                                 </div>
                                               </div>
                                               <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 mt-2 space-y-2">
@@ -5317,7 +5330,7 @@ const CashierDashboard = ({ onLogout }) => {
                                                 )}
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                                                   <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
-                                                  <span className="text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                                  <span className="text-sm font-black text-[#5C85BB]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                                 </div>
                                                 {Number(txn.tipAmount ?? 0) > 0 && (
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
@@ -5400,7 +5413,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={billFinderDate}
                                 onChange={(e) => { setBillFinderDate(e.target.value); setBillFinderSearched(false); }}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#5C85BB]"
                               />
                             </div>
                             <div>
@@ -5411,7 +5424,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={billFinderBillNo}
                                 onChange={(e) => { setBillFinderBillNo(e.target.value); setBillFinderSearched(false); }}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#5C85BB]"
                               />
                             </div>
                             <div>
@@ -5422,14 +5435,14 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={billFinderTableNo}
                                 onChange={(e) => { setBillFinderTableNo(e.target.value); setBillFinderSearched(false); }}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#5C85BB]"
                               />
                             </div>
                           </div>
                           <button
                             onClick={handleBillSearch}
                             disabled={billFinderLoading}
-                            className="w-full bg-[#E53935] text-white rounded-xl px-4 py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className="w-full bg-[#5C85BB] text-white rounded-xl px-4 py-3 text-sm font-black uppercase hover:bg-[#4A6A9A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                           >
                             {billFinderLoading ? (
                               <>
@@ -5497,7 +5510,7 @@ const CashierDashboard = ({ onLogout }) => {
                                           {txn.method || '—'}
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</td>
+                                      <td className="px-4 py-3 text-right text-sm font-black text-[#5C85BB]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</td>
                                       <td className="px-4 py-3 text-center">
                                         <div className="flex items-center justify-center gap-1.5">
                                           <button
@@ -5568,7 +5581,7 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                           <div className="text-center border-l border-gray-100 hidden md:block">
                             <p className="text-[9px] font-black uppercase text-gray-400">Delayed</p>
-                            <p className="text-lg font-black text-[#E53935]">
+                            <p className="text-lg font-black text-[#5C85BB]">
                               {liveKotQueue.filter(k => k.type === 'FOOD' && k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
                             </p>
                           </div>
@@ -5612,7 +5625,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       <div className="mb-3">
                                         <p className="text-[9px] font-bold text-gray-400 uppercase">Capt. {kot.table.captainName?.split(' ')[0] || 'Walk-in'}</p>
                                         <div className="flex items-center gap-2 mt-1">
-                                          <span className="text-[9px] font-black text-[#E53935] uppercase">{kot.items.length} Items</span>
+                                          <span className="text-[9px] font-black text-[#5C85BB] uppercase">{kot.items.length} Items</span>
                                           <div className="w-1 h-1 rounded-full bg-gray-300" />
                                           <span className="text-[9px] font-black text-gray-500">{kot.itemsReady || 0}/{kot.items.length} Ready</span>
                                         </div>
@@ -5676,7 +5689,7 @@ const CashierDashboard = ({ onLogout }) => {
                             x: isSearchFocused ? 2 : 0
                           }}
                           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                          className="absolute left-5 top-1/2 -translate-y-1/2 text-[#E53935] pointer-events-none z-10"
+                          className="absolute left-5 top-1/2 -translate-y-1/2 text-[#5C85BB] pointer-events-none z-10"
                         >
                           <Search size={24} />
                         </motion.div>
@@ -5686,8 +5699,8 @@ const CashierDashboard = ({ onLogout }) => {
                           type="text"
                           placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
                           className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${isSearchFocused
-                            ? 'border-[#E53935] ring-4 ring-red-100/80 shadow-red-100/20 scale-[1.002]'
-                            : 'border-gray-300 hover:border-[#E53935]/50 hover:shadow-md'
+                            ? 'border-[#5C85BB] ring-4 ring-[#5C85BB]/20 shadow-[#5C85BB]/10 scale-[1.002]'
+                            : 'border-gray-300 hover:border-[#5C85BB]/50 hover:shadow-md'
                             }`}
                           value={searchQuery}
                           onChange={(e) => {
@@ -5717,7 +5730,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 setSearchQuery('');
                                 searchInputRef.current?.focus();
                               }}
-                              className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-red-50 text-gray-405 hover:text-[#E53935] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
+                              className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-[#5C85BB]/10 text-gray-405 hover:text-[#5C85BB] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
                             >
                               <X size={16} />
                             </motion.button>
@@ -5749,8 +5762,8 @@ const CashierDashboard = ({ onLogout }) => {
                                   setSelectedCategory('All');
                                 }}
                                 className={`px-8 min-h-[56px] rounded-xl font-black text-lg uppercase tracking-widest transition-all duration-200 border-2 shrink-0 hover:scale-[1.03] active:scale-95 flex-1 ${selectedMenuType === tab.value
-                                  ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35'
-                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#E53935] hover:text-[#E53935]'
+                                  ? 'bg-[#5C85BB] border-[#5C85BB] text-white shadow-lg shadow-[#5C85BB]/35'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F6F9FC] hover:border-[#5C85BB] hover:text-[#5C85BB]'
                                   }`}
                               >
                                 {tab.label}
@@ -5780,8 +5793,8 @@ const CashierDashboard = ({ onLogout }) => {
                                 key={cat}
                                 onClick={() => setSelectedCategory(cat)}
                                 className={`px-6 py-4 rounded-xl text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
-                                  ? 'bg-[#E53935] border-[#E53935] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
-                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#FFF5F5] hover:border-[#FFCDD2] hover:text-[#E53935]'
+                                  ? 'bg-[#5C85BB] border-[#5C85BB] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F6F9FC] hover:border-[#D4D8E8] hover:text-[#5C85BB]'
                                   }`}
                               >
                                 {cat}
@@ -5796,7 +5809,7 @@ const CashierDashboard = ({ onLogout }) => {
                       {!menuLoading && activeOutlet === 'restaurant' && todaySpecials.length > 0 && (
                         <div className="mb-4">
                           <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 mb-2 flex items-center gap-2">
-                            <Star size={14} className="fill-amber-500" /> Today Specials
+                            <StarIcon size={14} className="fill-amber-500" /> Today Specials
                           </h4>
                           <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1">
                             {todaySpecials.map(special => (
@@ -5806,7 +5819,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 className="shrink-0 flex flex-col items-start bg-gradient-to-br from-amber-50 to-white border border-amber-200 hover:border-amber-400 rounded-xl px-3 py-2 shadow-sm active:scale-95 transition-all text-left"
                               >
                                 <span className="text-xs font-black text-gray-900 line-clamp-1 max-w-[140px]">{special.n}</span>
-                                <span className="text-xs font-black text-[#E53935]">₹{special.p}</span>
+                                <span className="text-xs font-black text-[#5C85BB]">₹{special.p}</span>
                               </button>
                             ))}
                           </div>
@@ -5829,7 +5842,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <div
                           className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm mt-4 w-full"
                         >
-                          <AlertCircle size={44} className="text-[#E53935] mb-4" />
+                          <AlertCircle size={44} className="text-[#5C85BB] mb-4" />
                           <h3 className="text-lg font-black text-gray-900 mb-1">No matching items found</h3>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest max-w-xs text-center">
                             {searchQuery.trim()
@@ -5839,7 +5852,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {searchQuery.trim() && (
                             <button
                               onClick={() => setSearchQuery('')}
-                              className="mt-6 px-6 py-2.5 bg-[#E53935] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-red-100 cursor-pointer"
+                              className="mt-6 px-6 py-2.5 bg-[#5C85BB] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-[#5C85BB]/10 cursor-pointer"
                             >
                               Clear Search
                             </button>
@@ -5852,7 +5865,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {activeMenuItems.map((item) => (
                             <div
                               key={item.id || item.n}
-                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#E53935] hover:shadow-xl transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[132px] p-3 sm:p-4 gap-2 justify-between"
+                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#5C85BB] hover:shadow-xl transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[132px] p-3 sm:p-4 gap-2 justify-between"
                             >
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
@@ -5873,8 +5886,8 @@ const CashierDashboard = ({ onLogout }) => {
 
                               {/* Price + Add button */}
                               <div className="flex items-center justify-between mt-auto">
-                                <p className="text-lg md:text-xl font-black text-[#E53935]">₹{item.p}</p>
-                                <div onClick={(e) => { e.stopPropagation(); handleAddItem(item); }} className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#E53935] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0 cursor-pointer">
+                                <p className="text-lg md:text-xl font-black text-[#5C85BB]">₹{item.p}</p>
+                                <div onClick={(e) => { e.stopPropagation(); handleAddItem(item); }} className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#5C85BB] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0 cursor-pointer">
                                   <Plus className="w-5 h-5" />
                                 </div>
                               </div>
@@ -5894,7 +5907,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="flex flex-col w-full">
                         <div className="flex justify-between items-center mb-3">
                           <h2 className="font-black text-base md:text-lg uppercase tracking-widest text-gray-900 flex items-center gap-2.5">
-                            <ShoppingCart size={22} className="text-[#E53935]" />
+                            <ShoppingCart size={22} className="text-[#5C85BB]" />
                             Cart Log
                           </h2>
                           <div className="flex items-center gap-1">
@@ -5930,7 +5943,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <select
                         value={selectedOrderPlatform}
                         onChange={(e) => setSelectedOrderPlatform(e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:border-[#E53935] focus:outline-none"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:border-[#5C85BB] focus:outline-none"
                       >
                         <option value="DINE_IN">Dine In</option>
                         <option value="SWIGGY">Swiggy</option>
@@ -6025,7 +6038,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     </div>
                                     <button
                                       onClick={() => { setEditQtyItemId(item.id); setEditQtyValue(String(item.q)); }}
-                                      className="text-xs md:text-sm font-black text-[#E53935] hover:underline px-2.5 py-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                      className="text-xs md:text-sm font-black text-[#5C85BB] hover:underline px-2.5 py-1.5 hover:bg-[#5C85BB]/10 rounded-lg transition-colors"
                                     >Edit</button>
                                   </>
                                 )}
@@ -6126,7 +6139,7 @@ const CashierDashboard = ({ onLogout }) => {
                             disabled={isKotSending || cart.length === 0}
                             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                               isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
-                                'bg-white border-gray-200 text-gray-700 hover:border-[#E53935] hover:text-[#E53935] hover:shadow-sm'
+                                'bg-white border-gray-200 text-gray-700 hover:border-[#5C85BB] hover:text-[#5C85BB] hover:shadow-sm'
                               }`}
                           >
                             {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
@@ -6166,7 +6179,7 @@ const CashierDashboard = ({ onLogout }) => {
           >
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3 sm:gap-4">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#E53935] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#5C85BB] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
                   {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.number ?? selectedTable.id}`}
                 </div>
                 <div>
@@ -6196,7 +6209,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-3 sm:p-4 bg-white flex flex-col flex-1 min-h-[100px] overflow-hidden">
               {/* ── Order Summary (read-only view) ─────────────────── */}
               <div className="flex flex-col min-h-0 flex-1 mb-3 overflow-hidden">
-                <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#E53935] border-b border-red-100 pb-1 shrink-0">
+                <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#5C85BB] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
@@ -6263,11 +6276,11 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className={`flex bg-gray-100 rounded-lg p-1 ml-2 ${isOrderSettled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
                         <button 
                           onClick={() => { setDiscountMode('percent'); setRawDiscountInput(''); }}
-                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#E53935]' : 'text-gray-400 hover:text-gray-600'}`}
+                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#5C85BB]' : 'text-gray-400 hover:text-gray-600'}`}
                         >%</button>
                         <button 
                           onClick={() => { setDiscountMode('fixed'); setRawDiscountInput(''); }}
-                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'fixed' ? 'bg-white shadow-sm border border-gray-200/50 text-[#E53935]' : 'text-gray-400 hover:text-gray-600'}`}
+                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'fixed' ? 'bg-white shadow-sm border border-gray-200/50 text-[#5C85BB]' : 'text-gray-400 hover:text-gray-600'}`}
                         >₹</button>
                       </div>
                     </div>
@@ -6278,7 +6291,7 @@ const CashierDashboard = ({ onLogout }) => {
                       value={rawDiscountInput}
                       onChange={(e) => setRawDiscountInput(e.target.value)}
                       disabled={isOrderSettled}
-                      className="w-full px-3 py-2 bg-[#FFF5F5] border focus:border-[#E53935] rounded-lg outline-none text-sm font-bold text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
+                      className="w-full px-3 py-2 bg-[#F6F9FC] border focus:border-[#5C85BB] rounded-lg outline-none text-sm font-bold text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
                       placeholder="0"
                     />
                   </div>
@@ -6294,7 +6307,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(2)}</span>
                     </div>
                     {discountPercent > 0 && (
-                      <div className="flex justify-between text-xs font-black text-[#E53935] uppercase">
+                      <div className="flex justify-between text-xs font-black text-[#5C85BB] uppercase">
                         <span>Discount {discountMode === 'percent' ? `(${discountPercent}%)` : ''}</span>
                         <span>-₹{activeDiscountAmount.toFixed(2)}</span>
                       </div>
@@ -6309,7 +6322,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <span className="text-xs font-black text-gray-900 uppercase tracking-widest">
                         {discountPercent > 0 ? 'Final' : 'Total'}
                       </span>
-                      <span className="text-xl sm:text-2xl font-black text-[#E53935] tracking-tight leading-none">
+                      <span className="text-xl sm:text-2xl font-black text-[#5C85BB] tracking-tight leading-none">
                         ₹{Number(activeGrandTotal).toFixed(0)}
                       </span>
                     </div>
@@ -6357,7 +6370,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       onClick={() => { if (isPrintingBill) return; setShowSettleConfirm(true); }}
                       disabled={isSettling}
-                      className="py-2.5 rounded-lg bg-[#E53935] border border-red-750 text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#c62828] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="py-2.5 rounded-lg bg-[#5C85BB] border border-[#4A6A9A] text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#4A6A9A] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Settlement
                     </button>
@@ -6525,7 +6538,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">New Total</p>
-                    <p className="text-2xl sm:text-3xl font-black text-[#E53935] tracking-tight">₹{Number(liveTotal).toFixed(2)}</p>
+                    <p className="text-2xl sm:text-3xl font-black text-[#5C85BB] tracking-tight">₹{Number(liveTotal).toFixed(2)}</p>
                   </div>
                   <button
                     onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillEditQuantities({}); setBillAdditions([]); setBillEditSearch(''); }}
@@ -6780,7 +6793,7 @@ const CashierDashboard = ({ onLogout }) => {
             </div>
             <div className="p-6">
               <p className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Select Payment Method</p>
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-2 gap-3 mb-5">
                 {[
                   { label: 'Cash', method: 'CASH', icon: Banknote, color: 'green' },
                   { label: 'Card', method: 'CARD', icon: CreditCard, color: 'purple' },
@@ -6790,25 +6803,28 @@ const CashierDashboard = ({ onLogout }) => {
                   <button
                     key={method}
                     onClick={() => setSelectedSettleMethod(method)}
-                    className={`flex flex-col items-center gap-2 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 ${
+                    className={`relative flex flex-col items-center gap-2.5 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
                       selectedSettleMethod === method
-                        ? color === 'green' ? 'bg-green-50 border-green-500 text-green-700'
-                          : color === 'purple' ? 'bg-purple-50 border-purple-500 text-purple-700'
-                          : color === 'blue' ? 'bg-blue-50 border-blue-500 text-blue-700'
-                          : 'bg-orange-50 border-orange-500 text-orange-700'
-                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                        ? color === 'green' ? 'bg-green-50 border-green-600 text-green-700'
+                          : color === 'purple' ? 'bg-purple-50 border-purple-600 text-purple-700'
+                          : color === 'blue' ? 'bg-blue-50 border-blue-600 text-blue-700'
+                          : 'bg-orange-50 border-orange-600 text-orange-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400 hover:bg-gray-50'
                     }`}
                   >
-                    <Icon size={24} />
+                    <Icon size={28} strokeWidth={2} />
                     <span className="text-sm font-black uppercase tracking-wider">{label}</span>
+                    {selectedSettleMethod === method && (
+                      <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-current" />
+                    )}
                   </button>
                 ))}
               </div>
 
-              <div className="mb-4">
-                <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip (Optional)</label>
+              <div className="mb-5">
+                <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-lg">₹</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -6817,7 +6833,7 @@ const CashierDashboard = ({ onLogout }) => {
                     value={tipInput}
                     onChange={(e) => setTipInput(e.target.value)}
                     placeholder="0"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 text-lg font-black text-gray-900 tabular-nums focus:outline-none focus:border-[#E53935] transition-colors"
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black text-gray-900 tabular-nums focus:outline-none focus:border-[#5C85BB] focus:ring-2 focus:ring-red-100 transition-colors"
                   />
                 </div>
               </div>
@@ -6831,7 +6847,7 @@ const CashierDashboard = ({ onLogout }) => {
                 }}
                 disabled={!selectedSettleMethod || isPrintingBill}
                 className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill
-                  ? 'bg-[#E53935] text-white shadow-lg shadow-red-150 hover:bg-[#c62828] border border-red-750'
+                  ? 'bg-[#5C85BB] text-white shadow-lg shadow-[#5C85BB]/20 hover:bg-[#4A6A9A] border border-[#4A6A9A]'
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
@@ -7001,7 +7017,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {Number(billPreviewTxn.roundOff ?? 0) !== 0 && (
                   <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Round Off</span><span className="font-bold text-gray-700">{Number(billPreviewTxn.roundOff) > 0 ? '+' : ''}₹{Number(billPreviewTxn.roundOff ?? 0).toFixed(2)}</span></div>
                 )}
-                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#E53935]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#5C85BB]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
               </div>
             </div>
           </div>
@@ -7025,13 +7041,13 @@ const CashierDashboard = ({ onLogout }) => {
                 onChange={e => { setReprintPinInput(e.target.value); setReprintPinError(''); }}
                 onKeyDown={e => { if (e.key === 'Enter') verifyReprintPin(); }}
                 placeholder="Enter PIN..."
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935] mb-2"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:border-[#5C85BB] mb-2"
               />
               {reprintPinError && <p className="text-xs font-bold text-red-500 mb-2">{reprintPinError}</p>}
               <button
                 onClick={verifyReprintPin}
                 disabled={isVerifyingReprintPin}
-                className="w-full bg-[#E53935] text-white rounded-lg py-3 text-sm font-black uppercase hover:bg-[#B71C1C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-[#5C85BB] text-white rounded-lg py-3 text-sm font-black uppercase hover:bg-[#4A6A9A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isVerifyingReprintPin ? 'Verifying...' : 'Verify & Reprint'}
               </button>
@@ -7186,8 +7202,8 @@ const CashierDashboard = ({ onLogout }) => {
       {/* NOTIFICATIONS OVERLAY */}
       <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
         {notifications.map(n => (
-          <div key={n.id} className="pointer-events-auto flex items-center gap-3 bg-white border-l-4 border-l-[#E53935] p-3 rounded-lg shadow-2xl animate-slide-in min-w-[240px]">
-            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-[#E53935]">
+          <div key={n.id} className="pointer-events-auto flex items-center gap-3 bg-white border-l-4 border-l-[#5C85BB] p-3 rounded-lg shadow-2xl animate-slide-in min-w-[240px]">
+            <div className="w-8 h-8 rounded-full bg-[#5C85BB]/10 flex items-center justify-center text-[#5C85BB]">
               {n.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
             </div>
             <div>
@@ -7582,7 +7598,7 @@ const CashierDashboard = ({ onLogout }) => {
                   onClick={handleCancelSelected}
                   disabled={selectedCount === 0 || cancelBatchLoading}
                   className={`flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${selectedCount > 0
-                    ? 'bg-[#E53935] text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
+                    ? 'bg-[#5C85BB] text-white hover:bg-[#4A6A9A] shadow-lg shadow-[#5C85BB]/30'
                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     }`}
                 >
@@ -7614,7 +7630,7 @@ const CashierDashboard = ({ onLogout }) => {
                   if (e.key === 'Escape') handlePasswordCancel();
                 }}
                 placeholder="Enter password"
-                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#E53935] focus:outline-none text-lg font-black tracking-widest text-center"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#5C85BB] focus:outline-none text-lg font-black tracking-widest text-center"
                 autoFocus
               />
               {passwordError && (
@@ -7630,7 +7646,7 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
               <button
                 onClick={handlePasswordSubmit}
-                className="flex-1 py-3 rounded-xl text-sm font-black bg-[#E53935] text-white hover:bg-red-700 transition-colors uppercase tracking-widest"
+                className="flex-1 py-3 rounded-xl text-sm font-black bg-[#5C85BB] text-white hover:bg-[#4A6A9A] transition-colors uppercase tracking-widest"
               >
                 Submit
               </button>

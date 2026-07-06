@@ -15,8 +15,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Edit2, Trash2, Save, X, Star, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
+  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -306,7 +307,7 @@ export default function TodaySpecials() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h2 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2">
-            <Star className="text-amber-500 fill-amber-500" /> Today Specials
+            <StarIcon className="text-amber-500 fill-amber-500" /> Today Specials
           </h2>
           <p className="text-xs font-bold text-gray-500 mt-1">Manage daily recommendations & captain targets</p>
         </div>
@@ -462,7 +463,7 @@ export default function TodaySpecials() {
 
         {specials.length === 0 && (
           <div className="col-span-full py-16 bg-white rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
-            <Star size={40} className="text-gray-300 mb-4" />
+            <StarIcon size={40} className="text-gray-300 mb-4" />
             <h3 className="text-lg font-black text-gray-900 mb-2">No Specials Added</h3>
             <p className="text-xs font-bold text-gray-500 max-w-sm">Create today's specials to instantly push recommendations to the Captain App.</p>
           </div>
@@ -686,100 +687,130 @@ export default function TodaySpecials() {
               <button onClick={() => setIsBulkModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-900 rounded-full hover:bg-gray-100"><X size={18} /></button>
             </div>
 
-            <div className="p-6 overflow-y-auto">
-              <p className="text-xs font-bold text-gray-500 mb-4">Add many items at once. Duplicates will be updated, not created again.</p>
-              <div className="space-y-2">
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start gap-3">
+                <Zap size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-xs font-bold text-blue-800 leading-relaxed">
+                  Items saved here are pushed to <span className="font-black">all outlets</span> in this organization automatically. Existing items with the same name will be updated, not duplicated.
+                </p>
+              </div>
+
+              <div className="space-y-3">
                 {bulkRows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                    <input
-                      type="text"
-                      placeholder="Item name"
-                      value={row.n}
-                      onChange={e => {
-                        const next = [...bulkRows];
-                        next[idx] = { ...next[idx], n: e.target.value };
-                        setBulkRows(next);
-                      }}
-                      className="col-span-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Category"
-                      value={row.c}
-                      onChange={e => {
-                        const next = [...bulkRows];
-                        next[idx] = { ...next[idx], c: e.target.value };
-                        setBulkRows(next);
-                      }}
-                      className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Price"
-                      value={row.p}
-                      onChange={e => {
-                        const next = [...bulkRows];
-                        next[idx] = { ...next[idx], p: e.target.value };
-                        setBulkRows(next);
-                      }}
-                      className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-                    />
-                    <select
-                      value={row.t}
-                      onChange={e => {
-                        const next = [...bulkRows];
-                        next[idx] = { ...next[idx], t: e.target.value };
-                        setBulkRows(next);
-                      }}
-                      className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-                    >
-                      <option value="veg">Veg</option>
-                      <option value="non-veg">Non-Veg</option>
-                    </select>
-                    <select
-                      value={row.menuType}
-                      onChange={e => {
-                        const next = [...bulkRows];
-                        next[idx] = { ...next[idx], menuType: e.target.value };
-                        setBulkRows(next);
-                      }}
-                      className="col-span-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-                    >
-                      <option value="FOOD">Food</option>
-                      <option value="LIQUOR">Liquor</option>
-                    </select>
-                    <select
-                      value={row.channel}
-                      onChange={e => {
-                        const next = [...bulkRows];
-                        next[idx] = { ...next[idx], channel: e.target.value };
-                        setBulkRows(next);
-                      }}
-                      className="col-span-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
-                    >
-                      <option value="BOTH">Both</option>
-                      <option value="CASHIER">Cashier</option>
-                      <option value="CAPTAIN">Captain</option>
-                    </select>
-                    <button
-                      onClick={() => {
-                        const next = [...bulkRows];
-                        next.splice(idx, 1);
-                        setBulkRows(next);
-                      }}
-                      disabled={bulkRows.length === 1}
-                      className="col-span-1 flex justify-center text-gray-400 hover:text-red-600 disabled:opacity-30"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                  <div key={idx} className="bg-gray-50/60 border border-gray-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Item #{idx + 1}</span>
+                      <button
+                        onClick={() => {
+                          const next = [...bulkRows];
+                          next.splice(idx, 1);
+                          setBulkRows(next);
+                        }}
+                        disabled={bulkRows.length === 1}
+                        className="text-gray-400 hover:text-red-600 disabled:opacity-30 transition-colors p-1 rounded-lg hover:bg-red-50"
+                        title="Remove row"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Item Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Special Chicken Biryani"
+                          value={row.n}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], n: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Category</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Main Course"
+                          value={row.c}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], c: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Price (₹)</label>
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={row.p}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], p: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Diet</label>
+                        <select
+                          value={row.t}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], t: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="veg">Veg</option>
+                          <option value="non-veg">Non-Veg</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Menu Type</label>
+                        <select
+                          value={row.menuType}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], menuType: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="FOOD">Food</option>
+                          <option value="LIQUOR">Liquor</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Channel</label>
+                        <select
+                          value={row.channel}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], channel: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="BOTH">Both</option>
+                          <option value="CASHIER">Cashier</option>
+                          <option value="CAPTAIN">Captain</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
               <button
                 onClick={() => setBulkRows([...bulkRows, { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' }])}
-                className="mt-4 px-4 py-2 bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-colors flex items-center gap-2"
+                className="w-full px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
               >
-                <Plus size={14} /> Add Row
+                <Plus size={14} /> Add Another Item
               </button>
             </div>
 
@@ -795,7 +826,7 @@ export default function TodaySpecials() {
                 disabled={bulkSaving || !bulkRows.some(r => r.n.trim() && Number(r.p) > 0)}
                 className="flex-1 py-3 bg-[#E53935] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-red-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                <Save size={14} /> {bulkSaving ? 'Saving...' : 'Save All'}
+                <Save size={14} /> {bulkSaving ? 'Saving...' : 'Save All to All Outlets'}
               </button>
             </div>
           </motion.div>

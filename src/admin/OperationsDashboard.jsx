@@ -4,8 +4,9 @@ import {
 } from 'recharts';
 import {
   AlertTriangle, Banknote, BarChart2, CreditCard, DollarSign, FileSpreadsheet, FileText, Layers,
-  Package, RefreshCw, Smartphone, Star, TrendingUp, Users,
+  Package, RefreshCw, Smartphone, TrendingUp, Users,
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { formatCurrency } from '../utils/formatCurrency';
 import { API_BASE, apiFetch } from '../services/apiConfig';
@@ -294,7 +295,7 @@ export default function OperationsDashboard({ dateFilter, outletId, onDownloadRe
         <StatCard label="Total Sales" value={<Money value={summary.totalSales} />} sub="With GST, after discount" icon={DollarSign} color="text-green-600" />
         <StatCard label="Net Sales" value={<Money value={summary.netSales} />} sub="Excl. GST, after discount" icon={TrendingUp} color="text-blue-600" />
         <StatCard label="Transactions" value={summary.totalTransactions} sub="Bills settled" icon={Package} color="text-amber-600" />
-        <StatCard label="Total Discount" value={<Money value={summary.totalDiscount} />} sub="Discounts given" icon={Star} color="text-purple-600" />
+        <StatCard label="Total Discount" value={<Money value={summary.totalDiscount} />} sub="Discounts given" icon={StarIcon} color="text-purple-600" />
       </div>
 
       {/* Operations mini cards */}

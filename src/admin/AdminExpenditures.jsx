@@ -8,8 +8,10 @@ import {
   X,
   Filter,
   Download,
+  Plus,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import CreateExpenditureModal from './CreateExpenditureModal';
 
 export default function AdminExpenditures() {
   const today = new Date().toISOString().split('T')[0];
@@ -22,6 +24,7 @@ export default function AdminExpenditures() {
     type: '',
   });
   const [actionLoading, setActionLoading] = useState({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadExpenditures = useCallback(async () => {
     setLoading(true);
@@ -95,13 +98,22 @@ export default function AdminExpenditures() {
           <Wallet size={22} className="text-[#E53935]" />
           Expenditures
         </h2>
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-2 bg-gray-100 text-gray-700 rounded-lg px-3 py-2 text-xs font-black uppercase hover:bg-gray-200"
-        >
-          <Download size={14} />
-          Export CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 bg-[#E53935] text-white rounded-lg px-3 py-2 text-xs font-black uppercase hover:bg-[#B71C1C]"
+          >
+            <Plus size={14} />
+            Create Expenditure
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 bg-gray-100 text-gray-700 rounded-lg px-3 py-2 text-xs font-black uppercase hover:bg-gray-200"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -259,6 +271,12 @@ export default function AdminExpenditures() {
           </div>
         )}
       </div>
+
+      <CreateExpenditureModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSaved={() => loadExpenditures()}
+      />
     </div>
   );
 }

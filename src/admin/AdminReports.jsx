@@ -24,9 +24,10 @@ import {
 } from 'recharts';
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
-  RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, Star, AlertTriangle,
+  RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
   ArrowUpDown, Wallet,
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
 import {
   fetchReportDailySales, fetchReportCategorywise,
@@ -167,7 +168,7 @@ const REPORT_CATEGORIES = [
     reports: [
       { id: 'operations-dashboard', label: 'Operations Dashboard', icon: BarChart2, urgent: true },
       { id: 'xreport-view', label: 'X Report View', icon: FileText, urgent: true },
-      { id: 'discount-report', label: 'Discount Report', icon: Star, urgent: true },
+      { id: 'discount-report', label: 'Discount Report', icon: StarIcon, urgent: true },
       { id: 'cancelled-items', label: 'Cancelled / Edited Items', icon: AlertTriangle, urgent: false },
       { id: 'table-utilization', label: 'Table Utilization', icon: BarChart2, urgent: false },
       { id: 'hourly-report', label: 'Hourly Analysis', icon: BarChart2, urgent: false },
@@ -183,7 +184,7 @@ const REPORT_CATEGORIES = [
   {
     key: 'customer', label: 'Customer Insights',
     reports: [
-      { id: 'captain-performance', label: 'Captain Performance', icon: Star, urgent: false },
+      { id: 'captain-performance', label: 'Captain Performance', icon: StarIcon, urgent: false },
     ],
   },
 ];
@@ -389,7 +390,7 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
         <StatCard label="Total Sales" value={<Money value={data.summary.totalSales ?? data.summary.totalSubtotal} />} sub="With GST, after discount" icon={DollarSign} color="text-green-600" />
         <StatCard label="Net Sales" value={<Money value={data.summary.netSales} />} sub="Excl. GST, after discount" icon={TrendingUp} color="text-blue-600" />
         <StatCard label="Transactions" value={data.summary.totalTransactions} sub="Real-time Order Volume" icon={Package} color="text-amber-600" />
-        <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts in this period" icon={Star} color="text-purple-600" />
+        <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts in this period" icon={StarIcon} color="text-purple-600" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
@@ -514,7 +515,7 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
         <StatCard label="Total Sales" value={<Money value={data.summary.totalSales ?? data.summary.totalSubtotal} />} sub="With GST, after discount" icon={DollarSign} color="text-green-600" />
         <StatCard label="Net Sales" value={<Money value={data.summary.netSales} />} sub="Excl. GST, after discount" icon={TrendingUp} color="text-blue-600" />
         <StatCard label="Transactions" value={data.summary.totalTransactions} sub="Bills settled" icon={Package} color="text-amber-600" />
-        <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts given" icon={Star} color="text-purple-600" />
+        <StatCard label="Total Discount" value={<Money value={data.summary.totalDiscount} />} sub="Discounts given" icon={StarIcon} color="text-purple-600" />
       </div>
       <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
         <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Outlet Breakdown</h3>
@@ -684,7 +685,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
         <StatCard label="Total Quantity" value={data.summary.totalQuantity} sub="Units sold" icon={TrendingUp} color="text-amber-600" />
         <StatCard label="Food Revenue" value={<Money value={data.summary.foodRevenue} />} sub="Food items" icon={DollarSign} color="text-green-600" />
         <StatCard label="Beverages Revenue" value={<Money value={data.summary.beveragesRevenue} />} sub="Beverage items" icon={Coffee} color="text-blue-600" />
-        <StatCard label="Liquor Revenue" value={<Money value={data.summary.liquorRevenue} />} sub="Liquor items" icon={Star} color="text-purple-600" />
+        <StatCard label="Liquor Revenue" value={<Money value={data.summary.liquorRevenue} />} sub="Liquor items" icon={StarIcon} color="text-purple-600" />
       </div>
       <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
         <div className="flex items-center justify-between mb-4">
@@ -1074,7 +1075,7 @@ function DiscountReport({ dateFilter, outletId, onDownloadRef }) {
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Discount Given" value={<Money value={data.summary.totalDiscountGiven} />} sub="Amount waived" icon={Star} color="text-purple-600" />
+        <StatCard label="Total Discount Given" value={<Money value={data.summary.totalDiscountGiven} />} sub="Amount waived" icon={StarIcon} color="text-purple-600" />
         <StatCard label="Txns with Discount" value={data.summary.totalTransactionsWithDiscount} sub="Bills discounted" icon={Package} color="text-blue-600" />
         <StatCard label="Avg Discount %" value={`${data.summary.averageDiscountPercent}%`} sub="Average rate" icon={TrendingUp} color="text-amber-600" />
         <StatCard label="Revenue Impact" value={<Money value={data.summary.totalRevenueLost} />} sub="Lost revenue" icon={DollarSign} color="text-red-600" />

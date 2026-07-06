@@ -18,7 +18,8 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Search, ShoppingBag, Plus, Minus, Bell, Flame, Clock, X, Heart, TrendingUp, AlertTriangle } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 import { modalBackdropVariants, modalContentVariants, bottomSheetVariants, springs, useMotionConfig, staggerContainer, staggerItem } from '../shared/animations';
 import { useMenuSync } from '../hooks/useMenuSync';
 import { fetchPublicMenu } from '../services/unifiedMenuService';
@@ -465,7 +466,7 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
 
                         {/* Animated Badge */}
                         <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-[0_5px_15px_rgba(0,0,0,0.1)] flex items-center gap-1 animate-[bounce_3s_infinite]">
-                          <Star size={10} className="fill-[#FF4D4F] text-[#FF4D4F] animate-pulse" />
+                          <StarIcon size={10} className="fill-[#FF4D4F] text-[#FF4D4F] animate-pulse" />
                           <span className="text-[9px] font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-[#FF4D4F] to-[#FF8787]">Trending</span>
                         </div>
                       </div>
@@ -618,7 +619,7 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
         {isAccepted ? (
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full shadow-[0_12px_30px_rgba(16,185,129,0.3)] bg-gradient-to-r from-emerald-500 to-green-500 text-white animate-in slide-in-from-bottom-5 zoom-in pointer-events-auto max-w-[180px] sm:max-w-[220px]">
             <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shrink-0">
-              <Star size={12} className="text-yellow-300 fill-yellow-300" />
+              <StarIcon size={12} className="text-yellow-300 fill-yellow-300" />
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[8px] font-bold text-emerald-100 uppercase tracking-widest leading-none mb-0.5">Captain</span>

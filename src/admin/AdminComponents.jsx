@@ -112,8 +112,6 @@ import {
 
   Filter,
 
-  Star,
-
   ArrowRightLeft,
 
   Plus,
@@ -147,6 +145,7 @@ import {
   Activity
 
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 
 import { 
 
@@ -855,7 +854,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       <div className={card + " p-4 flex flex-col animate-chart-in-delay-2"}>
         <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
-          <Star size={18} className="text-amber-500 fill-amber-500" />
+          <StarIcon size={18} className="text-amber-500 fill-amber-500" />
           Today Specials Sold
         </h3>
         <TodaySpecialsSoldWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
@@ -1010,7 +1009,7 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
   return (
     <div>
       <h4 className="text-xs font-black uppercase tracking-widest text-amber-500 mb-3 flex items-center gap-2">
-        <Star size={14} className="fill-amber-500" /> Today Specials Sold
+        <StarIcon size={14} className="fill-amber-500" /> Today Specials Sold
       </h4>
       <div className="space-y-2">
         {specials.map(special => (
@@ -5925,6 +5924,10 @@ export function Payroll() {
                           <p className="font-black text-gray-900">{emp.name}</p>
 
                           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
+
+                          {emp.createdVia === 'CASHIER' && (
+                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Created by cashier — set base salary</p>
+                          )}
 
                           {rec?.needsReview && (
                             <p className="text-[10px] font-bold text-amber-600 mt-0.5">Advance recorded, present days not set</p>

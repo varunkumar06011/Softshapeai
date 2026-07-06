@@ -20,7 +20,8 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { Search, ShoppingBag, Plus, Minus, Bell, Star, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater } from 'lucide-react';
+import { Search, ShoppingBag, Plus, Minus, Bell, Flame, Clock, X, Heart, TrendingUp, Sparkles, CheckCircle2, Wine, GlassWater } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 
 import { modalBackdropVariants, modalContentVariants, bottomSheetVariants, springs, useMotionConfig, staggerContainer, staggerItem } from '../shared/animations';
 
@@ -1438,7 +1439,7 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
             <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shrink-0">
 
-              <Star size={12} className="text-yellow-300 fill-yellow-300" />
+              <StarIcon size={12} className="text-yellow-300 fill-yellow-300" />
 
             </div>
 

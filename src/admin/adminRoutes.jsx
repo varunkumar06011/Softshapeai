@@ -2,8 +2,9 @@ import { lazy, useState } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
-  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Star, Scale,
+  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale,
 } from 'lucide-react';
+import { StarIcon } from '../shared/icons/StarIcon';
 import { useAuth } from '../context/AuthContext';
 
 // ── Lazy-loaded section components (code-splitting) ──────────────────────────
@@ -111,7 +112,7 @@ export const adminRoutes = [
   { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner'], element: <Dashboard />,                    props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope }) },
   { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner'], element: <TablesSection />,                props: (ctx) => ({ activeOutlet: ctx.activeOutlet }) },
   { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner'], element: <MenuSection />,                  props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
-  { key: 'specials',          label: 'Today Specials',         icon: Star,                roles: ['admin','owner'], element: <TodaySpecials /> },
+  { key: 'specials',          label: 'Today Specials',         icon: StarIcon,                roles: ['admin','owner'], element: <TodaySpecials /> },
   { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner'], element: <Orders /> },
   { key: 'transactions',      label: 'Transactions',           icon: Receipt,             roles: ['admin','owner'], element: <AdminTransactions />,            props: (ctx) => ({ onStatsRefresh: ctx.loadStats }) },
   { key: 'reports',           label: 'Reports',                icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <Reports /> },
