@@ -1132,17 +1132,17 @@ export default function CaptainApp({ onLogout }) {
 
 
   const todaySpecials = useMemo(() => {
+    const allItems = [...barMenu, ...restaurantMenu];
     const now = Date.now();
-    return outletFilteredMenuItems.filter(
+    return allItems.filter(
       i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CAPTAIN' || i.specialChannel === 'BOTH')
     );
-  }, [outletFilteredMenuItems]);
+  }, [barMenu, restaurantMenu]);
 
   const categories = useMemo(() => {
     const cats = new Set(outletFilteredMenuItems.map(i => i.c));
-    const hasTodaySpecial = todaySpecials.length > 0;
-    return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...Array.from(cats)].filter(Boolean);
-  }, [outletFilteredMenuItems, todaySpecials]);
+    return ['All', 'Today Special', ...Array.from(cats)].filter(Boolean);
+  }, [outletFilteredMenuItems]);
 
 
 
@@ -1318,28 +1318,26 @@ export default function CaptainApp({ onLogout }) {
     const isTodaySpecialCategory = activeCategory === 'Today Special';
     if (!q) {
       // No search — apply category and diet filters normally
+      if (isTodaySpecialCategory) {
+        return todaySpecials.filter(item => activeDiet === 'All' || item.t === activeDiet);
+      }
       return outletFilteredMenuItems.filter(item => {
-        if (activeCategory !== 'All') {
-          if (isTodaySpecialCategory) {
-            return item.isSpecial && item.active && (!item.expiresAt || Date.now() < item.expiresAt) && (item.specialChannel === 'CAPTAIN' || item.specialChannel === 'BOTH');
-          }
-          if (item.c !== activeCategory) return false;
-        }
+        if (activeCategory !== 'All' && item.c !== activeCategory) return false;
         if (activeDiet !== 'All' && item.t !== activeDiet) return false;
         return true;
       });
     }
 
+    if (isTodaySpecialCategory) {
+      return filterMenuItems(todaySpecials, { query: searchQuery, category: 'All', diet: activeDiet });
+    }
+
     // Use shared filterMenuItems for consistent search behavior across all terminals
     const baseResults = filterMenuItems(outletFilteredMenuItems, {
       query: searchQuery,
-      category: isTodaySpecialCategory ? 'All' : activeCategory,
+      category: activeCategory,
       diet: activeDiet,
     });
-
-    if (isTodaySpecialCategory) {
-      return baseResults.filter(item => item.isSpecial && item.active && (!item.expiresAt || Date.now() < item.expiresAt) && (item.specialChannel === 'CAPTAIN' || item.specialChannel === 'BOTH'));
-    }
 
     return baseResults.sort((a, b) => {
       const an = (a.n || '').toLowerCase();
@@ -1360,7 +1358,7 @@ export default function CaptainApp({ onLogout }) {
       const bScore = words.filter(w => bn.includes(w)).length;
       return bScore - aScore;
     });
-  }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems]);
+  }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems, todaySpecials]);
 
 
 
