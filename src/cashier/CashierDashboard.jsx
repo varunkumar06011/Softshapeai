@@ -34,7 +34,7 @@ import {
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
@@ -739,30 +739,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [rawDiscountInput, setRawDiscountInput] = useState('');
   const [walkinTableNumber, setWalkinTableNumber] = useState(null); // 1-20 when active
   const [isWalkinMode, setIsWalkinMode] = useState(false);
-  
-  const rawSubtotal = useMemo(() => {
-    let items = [];
-    if (activeTab === 'pos' && !selectedTable) {
-      items = cart;
-    } else if (selectedTable) {
-      const committedItems = getTableItems(selectedTable);
-      items = [...committedItems, ...cart];
-    }
-    return items.filter(i => !i.removedFromBill).reduce((acc, item) => acc + (Number(item.p || 0) * Number(item.q || 1)), 0);
-  }, [selectedTable, activeTab, cart]);
-
-  const discountPercent = useMemo(() => {
-    const val = parseFloat(rawDiscountInput);
-    if (isNaN(val) || val <= 0) return 0;
-    
-    if (discountMode === 'percent') {
-      return Math.min(100, val);
-    } else {
-      if (rawSubtotal <= 0) return 0;
-      const effectivePct = (val / rawSubtotal) * 100;
-      return Math.min(100, effectivePct);
-    }
-  }, [rawDiscountInput, discountMode, rawSubtotal]);
 
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [isCartExpanded, setIsCartExpanded] = useState(false);
@@ -853,6 +829,32 @@ const CashierDashboard = ({ onLogout }) => {
   const [billEditSearch, setBillEditSearch] = useState('');
   const [isSavingBillEdit, setIsSavingBillEdit] = useState(false);
 
+  const rawSubtotal = useMemo(() => {
+    let items = [];
+    if (activeTab === 'pos' && !selectedTable) {
+      items = cart;
+    } else if (selectedTable) {
+      const committedItems = getTableItems(selectedTable);
+      items = [...committedItems, ...cart];
+    }
+    return items
+      .filter(i => !i.removedFromBill && !removedItemIds.includes(i.id))
+      .reduce((acc, item) => acc + (Number(item.p || 0) * Number(item.q || 1)), 0);
+  }, [selectedTable, activeTab, cart, removedItemIds]);
+
+  const discountPercent = useMemo(() => {
+    const val = parseFloat(rawDiscountInput);
+    if (isNaN(val) || val <= 0) return 0;
+
+    if (discountMode === 'percent') {
+      return Math.min(100, val);
+    } else {
+      if (rawSubtotal <= 0) return 0;
+      const effectivePct = (val / rawSubtotal) * 100;
+      return Math.min(100, effectivePct);
+    }
+  }, [rawDiscountInput, discountMode, rawSubtotal]);
+
   useEffect(() => {
     setRemovedItemIds([]);
     setBillRemovals([]);
@@ -885,6 +887,7 @@ const CashierDashboard = ({ onLogout }) => {
   const lastReconnectRefetchRef = useRef(0); // Debounce reconnect-triggered refetches
   const [txnMethodFilter, setTxnMethodFilter] = useState('all'); // 'all' | 'CASH' | 'UPI' | 'CARD'
   const [txnSourceFilter, setTxnSourceFilter] = useState('all');
+  const [txnStatusFilter, setTxnStatusFilter] = useState('all');
   const [txnSearch, setTxnSearch] = useState('');
   const [txnPage, setTxnPage] = useState(1);
   const [activeVenueFilter, setActiveVenueFilter] = useState('all');
@@ -999,6 +1002,8 @@ const CashierDashboard = ({ onLogout }) => {
           billNumber: txn.billNumber || null,
           displayId: formatBillNumber(txn),
           kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
+          status: txn.status || 'COMPLETED',
+          rawStatus: txn.status || 'COMPLETED',
           amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
           grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
           subtotal,
@@ -1170,6 +1175,11 @@ const CashierDashboard = ({ onLogout }) => {
       list = list.filter(txn => txn.source === txnSourceFilter);
     }
 
+    // Status filter
+    if (txnStatusFilter !== 'all') {
+      list = list.filter(txn => (txn.status || 'COMPLETED') === txnStatusFilter);
+    }
+
     // Method filter
     if (txnMethodFilter !== 'all') {
       list = list.filter(txn => txn.method === txnMethodFilter);
@@ -1189,7 +1199,7 @@ const CashierDashboard = ({ onLogout }) => {
     }
 
     return list;
-  }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter, activeVenueFilter]);
+  }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter, txnStatusFilter, activeVenueFilter]);
 
   const txnTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / TXN_PAGE_SIZE));
   const paginatedTransactions = useMemo(() => {
@@ -1200,7 +1210,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Reset page whenever txn filters change
   useEffect(() => {
     setTxnPage(1);
-  }, [txnDateFilter, txnMethodFilter, txnSourceFilter, txnSearch, txnCustomDate, activeVenueFilter]);
+  }, [txnDateFilter, txnMethodFilter, txnSourceFilter, txnStatusFilter, txnSearch, txnCustomDate, activeVenueFilter]);
 
   // Real-time billing alert state
   const [billingAlerts, setBillingAlerts] = useState([]);
@@ -1213,6 +1223,16 @@ const CashierDashboard = ({ onLogout }) => {
     }, 3000);
   };
 
+  const handleConfirmPayment = useCallback(async (txn) => {
+    try {
+      await confirmPayment(txn.id);
+      addNotification('Payment Confirmed', `Bill ${txn.displayId || txn.id} marked as completed.`, 'success');
+      loadTransactions(txnDateFilterRef.current, null, { silent: true });
+    } catch (err) {
+      console.error('[ConfirmPayment] error:', err);
+      addNotification('Confirm Failed', err.message || 'Could not confirm payment.', 'error');
+    }
+  }, [loadTransactions]);
 
   useEffect(() => {
     if (!socket) return;
@@ -5106,6 +5126,32 @@ const CashierDashboard = ({ onLogout }) => {
 
                     {activeTab === 'history' && (
                       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                        {/* PENDING transactions warning */}
+                        {(() => {
+                          const pendingTxns = pastTransactions.filter(t => (t.status || 'COMPLETED') === 'PENDING');
+                          if (pendingTxns.length === 0) return null;
+                          return (
+                            <div className="m-3 mb-0 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <AlertCircle size={20} className="text-amber-600" />
+                                <div>
+                                  <p className="text-sm font-black text-amber-900">
+                                    {pendingTxns.length} Pending Bill{pendingTxns.length > 1 ? 's' : ''} — Awaiting Payment Confirmation
+                                  </p>
+                                  <p className="text-xs text-amber-700">
+                                    {pendingTxns.map(t => t.displayId || t.billNumber).filter(Boolean).join(', ')}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setTxnStatusFilter('PENDING')}
+                                className="text-xs font-black text-amber-700 bg-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition"
+                              >
+                                View →
+                              </button>
+                            </div>
+                          );
+                        })()}
                         {/* Total Amount Summary */}
                         <div className="m-3 mb-2">
                           <div className="bg-gradient-to-br from-[#5C85BB] to-[#4A6A9A] border border-blue-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
@@ -5166,7 +5212,7 @@ const CashierDashboard = ({ onLogout }) => {
                           ].map(f => (
                             <button
                               key={f.key}
-                              onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
+                              onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnStatusFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                               className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key && !txnCustomDate
                                 ? 'bg-[#5C85BB] text-white shadow-sm'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
@@ -5194,11 +5240,28 @@ const CashierDashboard = ({ onLogout }) => {
                             }`}
                           />
                           <button
-                            onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
+                            onClick={() => { loadTransactions(txnDateFilter); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnStatusFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                             className="ml-auto px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
                           >
                             ↻ Sync
                           </button>
+                        </div>
+                        {/* Status filter row */}
+                        <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap border-b border-gray-100">
+                          {[
+                            { key: 'all', label: 'All Status' },
+                            { key: 'COMPLETED', label: 'Completed' },
+                            { key: 'PENDING', label: 'Pending' },
+                            { key: 'CANCELLED', label: 'Cancelled' },
+                          ].map(f => (
+                            <button
+                              key={f.key}
+                              onClick={() => setTxnStatusFilter(f.key)}
+                              className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all ${txnStatusFilter === f.key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
                         </div>
                         {/* FIX 4: Method filter + Search row */}
                         <div className="flex items-center gap-2 flex-wrap px-3 py-3 border-b border-gray-50">
@@ -5244,18 +5307,27 @@ const CashierDashboard = ({ onLogout }) => {
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">TXN ID</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Table</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Date/Time</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Status</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500">Method</th>
                                 <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-right">Amount</th>
+                                <th className="p-4 text-xs md:text-sm font-black uppercase text-gray-500 text-center">Action</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                               {txnsLoading && !txnInitialLoaded && filteredTransactions.length === 0 ? (
                                 <tr>
-                                  <td colSpan={6} className="p-12 text-center">
+                                  <td colSpan={8} className="p-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2 py-8">
                                       <div className="w-7 h-7 border-2 border-[#5C85BB] border-t-transparent rounded-full animate-spin" />
                                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
                                     </div>
+                                  </td>
+                                </tr>
+                              ) : filteredTransactions.length === 0 ? (
+                                <tr>
+                                  <td colSpan={8} className="p-12 text-center">
+                                    <History size={32} className="text-gray-300 mb-2 mx-auto" />
+                                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest">No Transactions Found</p>
                                   </td>
                                 </tr>
                               ) : (
@@ -5286,6 +5358,11 @@ const CashierDashboard = ({ onLogout }) => {
                                         </div>
                                       </td>
                                       <td className="p-4">
+                                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${(txn.status || 'COMPLETED') === 'COMPLETED' ? 'bg-green-100 text-green-700' : (txn.status || 'COMPLETED') === 'PENDING' ? 'bg-amber-100 text-amber-700' : (txn.status || 'COMPLETED') === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'}`}>
+                                          {(txn.status || 'COMPLETED') === 'COMPLETED' ? 'Done' : (txn.status || 'COMPLETED') === 'PENDING' ? 'Pending' : (txn.status || 'COMPLETED') === 'CANCELLED' ? 'Cancelled' : (txn.status || 'COMPLETED')}
+                                        </span>
+                                      </td>
+                                      <td className="p-4">
                                         <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' :
                                           txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' :
                                             txn.method === 'CARD' ? 'bg-purple-100 text-purple-700' :
@@ -5303,10 +5380,21 @@ const CashierDashboard = ({ onLogout }) => {
                                           </span>
                                         </div>
                                       </td>
+                                      <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                                        {(txn.status || 'COMPLETED') !== 'COMPLETED' && (
+                                          <button
+                                            onClick={() => handleConfirmPayment(txn)}
+                                            title="Confirm payment"
+                                            className="px-2 py-1 rounded-lg bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 transition-colors"
+                                          >
+                                            Confirm
+                                          </button>
+                                        )}
+                                      </td>
                                     </tr>
                                     {expandedTxnId === txn.id && (
                                       <tr key={`${txn.id}-detail`} className="bg-gray-50">
-                                        <td colSpan={6} className="px-6 pb-4 pt-2">
+                                        <td colSpan={8} className="px-6 pb-4 pt-2">
                                           {txn.itemsList && txn.itemsList.length > 0 ? (
                                             <>
                                               <div className="flex flex-col gap-2">

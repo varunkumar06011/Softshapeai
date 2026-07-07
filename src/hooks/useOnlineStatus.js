@@ -10,30 +10,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { isBackendReachable, checkBackendReachability } from '../services/apiConfig';
+import { isBackendReachable, subscribeReachability } from '../services/apiConfig';
 
 export function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(isBackendReachable());
 
   useEffect(() => {
-    const handleOnline = async () => {
-      setIsOnline(await checkBackendReachability());
-    };
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Refresh reachability periodically
-    const interval = setInterval(async () => {
-      const reachable = await checkBackendReachability();
-      setIsOnline(prev => (prev !== reachable ? reachable : prev));
-    }, 30000);
+    // Subscribe to the shared reachability state from apiConfig.
+    // This replaces the old duplicate 30s polling interval — apiConfig
+    // runs a single interval and notifies all subscribers.
+    const unsubscribe = subscribeReachability((reachable) => {
+      setIsOnline(reachable);
+    });
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      clearInterval(interval);
+      unsubscribe();
     };
   }, []);
 

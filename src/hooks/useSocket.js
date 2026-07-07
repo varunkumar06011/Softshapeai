@@ -57,7 +57,7 @@ export function getSocket() {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 15000,
-      randomizationFactor: 0.5,
+      randomizationFactor: 0.7,  // 0.7 — more jitter to prevent thundering herd reconnects
       timeout: 45000,           // 45s — covers Railway cold starts (can take 30s)
       autoConnect: true,
       forceNew: false,
