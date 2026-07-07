@@ -2395,6 +2395,11 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
+    // Declare outside try so it's accessible in the catch block.
+    // If the local print succeeded but the backend API call fails, we must NOT
+    // roll back the bill-printed flag — the physical bill was already printed.
+    let localPrinted = false;
+
     try {
       setIsPrintingBill(true);
       lastKnownBillRef.current = 0; // Reset bill ref before print to allow recalculation
@@ -2463,7 +2468,6 @@ const CashierDashboard = ({ onLogout }) => {
         ? crypto.randomUUID()
         : Math.random().toString(36).slice(2) + Date.now().toString(36));
       const billEventId = `${billRequestId}-bill`;
-      let localPrinted = false;
 
       try {
         const { printLocal } = await import('../utils/printOffline');
@@ -2606,23 +2610,29 @@ const CashierDashboard = ({ onLogout }) => {
 
     } catch (error) {
       console.error('Final bill error:', error);
-      addNotification('Error', error.message || 'Failed to print bill.', 'error');
-      // On error, roll back the bill-printed flag
       const tableId = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
-      if (tableId) {
-        setBillPrintedTableIds(prev => {
-          const next = new Set(prev);
-          next.delete(tableId);
-          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
-          return next;
-        });
-        billPrintCooldownRef.current.delete(tableId);
-        if (selectedTable.isExtra) {
-          setExtraTables(prev => prev.map(et =>
-            et.id === tableId ? { ...et, status: 'Occupied', workflowStatus: 'Occupied' } : et
-          ));
+      if (localPrinted) {
+        // Physical bill was already printed — keep the Settlement button active.
+        // The backend sync failed but the bill exists; show a warning, not an error.
+        addNotification('Warning', `Bill printed locally but backend sync failed: ${error.message || 'Unknown error'}. Proceed to settlement.`, 'warning');
+      } else {
+        addNotification('Error', error.message || 'Failed to print bill.', 'error');
+        // On error, roll back the bill-printed flag
+        if (tableId) {
+          setBillPrintedTableIds(prev => {
+            const next = new Set(prev);
+            next.delete(tableId);
+            try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
+            return next;
+          });
+          billPrintCooldownRef.current.delete(tableId);
+          if (selectedTable.isExtra) {
+            setExtraTables(prev => prev.map(et =>
+              et.id === tableId ? { ...et, status: 'Occupied', workflowStatus: 'Occupied' } : et
+            ));
+          }
+          setSelectedTable(prev => prev ? { ...prev, status: 'Occupied', workflowStatus: 'Occupied' } : prev);
         }
-        setSelectedTable(prev => prev ? { ...prev, status: 'Occupied', workflowStatus: 'Occupied' } : prev);
       }
     } finally {
       setIsPrintingBill(false);
