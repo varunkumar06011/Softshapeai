@@ -2507,6 +2507,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Call backend print-bill endpoint with localPrinted flag and shared billEventId
       const orderId = selectedTable?.activeOrder?.id;
+      let response = null;
       if (orderId) {
         const printBillRestaurantId = selectedTable.section?.restaurantId || activeRestaurantId;
         const extraDiscountPercent = selectedTable.isExtra
@@ -2516,7 +2517,7 @@ const CashierDashboard = ({ onLogout }) => {
           .map(k => k.id)
           .filter(Boolean)
           .join(',');
-        const response = selectedTable.isExtra
+        response = selectedTable.isExtra
           ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
           : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
         if (response?.offline) {
