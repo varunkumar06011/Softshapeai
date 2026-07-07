@@ -7,7 +7,7 @@
 // Exports:
 //   - recordItemLoss(source, tableId, beforeCount, afterCount, details):
 //     Records a violation when items are dropped during sync operations.
-//     In dev mode, shows an alert dialog. In production, logs to console.
+//     Logs the violation to the console for debugging.
 //   - validateTableIntegrity(source, table, beforeItems, afterItems):
 //     Compares item counts before and after a sync operation.
 //     Returns true if invariant holds, false if items were dropped.
@@ -28,11 +28,10 @@ export function recordItemLoss(source, tableId, beforeCount, afterCount, details
   const msg = `[INVARIANT VIOLATION] ${source} dropped items for table ${tableId}: ${beforeCount} → ${afterCount}. ${details}`;
   VIOLATIONS.push({ source, tableId, beforeCount, afterCount, details, time: new Date().toISOString() });
   console.error(msg);
-  // Also flash a visible error so developers don't miss it during development
-  if (import.meta.env?.DEV) {
-    /* eslint-disable no-alert */
-    alert(`CRITICAL BUG: ${source} dropped items for table ${tableId}!\nCheck console immediately.`);
-  }
+  // Keep the violation visible in the console for debugging, but do not use a
+  // blocking alert. Server-authoritative updates can legitimately reduce item
+  // counts (cancellations, settlements, transfers), and the modal obstructs
+  // the UI without adding actionable information beyond the logged message.
 }
 
 export function validateTableIntegrity(source, before, after) {

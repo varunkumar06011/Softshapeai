@@ -195,7 +195,7 @@ import { authService } from '../services/authService';
 
 import { useVenueSections } from '../hooks/useVenueSections';
 
-import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions } from '../services/barInventoryApi';
+import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions, fetchBarTopSelling, fetchBarDeductionCheck } from '../services/barInventoryApi';
 
 import FloorPlanEditor from './FloorPlanEditor';
 
@@ -1333,17 +1333,14 @@ export function Tables({ onOpen }) {
   const [loadingVenues, setLoadingVenues] = useState(true);
 
   const [staffMap, setStaffMap] = useState({});
-  const [staffList, setStaffList] = useState([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/auth/staff`, { headers: { ...getAuthHeaders() } })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
-        const list = Array.isArray(data) ? data : [];
         const map = {};
-        list.forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
+        (Array.isArray(data) ? data : []).forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
         setStaffMap(map);
-        setStaffList(list);
       })
       .catch(() => {});
   }, []);
@@ -1697,24 +1694,7 @@ export function Tables({ onOpen }) {
 
       const pCaptainName = pTable.captainName || staffMap[pTable.captainId] || 'Staff';
 
-      const handleSaveCaptain = async () => {
-        setSavingCaptain(true);
-        try {
-          const res = await fetch(`${API_BASE}/api/tables/${pTable.backendId || pTable.id}`, {
-            method: 'PATCH',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ captainId: popupCaptainId || null }),
-            credentials: 'include',
-          });
-          if (!res.ok) throw new Error('Failed to update table captain');
-          setActivePopupTableId(null);
-        } catch (err) {
-          console.error(err);
-          alert('Failed to assign captain');
-        } finally {
-          setSavingCaptain(false);
-        }
-      };
+      
 
       return (
 
@@ -1734,20 +1714,11 @@ export function Tables({ onOpen }) {
 
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleSaveCaptain}
-                    disabled={savingCaptain}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${savingCaptain ? 'bg-gray-100 text-gray-400' : 'bg-[#E53935] text-white hover:bg-[#B71C1C]'}`}
-                  >
-                    {savingCaptain ? 'Saving...' : 'Save Captain'}
-                  </button>
-                  <button onClick={() => setActivePopupTableId(null)} className="p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-lg transition-colors">
+                <button onClick={() => setActivePopupTableId(null)} className="p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-lg transition-colors">
 
-                     <X size={18} />
+                   <X size={18} />
 
-                  </button>
-                </div>
+                </button>
 
              </div>
 
@@ -1761,16 +1732,7 @@ export function Tables({ onOpen }) {
 
                       <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Assigned Captain</span>
 
-                      <select
-                        className="text-sm font-bold text-gray-900 border border-gray-200 rounded-lg px-2 py-1 bg-white min-w-[140px]"
-                        value={popupCaptainId}
-                        onChange={e => setPopupCaptainId(e.target.value)}
-                      >
-                        <option value="">Unassigned</option>
-                        {staffList.filter(s => s.role === 'CAPTAIN').map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
+                      <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><User size={14} className="text-gray-400"/> {pCaptainName}</span>
 
                    </div>
 
@@ -5285,32 +5247,6 @@ export function Payroll() {
 
 
 
-  const handleGenerateRecord = async (employeeId) => {
-    const emp = employees.find((e) => e.id === employeeId);
-    if (!emp) return;
-    try {
-      setSavingRecordId(employeeId);
-      await apiFetch('/api/payroll/records', {
-        method: 'POST',
-        body: JSON.stringify({
-          restaurantId,
-          employeeId,
-          monthYear: dateMode === 'range' ? startDate.slice(0, 7) : monthYear,
-          startDate: dateMode === 'range' ? startDate : undefined,
-          endDate: dateMode === 'range' ? endDate : undefined,
-          presentDays: 0,
-          otDays: 0,
-          autoCount: false,
-        }),
-      });
-      await loadData();
-    } catch (err) {
-      console.error('[Payroll] Generate failed:', err);
-    } finally {
-      setSavingRecordId(null);
-    }
-  };
-
   const handleSaveRecord = async (employeeId) => {
 
     const vals = editValues[employeeId] || {};
@@ -6088,23 +6024,20 @@ export function Payroll() {
                           </button>
                         )}
 
-                        {rec ? (
-                          rec.status !== 'PAID' && (
-                            <button
-                              onClick={() => { setPayModal(rec); setPayAmount(''); }}
-                              className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
-                            >
-                              Pay
-                            </button>
-                          )
-                        ) : (
+                        {rec && rec.status !== 'PAID' && (
+
                           <button
-                            onClick={() => handleGenerateRecord(emp.id)}
-                            disabled={savingRecordId === emp.id}
-                            className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-bold hover:bg-amber-200 disabled:opacity-50"
+
+                            onClick={() => { setPayModal(rec); setPayAmount(''); }}
+
+                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
+
                           >
-                            {savingRecordId === emp.id ? '...' : 'Generate'}
+
+                            Pay
+
                           </button>
+
                         )}
 
                         <button
@@ -7431,17 +7364,14 @@ export function KitchenInventory() {
 
     <div className="space-y-6 font-sans">
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
 
-        <div>
-
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Kitchen Inventory</h2>
-
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Ingredients & Daily Tracking</p>
-
+        <div className="min-w-0 flex-shrink-0">
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter leading-tight">Kitchen<br />Inventory</h2>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 leading-relaxed">Ingredients & Daily<br />Tracking</p>
         </div>
 
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-start">
+        <div className="flex flex-wrap items-center gap-3">
 
           {accessibleOutlets.length > 1 && (
 
@@ -7591,7 +7521,7 @@ export function KitchenInventory() {
 
             onChange={(e) => setSearchQuery(e.target.value)}
 
-            className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none w-full sm:w-40"
+            className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none w-40"
 
           />
 
@@ -7644,21 +7574,17 @@ export function KitchenInventory() {
 
 
       {/* Deduction Diagnostic Panel */}
-      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
-        <button
-          onClick={() => setShowDeductionPanel(p => !p)}
-          className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-        >
-          <div>
-            <p className="text-sm font-black text-gray-900">Deduction Check</p>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Debug why inventory didn't decrease after settlement</p>
+      {showDeductionPanel && (
+        <div className="bg-white border-2 border-red-100 rounded-3xl p-6 shadow-sm mb-6 relative">
+          <button onClick={() => setShowDeductionPanel(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600">
+            <X size={20} />
+          </button>
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="text-red-600" size={20} />
+            <h3 className="text-sm font-black uppercase tracking-widest text-red-900">Deduction Diagnostic</h3>
           </div>
-          <ChevronDown size={16} className={`text-gray-400 transition-transform ${showDeductionPanel ? 'rotate-180' : ''}`} />
-        </button>
-
-        {showDeductionPanel && (
-          <div className="px-6 pb-6 space-y-4 border-t border-gray-100">
-            <div className="flex items-center gap-3 pt-4">
+          <p className="text-xs text-gray-500 mb-4">Enter an Order ID to verify what kitchen stock was deducted when the bill was settled.</p>
+          <div className="flex items-center gap-3">
               <input
                 type="text"
                 placeholder="Paste Order ID here…"
@@ -7736,8 +7662,7 @@ export function KitchenInventory() {
               </div>
             )}
           </div>
-        )}
-      </div>
+      )}
 
 
 
@@ -8093,7 +8018,7 @@ export function KitchenInventory() {
 
                         <div className="flex items-center justify-start gap-1 group/cat">
 
-                          <span className={`${item.category ? 'bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold' : 'text-gray-300 text-xs italic'}`}>
+                          <span className={`${item.category ? 'bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold -ml-2' : 'text-gray-300 text-xs italic'}`}>
 
                             {item.category || 'Uncategorized'}
 
@@ -12726,7 +12651,8 @@ export function Inventory() {
 
   const [selectedItem, setSelectedItem] = useState(null);
 
-  const [lowStockItems, setLowStockItems] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -12739,6 +12665,7 @@ export function Inventory() {
   const [popup, setPopup] = useState(null);
   const [outletFilter, setOutletFilter] = useState('self');
   const [accessibleOutlets, setAccessibleOutlets] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(getISTDateString);
 
 
 
@@ -12762,7 +12689,81 @@ export function Inventory() {
 
   const [isUpdating, setIsUpdating] = useState(false);
 
+  const [topSellingLoading, setTopSellingLoading] = useState(false);
+  const [topSelling, setTopSelling] = useState(null);
+  const [showDeductionPanel, setShowDeductionPanel] = useState(false);
+  const [deductionCheckOrderId, setDeductionCheckOrderId] = useState('');
+  const [deductionCheckLoading, setDeductionCheckLoading] = useState(false);
+  const [deductionCheckResult, setDeductionCheckResult] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState('');
+  
+  const [editingBarCell, setEditingBarCell] = useState(null);
+  const [editBarSaving, setEditBarSaving] = useState(false);
 
+  const handleBarInlineSave = async (item, field) => {
+    if (!editingBarCell || !editingBarCell.value) {
+      setEditingBarCell(null);
+      return;
+    }
+    
+    // Quick escape if value hasn't changed
+    const originalVal = field === 'name' ? (item.name || item.menuItem?.name) :
+                        field === 'category' ? (item.category || item.menuItem?.category) :
+                        field === 'bottleSize' ? item.bottleSize :
+                        field === 'price' ? item.menuItem?.price :
+                        field === 'opening' ? item.todayEntry?.openingStock :
+                        field === 'purchase' ? item.todayEntry?.addedStock :
+                        field === 'consumed' ? item.todayEntry?.consumedStock : '';
+                        
+    if (String(originalVal) === String(editingBarCell.value)) {
+      setEditingBarCell(null);
+      return;
+    }
+
+    setEditBarSaving(true);
+    try {
+      const payload = {};
+      if (field === 'name') payload.name = editingBarCell.value;
+      if (field === 'category') payload.category = editingBarCell.value;
+      if (field === 'bottleSize') payload.bottleSize = Number(editingBarCell.value);
+      if (field === 'price') payload.price = Number(editingBarCell.value);
+      if (field === 'opening') payload.openingStock = Number(editingBarCell.value);
+      if (field === 'purchase') payload.purchased = Number(editingBarCell.value);
+      if (field === 'consumed') payload.consumed = Number(editingBarCell.value);
+
+      const res = await fetch(apiUrl(`/api/bar/inventory/items/${item.id}`), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authService.getAuthHeader()
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!res.ok) throw new Error(await res.text());
+      const updatedItem = await res.json();
+      
+      setInventory(prev => prev.map(inv => {
+        if (inv.id === item.id) {
+          // Attempt to merge updated properties back into the array locally to avoid full reload
+          const merged = { ...inv, ...updatedItem };
+          // Refetching inventory is safer for daily ledger consistency
+          return merged;
+        }
+        return inv;
+      }));
+      showNotification(`${field} updated successfully`, 'success');
+      loadInventory(); // reload to get fresh todayEntry
+    } catch (err) {
+      console.error('Failed to update inline:', err);
+      showNotification('Failed to update value', 'error');
+    } finally {
+      setEditBarSaving(false);
+      setEditingBarCell(null);
+    }
+  };
+  const csvImportRef = useRef(null);
 
   const showNotification = (message, type = 'info') => {
 
@@ -12822,9 +12823,7 @@ export function Inventory() {
 
 
   const loadInventory = useCallback(async () => {
-
     try {
-
       if (outletFilter === 'combined') {
         const res = await fetch(apiUrl(`/api/bar/inventory/combined?restaurantId=${getCurrentRestaurantId()}`), {
           cache: 'no-store',
@@ -12834,45 +12833,17 @@ export function Inventory() {
         const data = await res.json();
         setInventory(Array.isArray(data) ? data : []);
       } else {
-        const data = await fetchBarInventory();
+        const data = await fetchBarInventory(selectedDate);
         setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
       }
-
     } catch (err) {
-
       console.error('[Inventory] Load failed:', err);
-
       showNotification('Failed to load inventory', 'error');
-
       setInventory([]);
-
     } finally {
-
       setLoading(false);
-
     }
-
-  }, [outletFilter]);
-
-
-
-  const loadLowStockItems = useCallback(async () => {
-
-    try {
-
-      const data = await fetchLowStockItems();
-
-      setLowStockItems(Array.isArray(data) ? data.filter(item => item && item.id) : []);
-
-    } catch (err) {
-
-      console.error('[Inventory] Low stock check failed:', err);
-
-      setLowStockItems([]);
-
-    }
-
-  }, []);
+  }, [outletFilter, selectedDate]);
 
 
 
@@ -12882,8 +12853,6 @@ export function Inventory() {
 
       loadInventory();
 
-      loadLowStockItems();
-
       loadBarMenu();
 
     } else {
@@ -12892,9 +12861,117 @@ export function Inventory() {
 
     }
 
-  }, [activeOutlet, loadInventory, loadLowStockItems, loadBarMenu]);
+  }, [activeOutlet, loadInventory, loadBarMenu]);
 
 
+
+  const handleImportCSV = async (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const rawText = e.target.result;
+        const text = rawText.replace(/^\uFEFF/, '');
+        const lines = text.trim().split('\n');
+        const header = lines[0].trim().replace(/\r/g, '');
+
+        if (header !== 'S.NO,ITEM,CATEGORY,PRICE,STOCK(ml),BOTTLE_SIZE(ml),REORDER(bottles),COST_PER_BOTTLE') {
+          alert(`Invalid CSV format.\nExpected header: S.NO,ITEM,CATEGORY,PRICE,STOCK(ml),BOTTLE_SIZE(ml),REORDER(bottles),COST_PER_BOTTLE\nGot: ${header}`);
+          return;
+        }
+
+        const rows = [];
+        let skipped = 0;
+        
+        // Simple CSV parser inline
+        const parseLine = (str) => {
+          const arr = [];
+          let quote = false;
+          for (let row = 0, col = 0, c = 0; c < str.length; c++) {
+            let cc = str[c], nc = str[c+1];
+            arr[col] = arr[col] || '';
+            if (cc === '"' && quote && nc === '"') { arr[col] += cc; ++c; continue; }
+            if (cc === '"') { quote = !quote; continue; }
+            if (cc === ',' && !quote) { ++col; continue; }
+            arr[col] += cc;
+          }
+          return arr;
+        };
+
+        const toTitle = (s) => s ? s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : '';
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim().replace(/\r/g, '');
+          if (!line) continue;
+          const cols = parseLine(line);
+          if (cols.length < 8) { skipped++; continue; }
+          const [, rawItem, rawCategory, price, stock, bottleSize, rawReorder, costPerBottle] = cols.map(c => c.trim());
+          const name = toTitle(rawItem);
+          if (!name) { skipped++; continue; }
+
+          rows.push({
+            name,
+            category: rawCategory === 'N/A' || rawCategory === '' ? '' : rawCategory,
+            price: parseFloat(price) || 0,
+            currentStock: parseFloat(stock) || 0,
+            bottleSize: parseInt(bottleSize) || 750,
+            reorderLevel: parseFloat(rawReorder) || 0,
+            costPerBottle: parseFloat(costPerBottle) || 0,
+            rowNum: i + 1
+          });
+        }
+
+        if (rows.length === 0) { alert('No valid rows found in the file.'); return; }
+
+        setImporting(true);
+        setImportProgress(`0 / ${rows.length}`);
+
+        let done = 0, succeeded = 0;
+        for (const row of rows) {
+          try {
+            let existingInv = inventory.find(i => (i.menuItem?.name || i.name || '').toLowerCase() === row.name.toLowerCase() && !i.isVirtual);
+            
+            if (existingInv) {
+              await updateInventoryItem(existingInv.id, {
+                bottleSize: row.bottleSize,
+                reorderLevel: row.reorderLevel,
+                costPerBottle: row.costPerBottle
+              });
+              succeeded++;
+            } else {
+              let virtualInv = inventory.find(i => (i.menuItem?.name || '').toLowerCase() === row.name.toLowerCase() && i.isVirtual);
+              if (virtualInv) {
+                await createInventoryItem({
+                  menuItemId: virtualInv.menuItemId,
+                  unitOfMeasure: 'ml',
+                  bottleSize: row.bottleSize,
+                  currentStock: row.currentStock,
+                  reorderLevel: row.reorderLevel,
+                  costPerBottle: row.costPerBottle
+                });
+                succeeded++;
+              } else {
+                console.warn(`Row ${row.rowNum}: No menu item found for "${row.name}". Please add to menu first.`);
+              }
+            }
+          } catch (err) {
+            console.error(`Row ${row.rowNum} error:`, err);
+          }
+          done++;
+          setImportProgress(`${done} / ${rows.length}`);
+        }
+
+        setImporting(false);
+        showNotification(`Imported ${succeeded} items successfully.`, 'success');
+        loadInventory();
+      } catch (err) {
+        console.error('CSV import error:', err);
+        alert('Failed to process CSV file.');
+        setImporting(false);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
 
@@ -12932,8 +13009,6 @@ export function Inventory() {
 
       });
 
-      loadLowStockItems();
-
     };
 
 
@@ -12955,8 +13030,6 @@ export function Inventory() {
       const { item } = data;
 
       showNotification(`Low Stock Alert: ${item.name || item.menuItem?.name || 'Unknown Item'}`, 'warning');
-
-      loadLowStockItems();
 
     };
 
@@ -13137,23 +13210,30 @@ export function Inventory() {
 
 
   const handleDeleteItem = async (itemId) => {
-
-    if (!confirm('Are you sure you want to delete this inventory item?')) return;
-
+    if (!confirm('Delete this ingredient?')) return;
     if (deletingItemId) return;
 
-
-
     setDeletingItemId(itemId);
-
     try {
+      const item = displayItems.find(i => i.id === itemId);
+      if (!item) return;
 
-      await deleteInventoryItem(itemId);
+      if (!item.isVirtual) {
+        await fetch(apiUrl(`/api/bar/inventory/items/${itemId}`), {
+          method: 'DELETE',
+          headers: { ...getAuthHeaders() },
+        });
+      }
 
-      setInventory(prev => prev.filter(i => i.id !== itemId));
+      if (item.menuItemId) {
+        await fetch(apiUrl(`/api/bar/menu/items/${item.menuItemId}`), {
+          method: 'DELETE',
+          headers: { ...getAuthHeaders() },
+        });
+      }
 
-      showNotification('Inventory item deleted successfully', 'success');
-
+      loadBarMenu();
+      loadInventory();
     } catch (err) {
 
       console.error('[Inventory] Delete failed:', err);
@@ -13308,6 +13388,67 @@ export function Inventory() {
 
 
 
+  const lowStockItems = useMemo(() => {
+    return displayItems.filter(i => {
+      const stockStatus = getStockStatus(i);
+      return stockStatus.status === 'low' || stockStatus.status === 'out';
+    });
+  }, [displayItems]);
+
+  const toggleSelection = (id) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected ingredient(s)?`)) return;
+
+    setBulkDeleting(true);
+    const ids = Array.from(selectedIds);
+    let failed = 0;
+
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const item = displayItems.find(i => i.id === id);
+        if (!item) return;
+
+        let success = true;
+        
+        if (!item.isVirtual) {
+          const resInv = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {
+            method: 'DELETE',
+            headers: { ...getAuthHeaders() },
+          });
+          if (!resInv.ok) success = false;
+        }
+
+        if (item.menuItemId) {
+          const resMenu = await fetch(apiUrl(`/api/bar/menu/items/${item.menuItemId}`), {
+            method: 'DELETE',
+            headers: { ...getAuthHeaders() },
+          });
+          if (!resMenu.ok) success = false;
+        }
+
+        if (!success) failed++;
+      } catch {
+        failed++;
+      }
+    }));
+
+    setSelectedIds(new Set());
+    setBulkDeleting(false);
+    loadBarMenu();
+    loadInventory();
+
+    if (failed > 0) {
+      alert(`${ids.length - failed} deleted, ${failed} failed.`);
+    }
+  };
+
   // Show "Coming Soon" for restaurant-only outlet
 
   if (activeOutlet === 'restaurant') {
@@ -13362,242 +13503,527 @@ export function Inventory() {
 
 
 
+  const renderEditBarCell = (item, field, displayValue, inputType = "number", align = "center", unit = "") => {
+    return editingBarCell?.itemId === item.id && editingBarCell?.field === field ? (
+      <div className={`flex items-center justify-${align} gap-1`}>
+        <input
+          type={inputType}
+          step="any"
+          value={editingBarCell.value}
+          onChange={(e) => setEditingBarCell(prev => ({ ...prev, value: e.target.value }))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleBarInlineSave(item, field);
+            if (e.key === 'Escape') setEditingBarCell(null);
+          }}
+          className={`px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400 ${inputType === 'text' ? 'w-32' : 'w-20'} text-${align}`}
+          autoFocus
+          disabled={editBarSaving}
+        />
+        <button onClick={() => handleBarInlineSave(item, field)} disabled={editBarSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+        <button onClick={() => setEditingBarCell(null)} disabled={editBarSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+      </div>
+    ) : (
+      <div className={`flex items-center justify-${align} gap-1 group/cell`}>
+        <span>
+          {displayValue} {unit}
+        </span>
+        <button
+          onClick={() => setEditingBarCell({ 
+            itemId: item.id, 
+            field, 
+            value: String(
+              field === 'name' ? (item.name || item.menuItem?.name || '') : 
+              field === 'category' ? (item.category || item.menuItem?.category || '') : 
+              field === 'bottleSize' ? (item.bottleSize || '') : 
+              field === 'price' ? (item.menuItem?.price || 0) : 
+              field === 'opening' ? (item.todayEntry?.openingStock ?? 0) : 
+              field === 'purchase' ? (item.todayEntry?.addedStock ?? 0) : 
+              field === 'consumed' ? (item.todayEntry?.consumedStock ?? 0) : ''
+            ) 
+          })}
+          className="p-0.5 text-gray-400 hover:text-gray-700"
+        >
+          <Pencil size={12} />
+        </button>
+      </div>
+    );
+  };
+
   return (
 
     <div className="space-y-6">
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
 
-        <div>
-
-          <h2 className="text-2xl font-black uppercase tracking-[0.2em]">Bar Inventory</h2>
-
-          <p className="text-sm text-gray-600 mt-1">Manage liquor stock levels and purchases</p>
-
+        <div className="min-w-0 flex-shrink-0">
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter leading-tight">Bar<br />Inventory</h2>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 leading-relaxed">Liquor Stock Levels<br />& Purchases</p>
         </div>
 
-        <div className="flex gap-2">
-
+        <div className="flex flex-wrap items-center gap-3">
+          {accessibleOutlets.length > 1 && (
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">View</label>
+              <select
+                value={outletFilter}
+                onChange={(e) => setOutletFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+              >
+                <option value="self">This Outlet</option>
+                <option value="combined">All Outlets (Shared)</option>
+              </select>
+              {outletFilter === 'combined' && (
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">Read-only</span>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+            />
+          </div>
           <button
-
-            onClick={() => setShowPurchaseModal(true)}
-
-            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
-
+            onClick={() => {
+              if (inventory.length === 0) return;
+              const headers = ['S.NO', 'ITEM', 'CATEGORY', 'PRICE', 'STOCK(ml)', 'BOTTLE_SIZE(ml)', 'REORDER(bottles)', 'COST_PER_BOTTLE'];
+              const rows = inventory.map((item, index) => {
+                const name = item.name || item.menuItem?.name || '';
+                const category = item.category || item.menuItem?.category || '';
+                const price = parseFloat(item.menuItem?.price || 0);
+                const stock = parseFloat(item.currentStock || 0);
+                const bottleSize = parseInt(item.bottleSize || 750);
+                const reorder = parseFloat(item.reorderLevel || 0);
+                const cost = parseFloat(item.costPerBottle || 0);
+                const safeName = name.includes(',') ? `"${name}"` : name;
+                const safeCategory = category.includes(',') ? `"${category}"` : category;
+                return [index + 1, safeName, safeCategory, price, stock, bottleSize, reorder, cost].join(',');
+              });
+              const csv = [headers.join(','), ...rows].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `bar-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            disabled={inventory.length === 0}
+            className="w-full sm:w-auto text-xs font-bold bg-[#F4F4F5] text-gray-700 px-6 py-4 rounded-2xl hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-
-            + Record Purchase
-
+            <Download size={14} /> CSV
+          </button>
+          
+          <input
+            ref={csvImportRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files[0]) {
+                handleImportCSV(e.target.files[0]);
+                e.target.value = '';
+              }
+            }}
+          />
+          <button
+            onClick={() => csvImportRef.current?.click()}
+            disabled={importing}
+            className="w-full sm:w-auto text-xs font-bold bg-[#F4F4F5] text-gray-700 px-6 py-4 rounded-2xl hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <Download size={14} className="rotate-180" /> {importing ? `Importing ${importProgress}…` : 'Import CSV'}
           </button>
 
-          <button
+          <input
+            type="text"
+            placeholder="Search inventory..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="px-4 py-3 border border-gray-100 rounded-xl text-sm focus:border-[#E53935] outline-none shadow-sm flex-1 sm:flex-none sm:w-64"
+          />
 
+          <button
             onClick={() => setShowAddModal(true)}
-
-            className="px-4 py-2 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase hover:scale-105 active:scale-95 transition-all"
-
+            className="w-full sm:w-auto bg-[#B71C1C] text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] shadow-red-100 shadow-xl transition-all active:scale-95 text-center"
           >
+            Add Item
+          </button>
 
-            + Add Item
+          <button
+            onClick={() => setShowPurchaseModal(true)}
+            className="w-full sm:w-auto bg-[#E8F5E9] text-[#2E7D32] px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#C8E6C9] transition-all active:scale-95"
+          >
+            Record Purchase
+          </button>
 
+          <button
+            onClick={async () => {
+              setTopSellingLoading(true);
+              try {
+                const res = await fetchBarTopSelling({ startDate: selectedDate, endDate: selectedDate });
+                setTopSelling(res);
+              } catch (err) {
+                showNotification('Failed to fetch top selling items', 'error');
+              } finally {
+                setTopSellingLoading(false);
+              }
+            }}
+            disabled={topSellingLoading}
+            className="w-full sm:w-auto bg-[#FFF3E0] text-[#E65100] px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#FFE0B2] transition-all active:scale-95 disabled:opacity-50"
+          >
+            {topSellingLoading ? 'Loading...' : 'Top 3 Selling Items'}
+          </button>
+
+          <button
+            onClick={() => setShowDeductionPanel(p => !p)}
+            className={`w-full sm:w-auto px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 ${showDeductionPanel ? 'bg-[#B71C1C] text-white shadow-red-100 shadow-xl' : 'bg-[#F4F4F5] text-gray-700 hover:bg-gray-200'}`}
+          >
+            <Activity size={14} /> Deduction Check
           </button>
 
         </div>
-
       </div>
 
-
-
-      <div className="flex gap-2 border-b border-gray-200 mb-6">
-
-        <button
-
-          onClick={() => setActiveTab('inventory')}
-
-          className={`px-4 py-3 font-bold text-sm transition-all ${
-
-            activeTab === 'inventory'
-
-              ? 'border-b-2 border-[#E53935] text-[#E53935]'
-
-              : 'text-gray-500 hover:text-gray-700'
-
-          }`}
-
-        >
-
-          Inventory
-
-        </button>
-
-        <button
-
-          onClick={() => setActiveTab('transactions')}
-
-          className={`px-4 py-3 font-bold text-sm transition-all ${
-
-            activeTab === 'transactions'
-
-              ? 'border-b-2 border-[#E53935] text-[#E53935]'
-
-              : 'text-gray-500 hover:text-gray-700'
-
-          }`}
-
-        >
-
-          Transactions
-
-        </button>
-
-        <button
-
-          onClick={() => setActiveTab('reports')}
-
-          className={`px-4 py-3 font-bold text-sm transition-all ${
-
-            activeTab === 'reports'
-
-              ? 'border-b-2 border-[#E53935] text-[#E53935]'
-
-              : 'text-gray-500 hover:text-gray-700'
-
-          }`}
-
-        >
-
-          Sales Reports
-
-        </button>
-
-      </div>
-
-
-
-      {activeTab === 'inventory' && (
-
-        <>
-
-          {lowStockItems.length > 0 && (
-
-        <div className="bg-amber-50 border-2 border-amber-500 rounded-2xl p-4">
-
-          <div className="flex items-center gap-2 mb-2">
-
-            <AlertCircle className="text-amber-600" size={20} />
-
-            <h3 className="font-black text-amber-900 uppercase text-sm tracking-wide">
-
-              {lowStockItems.length} Item{lowStockItems.length !== 1 ? 's' : ''} Need Attention
-
-            </h3>
-
+      {showDeductionPanel && (
+        <div className="bg-white border-2 border-red-100 rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="text-red-600" size={20} />
+            <h3 className="text-sm font-black uppercase tracking-widest text-red-900">Deduction Diagnostic</h3>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">Enter an Order ID to verify what liquor stock was deducted when the bill was settled.</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="order_xxx..."
+              value={deductionCheckOrderId}
+              onChange={(e) => setDeductionCheckOrderId(e.target.value)}
+              className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none font-mono"
+            />
+            <button
+              onClick={async () => {
+                if (!deductionCheckOrderId.trim()) return;
+                setDeductionCheckLoading(true);
+                setDeductionCheckResult(null);
+                try {
+                  const data = await fetchBarDeductionCheck(deductionCheckOrderId.trim());
+                  setDeductionCheckResult(data);
+                } catch (err) {
+                  setDeductionCheckResult({ error: err.message });
+                } finally {
+                  setDeductionCheckLoading(false);
+                }
+              }}
+              disabled={deductionCheckLoading || !deductionCheckOrderId.trim()}
+              className="px-5 py-2 bg-[#B71C1C] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#8E1414] disabled:opacity-50"
+            >
+              {deductionCheckLoading ? 'Checking…' : 'Check'}
+            </button>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          {deductionCheckResult && (
+            <div className="space-y-3 mt-4">
+              {deductionCheckResult.error ? (
+                <p className="text-sm text-red-600 font-bold">{deductionCheckResult.error}</p>
+              ) : (
+                <>
+                  <div className="flex items-center gap-4 text-xs">
+                    <span className="font-bold text-gray-700">Status: <span className={deductionCheckResult.status === 'PAID' ? 'text-green-600' : 'text-amber-600'}>{deductionCheckResult.status}</span></span>
+                    <span className="font-bold text-gray-700">Liquor Items: {deductionCheckResult.summary.totalLiquorItems}</span>
+                  </div>
 
-            {lowStockItems.filter(item => item && item.id).map(item => {
+                  {deductionCheckResult.missingInventoryLinks?.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                      <p className="text-xs font-black text-red-700 mb-1">No Inventory Link Found For:</p>
+                      <p className="text-xs text-red-600">{deductionCheckResult.missingInventoryLinks.join(', ')}</p>
+                    </div>
+                  )}
 
-              const currentStock = parseFloat(item.currentStock) || 0;
-
-              const category = item.category || item.menuItem?.category || '';
-
-              const isBeer = String(category || '').toLowerCase() === 'beer';
-
-              const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
-
-              const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
-
-              return (
-
-                <span key={item.id} className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
-
-                  {item.name || item.menuItem?.name || 'Unknown Item'} ({Math.floor(currentStock / bottleSize)} bottles)
-
-                </span>
-
-              );
-
-            })}
-
-          </div>
-
+                  <div className="space-y-2">
+                    {deductionCheckResult.liquorItems?.map((li) => (
+                      <div key={li.menuItemId} className={`rounded-xl border p-3 ${li.hasInventoryLink && li.deductedQty !== null ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-xs font-black text-gray-900">{li.name} × {li.orderedQty}</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${li.hasInventoryLink ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {li.hasInventoryLink ? '✓ Inventory found' : '✗ No inventory'}
+                          </span>
+                        </div>
+                        {li.deductedQty !== null && (
+                          <div className="text-[10px] bg-white border border-green-200 rounded-lg px-2 py-1 text-gray-700 inline-block">
+                            Deducted: <span className="font-bold text-red-600">-{li.deductedQty} ml</span> 
+                            <span className="mx-2 text-gray-300">|</span> 
+                            Stock: {li.stockBefore} → {li.stockAfter}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
-
       )}
 
 
 
-      <div className="flex gap-4 flex-wrap">
 
-        <input
 
-          type="text"
 
-          placeholder="Search inventory..."
 
-          value={searchTerm}
+      {activeTab === 'inventory' && (
+        <>
 
-          onChange={(e) => setSearchTerm(e.target.value)}
+          {lowStockItems.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 mb-6">
+              <AlertCircle className="text-amber-600" size={24} />
+              <div>
+                <p className="font-bold text-amber-800">{lowStockItems.length} item(s) below reorder level</p>
+                <p className="text-sm text-amber-600">{lowStockItems.map((i) => i.name || i.menuItem?.name || 'Unknown Item').join(', ')}</p>
+              </div>
+            </div>
+          )}
 
-          className="flex-1 min-w-[200px] px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none"
+          {selectedIds.size > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <CheckSquare className="text-red-600" size={24} />
+                <p className="font-bold text-red-800">{selectedIds.size} item(s) selected</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-sm font-bold text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg hover:bg-gray-100"
+                >Clear Selection</button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="text-sm font-bold text-white bg-red-600 hover:bg-red-700 px-4 py-1.5 rounded-lg disabled:opacity-50 flex items-center gap-2"
+                >
+                  {bulkDeleting ? <span className="inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <Trash2 size={14} />}
+                  {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
+                </button>
+              </div>
+            </div>
+          )}
 
-        />
 
-        {accessibleOutlets.length > 1 && (
 
-          <select
 
-            value={outletFilter}
 
-            onChange={(e) => setOutletFilter(e.target.value)}
 
-            className="px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm font-bold"
 
-          >
+      {/* Desktop Table View */}
+      <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden mb-6">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+              <tr>
+                <th className="px-4 py-4 text-center">
+                  <input 
+                    type="checkbox" 
+                    className="h-4 w-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935] cursor-pointer"
+                    checked={filteredInventory.length > 0 && filteredInventory.every(i => selectedIds.has(i.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedIds(new Set(filteredInventory.map(i => i.id)));
+                      } else {
+                        setSelectedIds(new Set());
+                      }
+                    }}
+                  />
+                </th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 w-[1%] whitespace-nowrap">Ingredient</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Scale</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center w-full">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filteredInventory.map(item => {
+                if (!item) return null;
+                const stockStatus = getStockStatus(item);
+                const currentStock = parseFloat(item.currentStock) || 0;
+                const category = item.category || item.menuItem?.category || '';
+                const isBeer = String(category || '').toLowerCase() === 'beer';
+                const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
+                const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
+                const reorderLevel = parseFloat(item.reorderLevel) || 0;
+                const reorderBottles = bottleSize > 0 ? Math.ceil(reorderLevel / bottleSize) : 0;
+                const maxStock = parseFloat(item.maxStock) || (reorderLevel * 3) || 10000;
+                const stockPercentage = maxStock > 0 ? Math.min((currentStock / maxStock) * 100, 100) : 0;
+                
+                const hasEntry = !!item.todayEntry;
+                const isCarryOver = item.todayEntry?.isCarryOver === true;
+                const opening  = hasEntry ? Number(item.todayEntry.openingStock  ?? 0) : null;
+                const purchase = hasEntry ? Number(item.todayEntry.addedStock    ?? 0) : null;
+                const consumed = hasEntry ? Number(item.todayEntry.consumedStock ?? 0) : null;
+                const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
 
-            <option value="self">This Outlet</option>
+                const price = Number(item.menuItem?.price || 0);
+                const costPerBottle = item.costPerBottle ? Number(item.costPerBottle) : (price * (bottleSize / 30));
+                const pricePerMl = bottleSize > 0 ? (costPerBottle / bottleSize) : 0;
 
-            <option value="combined">All Outlets (Summed)</option>
+                const openingAmt     = opening     != null ? opening     * pricePerMl : null;
+                const purchaseAmt    = purchase    != null ? purchase    * pricePerMl : null;
+                const totalStock     = hasEntry    ? opening + purchase          : null;
+                const totalStockAmt  = totalStock  != null ? totalStock  * pricePerMl : null;
+                const consumptionAmt = consumed    != null ? consumed    * pricePerMl : null;
+                const balanceStock   = closingStock;
+                const balanceStockAmt = balanceStock != null ? balanceStock * pricePerMl : null;
 
-          </select>
+                const fmtAmt = (val) => val == null ? '—' : `₹ ${Number(val).toFixed(2)}`;
+                const fmtVal = (val, suffix = '') => val == null ? '—' : `${Number(val).toFixed(0)} ${suffix}`.trim();
 
-        )}
-
-        {outletFilter === 'combined' && (
-
-          <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">Read-only</span>
-
-        )}
-
-        <select
-
-          value={filterStatus}
-
-          onChange={(e) => setFilterStatus(e.target.value)}
-
-          className="px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none"
-
-        >
-
-          <option value="all">All Items</option>
-
-          <option value="ok">In Stock</option>
-
-          <option value="low">Low Stock</option>
-
-          <option value="out">Out of Stock</option>
-
-        </select>
-
+                return (
+                  <tr key={item.id} className={`transition-colors ${isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'} ${selectedIds.has(item.id) ? 'bg-red-50/50' : ''}`}>
+                    <td className="px-4 py-4 text-center">
+                      <input 
+                        type="checkbox" 
+                        className="h-4 w-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935] cursor-pointer" 
+                        checked={selectedIds.has(item.id)}
+                        onChange={() => toggleSelection(item.id)}
+                      />
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="relative group shrink-0">
+                          {item.menuItem?.imageUrl ? (
+                            <img src={item.menuItem.imageUrl} alt={item.name || item.menuItem?.name || ''} className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-sm" />
+                          ) : (
+                            <IngredientAvatar name={item.name || item.menuItem?.name || 'Unknown Item'} />
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {editingBarCell?.itemId === item.id && editingBarCell?.field === 'name' ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={editingBarCell.value}
+                                onChange={(e) => setEditingBarCell(prev => ({ ...prev, value: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleBarInlineSave(item, 'name'); if (e.key === 'Escape') setEditingBarCell(null); }}
+                                className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400 w-32"
+                                autoFocus
+                                disabled={editBarSaving}
+                              />
+                              <button onClick={() => handleBarInlineSave(item, 'name')} disabled={editBarSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+                              <button onClick={() => setEditingBarCell(null)} disabled={editBarSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 group/name">
+                              <p className="font-black text-gray-900 text-sm">{toTitleCase(item.name || item.menuItem?.name || 'Unknown Item')}</p>
+                              <button
+                                onClick={() => setEditingBarCell({ itemId: item.id, field: 'name', value: item.name || item.menuItem?.name || '' })}
+                                className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/name:opacity-100 transition-opacity"
+                              >
+                                <Pencil size={11} />
+                              </button>
+                            </div>
+                          )}
+                          {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-gray-500 text-sm">
+                      {editingBarCell?.itemId === item.id && editingBarCell?.field === 'category' ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={editingBarCell.value}
+                            onChange={(e) => setEditingBarCell(prev => ({ ...prev, value: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleBarInlineSave(item, 'category'); if (e.key === 'Escape') setEditingBarCell(null); }}
+                            className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400 w-24"
+                            autoFocus
+                            disabled={editBarSaving}
+                          />
+                          <button onClick={() => handleBarInlineSave(item, 'category')} disabled={editBarSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+                          <button onClick={() => setEditingBarCell(null)} disabled={editBarSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-start gap-1 group/cat">
+                          <span className={`${category ? 'bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold -ml-2' : 'text-gray-300 text-xs italic'}`}>
+                            {category || 'Uncategorized'}
+                          </span>
+                          <button
+                            onClick={() => setEditingBarCell({ itemId: item.id, field: 'category', value: category || '' })}
+                            className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/cat:opacity-100 transition-opacity"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-gray-500 text-sm">
+                      {editingBarCell?.itemId === item.id && editingBarCell?.field === 'bottleSize' ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={editingBarCell.value}
+                            onChange={(e) => setEditingBarCell(prev => ({ ...prev, value: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleBarInlineSave(item, 'bottleSize'); if (e.key === 'Escape') setEditingBarCell(null); }}
+                            className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-400 w-20"
+                            autoFocus
+                            disabled={editBarSaving}
+                          />
+                          <button onClick={() => handleBarInlineSave(item, 'bottleSize')} disabled={editBarSaving} className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"><Check size={12} /></button>
+                          <button onClick={() => setEditingBarCell(null)} disabled={editBarSaving} className="p-1 text-gray-400 hover:text-gray-600"><X size={12} /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-start gap-1 group/unit">
+                          <span>{bottleSize} ml</span>
+                          <button
+                            onClick={() => setEditingBarCell({ itemId: item.id, field: 'bottleSize', value: String(bottleSize || '') })}
+                            className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/unit:opacity-100 transition-opacity"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `₹${price.toFixed(2)}`, 'number')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', fmtVal(opening, 'ml'))}</td>
+                    <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(openingAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', fmtVal(purchase, 'ml'))}</td>
+                    <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(purchaseAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-blue-600">{fmtVal(totalStock, 'ml')}</td>
+                    <td className="px-4 py-4 text-xs text-center text-blue-600">{fmtAmt(totalStockAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', fmtVal(consumed, 'ml'))}</td>
+                    <td className="px-4 py-4 text-xs text-center text-red-600">{fmtAmt(consumptionAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{fmtVal(balanceStock, 'ml')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{fmtAmt(balanceStockAmt)}</td>
+                    <td className="px-4 py-4 text-center">
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            disabled={deletingItemId === item.id}
+                            className="p-1.5 text-red-600 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {deletingItemId === item.id ? <ButtonSpinner /> : <Trash2 size={16} />}
+                          </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-
-
-      <div className="space-y-3">
-
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-3">
         {filteredInventory.map(item => {
-
           if (!item) return null;
 
           const stockStatus = getStockStatus(item);
@@ -13630,7 +14056,7 @@ export function Inventory() {
 
           return (
 
-            <div key={item.id} className="bg-white rounded-2xl shadow-lg p-5 border-2 border-gray-100 hover:border-[#E53935] transition-all">
+            <div key={item.id} className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm p-6 hover:shadow-md transition-all">
 
               <div className="flex items-center justify-between gap-4">
 
@@ -13640,13 +14066,9 @@ export function Inventory() {
 
                   <div className="flex items-center gap-3 mb-2">
 
-                    <h3 className="font-black text-base uppercase tracking-wide truncate">{item.name || item.menuItem?.name || 'Unknown Item'}</h3>
+                    <h3 className="font-black text-sm uppercase tracking-wide text-gray-900 truncate">{item.name || item.menuItem?.name || 'Unknown Item'}</h3>
 
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${stockStatus.color} bg-gray-100 whitespace-nowrap`}>
 
-                      {stockStatus.label}
-
-                    </span>
 
                   </div>
 
@@ -13656,25 +14078,25 @@ export function Inventory() {
 
                   <div className="mb-3">
 
-                    <div className="flex justify-between text-xs mb-1">
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-1">
 
-                      <span className="text-gray-600">Stock Level</span>
+                      <span className="text-gray-400">Stock Level</span>
 
-                      <span className="font-bold">{bottles} bottles ({currentStock.toFixed(0)} ml)</span>
+                      <span className="text-gray-900">{bottles} bottles <span className="text-gray-400 font-bold ml-1">({currentStock.toFixed(0)} ml)</span></span>
 
                     </div>
 
-                    <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
 
                       <div
 
                         className={`h-full rounded-full transition-all duration-500 ${
 
-                          stockStatus.status === 'out' ? 'bg-red-600' :
+                          stockStatus.status === 'out' ? 'bg-red-500' :
 
-                          stockStatus.status === 'low' ? 'bg-amber-500' :
+                          stockStatus.status === 'low' ? 'bg-amber-400' :
 
-                          'bg-green-500'
+                          'bg-green-400'
 
                         }`}
 
@@ -13690,15 +14112,15 @@ export function Inventory() {
 
                   {/* Additional Info */}
 
-                  <div className="flex gap-4 text-xs text-gray-600">
+                  <div className="flex gap-4 text-[10px] font-black uppercase tracking-widest text-gray-400">
 
-                    <span>Reorder: <strong className="text-gray-800">{reorderBottles} bottles</strong></span>
+                    <span>Reorder: <strong className="text-gray-900">{reorderBottles} btl</strong></span>
 
-                    <span>Size: <strong className="text-gray-800">{bottleSize} ml</strong></span>
+                    <span>Size: <strong className="text-gray-900">{bottleSize} ml</strong></span>
 
                     {item.costPerBottle > 0 && (
 
-                      <span>Cost: <strong className="text-gray-800">₹{parseFloat(item.costPerBottle).toFixed(2)}</strong></span>
+                      <span>Cost: <strong className="text-gray-900">₹{parseFloat(item.costPerBottle).toFixed(2)}</strong></span>
 
                     )}
 
@@ -13710,65 +14132,15 @@ export function Inventory() {
 
                 {/* Right: Action Buttons */}
 
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
 
-                  <button
-
-                    onClick={() => {
-
-                      setSelectedItem(item);
-
-                      setShowAdjustModal(true);
-
-                    }}
-
-                    className="px-4 py-2 bg-[#E53935] text-white rounded-xl font-bold text-xs uppercase tracking-wide hover:scale-105 active:scale-95 transition-all whitespace-nowrap"
-
-                  >
-
-                    {item.isVirtual ? 'Add Stock' : 'Adjust'}
-
-                  </button>
-
-                  {!item.isVirtual && (
-
-                    <>
-
-                      <button
-
-                        onClick={() => {
-
-                          setEditingItem(item);
-
-                          setShowEditModal(true);
-
-                        }}
-
-                        className="px-3 py-2 bg-blue-100 text-blue-700 rounded-xl font-bold text-xs hover:bg-blue-600 hover:text-white hover:scale-105 active:scale-95 transition-all"
-
-                      >
-
-                        <Edit2 size={16} />
-
-                      </button>
-
-                      <button
-
-                        onClick={() => handleDeleteItem(item.id)}
-
-                        disabled={deletingItemId === item.id}
-
-                        className="px-3 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-
-                      >
-
-                        {deletingItemId === item.id ? <ButtonSpinner /> : <Trash2 size={16} />}
-
-                      </button>
-
-                    </>
-
-                  )}
+                    <button
+                      onClick={() => handleDeleteItem(item.id)}
+                      disabled={deletingItemId === item.id}
+                      className="p-1.5 text-red-600 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {deletingItemId === item.id ? <ButtonSpinner /> : <Trash2 size={16} />}
+                    </button>
 
                 </div>
 
@@ -13859,25 +14231,46 @@ export function Inventory() {
 
 
       {showEditModal && editingItem && (
-
         <EditInventoryModal
-
           item={editingItem}
-
           onClose={() => {
-
             setShowEditModal(false);
-
             setEditingItem(null);
-
           }}
-
           onSave={(updateData) => handleUpdateItem(editingItem.id, updateData)}
-
           isSubmitting={isUpdating}
-
         />
+      )}
 
+      {/* Top Selling Modal */}
+      {topSelling !== null && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setTopSelling(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-gray-900">Top 3 Selling Items</h3>
+              <button onClick={() => setTopSelling(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
+            </div>
+            {topSelling.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No sales data found.</p>
+            ) : (
+              <div className="space-y-3">
+                {topSelling.map((item, idx) => {
+                  const toTitleCase = (s) => s ? s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : '';
+                  return (
+                  <div key={item.menuItemId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-black ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : idx === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-gray-900">{toTitleCase(item.name)}</p>
+                      <p className="text-xs text-gray-500">{item.totalSold} sold</p>
+                    </div>
+                  </div>
+                )})}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
         </>
@@ -13886,19 +14279,7 @@ export function Inventory() {
 
 
 
-      {activeTab === 'transactions' && (
 
-        <TransactionsTab />
-
-      )}
-
-
-
-      {activeTab === 'reports' && (
-
-        <SalesReportsTab inventory={inventory} />
-
-      )}
 
 
 
@@ -14570,7 +14951,7 @@ function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
 
     quantityChange: 0,
 
-    type: item.isVirtual ? 'OPENING' : 'ADJUSTMENT',
+    type: 'ADJUSTMENT',
 
     notes: '',
 
@@ -14669,10 +15050,6 @@ function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
               className="w-full px-4 py-3 bg-[#FFF5F5] border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none transition-all font-medium"
 
             >
-
-              {item.isVirtual && (
-                <option value="OPENING">Opening Stock</option>
-              )}
 
               <option value="ADJUSTMENT">Manual Adjustment</option>
 
@@ -17955,7 +18332,7 @@ export function StaffManagement() {
 
   const handleDeactivate = async (id) => {
 
-    if (!confirm('Warning: Deactivating this staff member will permanently delete their payroll records, advances, attendance, and captain assignments. This cannot be undone. Do you want to continue?')) return;
+    if (!confirm('Deactivate this staff member?')) return;
 
     try {
 
@@ -18342,19 +18719,6 @@ export function StaffManagement() {
               />
 
             </div>
-            )}
-
-            {!editing && (
-              <div>
-                <label className="text-[10px] font-bold text-gray-500 uppercase">Base Salary (Monthly)</label>
-                <input
-                  type="number"
-                  value={form.baseSalary}
-                  onChange={(e) => setForm({ ...form, baseSalary: e.target.value })}
-                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-                  placeholder="e.g. 15000"
-                />
-              </div>
             )}
 
             {editing && editing.role === 'CASHIER' && (
