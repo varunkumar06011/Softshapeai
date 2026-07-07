@@ -4475,13 +4475,14 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const settlementBreakdown = useMemo(() => {
-    const breakdown = { CASH: 0, CARD: 0, UPI: 0, count: 0 };
+    const breakdown = { CASH: 0, CARD: 0, UPI: 0, OTHER: 0, count: 0 };
     for (const txn of filteredTransactions) {
       const method = (txn.method || '').toUpperCase();
       const amt = Number(txn.grandTotal ?? txn.amount ?? 0);
       if (method === 'CASH') breakdown.CASH += amt;
       else if (method === 'CARD') breakdown.CARD += amt;
       else if (method === 'UPI') breakdown.UPI += amt;
+      else breakdown.OTHER += amt;
       breakdown.count++;
     }
     return breakdown;
@@ -4662,7 +4663,7 @@ const CashierDashboard = ({ onLogout }) => {
                           Settlement Breakdown
                           <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{settlementBreakdown.count} transactions</span>
                         </h3>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-4 gap-3">
                           <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Cash</p>
                             <p className="text-lg font-black text-amber-700 tabular-nums">₹{settlementBreakdown.CASH.toFixed(2)}</p>
@@ -4674,6 +4675,10 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">UPI</p>
                             <p className="text-lg font-black text-blue-700 tabular-nums">₹{settlementBreakdown.UPI.toFixed(2)}</p>
+                          </div>
+                          <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 text-center">
+                            <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest mb-1">Other</p>
+                            <p className="text-lg font-black text-orange-700 tabular-nums">₹{settlementBreakdown.OTHER.toFixed(2)}</p>
                           </div>
                         </div>
                       </div>

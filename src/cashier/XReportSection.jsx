@@ -39,6 +39,8 @@ export default function XReportSection() {
     expenditureAmount: 0,
     cardAmount: 0,
     cashAmount: 0,
+    upiAmount: 0,
+    otherAmount: 0,
     tipsAmount: 0,
     notes500: 0,
     notes200: 0,
@@ -71,6 +73,8 @@ export default function XReportSection() {
         expenditureAmount: Number(data.expenditureAmount) || 0,
         cardAmount: Number(data.cardAmount) || 0,
         cashAmount: Number(data.cashAmount) || 0,
+        upiAmount: Number(data.upiAmount) || 0,
+        otherAmount: Number(data.otherAmount) || 0,
         tipsAmount: Number(data.tipsAmount) || 0,
         notes500: data.notes500 || 0,
         notes200: data.notes200 || 0,
@@ -108,6 +112,8 @@ export default function XReportSection() {
           expenditureAmount: Number(report.expenditureAmount || 0),
           cardAmount: Number(report.cardAmount || 0),
           cashAmount: Number(report.cashAmount || 0),
+          upiAmount: Number(report.upiAmount || 0),
+          otherAmount: Number(report.otherAmount || 0),
           tipsAmount: Number(report.tipsAmount || 0),
           notes500: Number(report.notes500 || 0),
           notes200: Number(report.notes200 || 0),
@@ -146,6 +152,8 @@ export default function XReportSection() {
     lines.push(row('Total Sale', '₹' + round2(Number(report.totalSales)).toFixed(2)));
     lines.push(row('  Cash', '₹' + round2(Number(report.cashAmount || 0)).toFixed(2)));
     lines.push(row('  Card', '₹' + round2(Number(report.cardAmount || 0)).toFixed(2)));
+    lines.push(row('  UPI', '₹' + round2(Number(report.upiAmount || 0)).toFixed(2)));
+    lines.push(row('  Other', '₹' + round2(Number(report.otherAmount || 0)).toFixed(2)));
     lines.push(row('  Tips', '₹' + round2(Number(report.tipsAmount || 0)).toFixed(2)));
     lines.push(line);
     lines.push(row('Expenditure (Total)', '₹' + round2(Number(report.expenditureAmount || 0)).toFixed(2)));
@@ -185,6 +193,8 @@ export default function XReportSection() {
     totalSales: round2(Number(report.totalSales)),
     cardAmount: round2(Number(report.cardAmount || 0)),
     cashAmount: round2(Number(report.cashAmount || 0)),
+    upiAmount: round2(Number(report.upiAmount || 0)),
+    otherAmount: round2(Number(report.otherAmount || 0)),
     tipsAmount: round2(Number(report.tipsAmount || 0)),
     expenditureAmount: round2(Number(report.expenditureAmount || 0)),
     finalAmount,
@@ -328,6 +338,32 @@ export default function XReportSection() {
                     min="0"
                     value={report.cardAmount}
                     onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="flex justify-between items-center py-1 gap-3">
+                  <span className="text-sm font-bold text-gray-600">UPI</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={report.upiAmount}
+                    onChange={(e) => handleFieldChange('upiAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="flex justify-between items-center py-1 gap-3">
+                  <span className="text-sm font-bold text-gray-600">Other</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={report.otherAmount}
+                    onChange={(e) => handleFieldChange('otherAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
                     step="0.01"
