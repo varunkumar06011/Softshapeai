@@ -237,6 +237,11 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
         }`}>
           {status}
         </div>
+        {isBilling && table.billNumber && (
+          <span className={`${compactMode ? 'text-[7px]' : 'text-[9px]'} font-black uppercase tracking-wider text-amber-600`}>
+            Bill #{table.billNumber}
+          </span>
+        )}
         {!isFree && (
           <span className={`${compactMode ? 'text-[8px]' : 'text-[10px]'} font-black opacity-60`}>₹{bill?.grandTotal ?? 0}</span>
         )}

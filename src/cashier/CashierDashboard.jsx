@@ -6213,6 +6213,11 @@ const CashierDashboard = ({ onLogout }) => {
                   <p className="text-base sm:text-lg font-black text-gray-900 mt-0.5 sm:mt-1">
                     {selectedTable.time ? (() => { try { const d = new Date(selectedTable.time); return isNaN(d.getTime()) ? 'Just now' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch { return 'Just now'; } })() : 'Just now'}
                   </p>
+                  {selectedTable.billNumber && (
+                    <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 mt-0.5">
+                      Bill #{selectedTable.billNumber}
+                    </p>
+                  )}
                 </div>
               </div>
               <button
