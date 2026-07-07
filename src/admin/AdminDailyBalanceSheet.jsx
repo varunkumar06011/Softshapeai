@@ -169,6 +169,7 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
         value={localValue}
         onChange={(e) => setLocalValue(e.target.value)}
         onBlur={handleBlur}
+        onFocus={(e) => e.target.select()}
         disabled={isLocked}
         placeholder={isAuto ? String(computedValue || 0) : '0'}
         className={`w-full bg-transparent text-lg font-black text-gray-900 outline-none ${isLocked ? 'cursor-not-allowed opacity-60' : ''}`}
