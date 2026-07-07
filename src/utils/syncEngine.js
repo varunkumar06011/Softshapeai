@@ -31,6 +31,11 @@ import {
   setSyncMeta,
   getSyncMeta,
   markOfflineTransactionSynced,
+  setOrderIdMapping,
+  getRealOrderId,
+  getAllOrderIdMappings,
+  updatePendingActionEntityIds,
+  restoreLocalInventory,
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
@@ -86,11 +91,29 @@ let pendingCount = 0;
 let lastSyncAt = null;
 let lastError = null;
 let authExpired = false;
+let stuckCount = 0;
 
 const statusListeners = new Set();
+const stuckActionListeners = new Set();
 
 export function getSyncStatus() {
-  return { syncStatus, pendingCount, lastSyncAt, lastError, authExpired };
+  return { syncStatus, pendingCount, lastSyncAt, lastError, authExpired, stuckCount };
+}
+
+export function getStuckCount() {
+  return stuckCount;
+}
+
+export function subscribeStuckActions(callback) {
+  stuckActionListeners.add(callback);
+  callback(stuckCount);
+  return () => stuckActionListeners.delete(callback);
+}
+
+function notifyStuckActionListeners() {
+  stuckActionListeners.forEach(cb => {
+    try { cb(stuckCount); } catch (e) { /* ignore */ }
+  });
 }
 
 export function subscribeSyncStatus(callback) {
@@ -134,15 +157,26 @@ function getBackoffDelay(attempts) {
 
 async function bulkSync(actions) {
   const payload = {
-    actions: actions.map(a => ({
-      requestId: a.requestId,
-      actionType: a.actionType,
-      orderId: a.entityId,
-      url: a.url,
-      method: a.method,
-      body: a.body,
-      deviceId: a.deviceId || null,
-    })),
+    actions: actions.map(a => {
+      const body = { ...a.body };
+      // Fix B: Strip preReservedKotNumber for offline-origin orders to avoid
+      // @@unique([restaurantId, kotNumber]) violation when two devices sync
+      // the same local KOT number. Let the backend allocate its own number.
+      // Check both entityId (child actions) and offlineOrderId (create-order actions).
+      const isOfflineOrigin = (a.entityId && String(a.entityId).startsWith('offline-')) || a.offlineOrderId;
+      if (isOfflineOrigin) {
+        delete body.preReservedKotNumber;
+      }
+      return {
+        requestId: a.requestId,
+        actionType: a.actionType,
+        orderId: a.entityId,
+        url: a.url,
+        method: a.method,
+        body,
+        deviceId: a.deviceId || null,
+      };
+    }),
   };
 
   const res = await fetch(`${API_BASE}/api/orders/offline-sync`, {
@@ -164,9 +198,15 @@ async function bulkSync(actions) {
 
 async function syncSingleAction(action) {
   let url = action.url;
+  let body = action.body ? { ...action.body } : action.body;
+  // Fix B: Strip preReservedKotNumber for offline-origin orders in fallback path too
+  const isOfflineOrigin = (action.entityId && String(action.entityId).startsWith('offline-')) || action.offlineOrderId;
+  if (isOfflineOrigin && body) {
+    delete body.preReservedKotNumber;
+  }
   // Append requestId as query param for GET-like endpoints, or into body for POST/PATCH
   if (action.method === 'POST' || action.method === 'PATCH') {
-    action.body = { ...action.body, requestId: action.requestId };
+    body = { ...(body || {}), requestId: action.requestId };
   } else {
     const sep = url.includes('?') ? '&' : '?';
     url = `${url}${sep}requestId=${encodeURIComponent(action.requestId)}`;
@@ -175,7 +215,7 @@ async function syncSingleAction(action) {
   const res = await fetch(`${API_BASE}${url}`, {
     method: action.method,
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: action.body ? JSON.stringify(action.body) : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
 
   if (res.ok) {
@@ -221,25 +261,65 @@ export async function syncPendingActions() {
   setSyncStatus('syncing');
 
   try {
-    const actions = await getPendingActions();
-    if (actions.length === 0) {
+    const allActions = await getPendingActions();
+    if (allActions.length === 0) {
       setSyncStatus('idle');
       return;
     }
 
     // Sort by createdAt to preserve global ordering
-    actions.sort((a, b) => a.createdAt - b.createdAt);
+    allActions.sort((a, b) => a.createdAt - b.createdAt);
 
-    console.log(`[SyncEngine] Syncing ${actions.length} pending action(s)`);
+    // Fix A: Dependency-aware batching — partition actions into ready and blocked.
+    // Actions with dependsOnOrderId referencing an unresolved offline- ID are held
+    // back until their parent create-order action has synced and the real ID is
+    // written to orderIdMap in IndexedDB.
+    const mappings = await getAllOrderIdMappings();
+    const resolvedOfflineIds = new Set(mappings.map(m => m.offlineId));
+
+    const readyActions = [];
+    const blockedActions = [];
+
+    for (const action of allActions) {
+      if (action.dependsOnOrderId && String(action.dependsOnOrderId).startsWith('offline-')) {
+        if (resolvedOfflineIds.has(action.dependsOnOrderId)) {
+          // Parent has synced — update this action's entityId to the real ID
+          const mapping = mappings.find(m => m.offlineId === action.dependsOnOrderId);
+          if (mapping) {
+            action.entityId = mapping.realId;
+            if (action.body?.orderId === action.dependsOnOrderId) {
+              action.body.orderId = mapping.realId;
+            }
+            if (action.url && action.url.includes(action.dependsOnOrderId)) {
+              action.url = action.url.replace(action.dependsOnOrderId, mapping.realId);
+            }
+            action.dependsOnOrderId = null;
+          }
+          readyActions.push(action);
+        } else {
+          blockedActions.push(action);
+        }
+      } else {
+        readyActions.push(action);
+      }
+    }
+
+    if (readyActions.length === 0) {
+      console.log(`[SyncEngine] ${blockedActions.length} action(s) blocked on parent order sync — waiting`);
+      setSyncStatus('idle');
+      return;
+    }
+
+    console.log(`[SyncEngine] Syncing ${readyActions.length} ready action(s), ${blockedActions.length} blocked on parent`);
 
     // Try bulk sync first (more efficient, handles per-entity ordering server-side)
     let results;
     try {
-      results = await bulkSync(actions);
+      results = await bulkSync(readyActions);
     } catch (bulkErr) {
       console.warn('[SyncEngine] Bulk sync failed, falling back to individual sync:', bulkErr.message);
       // Fallback: sync individually, grouped by entity
-      results = await syncIndividually(actions);
+      results = await syncIndividually(readyActions);
     }
 
     // Build a result map by requestId so out-of-order bulk-sync results cannot be
@@ -253,8 +333,8 @@ export async function syncPendingActions() {
     let hadAuthError = false;
     let hadConflict = false;
 
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i];
+    for (let i = 0; i < readyActions.length; i++) {
+      const action = readyActions[i];
       let result = resultMap.get(action.requestId) || { status: 'error', error: 'No result returned' };
 
       // Normalize bulk sync results: map statusCode to status for conflict detection
@@ -276,6 +356,16 @@ export async function syncPendingActions() {
         }
         if (action.actionType === 'create-order' || action.actionType === 'update-items') {
           markKitchenItemsSynced(action.body?.tableId || action.entityId, action.requestId).catch(() => {});
+        }
+        // Fix A: After a successful create-order, store the offline→real ID mapping
+        // and update all child actions that were blocked on this offline ID.
+        if (action.actionType === 'create-order' && action.offlineOrderId) {
+          const realId = result.data?.order?.id || result.data?.id;
+          if (realId) {
+            await setOrderIdMapping(action.offlineOrderId, realId);
+            await updatePendingActionEntityIds(action.offlineOrderId, realId);
+            console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${realId}, updated child actions`);
+          }
         }
         succeeded++;
       } else if (result.status === 'conflict') {
@@ -333,15 +423,115 @@ export async function syncPendingActions() {
         break; // Stop syncing — need re-login
       } else {
         // Generic error — increment attempts, keep for retry
+        const newAttempts = (action.attempts || 0) + 1;
         await updatePendingAction(action.id, {
           status: 'error',
           lastError: result.error,
-          attempts: (action.attempts || 0) + 1,
+          attempts: newAttempts,
         });
         if (action.actionType === 'settle') {
           finalizeSettlementAudit(action.requestId, { status: 'error', error: result.error });
         }
+        // Fix E: Inventory rollback on permanent failure (5+ attempts)
+        if (newAttempts >= 5 && (action.actionType === 'create-order' || action.actionType === 'update-items')) {
+          const items = action.body?.items || [];
+          for (const item of items) {
+            if (item.menuItemId) {
+              await restoreLocalInventory(item.menuItemId, item.quantity || 1).catch(() => {});
+            }
+          }
+          await updatePendingAction(action.id, { status: 'failed-permanent' });
+          console.warn(`[SyncEngine] Action ${action.requestId} permanently failed after ${newAttempts} attempts — inventory restored`);
+        }
         failed++;
+      }
+    }
+
+    // Fix A: Second pass — if any create-order succeeded and unblocked child actions,
+    // run a second bulk sync with the newly-ready actions.
+    const newlyUnblocked = [];
+    for (const action of blockedActions) {
+      if (!action.dependsOnOrderId) {
+        newlyUnblocked.push(action);
+        continue;
+      }
+      const realId = await getRealOrderId(action.dependsOnOrderId);
+      if (realId) {
+        action.entityId = realId;
+        if (action.body?.orderId === action.dependsOnOrderId) {
+          action.body.orderId = realId;
+        }
+        if (action.url && action.url.includes(action.dependsOnOrderId)) {
+          action.url = action.url.replace(action.dependsOnOrderId, realId);
+        }
+        action.dependsOnOrderId = null;
+        newlyUnblocked.push(action);
+      }
+    }
+
+    if (newlyUnblocked.length > 0) {
+      console.log(`[SyncEngine] Second pass: syncing ${newlyUnblocked.length} newly-unblocked action(s)`);
+      let pass2Results;
+      try {
+        pass2Results = await bulkSync(newlyUnblocked);
+      } catch {
+        pass2Results = await syncIndividually(newlyUnblocked);
+      }
+      const pass2Map = new Map((pass2Results || []).map(r => [r.requestId, r]));
+      for (const action of newlyUnblocked) {
+        let result = pass2Map.get(action.requestId) || { status: 'error', error: 'No result returned' };
+        if (result.statusCode === 409 && result.status !== 'conflict') {
+          result = { ...result, status: 'conflict' };
+        } else if (result.statusCode === 401 && result.status !== 'auth_error') {
+          result = { ...result, status: 'auth_error', error: result.error || 'Authentication expired' };
+        }
+        if (result.status === 'success' || result.status === 'skipped') {
+          await removePendingAction(action.id);
+          clearConflict(action.id);
+          if (action.actionType === 'settle' && action.body?.localTxnId) {
+            markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
+          }
+          succeeded++;
+        } else if (result.status === 'conflict') {
+          const resolution = resolveConflict(action, result);
+          const autoResolved = resolution.resolution === 'skip' || resolution.resolution === 'adopt_server';
+          await updatePendingAction(action.id, {
+            status: autoResolved ? 'synced' : 'conflict',
+            lastError: resolution.message,
+            attempts: (action.attempts || 0) + 1,
+          });
+          if (autoResolved) {
+            await removePendingAction(action.id);
+            succeeded++;
+          } else {
+            addConflict({ actionId: action.id, requestId: action.requestId, actionType: action.actionType, ...resolution });
+            hadConflict = true;
+            failed++;
+          }
+        } else if (result.status === 'auth_error') {
+          hadAuthError = true;
+          await updatePendingAction(action.id, { status: 'auth_error', lastError: result.error, attempts: (action.attempts || 0) + 1 });
+          failed++;
+          break;
+        } else {
+          await updatePendingAction(action.id, { status: 'error', lastError: result.error, attempts: (action.attempts || 0) + 1 });
+          failed++;
+        }
+      }
+    }
+
+    // Fix D: Detect stuck actions — status 'error' with 3+ attempts and older than 5 minutes
+    const allRemaining = await getPendingActions();
+    const stuck = allRemaining.filter(a =>
+      (a.status === 'error' || a.status === 'failed-permanent') &&
+      (a.attempts || 0) >= 3 &&
+      a.createdAt < Date.now() - 5 * 60 * 1000
+    );
+    if (stuck.length !== stuckCount) {
+      stuckCount = stuck.length;
+      notifyStuckActionListeners();
+      if (stuckCount > 0) {
+        console.warn(`[SyncEngine] ${stuckCount} action(s) stuck (3+ failed attempts, 5+ min old)`);
       }
     }
 
