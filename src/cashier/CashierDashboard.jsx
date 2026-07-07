@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -2138,6 +2138,11 @@ const CashierDashboard = ({ onLogout }) => {
   const dashboardFinalAmount = useMemo(() => {
     return dashboardTotalSales - dashboardExpenditureAmount;
   }, [dashboardTotalSales, dashboardExpenditureAmount]);
+
+  // Total discounts given for the selected dashboard date (sum of discountAmount across filtered transactions)
+  const dashboardTotalDiscounts = useMemo(() => {
+    return filteredTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+  }, [filteredTransactions]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -4462,15 +4467,11 @@ const CashierDashboard = ({ onLogout }) => {
     return breakdown;
   }, [filteredTransactions]);
 
-  const waitingBillCount = useMemo(() => {
-    return dashboardFloorTables.filter(t => t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill').length;
-  }, [dashboardFloorTables]);
-
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${filteredTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "Expenditures", value: `₹${Number(dashboardExpenditureAmount).toFixed(2)}`, change: `${expenditureSummary?.count || 0} expenditures ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Expenditures", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Active Tables", value: `${dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length}/${dashboardFloorTables.length}`, change: `${waitingBillCount} waiting bill`, icon: Table2, color: "text-blue-600", bg: "bg-blue-50" },
   ];
 
   return (

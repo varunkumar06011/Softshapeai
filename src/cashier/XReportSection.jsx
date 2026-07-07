@@ -191,9 +191,9 @@ export default function XReportSection() {
       amount: Number(v.amount),
     })),
     denominations: DENOMINATIONS.map(d => ({
-      label: d.label,
-      qty: report[d.key] || 0,
-      amount: (report[d.key] || 0) * d.value,
+      label: `Rs.${d.value}`,
+      value: d.value,
+      count: report[d.key] || 0,
     })),
     cashFromNotes: round2(cashFromNotes),
   });
