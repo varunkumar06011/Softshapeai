@@ -49,8 +49,14 @@ export default function XReportSection() {
   });
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  // Balance = Total Sale - Expenditure (Total)
-  const finalAmount = round2(Number(report.totalSales) - Number(report.expenditureAmount || 0));
+  // Balance = Total Sale - Card - Cash - Tips - Expenditure
+  const finalAmount = round2(
+    Number(report.totalSales)
+    - Number(report.cardAmount || 0)
+    - Number(report.cashAmount || 0)
+    - Number(report.tipsAmount || 0)
+    - Number(report.expenditureAmount || 0)
+  );
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
@@ -155,7 +161,7 @@ export default function XReportSection() {
     lines.push(line);
     lines.push(center('BALANCE'));
     lines.push(center('₹' + finalAmount.toFixed(2)));
-    lines.push(center('(Total Sale − Expenditure)'));
+    lines.push(center('(Sale - Card - Cash - Tips - Exp)'));
     lines.push(line);
     lines.push('Denomination breakdown:');
     DENOMINATIONS.forEach(d => {
@@ -384,7 +390,7 @@ export default function XReportSection() {
             <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 flex flex-col items-center justify-center gap-1">
               <span className="text-xs font-black uppercase tracking-widest text-blue-700">Balance</span>
               <span className="text-3xl md:text-4xl font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
-              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Total Sale − Expenditure</span>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Sale - Card - Cash - Tips - Exp</span>
             </div>
 
             {/* Denomination Count */}

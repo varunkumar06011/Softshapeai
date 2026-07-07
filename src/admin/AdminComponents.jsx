@@ -646,7 +646,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
     loadSalesData();
 
-    const interval = setInterval(loadSalesData, 300000); // Refresh every 5 minutes
+    const interval = setInterval(loadSalesData, 600000); // Refresh every 10 minutes
 
 
 
@@ -692,7 +692,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
     loadStaff();
 
-    const interval = setInterval(loadStaff, 60000); // Refresh every 1 minute
+    const interval = setInterval(loadStaff, 300000); // Refresh every 5 minutes
 
 
 
@@ -893,7 +893,7 @@ function TopItemsWidget({ dashboardScope, restaurantId }) {
     };
 
     loadTopItems();
-    const interval = setInterval(loadTopItems, 300000); // 5 minutes
+    const interval = setInterval(loadTopItems, 600000); // 10 minutes
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -1897,7 +1897,7 @@ export function MenuPage({ onAddDish }) {
       }
     };
     fetchLivePrinters();
-    const id = setInterval(fetchLivePrinters, 30_000);
+    const id = setInterval(fetchLivePrinters, 120_000); // 2 minutes
     return () => clearInterval(id);
   }, [restaurant?.id]);
 

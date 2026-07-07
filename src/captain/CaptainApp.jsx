@@ -1726,7 +1726,8 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    // Poll every 60 seconds so captain sees new assignments without refresh
+    // Poll every 3 minutes so captain sees new assignments without refresh
+    // Socket.IO pushes real-time updates; this is just a safety net
 
     const interval = setInterval(() => {
 
@@ -1734,7 +1735,7 @@ export default function CaptainApp({ onLogout }) {
 
       loadCaptainRevenue(currentCaptain.id);
 
-    }, 60000);
+    }, 180000);
 
 
 

@@ -1706,7 +1706,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Periodic re-sync poll: safety net for missed socket events ────────────
   useEffect(() => {
-    const pollInterval = socket?.connected ? 30_000 : 20_000;
+    const pollInterval = socket?.connected ? 60_000 : 30_000;
     const interval = setInterval(() => {
       if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
       refetchRestaurantTables();

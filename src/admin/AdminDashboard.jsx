@@ -266,7 +266,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
     };
 
     loadStatsEffect();
-    const interval = setInterval(loadStatsEffect, 60000);
+    const interval = setInterval(loadStatsEffect, 300000); // 5 minutes — socket events handle real-time
 
     const onOrderPaidRefresh = () => loadStatsEffect();
     if (socket) socket.on('order:paid', onOrderPaidRefresh);
@@ -752,11 +752,13 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
               <div className="flex flex-wrap gap-2 pt-2">
                 {[
                   { label: 'Today sales', text: 'today sales' },
-                  { label: 'Today attendance', text: 'today attendance' },
+                  { label: 'Floor status', text: 'floor status' },
                   { label: 'Top selling', text: 'top selling items today' },
-                  { label: 'This week discounts', text: 'this week discounts' },
-                  { label: 'Chicken sales', text: 'today chicken sales' },
-                  { label: 'Purchases', text: 'this week purchases' },
+                  { label: 'Payments', text: 'today payment breakdown' },
+                  { label: 'Low stock', text: 'low stock alerts' },
+                  { label: 'vs yesterday', text: 'today vs yesterday sales' },
+                  { label: 'Wastage', text: 'this week wastage' },
+                  { label: 'Attendance', text: 'today attendance' },
                 ].map((chip) => (
                   <button
                     key={chip.text}
