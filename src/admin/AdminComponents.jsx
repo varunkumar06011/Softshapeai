@@ -7280,11 +7280,13 @@ export function KitchenInventory() {
 
 
 
-  const allCategories = [...new Set(items.map(i => i.category || '').filter(Boolean))].sort();
+  const getCatName = (cat) => (cat && typeof cat === 'object' ? cat.name ?? '' : cat ?? '');
+
+  const allCategories = [...new Set(items.map(i => getCatName(i.category)).filter(Boolean))].sort();
 
   const filteredItems = items.filter(i =>
     i.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    (categoryFilter === 'All' || (i.category || '') === categoryFilter)
+    (categoryFilter === 'All' || getCatName(i.category) === categoryFilter)
   );
 
   const allSelected = filteredItems.length > 0 && filteredItems.every(i => selectedIds.has(i.id));
@@ -7820,7 +7822,7 @@ export function KitchenInventory() {
                   : 'bg-[#F4F4F5] text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {cat === 'All' ? `All (${items.length})` : `${cat} (${items.filter(i => (i.category || '') === cat).length})`}
+              {cat === 'All' ? `All (${items.length})` : `${cat} (${items.filter(i => getCatName(i.category) === cat).length})`}
             </button>
           ))}
         </div>
@@ -8095,13 +8097,13 @@ export function KitchenInventory() {
 
                           <span className={`${item.category ? 'bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold' : 'text-gray-300 text-xs italic'}`}>
 
-                            {item.category || 'Uncategorized'}
+                            {getCatName(item.category) || 'Uncategorized'}
 
                           </span>
 
                           <button
 
-                            onClick={() => setEditingCell({ itemId: item.id, field: 'category', value: item.category || '' })}
+                            onClick={() => setEditingCell({ itemId: item.id, field: 'category', value: getCatName(item.category) })}
 
                             className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/cat:opacity-100 transition-opacity"
 
