@@ -365,6 +365,7 @@ export default function AdminDailyBalanceSheet() {
     zomatoSale: null,
   });
   const [adjustments, setAdjustments] = useState([]);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!sheet) return;
@@ -390,6 +391,7 @@ export default function AdminDailyBalanceSheet() {
     // (date change, initial load, external refresh) — not from our own save echoes.
     if (!isSaveResponse) {
       setAdjustments(sheet.adjustments || []);
+      setDirty(false);
     }
   }, [sheet]);
 
@@ -419,55 +421,57 @@ export default function AdminDailyBalanceSheet() {
     return calculateBalance(computedSales, totalExpenditures, adjustments);
   }, [computedSales, totalExpenditures, adjustments]);
 
-  // ── Debounced autosave ─────────────────────────────────────────────────────
-  const triggerSave = useCallback((adjustmentsOverride) => {
+  // ── Manual save ────────────────────────────────────────────────────────────
+  const doSave = useCallback(async () => {
     if (isLocked || !sheet) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      setSaving(true);
-      const thisSeq = ++saveSeqRef.current;
-      try {
-        const adjustmentsToSave = adjustmentsOverride || adjustments;
-        const body = {
-          openingBalance: overrides.openingBalance,
-          acBarSaleOverride: overrides.acBarSaleOverride,
-          nonAcBarSaleOverride: overrides.nonAcBarSaleOverride,
-          familyWingSaleOverride: overrides.familyWingSaleOverride,
-          parcelSaleOverride: overrides.parcelSaleOverride,
-          swiggySale: overrides.swiggySale,
-          zomatoSale: overrides.zomatoSale,
-          adjustments: adjustmentsToSave.map((a, i) => ({
-            label: a.label,
-            amount: Number(a.amount),
-            sign: a.sign,
-            sortOrder: a.sortOrder ?? i,
-          })),
-        };
-        const updated = await apiFetch(`/api/balance-sheet/${selectedDate}`, {
-          method: 'PUT',
-          body: JSON.stringify(body),
-        });
-        // Only apply if no newer save has been issued since this one started
-        if (thisSeq === saveSeqRef.current) {
-          if (outletId === 'all') {
-            // All-Outlets view is an aggregate; the backend saves against the active outlet,
-            // so reload the aggregate to keep the view consistent.
-            loadSheet();
-          } else {
-            setSheet({ ...updated, __saveSeq: thisSeq });
-          }
+    setSaving(true);
+    const thisSeq = ++saveSeqRef.current;
+    try {
+      const body = {
+        openingBalance: overrides.openingBalance,
+        acBarSaleOverride: overrides.acBarSaleOverride,
+        nonAcBarSaleOverride: overrides.nonAcBarSaleOverride,
+        familyWingSaleOverride: overrides.familyWingSaleOverride,
+        parcelSaleOverride: overrides.parcelSaleOverride,
+        swiggySale: overrides.swiggySale,
+        zomatoSale: overrides.zomatoSale,
+        adjustments: adjustments.map((a, i) => ({
+          label: a.label,
+          amount: Number(a.amount),
+          sign: a.sign,
+          sortOrder: a.sortOrder ?? i,
+        })),
+      };
+      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      // Only apply if no newer save has been issued since this one started
+      if (thisSeq === saveSeqRef.current) {
+        if (outletId === 'all') {
+          // All-Outlets view is an aggregate; the backend saves against the active outlet,
+          // so reload the aggregate to keep the view consistent.
+          await loadSheet();
+        } else {
+          setSheet({ ...updated, __saveSeq: thisSeq });
         }
-      } catch (err) {
-        console.error('[BalanceSheet] Save failed:', err);
-      } finally {
-        setSaving(false);
+        setDirty(false);
       }
-    }, 800);
+    } catch (err) {
+      console.error('[BalanceSheet] Save failed:', err);
+    } finally {
+      setSaving(false);
+    }
   }, [isLocked, sheet, overrides, adjustments, selectedDate, outletId, loadSheet]);
+
+  const handleSave = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    doSave();
+  };
 
   const handleFieldChange = (field, value) => {
     setOverrides((prev) => ({ ...prev, [field]: value }));
-    triggerSave();
+    setDirty(true);
   };
 
   // ── Adjustment handlers ────────────────────────────────────────────────────
@@ -484,7 +488,7 @@ export default function AdminDailyBalanceSheet() {
     setAdjustments(updated);
     setNewAdj({ label: '', amount: '', sign: 'MINUS' });
     setShowAddAdj(false);
-    triggerSave(updated);
+    setDirty(true);
   };
 
   const applyAdjustmentPreset = (preset) => {
@@ -496,13 +500,13 @@ export default function AdminDailyBalanceSheet() {
     const safe = { ...updated, amount: Math.max(0, Number(updated.amount)) };
     const next = adjustments.map((a) => (a.id === safe.id ? safe : a));
     setAdjustments(next);
-    triggerSave(next);
+    setDirty(true);
   };
 
   const handleDeleteAdjustment = (adj) => {
     const next = adjustments.filter((a) => a.id !== adj.id);
     setAdjustments(next);
-    triggerSave(next);
+    setDirty(true);
   };
 
   // ── Drag reorder ───────────────────────────────────────────────────────────
@@ -519,7 +523,7 @@ export default function AdminDailyBalanceSheet() {
     const reindexed = reordered.map((a, i) => ({ ...a, sortOrder: i }));
     setAdjustments(reindexed);
     dragItemRef.current = null;
-    triggerSave(reindexed);
+    setDirty(true);
   };
 
   // ── Status transitions ─────────────────────────────────────────────────────
@@ -817,11 +821,19 @@ export default function AdminDailyBalanceSheet() {
               ))}
             </select>
           )}
-          {saving && (
-            <span className="flex items-center gap-1 text-xs text-gray-500">
-              <Loader2 size={12} className="animate-spin" /> Saving...
+          {dirty && !isLocked && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+              Unsaved
             </span>
           )}
+          <button
+            onClick={handleSave}
+            disabled={saving || isLocked || !dirty}
+            className="flex items-center gap-1 rounded-lg bg-[#E53935] px-3 py-2 text-sm font-bold text-white hover:bg-[#C62828] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            Save
+          </button>
         </div>
       </div>
 
