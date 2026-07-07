@@ -199,7 +199,7 @@ async function discoverPrintAgentUrls() {
   // 2. Backend-reported URL (from Print Agent registration/heartbeat)
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1000);
+    const timeout = setTimeout(() => controller.abort(), 300);
     const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
       method: 'GET',
       headers: getAuthHeaders(),
@@ -265,9 +265,23 @@ async function tryPrintAgentUrls(body, jobType) {
     return null;
   };
 
-  // Race all URLs in parallel — first success wins, others are ignored.
-  const results = await Promise.all(urls.map(tryUrl));
-  const workingUrl = results.find(Boolean);
+  // First-success-wins: resolve as soon as any URL succeeds, don't wait for others to timeout
+  const workingUrl = await new Promise((resolve) => {
+    let settled = false;
+    let remaining = urls.length;
+    urls.forEach(async (url) => {
+      const result = await tryUrl(url);
+      if (!settled && result) {
+        settled = true;
+        resolve(result);
+      } else {
+        remaining--;
+        if (remaining === 0 && !settled) {
+          resolve(null);
+        }
+      }
+    });
+  });
 
   if (workingUrl) {
     console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${workingUrl}`);

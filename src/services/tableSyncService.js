@@ -181,11 +181,11 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     }
   }
 
-  // Fall back to existing if no incoming order and table is not free (prevents wipe on partial payloads)
+  // Don't fall back to existing activeOrder on partial REST payloads — server is authoritative.
+  // If the REST sync omits order data, activeOrder will be null and the next socket event
+  // or explicit fetch will populate it. Preserving stale activeOrder risks showing items
+  // from a settled order.
   const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
-  if (!activeOrder && existing?.activeOrder && !isFreeWorkflow) {
-    activeOrder = existing.activeOrder;
-  }
 
   // kotHistory: normalize DB kots relation (authoritative), fall back to legacy kotHistory
   const incomingKot = (Array.isArray(row.kots) && row.kots.length > 0)
@@ -259,6 +259,15 @@ function findTableIndex(tables, backendId) {
   return tables.findIndex((t) => t.backendId === backendId);
 }
 
+// Server is authoritative — directly use incoming order
+function mergeOrder(incoming, existing) {
+  return incoming;
+}
+
+function mergeOrderItems(existing = [], incoming = []) {
+  return incoming;
+}
+
 let sharedSocket = null;
 let socketRefCount = 0;
 let socketListenersAttached = false;
@@ -310,16 +319,20 @@ function acquireSocket(handlers) {
 
     sharedSocket.emit("join", getCurrentRestaurantId());
 
-    const { onUpdated, onCreated, onDeleted } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
+    if (onOrderCreated) sharedSocket.on("order:created", onOrderCreated);
+    if (onOrderUpdated) sharedSocket.on("order:updated", onOrderUpdated);
     socketRefCount += 1;
 
     return () => {
       sharedSocket?.off("table:updated", onUpdated);
       sharedSocket?.off("table:created", onCreated);
       sharedSocket?.off("table:deleted", onDeleted);
+      if (onOrderCreated) sharedSocket?.off("order:created", onOrderCreated);
+      if (onOrderUpdated) sharedSocket?.off("order:updated", onOrderUpdated);
       socketRefCount = Math.max(0, socketRefCount - 1);
     };
   } catch (err) {
@@ -531,6 +544,54 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
         if (restaurantId && restaurantId !== getCurrentRestaurantId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderCreated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[TableSync] Ignoring stale order:created for settled table', t.number);
+              return t;
+            }
+            return {
+              ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              items: mergeOrderItems(t.items || [], order.items || []),
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            };
+          });
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderUpdated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[TableSync] Ignoring stale order:updated for settled table', t.number);
+              return t;
+            }
+            return {
+              ...t,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              items: mergeOrderItems(t.items || [], order.items || []),
+              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+            };
+          });
           writeCache(next);
           return next;
         });

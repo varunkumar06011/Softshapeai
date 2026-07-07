@@ -523,6 +523,11 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
             if (t.backendId !== order.tableId) return t;
             // Guard: skip active table during KOT submission to prevent duplicate items in display
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            // Guard: skip stale order:created for settled/Free tables to prevent ghost items
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[BarTableSync] Ignoring stale order:created for settled table', t.number);
+              return t;
+            }
             return {
               ...t,
               status: t.status === 'Free' ? 'Occupied' : t.status,

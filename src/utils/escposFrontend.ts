@@ -297,6 +297,149 @@ export function buildXReportEscpos(data: XReportData): object[] {
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
+// ─── Final Bill ──────────────────────────────────────────────────────────────
+
+export interface BillItem {
+  name: string;
+  quantity: number;
+  price: number;
+  amount?: number;
+  menuType?: string;
+  notes?: string | null;
+}
+
+export interface BillEscposData {
+  billNumber: string;
+  tableNumber: string | number;
+  sectionTag?: string | null;
+  date?: string;
+  time?: string;
+  kotNumbers?: string[];
+  captain?: string;
+  items: BillItem[];
+  subtotal: number;
+  discount?: { percent: number; amount: number } | null;
+  tax?: { cgst: number; sgst: number; total: number } | null;
+  roundOff?: number;
+  grandTotal: number;
+  itemCount?: number;
+  qtyCount?: number;
+  section?: string;
+  gstIn?: string;
+  restaurant?: {
+    name?: string;
+    receiptHeader?: string | null;
+    receiptSubHeader?: string | null;
+    address?: string | null;
+    phone?: string | null;
+  };
+}
+
+export function buildBillEscpos(data: BillEscposData): object[] {
+  const cmds: string[] = [];
+
+  cmds.push(INIT);
+
+  const venueName = (data.restaurant?.receiptHeader?.trim() || data.restaurant?.name?.trim() || 'RESTAURANT').toUpperCase();
+  cmds.push(CENTER, BOLD_ON, SIZE_HEIGHT, `${venueName}\n`, BOLD_OFF, SIZE_NORMAL);
+
+  cmds.push(CENTER);
+  if (data.restaurant?.receiptSubHeader) cmds.push(`${data.restaurant.receiptSubHeader}\n`);
+  if (data.restaurant?.address) cmds.push(`${data.restaurant.address}\n`);
+  if (data.restaurant?.phone) cmds.push(`Phone: ${data.restaurant.phone}\n`);
+  if (data.gstIn) cmds.push(`GST IN: ${data.gstIn}\n`);
+
+  cmds.push(separator("-"));
+
+  const rawTable = (data.tableNumber || 'N/A').toString();
+  const tableNumeric = (data.sectionTag && data.sectionTag.startsWith('venue-'))
+    ? rawTable
+    : rawTable.replace(/^[BT]/i, '');
+
+  cmds.push(SIZE_HEIGHT, BOLD_ON);
+  const billNo = data.billNumber || 'N/A';
+  const billTableGap = Math.max(1, LINE_NORMAL - `Bill No : ${billNo}`.length - `Table: ${tableNumeric}`.length);
+  cmds.push(`Bill No : ${billNo}${' '.repeat(billTableGap)}Table: ${tableNumeric}\n`);
+  cmds.push(BOLD_OFF, SIZE_NORMAL);
+
+  cmds.push(`Date: ${data.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' })}\n`);
+
+  if (data.kotNumbers && data.kotNumbers.length > 0) {
+    cmds.push(`KOT No : ${data.kotNumbers.join(', ')}\n`);
+  }
+
+  cmds.push(`Time: ${data.time || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}\n`);
+
+  if (data.captain && data.captain !== 'N/A') {
+    const captainGap = Math.max(1, LINE_NORMAL - `Captain: ${data.captain}`.length - `Waiter: Waiter`.length);
+    cmds.push(`Captain: ${data.captain}${' '.repeat(captainGap)}Waiter: Waiter\n`);
+  }
+
+  cmds.push(separator("-"));
+
+  cmds.push(LEFT, 'Item            Qty    Price    Amount\n', separator("-"));
+
+  if (!data.items || data.items.length === 0) {
+    cmds.push('NO ITEMS\n');
+  } else {
+    data.items.forEach(item => {
+      const itemName = (item.name || '').toUpperCase().substring(0, 24);
+      cmds.push(BOLD_ON, `${itemName}\n`, BOLD_OFF);
+      const qty = String(item.quantity).padStart(4);
+      const price = String(Math.round(item.price).toFixed(0)).padStart(9);
+      const amount = String(Math.round((item.amount || item.price * item.quantity)).toFixed(0)).padStart(10);
+      cmds.push(BOLD_ON, `              ${qty}  ${price}  ${amount}\n`, BOLD_OFF);
+      if (item.notes) cmds.push(`   * ${item.notes}\n`);
+    });
+  }
+
+  cmds.push(separator("-"));
+
+  cmds.push(BOLD_ON, `Sub Total :${String(Math.round(data.subtotal).toFixed(0)).padStart(LINE_NORMAL - 12)}\n`, BOLD_OFF);
+
+  if (data.tax && data.tax.total > 0) {
+    cmds.push(BOLD_ON);
+    cmds.push(`CGST :${String(Math.round(data.tax.cgst).toFixed(0)).padStart(LINE_NORMAL - 7)}\n`);
+    cmds.push(`SGST :${String(Math.round(data.tax.sgst).toFixed(0)).padStart(LINE_NORMAL - 7)}\n`);
+    cmds.push(BOLD_OFF);
+  }
+
+  if (data.discount && data.discount.percent > 0) {
+    cmds.push(BOLD_ON, `(-) Discount ${Math.round(data.discount.percent).toFixed(0)}% :${String(Math.round(data.discount.amount).toFixed(0)).padStart(LINE_NORMAL - 22)}\n`, BOLD_OFF);
+  }
+
+  cmds.push(separator("-"));
+
+  if (data.roundOff && data.roundOff !== 0) {
+    cmds.push(BOLD_ON);
+    const roValue = (data.roundOff > 0 ? '+' : '') + data.roundOff.toFixed(2);
+    cmds.push(`Round Off :${String(roValue).padStart(LINE_NORMAL - 11)}\n`);
+    cmds.push(BOLD_OFF);
+  }
+
+  cmds.push(SIZE_HEIGHT, BOLD_ON);
+  const gtValue = Math.round(data.grandTotal).toFixed(0);
+  const gtGap = Math.max(1, LINE_NORMAL - 'Grand Total'.length - gtValue.length);
+  cmds.push('Grand Total' + ' '.repeat(gtGap) + gtValue + '\n');
+  cmds.push(BOLD_OFF, SIZE_NORMAL);
+
+  cmds.push(BOLD_ON, `Items / Qty : ${data.itemCount || 0}/${data.qtyCount || 0}\n`, BOLD_OFF);
+
+  const secTag = (data.sectionTag || '').toLowerCase();
+  const secName = (data.section || '').toLowerCase();
+  const hallName = (secTag === 'venue-family-restaurant' || secName.includes('family restaurant') || secName.includes('main hall'))
+    ? 'DINE IN'
+    : (secTag === 'venue-restaurant-parcel' || secName.includes('parcel'))
+      ? 'PARCEL(FAMILY RESTAURANT)'
+      : (data.section ? data.section.toUpperCase() : 'DINE IN');
+
+  cmds.push(separator("-"), `Hall : ${hallName}\n`, '* *\n', '\n', BOLD_ON, hallName, BOLD_OFF, '\n');
+
+  cmds.push(CENTER, 'Thank You, Please Visit again\n', '\n\n\n', CUT);
+
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
+}
+
 // ─── Liquor / Bar KOT ─────────────────────────────────────────────────────────
 
 export function buildLiquorKOT(orderData: OrderData): object[] {

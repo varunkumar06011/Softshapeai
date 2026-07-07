@@ -51,11 +51,12 @@ export default function XReportSection() {
   });
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  // Balance = Total Sale - Card - Cash - Tips - Expenditure
+  // Balance = Total Sale - Card - UPI - Other - Tips - Expenditure (= Cash - Tips - Expenditure)
   const finalAmount = round2(
     Number(report.totalSales)
     - Number(report.cardAmount || 0)
-    - Number(report.cashAmount || 0)
+    - Number(report.upiAmount || 0)
+    - Number(report.otherAmount || 0)
     - Number(report.tipsAmount || 0)
     - Number(report.expenditureAmount || 0)
   );
@@ -169,7 +170,7 @@ export default function XReportSection() {
     lines.push(line);
     lines.push(center('BALANCE'));
     lines.push(center('₹' + finalAmount.toFixed(2)));
-    lines.push(center('(Sale - Card - Cash - Tips - Exp)'));
+    lines.push(center('(Sale - Card - UPI - Other - Tips - Exp)'));
     lines.push(line);
     lines.push('Denomination breakdown:');
     DENOMINATIONS.forEach(d => {
