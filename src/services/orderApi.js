@@ -939,7 +939,11 @@ export async function deleteTransaction(transactionId, restaurantId) {
   }
 }
 
-export async function confirmPayment(transactionId, { paymentMethod = 'CASH' } = {}) {
+export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount } = {}) {
+  const body = { paymentMethod };
+  if (cashAmount != null) body.cashAmount = Number(cashAmount);
+  if (cardAmount != null) body.cardAmount = Number(cardAmount);
+
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing confirm-payment');
@@ -951,7 +955,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH' } =
       actionType: 'confirm-payment',
       url: `/api/transactions/${transactionId}/confirm-payment`,
       method: 'POST',
-      body: { paymentMethod, requestId },
+      body: { ...body, requestId },
     });
     return { offline: true };
   }
@@ -962,7 +966,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH' } =
       const res = await fetch(apiUrl(`/api/transactions/${transactionId}/confirm-payment`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeader() },
-        body: JSON.stringify({ paymentMethod }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -982,7 +986,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH' } =
         actionType: 'confirm-payment',
         url: `/api/transactions/${transactionId}/confirm-payment`,
         method: 'POST',
-        body: { paymentMethod, requestId },
+        body: { ...body, requestId },
       });
       return { offline: true };
     }

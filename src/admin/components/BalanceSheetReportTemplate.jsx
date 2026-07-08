@@ -51,7 +51,7 @@ function KpiCard({ icon: Icon, label, value, sub, color, bg }) {
 function SectionBadge({ n, children }) {
   return (
     <div className="mb-3 flex items-center gap-2">
-      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E63946] text-xs font-bold text-white">
+      <div className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold" style={{ background: '#E63946', color: '#FFFFFF' }}>
         {n}
       </div>
       <h3 className="text-sm font-bold tracking-wide text-[#E63946]">{children}</h3>
@@ -174,7 +174,7 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
         </div>
       </div>
 
-      {/* ── KPI cards (5 cards including Gross Balance) ──────────────────────── */}
+      {/* ── KPI cards (4 cards) ──────────────────────────────────────────────── */}
       <div className="mt-6 flex gap-3">
         <KpiCard icon={TrendingUp} label="Total Sales" value={data.totalSales}
           sub={`from ${data.totalSalesSourcesCount} sources`} color="#16A34A" bg="#F0FDF4" />
@@ -182,8 +182,6 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           sub={`from ${data.totalExpenditureCategoriesCount} categories`} color="#3B82F6" bg="#EFF6FF" />
         <KpiCard icon={SlidersHorizontal} label="Total Adjustments" value={data.totalAdjustments}
           sub={`from ${data.totalAdjustmentsEntriesCount} entries`} color="#7C3AED" bg="#F5F3FF" />
-        <KpiCard icon={Wallet} label="Gross Balance" value={data.grossBalance}
-          sub="Sales - Expenditure" color="#F59E0B" bg="#FFFBEB" />
         <KpiCard icon={TrendingUp} label="Net Closing Balance" value={data.netClosingBalance}
           sub="After Adjustments" color="#16A34A" bg="#F0FDF4" />
       </div>

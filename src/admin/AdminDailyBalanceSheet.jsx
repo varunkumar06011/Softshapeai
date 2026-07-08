@@ -4,9 +4,13 @@ import {
   Plus, Minus, Trash2, Save, Send, CheckCircle, TrendingUp, Wallet,
   ArrowRight, Edit3, X,
 } from 'lucide-react';
+<<<<<<< HEAD
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import domtoimage from 'dom-to-image-more';
+=======
+import html2canvas from 'html2canvas';
+>>>>>>> 315f8ec (all fixed i think)
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -101,32 +105,7 @@ async function blobToBase64(blob) {
   });
 }
 
-async function shareOrDownloadPDF(blob, filename) {
-  const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
-
-  if (isNative) {
-    // Capacitor native app: write PDF to cache and open native share dialog
-    const base64 = await blobToBase64(blob);
-    await Filesystem.writeFile({
-      path: filename,
-      data: base64,
-      directory: Directory.Cache,
-      recursive: true,
-    });
-    const fileUri = await Filesystem.getUri({
-      path: filename,
-      directory: Directory.Cache,
-    });
-    await Share.share({
-      title: 'Daily Balance Sheet',
-      text: `Daily Balance Sheet Report - ${filename}`,
-      url: fileUri.uri,
-      dialogTitle: 'Share via',
-    });
-    return;
-  }
-
-  // Web / PWA fallback: trigger browser download
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -351,6 +330,7 @@ export default function AdminDailyBalanceSheet() {
   }, [selectedDate, outletId]);
 
   useEffect(() => { loadXReport(); }, [loadXReport]);
+  useEffect(() => { loadVenueSales(); }, [loadVenueSales]);
 
 >>>>>>> 8054c64 (heal)
   const accessibleOutlets = useMemo(() => {
@@ -698,6 +678,7 @@ export default function AdminDailyBalanceSheet() {
       return convert(Math.round(num)) + ' Rupees Only';
     };
 
+<<<<<<< HEAD
     // Header section
     let y = 12;
     const footerHeight = 15;
@@ -738,8 +719,13 @@ export default function AdminDailyBalanceSheet() {
     checkPageBreak(20);
     
     // Meta info bar
+=======
+  // ── Build template data (shared by download + WhatsApp) ──────────────────
+  const buildTemplateData = useCallback(() => {
+>>>>>>> 315f8ec (all fixed i think)
     const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
     const now = new Date();
+<<<<<<< HEAD
     const generatedDateTime = now.toLocaleString('en-IN', { 
       day: '2-digit', month: 'short', year: 'numeric', 
       hour: '2-digit', minute: '2-digit' 
@@ -842,6 +828,96 @@ export default function AdminDailyBalanceSheet() {
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252);
         doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+=======
+    const generatedOn = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' +
+                      now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    const paymentData = {
+      cash: Number(xReportData?.cashAmount) || 0,
+      upi: Number(xReportData?.upiAmount) || 0,
+      card: Number(xReportData?.cardAmount) || 0,
+      credit: Number(xReportData?.otherAmount) || 0,
+    };
+
+    const grossBalance = totalSales - totalExpenditures;
+
+    return {
+      outletName,
+      date: dateStr,
+      weekday,
+      status: sheet?.status || 'DRAFT',
+      reportId: `DBS-${selectedDate.replace(/-/g, '')}-001`,
+      generatedOn,
+      generatedBy: user?.name || 'Admin',
+      totalSales,
+      totalSalesSourcesCount: 6,
+      totalExpenditure: totalExpenditures,
+      totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
+      totalAdjustments: adjustments.reduce((sum, a) => sum + Number(a.amount), 0),
+      totalAdjustmentsEntriesCount: adjustments.length,
+      grossBalance,
+      netClosingBalance: balanceCalc.closingBalance,
+      otherIncome: 0,
+      amountInWords: numberToWords(balanceCalc.closingBalance),
+      venueSales: [
+        { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
+        { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
+        { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
+        { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
+        { icon: null, label: 'Swiggy', amount: computedSales.swiggy, color: '#F97316' },
+        { icon: null, label: 'Zomato', amount: computedSales.zomato, color: '#E53935' },
+      ],
+      expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
+        label: cat,
+        amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
+      })),
+      adjustments: adjustments.map(a => ({
+        label: a.label,
+        amount: Number(a.amount),
+      })),
+      payment: paymentData,
+    };
+  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, xReportData, user?.name]);
+
+  // ── Render template off-screen and capture canvas ─────────────────────────
+  const generateBalanceSheetCanvas = useCallback(async () => {
+    const templateData = buildTemplateData();
+
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '900px';
+    container.style.background = 'white';
+    document.body.appendChild(container);
+
+    try {
+      const { createRoot } = await import('react-dom/client');
+      const root = createRoot(container);
+      root.render(
+        <BalanceSheetReportTemplate
+          data={templateData}
+          logoSrc={logoBase64 || '/logo softshape.ai.png'}
+        />
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const canvas = await html2canvas(container, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+
+      root.unmount();
+      document.body.removeChild(container);
+
+      return canvas;
+    } catch (err) {
+      if (container.parentNode) {
+        document.body.removeChild(container);
+>>>>>>> 315f8ec (all fixed i think)
       }
       doc.text(row[0], margin + 3, y + 5);
       doc.text(formatCurrency(row[1]), pageWidth - margin - 3, y + 5, { align: 'right' });
@@ -904,6 +980,7 @@ export default function AdminDailyBalanceSheet() {
       doc.text(formatCurrency(totalExpend), pageWidth - margin - 3, y + 5, { align: 'right' });
       y += 12;
     }
+<<<<<<< HEAD
     
     // Adjustments Section
     if (adjustments.length > 0) {
@@ -1079,12 +1156,31 @@ export default function AdminDailyBalanceSheet() {
       await shareOrDownloadPDF(blob, filename);
     } catch (err) {
       setError(err.message || 'Failed to generate PDF');
+=======
+  }, [buildTemplateData, logoBase64]);
+
+  // ── Download Balance Sheet as PNG ─────────────────────────────────────────
+  const handleDownloadBalanceSheet = async () => {
+    setStatusLoading(true);
+    setError(null);
+    try {
+      const canvas = await generateBalanceSheetCanvas();
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Failed to generate PNG');
+      downloadBlob(blob, `Daily-Balance-Sheet-${selectedDate}.png`);
+    } catch (err) {
+      setError(err.message || 'Failed to generate balance sheet image');
+>>>>>>> 315f8ec (all fixed i think)
     } finally {
       setStatusLoading(false);
     }
   };
 
+<<<<<<< HEAD
   // ── WhatsApp share: capture UI as image and share ───────────────────────
+=======
+  // ── WhatsApp share: generate PNG and send to WhatsApp ─────────────────────
+>>>>>>> 315f8ec (all fixed i think)
   const handleWhatsAppShare = async () => {
     setStatusLoading(true);
     setError(null);
@@ -1109,6 +1205,7 @@ export default function AdminDailyBalanceSheet() {
       const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
       const message = `Venue Sales Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nTotal Sales: ₹${totalSales.toLocaleString('en-IN')}`;
 
+<<<<<<< HEAD
       const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
 
       if (isNative) {
@@ -1140,6 +1237,43 @@ export default function AdminDailyBalanceSheet() {
         if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
           setError('WhatsApp was blocked by the browser. Please allow popups for this site.');
         }
+=======
+      const canvas = await generateBalanceSheetCanvas();
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Failed to generate PNG');
+
+      const file = new File([blob], `Daily-Balance-Sheet-${selectedDate}.png`, { type: 'image/png' });
+      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
+
+      if (isNative) {
+        const base64 = await blobToBase64(blob);
+        await Filesystem.writeFile({
+          path: file.name,
+          data: base64,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        const fileUri = await Filesystem.getUri({
+          path: file.name,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: 'Daily Balance Sheet',
+          text: message,
+          url: fileUri.uri,
+          dialogTitle: 'Share via',
+        });
+      } else if (navigator.share && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: 'Daily Balance Sheet',
+          text: message,
+          files: [file],
+        });
+      } else {
+        downloadBlob(blob, file.name);
+        const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+>>>>>>> 315f8ec (all fixed i think)
       }
     } catch (err) {
       setError(err.message || 'Failed to generate image for WhatsApp');
@@ -1561,12 +1695,21 @@ export default function AdminDailyBalanceSheet() {
         ) : (
           <>
             <button
+<<<<<<< HEAD
               onClick={handleDownloadPDF}
               disabled={statusLoading}
               className="flex items-center justify-center gap-2 rounded-lg bg-gray-600 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700 disabled:opacity-50"
             >
               {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               Download PDF
+=======
+              onClick={handleDownloadBalanceSheet}
+              disabled={statusLoading}
+              className="flex items-center justify-center gap-2 rounded-lg bg-[#E53935] px-4 py-2 text-sm font-bold text-white hover:bg-[#C62828] disabled:opacity-50"
+            >
+              {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+              Download Balance Sheet
+>>>>>>> 315f8ec (all fixed i think)
             </button>
             <button
               onClick={handleWhatsAppShare}

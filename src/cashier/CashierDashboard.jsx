@@ -483,7 +483,13 @@ const CashierDashboard = ({ onLogout }) => {
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [showConfirmPaymentModal, setShowConfirmPaymentModal] = useState(false);
   const [confirmPaymentTxn, setConfirmPaymentTxn] = useState(null);
+  const [confirmPaymentMethod, setConfirmPaymentMethod] = useState(null);
+  const [confirmCashInput, setConfirmCashInput] = useState('');
+  const [confirmCardInput, setConfirmCardInput] = useState('');
+  const [confirmTipInput, setConfirmTipInput] = useState('');
   const [tipInput, setTipInput] = useState('');
+  const [otherCashInput, setOtherCashInput] = useState('');
+  const [otherCardInput, setOtherCardInput] = useState('');
   const [selectedSettleMethod, setSelectedSettleMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
@@ -884,8 +890,8 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
 
   const loadTransactions = useCallback(async (filter = 'today', dateOverride = null, opts = {}) => {
-    const { silent = false } = opts;
-    if (txnFetchingRef.current) return;
+    const { silent = false, force = false } = opts;
+    if (txnFetchingRef.current && !force) return;
     txnFetchingRef.current = true;
     const myGeneration = ++loadTxnsGenerationRef.current; // increment BEFORE any await
     if (!silent) setTxnsLoading(true);
@@ -1196,30 +1202,60 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleConfirmPayment = useCallback(async (txn) => {
     setConfirmPaymentTxn(txn);
+    setConfirmPaymentMethod(null);
+    setConfirmCashInput('');
+    setConfirmCardInput('');
+    setConfirmTipInput('');
     setShowConfirmPaymentModal(true);
   }, []);
 
   const handleConfirmPaymentSubmit = useCallback(async () => {
-    if (!confirmPaymentTxn) return;
+    if (!confirmPaymentTxn || !confirmPaymentMethod) return;
     try {
-      const result = await confirmPayment(confirmPaymentTxn.id);
+      const cashAmt = Number(confirmCashInput) || 0;
+      const cardAmt = Number(confirmCardInput) || 0;
+      const tipAmt = Number(confirmTipInput) || 0;
+      const isMixed = confirmPaymentMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
+      const effectiveMethod = isMixed ? 'MIXED' : confirmPaymentMethod;
+
+      const result = await confirmPayment(confirmPaymentTxn.id, {
+        paymentMethod: effectiveMethod,
+        cashAmount: cashAmt,
+        cardAmount: cardAmt,
+      });
       if (result?.offline) {
         addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
       } else {
         addNotification('Payment Confirmed', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} marked as completed.`, 'success');
+        // Optimistically update status so UI + final sale totals reflect the change immediately
+        setPastTransactions(prev => prev.map(t =>
+          t.id === confirmPaymentTxn.id
+            ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED' }
+            : t
+        ));
+        // Reset status filter so the confirmed txn is visible and included in final sale
+        setTxnStatusFilter('all');
       }
       setShowConfirmPaymentModal(false);
       setConfirmPaymentTxn(null);
-      loadTransactions(txnDateFilterRef.current, null, { silent: true });
+      setConfirmPaymentMethod(null);
+      setConfirmCashInput('');
+      setConfirmCardInput('');
+      setConfirmTipInput('');
+      loadTransactions(txnDateFilterRef.current, null, { silent: true, force: true });
     } catch (err) {
       console.error('[ConfirmPayment] error:', err);
       addNotification('Confirm Failed', err.message || 'Could not confirm payment.', 'error');
     }
-  }, [confirmPaymentTxn, loadTransactions]);
+  }, [confirmPaymentTxn, confirmPaymentMethod, confirmCashInput, confirmCardInput, confirmTipInput, loadTransactions]);
 
   const handleConfirmPaymentCancel = useCallback(() => {
     setShowConfirmPaymentModal(false);
     setConfirmPaymentTxn(null);
+    setConfirmPaymentMethod(null);
+    setConfirmCashInput('');
+    setConfirmCardInput('');
+    setConfirmTipInput('');
   }, []);
 
   useEffect(() => {
@@ -3117,7 +3153,7 @@ const CashierDashboard = ({ onLogout }) => {
     })();
   };
 
-  const handlePayment = async (method, tipAmount = 0) => {
+  const handlePayment = async (method, tipAmount = 0, cashAmount = 0, cardAmount = 0) => {
     if (!selectedTable || !method) return;
     if (isSubmittingPaymentRef.current) return;
     isSubmittingPaymentRef.current = true;
@@ -3299,6 +3335,8 @@ const CashierDashboard = ({ onLogout }) => {
             {
               paymentMethod: method,
               tipAmount: Number(tipAmount) || 0,
+              cashAmount: Number(cashAmount) || 0,
+              cardAmount: Number(cardAmount) || 0,
               discountPercent: selectedTable.isExtra
                 ? (discountPercent || selectedTable.discountPercent || 0)
                 : discountPercent,
@@ -7079,7 +7117,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <p className="text-3xl font-black text-gray-900 mt-1 tabular-nums">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : 0).toFixed(0)}</p>
               </div>
               <button
-                onClick={() => { setShowSettleConfirm(false); setTipInput(''); setSelectedSettleMethod(null); }}
+                onClick={() => { setShowSettleConfirm(false); setTipInput(''); setSelectedSettleMethod(null); setOtherCashInput(''); setOtherCardInput(''); }}
                 className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
               >
                 <X size={20} />
@@ -7096,7 +7134,7 @@ const CashierDashboard = ({ onLogout }) => {
                 ].map(({ label, method, icon: Icon, color }) => (
                   <button
                     key={method}
-                    onClick={() => setSelectedSettleMethod(method)}
+                    onClick={() => { setSelectedSettleMethod(method); setOtherCashInput(''); setOtherCardInput(''); }}
                     className={`relative flex flex-col items-center gap-2.5 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
                       selectedSettleMethod === method
                         ? color === 'green' ? 'bg-green-50 border-green-600 text-green-700'
@@ -7114,6 +7152,61 @@ const CashierDashboard = ({ onLogout }) => {
                   </button>
                 ))}
               </div>
+
+              {/* Cash/Card sub-boxes when "Other" is selected */}
+              {selectedSettleMethod === 'OTHER' && (
+                <div className="mb-5 p-4 bg-orange-50 rounded-xl border-2 border-orange-200 space-y-3">
+                  <p className="text-xs font-black uppercase text-orange-600 tracking-widest">Other Payment Breakdown (Optional)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">Cash</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={otherCashInput}
+                          onChange={(e) => setOtherCashInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">Card</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={otherCardInput}
+                          onChange={(e) => setOtherCardInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {(() => {
+                    const cash = Number(otherCashInput) || 0;
+                    const card = Number(otherCardInput) || 0;
+                    const tip = Number(tipInput) || 0;
+                    const total = cash + card + tip;
+                    const grandTotalNum = Number(activeGrandTotal > 0 ? activeGrandTotal : 0);
+                    const isMixed = cash > 0 || card > 0;
+                    return (
+                      <div className={`text-xs font-bold ${total >= grandTotalNum ? 'text-green-600' : 'text-gray-500'}`}>
+                        {isMixed ? 'MIXED' : 'OTHER'} • Cash+Card+Tip = ₹{total.toFixed(0)}
+                        {total >= grandTotalNum ? ' ✓' : ` (₹${(grandTotalNum - total).toFixed(0)} short)`}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div className="mb-5">
                 <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
@@ -7135,9 +7228,15 @@ const CashierDashboard = ({ onLogout }) => {
               <button
                 onClick={() => {
                   if (!selectedSettleMethod || isPrintingBill) return;
-                  handlePayment(selectedSettleMethod, Number(tipInput) || 0);
+                  const cashAmt = Number(otherCashInput) || 0;
+                  const cardAmt = Number(otherCardInput) || 0;
+                  const isMixed = selectedSettleMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
+                  const effectiveMethod = isMixed ? 'MIXED' : selectedSettleMethod;
+                  handlePayment(effectiveMethod, Number(tipInput) || 0, cashAmt, cardAmt);
                   setTipInput('');
                   setSelectedSettleMethod(null);
+                  setOtherCashInput('');
+                  setOtherCardInput('');
                 }}
                 disabled={!selectedSettleMethod || isPrintingBill}
                 className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill
@@ -7511,9 +7610,107 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
             </div>
             <div className="p-6">
-              <p className="text-sm text-gray-600 mb-6">
-                Are you sure you want to confirm this payment? This will mark the bill as completed and add it to total sales.
-              </p>
+              <p className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Select Payment Method</p>
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {[
+                  { label: 'Cash', method: 'CASH', icon: Banknote, color: 'green' },
+                  { label: 'Card', method: 'CARD', icon: CreditCard, color: 'purple' },
+                  { label: 'UPI', method: 'UPI', icon: Smartphone, color: 'blue' },
+                  { label: 'Other', method: 'OTHER', icon: Wallet, color: 'orange' },
+                ].map(({ label, method, icon: Icon, color }) => (
+                  <button
+                    key={method}
+                    onClick={() => { setConfirmPaymentMethod(method); setConfirmCashInput(''); setConfirmCardInput(''); }}
+                    className={`relative flex flex-col items-center gap-2.5 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
+                      confirmPaymentMethod === method
+                        ? color === 'green' ? 'bg-green-50 border-green-600 text-green-700'
+                          : color === 'purple' ? 'bg-purple-50 border-purple-600 text-purple-700'
+                          : color === 'blue' ? 'bg-blue-50 border-blue-600 text-blue-700'
+                          : 'bg-orange-50 border-orange-600 text-orange-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Icon size={28} strokeWidth={2} />
+                    <span className="text-sm font-black uppercase tracking-wider">{label}</span>
+                    {confirmPaymentMethod === method && (
+                      <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-current" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Cash/Card sub-boxes when "Other" is selected */}
+              {confirmPaymentMethod === 'OTHER' && (
+                <div className="mb-5 p-4 bg-orange-50 rounded-xl border-2 border-orange-200 space-y-3">
+                  <p className="text-xs font-black uppercase text-orange-600 tracking-widest">Other Payment Breakdown (Optional)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">Cash</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={confirmCashInput}
+                          onChange={(e) => setConfirmCashInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">Card</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={confirmCardInput}
+                          onChange={(e) => setConfirmCardInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {(() => {
+                    const cash = Number(confirmCashInput) || 0;
+                    const card = Number(confirmCardInput) || 0;
+                    const tip = Number(confirmTipInput) || 0;
+                    const total = cash + card + tip;
+                    const grandTotalNum = Number(confirmPaymentTxn.grandTotal || confirmPaymentTxn.amount || 0);
+                    const isMixed = cash > 0 || card > 0;
+                    return (
+                      <div className={`text-xs font-bold ${total >= grandTotalNum ? 'text-green-600' : 'text-gray-500'}`}>
+                        {isMixed ? 'MIXED' : 'OTHER'} • Cash+Card+Tip = ₹{total.toFixed(0)}
+                        {total >= grandTotalNum ? ' ✓' : ` (₹${(grandTotalNum - total).toFixed(0)} short)`}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div className="mb-5">
+                <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="1"
+                    value={confirmTipInput}
+                    onChange={(e) => setConfirmTipInput(e.target.value)}
+                    placeholder="0"
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black text-gray-900 tabular-nums focus:outline-none focus:border-[#5C85BB] focus:ring-2 focus:ring-red-100 transition-colors"
+                  />
+                </div>
+              </div>
+
               <div className="flex gap-3">
                 <button
                   onClick={handleConfirmPaymentCancel}
@@ -7523,7 +7720,11 @@ const CashierDashboard = ({ onLogout }) => {
                 </button>
                 <button
                   onClick={handleConfirmPaymentSubmit}
-                  className="flex-1 py-3 px-4 rounded-xl bg-green-600 text-white font-black uppercase text-sm hover:bg-green-700 transition-colors"
+                  disabled={!confirmPaymentMethod}
+                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors ${confirmPaymentMethod
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                  }`}
                 >
                   Confirm
                 </button>

@@ -57,6 +57,9 @@ export default function XReportSection() {
     tipsAmount: 0,
   });
 
+  // Track which payment fields were manually edited by the user
+  const [manuallyEditedFields, setManuallyEditedFields] = useState(new Set());
+
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
   // Balance = Payment Breakdown (Cash + Card + UPI + Other) - Expenditure
   const paymentBreakdownTotal = round2(
@@ -105,6 +108,7 @@ export default function XReportSection() {
         tipsAmount: Number(data.tipsAmount) || 0,
       });
       setExpenditures((expenditures || []).filter((v) => v.status !== 'VOIDED'));
+      setManuallyEditedFields(new Set()); // Reset manual edits on load
     } catch (err) {
       setError(err.message || 'Failed to load X Report');
     } finally {
@@ -119,6 +123,10 @@ export default function XReportSection() {
   const handleFieldChange = (field, value) => {
     setReport(prev => ({ ...prev, [field]: value }));
     setSavedMsg(null);
+    // Track manual edits for payment fields
+    if (['cashAmount', 'cardAmount', 'upiAmount', 'otherAmount', 'tipsAmount'].includes(field)) {
+      setManuallyEditedFields(prev => new Set([...prev, field]));
+    }
   };
 
   const handleResetToAutoCalculated = () => {
@@ -162,24 +170,39 @@ export default function XReportSection() {
     setSaving(true);
     setError(null);
     try {
+      const payload = {
+        reportDate,
+        totalSales: Number(report.totalSales),
+        expenditureAmount: Number(report.expenditureAmount || 0),
+        notes500: Number(report.notes500 || 0),
+        notes200: Number(report.notes200 || 0),
+        notes100: Number(report.notes100 || 0),
+        notes50: Number(report.notes50 || 0),
+        notes20: Number(report.notes20 || 0),
+        notes10: Number(report.notes10 || 0),
+      };
+
+      // Only include payment fields that were manually edited by the user
+      // This allows self-heal to work for fields the user hasn't touched
+      if (manuallyEditedFields.has('cashAmount')) {
+        payload.cashAmount = Number(report.cashAmount || 0);
+      }
+      if (manuallyEditedFields.has('cardAmount')) {
+        payload.cardAmount = Number(report.cardAmount || 0);
+      }
+      if (manuallyEditedFields.has('upiAmount')) {
+        payload.upiAmount = Number(report.upiAmount || 0);
+      }
+      if (manuallyEditedFields.has('otherAmount')) {
+        payload.otherAmount = Number(report.otherAmount || 0);
+      }
+      if (manuallyEditedFields.has('tipsAmount')) {
+        payload.tipsAmount = Number(report.tipsAmount || 0);
+      }
+
       await apiFetch('/api/xreports', {
         method: 'POST',
-        body: JSON.stringify({
-          reportDate,
-          totalSales: Number(report.totalSales),
-          expenditureAmount: Number(report.expenditureAmount || 0),
-          cardAmount: Number(report.cardAmount || 0),
-          cashAmount: Number(report.cashAmount || 0),
-          upiAmount: Number(report.upiAmount || 0),
-          otherAmount: Number(report.otherAmount || 0),
-          tipsAmount: Number(report.tipsAmount || 0),
-          notes500: Number(report.notes500 || 0),
-          notes200: Number(report.notes200 || 0),
-          notes100: Number(report.notes100 || 0),
-          notes50: Number(report.notes50 || 0),
-          notes20: Number(report.notes20 || 0),
-          notes10: Number(report.notes10 || 0),
-        }),
+        body: JSON.stringify(payload),
       });
       setSavedMsg('X Report saved successfully');
       return true;
