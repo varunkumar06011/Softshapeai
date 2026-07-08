@@ -520,7 +520,12 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             // no real session and is a stale rebroadcast; accepting it flips the card back
             // to Occupied/Preparing and causes flicker. Skip regardless of the current
             // local status so an already-flipped ghost state cannot keep ping-ponging.
-            const hasNoSession = (!updatedTable.orders || updatedTable.orders.length === 0) && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
+            // Count actual live items across all incoming orders. A stale/ghost event
+            // often carries an order object whose items array is empty (order was settled
+            // or all items removed), so orders.length alone is not a reliable session signal.
+            const incomingOrders = Array.isArray(updatedTable.orders) ? updatedTable.orders : [];
+            const incomingItemCount = incomingOrders.reduce((sum, o) => sum + (Array.isArray(o?.items) ? o.items.length : 0), 0);
+            const hasNoSession = incomingItemCount === 0 && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
             const claimsOccupied = (updatedTable.status === 'OCCUPIED' || updatedTable.workflowStatus === 'Preparing' || updatedTable.workflowStatus === 'Occupied') && !incomingIsAvailable;
             if (claimsOccupied && hasNoSession) {
               console.warn('[TableSync] Skipping ghost OCCUPIED/Preparing event (no session data) for table', t.number);
