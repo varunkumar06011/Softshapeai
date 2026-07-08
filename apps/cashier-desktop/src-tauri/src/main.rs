@@ -4,6 +4,7 @@
 )]
 
 use serde::{Deserialize, Serialize};
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
 mod windows_printing;
@@ -87,6 +88,7 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             list_printers,
             print_raw,
