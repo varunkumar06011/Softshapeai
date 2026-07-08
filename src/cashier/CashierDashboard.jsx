@@ -35,7 +35,7 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
-import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
+import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced } from '../utils/offlineDB';
@@ -449,49 +449,14 @@ const CashierDashboard = ({ onLogout }) => {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
-  const [cart, setCart] = useState(() => {
-    try {
-      const savedTableStr = localStorage.getItem(getTenantScopedKey('cashier_selected_table'));
-      const savedTable = savedTableStr ? JSON.parse(savedTableStr) : null;
-      if (!savedTable || savedTable.status === 'Free' || savedTable.status === 'AVAILABLE') {
-        return [];
-      }
-      const key = getCartStorageKey(savedTable);
-      const saved = localStorage.getItem(key) || localStorage.getItem('cashier_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [cart, setCart] = useState([]);
   const [expandedNoteItemId, setExpandedNoteItemId] = useState(null);
   const [activeNoteItemId, setActiveNoteItemId] = useState(null);
   const [noteInputValue, setNoteInputValue] = useState('');
   const [editQtyItemId, setEditQtyItemId] = useState(null);
   const [editQtyValue, setEditQtyValue] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedTable, setSelectedTable] = useState(() => {
-    try {
-      const saved = localStorage.getItem(getTenantScopedKey('cashier_selected_table'));
-      if (!saved) return null;
-      const parsed = JSON.parse(saved);
-      // Do not restore activeOrder/items from the selected-table snapshot alone;
-      // instead, find the matching table in the persisted table cache so the
-      // latest kotHistory, activeOrder.items, and currentBill are restored.
-      const restaurantId = getCurrentRestaurantId();
-      const restaurantTables = JSON.parse(localStorage.getItem(getTablesCacheKey(restaurantId)) || '[]');
-      const barTables = JSON.parse(localStorage.getItem(getBarTablesCacheKey(restaurantId)) || '[]');
-      const mergedCache = Array.from(new Map([...restaurantTables, ...barTables].map(t => [t.backendId ?? t.id, t])).values());
-      const cachedTable = mergedCache.find(t => t.backendId === parsed.backendId || t.id === parsed.id);
-      return {
-        ...parsed,
-        activeOrder: cachedTable?.activeOrder || (parsed.activeOrder ? { id: parsed.activeOrder.id, totalAmount: parsed.activeOrder.totalAmount } : null),
-        kotHistory: cachedTable?.kotHistory || [],
-        currentBill: cachedTable?.currentBill || 0,
-      };
-    } catch {
-      return null;
-    }
-  });
+  const [selectedTable, setSelectedTable] = useState(null);
   const [showTableModal, setShowTableModal] = useState(false);
   const [isModalDataLoading, setIsModalDataLoading] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -505,6 +470,7 @@ const CashierDashboard = ({ onLogout }) => {
   const kotRequestIdRef = useRef(null);
   const lastKotCartSignatureRef = useRef(null);
   const lastConfirmedItemsRef = useRef([]);
+  const fetchGenerationRef = useRef(0);
   const loadTxnsGenerationRef = useRef(0);
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -789,14 +755,10 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [selectedPDRRoom]);
 
+  // Cart is ephemeral — not persisted to localStorage. Clear any legacy keys.
   useEffect(() => {
-    const key = getCartStorageKey(selectedTable);
-    if (key && key !== 'cashier_cart_none') {
-      localStorage.setItem(key, JSON.stringify(cart));
-    }
-    // Also clear legacy global key to prevent stale data from ever bleeding
     localStorage.removeItem('cashier_cart');
-  }, [cart, selectedTable]);
+  }, []);
 
   // Table-swap state
   const [showSwapModal, setShowSwapModal] = useState(false);
@@ -1201,6 +1163,13 @@ const CashierDashboard = ({ onLogout }) => {
     return list;
   }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter, txnStatusFilter, activeVenueFilter]);
 
+  // Completed-only transactions for sales/revenue calculations.
+  // CANCELLED and PENDING transactions are excluded so terminated bills
+  // don't inflate totals until confirmed via Past Transactions.
+  const completedTransactions = useMemo(() => {
+    return filteredTransactions.filter(txn => (txn.status || 'COMPLETED') === 'COMPLETED');
+  }, [filteredTransactions]);
+
   const txnTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / TXN_PAGE_SIZE));
   const paginatedTransactions = useMemo(() => {
     const start = (txnPage - 1) * TXN_PAGE_SIZE;
@@ -1334,18 +1303,22 @@ const CashierDashboard = ({ onLogout }) => {
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
       const incomingGridKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-      const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId
-          ? {
-              ...t,
-              activeOrder: mergeOrder(order, t.activeOrder),
-              status: t.status === 'Free' ? 'Occupied' : t.status,
-              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
-              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
-              kotHistory: incomingGridKotHistory,
-            }
-          : t
-      );
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId !== order.tableId) return t;
+        // Guard: skip stale order:created for settled/Free tables to prevent ghost items
+        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
+          console.warn('[CashierDashboard] Ignoring stale order:created for settled table', t.number);
+          return t;
+        }
+        return {
+          ...t,
+          activeOrder: mergeOrder(order, t.activeOrder),
+          status: t.status === 'Free' ? 'Occupied' : t.status,
+          workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
+          currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+          kotHistory: incomingGridKotHistory,
+        };
+      });
       setActiveTables(updateTables, { skipPersist: true });
       if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
@@ -1393,16 +1366,20 @@ const CashierDashboard = ({ onLogout }) => {
       if (payload?.isExtraTable) return;
       // No click cooldown — real-time updates from captain must always be visible
       const incomingGridKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-      const updateTables = (prev) => prev.map(t =>
-        t.backendId === order.tableId
-          ? {
-              ...t,
-              activeOrder: mergeOrder(order, t.activeOrder),
-              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
-              kotHistory: incomingGridKotArr,
-            }
-          : t
-      );
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId !== order.tableId) return t;
+        // Guard: skip stale order:updated for settled/Free tables to prevent ghost items
+        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
+          console.warn('[CashierDashboard] Ignoring stale order:updated for settled table', t.number);
+          return t;
+        }
+        return {
+          ...t,
+          activeOrder: mergeOrder(order, t.activeOrder),
+          currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+          kotHistory: incomingGridKotArr,
+        };
+      });
       setActiveTables(updateTables, { skipPersist: true });
       if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
@@ -1445,7 +1422,7 @@ const CashierDashboard = ({ onLogout }) => {
         const incomingHasOrders = Array.isArray(table.orders) && table.orders.length > 0;
         const incomingOrder = incomingHasOrders
           ? (table.orders[0] || null)
-          : (t.activeOrder || null);  // keep existing if socket didn't send orders
+          : (incomingIsAvailable ? null : t.activeOrder);  // clear on Free, keep existing for occupied partial updates
         // Never downgrade a table that is locally in 'Waiting Bill' state back to a lesser state
         // Also protect tables where bill was printed but not yet settled
         const isBillPrintedGrid = billPrintedTableIdsRef.current.has(t.backendId);
@@ -1468,7 +1445,7 @@ const CashierDashboard = ({ onLogout }) => {
           status: protectedStatus,
           workflowStatus: protectedStatus,
           billNumber: incomingBillNumber,
-          activeOrder: isFrozenGrid ? t.activeOrder : (incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder),
+          activeOrder: isFrozenGrid ? t.activeOrder : (incomingIsAvailable ? null : (incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder)),
         };
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
@@ -1520,7 +1497,7 @@ const CashierDashboard = ({ onLogout }) => {
             status: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
             workflowStatus: effectiveIsTableFree && isTableSettled ? 'Free' : (isBillPrinted && !isTableSettled ? 'Waiting Bill' : protectedStatusSel),
             billNumber: effectiveIsTableFree && isTableSettled ? null : selBillNumber,
-            activeOrder: (effectiveIsTableFree && isTableSettled)
+            activeOrder: effectiveIsTableFree
               ? null
               : (isFrozenSel ? prev.activeOrder : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder)),
           };
@@ -2144,11 +2121,11 @@ const CashierDashboard = ({ onLogout }) => {
   // Total Sales = sum of grandTotal (with GST, after discount — the final bill amount)
   // Expenditure Amount = total non-voided expenditures for the selected dashboard date
   // Final Amount = Total Sales − Expenditure Amount (cashier-only "X Report")
-  // These use filteredTransactions so they respect the active date/source/method filters
+  // These use completedTransactions so CANCELLED/PENDING bills are excluded from totals
   const dashboardTotalSales = useMemo(() => {
-    return filteredTransactions
+    return completedTransactions
       .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
-  }, [filteredTransactions]);
+  }, [completedTransactions]);
 
   // Expenditure + final amount shown only on the cashier dashboard
   const dashboardExpenditureAmount = useMemo(() => {
@@ -2159,10 +2136,10 @@ const CashierDashboard = ({ onLogout }) => {
     return dashboardTotalSales - dashboardExpenditureAmount;
   }, [dashboardTotalSales, dashboardExpenditureAmount]);
 
-  // Total discounts given for the selected dashboard date (sum of discountAmount across filtered transactions)
+  // Total discounts given for the selected dashboard date (sum of discountAmount across completed transactions)
   const dashboardTotalDiscounts = useMemo(() => {
-    return filteredTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
-  }, [filteredTransactions]);
+    return completedTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+  }, [completedTransactions]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -2383,6 +2360,10 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Error', 'Invalid table selected.', 'error');
       return;
     }
+    if (isModalDataLoading) {
+      addNotification('Loading', 'Table data is refreshing — please wait a moment.', 'warning');
+      return;
+    }
 
     // ── DIAGNOSTIC: trace cancelled-item display bug ──
     const _allItems = getAllOrderItems(selectedTable);
@@ -2498,8 +2479,37 @@ const CashierDashboard = ({ onLogout }) => {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
+        const billEscpos = buildBillEscpos({
+          billNumber: 'PENDING',
+          tableNumber: selectedTable.number,
+          sectionTag: selectedTable.sectionTag || null,
+          items: billItems.map(i => ({
+            name: i.name || i.n || '',
+            quantity: i.quantity || i.q || 1,
+            price: i.price || i.p || 0,
+            amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
+            menuType: i.menuType || i.type || undefined,
+            notes: i.notes || null,
+          })),
+          subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+          discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+          tax: (billCalc.cgst || billCalc.sgst) ? { cgst: billCalc.cgst, sgst: billCalc.sgst, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) } : null,
+          roundOff: billCalc.roundOff ?? 0,
+          grandTotal: billCalc.grandTotal,
+          itemCount: billItems.length,
+          qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
+          section: selectedTable.section?.name || undefined,
+          restaurant: {
+            name: restaurant?.name || undefined,
+            receiptHeader: restaurant?.receiptHeader || undefined,
+            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+            address: restaurant?.address || undefined,
+            phone: restaurant?.phone || undefined,
+          },
+        });
         const result = await printLocal({
-          jobType: 'FINAL_BILL',
+          type: 'FINAL_BILL',
+          escposData: billEscpos,
           eventId: billEventId,
           data: {
             tableNumber: selectedTable.number,
@@ -2542,6 +2552,70 @@ const CashierDashboard = ({ onLogout }) => {
           .map(k => k.id)
           .filter(Boolean)
           .join(',');
+
+        if (localPrinted) {
+          // Bill already printed locally — fire-and-forget backend call for bill number assignment.
+          // Spinner clears immediately; bill number updates table card when backend responds.
+          const printBillArgs = selectedTable.isExtra
+            ? { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId }
+            : { restaurantId: printBillRestaurantId, localPrinted, billEventId };
+
+          printBill(orderId, printBillArgs)
+            .then(resp => {
+              if (resp?.billNumber) {
+                setSelectedTable(prev => prev ? { ...prev, billNumber: resp.billNumber } : prev);
+                if (selectedTable.isExtra) {
+                  setExtraTables(prev => prev.map(et =>
+                    et.id === selectedTable.id ? { ...et, billNumber: resp.billNumber } : et
+                  ));
+                } else {
+                  setActiveTables(prev => prev.map(t =>
+                    t.backendId === selectedTable.backendId ? { ...t, billNumber: resp.billNumber } : t
+                  ));
+                }
+              }
+              if (resp?.offline) {
+                addNotification('Offline', `Bill queued — will sync when online. Ref: ${resp.billNumber}`, 'warning');
+              }
+              window.dispatchEvent(new Event('softshape_order_updated'));
+            })
+            .catch(err => {
+              console.warn('[handleFinalBill] Background printBill failed:', err.message);
+              addNotification('Sync Pending', 'Bill printed, bill number will sync when online.', 'warning');
+            })
+            .finally(() => {
+              isPrintingBillRef.current = false;
+            });
+
+          // Clear spinner immediately — bill is already printed
+          setIsPrintingBill(false);
+
+          // Per-table cooldown
+          const printedTableKey = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
+          if (printedTableKey) {
+            billPrintCooldownRef.current.set(printedTableKey, Date.now() + 2000);
+            setTimeout(() => billPrintCooldownRef.current.delete(printedTableKey), 2000);
+          }
+
+          addNotification('Success', 'Bill printed successfully.', 'success');
+
+          // Update localStorage cache for the table status
+          const tableIdForCache = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
+          if (!selectedTable.isExtra && tableIdForCache) {
+            try {
+              const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
+              const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+              const updatedCache = cached.map(t =>
+                t.backendId === tableIdForCache ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
+              );
+              localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+            } catch {}
+          }
+
+          return;
+        }
+
+        // localPrinted=false — MUST await backend (socket path prints the bill)
         response = selectedTable.isExtra
           ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
           : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
@@ -2553,8 +2627,37 @@ const CashierDashboard = ({ onLogout }) => {
               const { printLocal } = await import('../utils/printOffline');
               const billItems = getBillableItems(selectedTable);
               const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
+              const billEscpos = buildBillEscpos({
+                billNumber: response.billNumber,
+                tableNumber: selectedTable.number,
+                sectionTag: selectedTable.sectionTag || null,
+                items: billItems.map(i => ({
+                  name: i.name || i.n || '',
+                  quantity: i.quantity || i.q || 1,
+                  price: i.price || i.p || 0,
+                  amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
+                  menuType: i.menuType || i.type || undefined,
+                  notes: i.notes || null,
+                })),
+                subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+                discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
+                tax: (billCalc.cgst || billCalc.sgst) ? { cgst: billCalc.cgst, sgst: billCalc.sgst, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) } : null,
+                roundOff: billCalc.roundOff ?? 0,
+                grandTotal: billCalc.grandTotal,
+                itemCount: billItems.length,
+                qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
+                section: selectedTable.section?.name || undefined,
+                restaurant: {
+                  name: restaurant?.name || undefined,
+                  receiptHeader: restaurant?.receiptHeader || undefined,
+                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                  address: restaurant?.address || undefined,
+                  phone: restaurant?.phone || undefined,
+                },
+              });
               const result = await printLocal({
-                jobType: 'FINAL_BILL',
+                type: 'FINAL_BILL',
+                escposData: billEscpos,
                 eventId: billEventId,
                 data: {
                   tableNumber: selectedTable.number,
@@ -3859,26 +3962,25 @@ const CashierDashboard = ({ onLogout }) => {
     // Skip for extra tables: they share backendId with parent; fetchFreshOrderData would return parent order
     const isOccupied = table.status && table.status !== 'Free' && table.status !== 'AVAILABLE';
     if (table.backendId && isOccupied && !table.isExtra) {
+      const gen = ++fetchGenerationRef.current;
       setIsModalDataLoading(true);
       fetchFreshOrderData(table.backendId).then(freshOrder => {
+        if (gen !== fetchGenerationRef.current) return; // stale response — user switched tables
         if (freshOrder) {
           setSelectedTable(prev => {
             if (!prev || prev.backendId !== table.backendId || prev.isExtra) return prev; // user moved on or extra table
-            // Merge fresh order items with existing — never drop items that exist locally
-            const existingItems = prev.activeOrder?.items || [];
+            // Server is authoritative — replace items entirely, no local-only merge
             const freshItems = freshOrder.items || [];
-            const freshIds = new Set(freshItems.map(i => i.id).filter(Boolean));
-            const localOnlyItems = existingItems.filter(i => i.id && !freshIds.has(i.id) && !i.removedFromBill);
-            const mergedItems = [...freshItems, ...localOnlyItems];
             lastFetchUpdateRef.current = { backendId: table.backendId, ts: Date.now() };
             return {
               ...prev,
-              activeOrder: { ...freshOrder, items: mergedItems },
+              activeOrder: { ...freshOrder, items: freshItems },
             };
           });
         }
         setIsModalDataLoading(false);
       }).catch(() => {
+        if (gen !== fetchGenerationRef.current) return; // stale error, discard
         // Silent — stale cached data is still better than nothing
         setIsModalDataLoading(false);
       });
@@ -4007,6 +4109,10 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleSmartKOT = async () => {
     if (isKotSending || isSubmittingKotRef.current || cart.length === 0) return;
+    if (isModalDataLoading) {
+      addNotification('Loading', 'Table data is refreshing — please wait a moment.', 'warning');
+      return;
+    }
     isSubmittingKotRef.current = true;
     setIsKotSending(true);
     setIsKotSuccess(false);
@@ -4166,6 +4272,20 @@ const CashierDashboard = ({ onLogout }) => {
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                // Fetch the existing order so the cashier knows what's already on the table
+                try {
+                  const existingOrder = await fetchFreshOrderData(selectedTable.backendId);
+                  if (existingOrder?.items?.length > 0) {
+                    setSelectedTable(prev => prev ? { ...prev, activeOrder: existingOrder } : prev);
+                    addNotification(
+                      'Table Already Has Order',
+                      `Table ${selectedTable.number} already has ${existingOrder.items.length} item(s). Your new items will be added to this order.`,
+                      'warning'
+                    );
+                  }
+                } catch (fetchErr) {
+                  console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
+                }
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
                 orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, localPrinted, preReservedKotNumber, kotEventIds);
               } else {
@@ -4227,6 +4347,20 @@ const CashierDashboard = ({ onLogout }) => {
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                // Fetch the existing order so the cashier knows what's already on the table
+                try {
+                  const existingOrder = await fetchFreshOrderData(selectedTable.backendId);
+                  if (existingOrder?.items?.length > 0) {
+                    setSelectedTable(prev => prev ? { ...prev, activeOrder: existingOrder } : prev);
+                    addNotification(
+                      'Table Already Has Order',
+                      `Table ${selectedTable.number} already has ${existingOrder.items.length} item(s). Your new items will be added to this order.`,
+                      'warning'
+                    );
+                  }
+                } catch (fetchErr) {
+                  console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
+                }
                 orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000);
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
               } else {
@@ -4475,21 +4609,22 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const settlementBreakdown = useMemo(() => {
-    const breakdown = { CASH: 0, CARD: 0, UPI: 0, count: 0 };
-    for (const txn of filteredTransactions) {
+    const breakdown = { CASH: 0, CARD: 0, UPI: 0, OTHER: 0, count: 0 };
+    for (const txn of completedTransactions) {
       const method = (txn.method || '').toUpperCase();
       const amt = Number(txn.grandTotal ?? txn.amount ?? 0);
       if (method === 'CASH') breakdown.CASH += amt;
       else if (method === 'CARD') breakdown.CARD += amt;
       else if (method === 'UPI') breakdown.UPI += amt;
+      else breakdown.OTHER += amt;
       breakdown.count++;
     }
     return breakdown;
-  }, [filteredTransactions]);
+  }, [completedTransactions]);
 
   const stats = [
-    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${filteredTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${completedTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${completedTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "Expenditures", value: `₹${Number(dashboardExpenditureAmount).toFixed(2)}`, change: `${expenditureSummary?.count || 0} expenditures ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Expenditures", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
   ];
@@ -4662,7 +4797,7 @@ const CashierDashboard = ({ onLogout }) => {
                           Settlement Breakdown
                           <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{settlementBreakdown.count} transactions</span>
                         </h3>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-4 gap-3">
                           <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Cash</p>
                             <p className="text-lg font-black text-amber-700 tabular-nums">₹{settlementBreakdown.CASH.toFixed(2)}</p>
@@ -4674,6 +4809,10 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
                             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">UPI</p>
                             <p className="text-lg font-black text-blue-700 tabular-nums">₹{settlementBreakdown.UPI.toFixed(2)}</p>
+                          </div>
+                          <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 text-center">
+                            <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest mb-1">Other</p>
+                            <p className="text-lg font-black text-orange-700 tabular-nums">₹{settlementBreakdown.OTHER.toFixed(2)}</p>
                           </div>
                         </div>
                       </div>
@@ -5157,10 +5296,10 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#5C85BB] to-[#4A6A9A] border border-blue-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-blue-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
+                              ₹{completedTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
                             </span>
                             <span className="text-[10px] font-bold text-blue-100">
-                              {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(2)}
+                              {completedTransactions.length} transactions · Grand Total: ₹{completedTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -5173,10 +5312,10 @@ const CashierDashboard = ({ onLogout }) => {
                             { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
                             { label: 'Other', method: 'OTHER', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
                           ].map(({ label, method, color, bg, border }) => {
-                            const total = filteredTransactions
+                            const total = completedTransactions
                               .filter(t => t.method === method)
                               .reduce((sum, t) => sum + netTotal(t), 0);
-                            const count = filteredTransactions.filter(t => t.method === method).length;
+                            const count = completedTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
                                 <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
@@ -5188,7 +5327,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                         {/* Tips summary — separate from sales */}
                         {(() => {
-                          const tipTxns = filteredTransactions.filter(t => Number(t.tipAmount ?? 0) > 0);
+                          const tipTxns = completedTransactions.filter(t => Number(t.tipAmount ?? 0) > 0);
                           const totalTips = tipTxns.reduce((sum, t) => sum + Number(t.tipAmount ?? 0), 0);
                           if (totalTips <= 0) return null;
                           return (

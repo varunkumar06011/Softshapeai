@@ -30,7 +30,9 @@ import {
 
   FileText, History, Bell, RefreshCw, Info, Flame, ChevronLeft, Edit2, Image as ImageIcon,
 
-  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp
+  Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp,
+
+  Wifi, WifiOff, AlertTriangle
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -58,6 +60,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
+import { useSyncStatus } from '../context/SyncStatusContext';
 
 
 
@@ -427,6 +430,7 @@ function ItemCard({ item, onAdd, children, className }) {
 export default function CaptainApp({ onLogout }) {
 
   const { restaurant, user, setAuth } = useAuth();
+  const { isOffline, isOnline, syncStatus, pendingCount, lastError, triggerSync } = useSyncStatus();
 
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
@@ -452,6 +456,31 @@ export default function CaptainApp({ onLogout }) {
         })
         .catch(() => {});
     }
+  }, []);
+
+  // Proactive Print Agent URL caching — fetch on startup so it's available when offline
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    fetch(`${API_BASE}/api/print/agent-endpoint`, {
+      credentials: 'include',
+      headers: getAuthHeaders(),
+      signal: controller.signal,
+    })
+      .then(r => { clearTimeout(timeout); return r.ok ? r.json() : null; })
+      .then(data => {
+        if (data?.httpUrl) {
+          localStorage.setItem('last_working_print_agent_url', data.httpUrl);
+        }
+        if (data?.lanIp) {
+          const lanUrl = `http://${data.lanIp}:3100`;
+          if (!localStorage.getItem('last_working_print_agent_url')) {
+            localStorage.setItem('last_working_print_agent_url', lanUrl);
+          }
+        }
+      })
+      .catch(() => { clearTimeout(timeout); });
+    return () => clearTimeout(timeout);
   }, []);
 
   // Fetch sections dynamically
@@ -1629,16 +1658,19 @@ export default function CaptainApp({ onLogout }) {
         const incomingOrder = (table.orders?.[0] && table.orders[0].tableId === table.id) ? table.orders[0] : (table.activeOrder || null);
         const isTableFree = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         // Server is now authoritative — directly use its items and kots (no merge)
-        const serverItems = incomingOrder?.items ?? (t.activeOrder?.items || []);
+        // When table is Free (settled), clear items and activeOrder to prevent ghost items
+        const serverItems = isTableFree ? [] : (incomingOrder?.items ?? (t.activeOrder?.items || []));
         const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
           workflowStatus: table.workflowStatus ?? t.workflowStatus,
-          currentBill: table.currentBill ?? t.currentBill,
-          activeOrder: incomingOrder
-            ? { ...(t.activeOrder || {}), ...incomingOrder, items: serverItems }
-            : t.activeOrder,
+          currentBill: isTableFree ? 0 : (table.currentBill ?? t.currentBill),
+          activeOrder: isTableFree
+            ? null
+            : (incomingOrder
+              ? { ...(t.activeOrder || {}), ...incomingOrder, items: serverItems }
+              : t.activeOrder),
           kotHistory: serverKots,
         };
       });
@@ -1653,6 +1685,11 @@ export default function CaptainApp({ onLogout }) {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
+        // Guard: skip stale order:updated for settled/Free tables to prevent ghost items
+        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
+          console.warn('[CaptainApp] Ignoring stale order:updated for settled table', t.number);
+          return t;
+        }
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || (t.activeOrder?.items || []);
         const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
@@ -1669,6 +1706,11 @@ export default function CaptainApp({ onLogout }) {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
+        // Guard: skip stale order:created for settled/Free tables to prevent ghost items
+        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
+          console.warn('[CaptainApp] Ignoring stale order:created for settled table', t.number);
+          return t;
+        }
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || [];
         const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory
@@ -3527,11 +3569,13 @@ export default function CaptainApp({ onLogout }) {
 
         <div className="flex items-center gap-3 sm:gap-6 shrink-0">
 
-          <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-20'}`}>
+          <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-100'}`}>
 
-            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+            <div className={`w-2 h-2 rounded-full animate-pulse ${isOffline ? 'bg-amber-500' : syncStatus === 'syncing' ? 'bg-blue-500' : syncStatus === 'error' ? 'bg-red-500' : 'bg-green-500'}`} />
 
-            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Live Sync</span>
+            <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-600' : syncStatus === 'error' ? 'text-red-500' : 'text-gray-400'}`}>{isOffline ? 'Offline' : syncStatus === 'syncing' ? 'Syncing' : syncStatus === 'error' ? 'Sync Error' : 'Live'}</span>
+
+            {pendingCount > 0 && <span className="text-[9px] font-bold text-amber-600 bg-amber-100 rounded-full px-1.5">{pendingCount}</span>}
 
           </div>
 
@@ -3558,6 +3602,44 @@ export default function CaptainApp({ onLogout }) {
       </button>
 
 
+
+      {/* OFFLINE STATUS BAR — colored strip showing sync state */}
+      {(() => {
+        const isSyncingNow = syncStatus === 'syncing';
+        const hasError = syncStatus === 'error' || syncStatus === 'paused';
+        const showBar = isOffline || isSyncingNow || hasError || pendingCount > 0;
+        if (!showBar) return null;
+        const barColor = isOffline ? 'bg-amber-500' : hasError ? 'bg-red-500' : 'bg-blue-500';
+        const Icon = isOffline ? WifiOff : hasError ? AlertTriangle : RefreshCw;
+        const label = isOffline
+          ? `Offline${pendingCount > 0 ? ` — ${pendingCount} action${pendingCount !== 1 ? 's' : ''} queued` : ''}`
+          : hasError
+          ? (lastError || 'Sync error')
+          : `Syncing${pendingCount > 0 ? ` ${pendingCount} pending` : '…'}`;
+        return (
+          <div className={`flex items-center justify-between px-4 py-1.5 text-white text-xs font-bold shrink-0 z-40 ${barColor}`}>
+            <div className="flex items-center gap-2">
+              <Icon size={14} className={isSyncingNow ? 'animate-spin' : ''} />
+              <span>{label}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {isOffline && pendingCount > 0 && (
+                <span className="bg-white/20 rounded-full px-2 py-0.5 text-[10px]">Will sync automatically</span>
+              )}
+              {isOnline && (hasError || pendingCount > 0) && (
+                <button
+                  onClick={() => triggerSync()}
+                  disabled={isSyncingNow}
+                  className="flex items-center gap-1 bg-white/20 rounded px-2 py-0.5 hover:bg-white/30 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={10} className={isSyncingNow ? 'animate-spin' : ''} />
+                  Retry sync
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* CAPTAIN NAV TABS */}
 

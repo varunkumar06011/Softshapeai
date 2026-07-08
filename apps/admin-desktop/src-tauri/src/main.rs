@@ -4,6 +4,7 @@
 )]
 
 use serde::{Deserialize, Serialize};
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
 mod windows_printing;
@@ -73,10 +74,12 @@ fn get_app_version() -> String {
 /// Check for updates using Tauri's built-in updater.
 #[tauri::command]
 async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
-    let update = app.updater().check().await
+    let update = app.updater()
+        .map_err(|e| format!("Updater init failed: {}", e))?
+        .check().await
         .map_err(|e| format!("Update check failed: {}", e))?;
-    if update.is_update_available() {
-        update.download_and_install().await
+    if let Some(update) = update {
+        update.download_and_install(|_, _| {}, || {}).await
             .map_err(|e| format!("Update install failed: {}", e))?;
         Ok(true)
     } else {
@@ -86,6 +89,7 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             list_printers,
             print_raw,
