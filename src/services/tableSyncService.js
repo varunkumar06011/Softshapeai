@@ -185,7 +185,23 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   // If the REST sync omits order data, activeOrder will be null and the next socket event
   // or explicit fetch will populate it. Preserving stale activeOrder risks showing items
   // from a settled order.
-  const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
+
+  // Ghost detection: if backend claims non-Free but has no billable items, no bill, and no guests,
+  // the table is in a corrupt state (active order with zero items after settle/terminate).
+  // Force it to Free to prevent stable incorrect display.
+  const incomingOrders = Array.isArray(row.orders) ? row.orders : [];
+  const incomingItemCount = incomingOrders.reduce((sum, o) => {
+    if (!Array.isArray(o?.items)) return sum;
+    return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
+  }, 0);
+  const hasNoSession = incomingItemCount === 0 && (row.currentBill ?? 0) === 0 && (row.guests ?? 0) === 0;
+  const claimsNonFree = row.workflowStatus !== 'Free' && row.status !== 'Free' && dbStatus !== 'AVAILABLE';
+  const isGhost = claimsNonFree && hasNoSession;
+  if (isGhost) {
+    console.warn('[TableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
+  }
+
+  const isFreeWorkflow = isGhost || row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
 
   // kotHistory: normalize DB kots relation (authoritative), fall back to legacy kotHistory
   const incomingKot = (Array.isArray(row.kots) && row.kots.length > 0)
@@ -526,9 +542,14 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             const incomingOrders = Array.isArray(updatedTable.orders) ? updatedTable.orders : [];
             const incomingItemCount = incomingOrders.reduce((sum, o) => sum + (Array.isArray(o?.items) ? o.items.length : 0), 0);
             const hasNoSession = incomingItemCount === 0 && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
-            const claimsOccupied = (updatedTable.status === 'OCCUPIED' || updatedTable.workflowStatus === 'Preparing' || updatedTable.workflowStatus === 'Occupied') && !incomingIsAvailable;
-            if (claimsOccupied && hasNoSession) {
-              console.warn('[TableSync] Skipping ghost OCCUPIED/Preparing event (no session data) for table', t.number);
+            // Any non-Free claim (Occupied / Preparing / Confirmed / Ready / Waiting Bill)
+            // is contradictory when the table carries no billable items, no bill and no
+            // guests — a genuinely active table always has at least one billable item.
+            // These are stale/corrupt rebroadcasts (e.g. an order left in an active status
+            // with all items removed after settle/terminate) and must never flip the card.
+            const claimsNonFree = !incomingIsAvailable;
+            if (claimsNonFree && hasNoSession) {
+              console.warn('[TableSync] Skipping ghost non-Free event (no session data) for table', t.number, updatedTable.workflowStatus || updatedTable.status);
               return t;
             }
             const before = t;
