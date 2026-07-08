@@ -5,12 +5,13 @@ import {
   ArrowRight, Edit3, X,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
+import BalanceSheetReportTemplate from './components/BalanceSheetReportTemplate';
 
 // ── Pure client-side calculation (mirrors backend calculateRunningBalance) ────
 function round2(n) {
@@ -300,6 +301,7 @@ export default function AdminDailyBalanceSheet() {
   const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS' });
   const [statusLoading, setStatusLoading] = useState(false);
   const [logoBase64, setLogoBase64] = useState(null);
+  const [xReportData, setXReportData] = useState(null);
   const saveTimerRef = useRef(null);
   const dragItemRef = useRef(null);
   const saveSeqRef = useRef(0);
@@ -311,6 +313,22 @@ export default function AdminDailyBalanceSheet() {
       .then((data) => setLogoBase64(data))
       .catch(() => setLogoBase64(null));
   }, []);
+
+  // Fetch X-Report data for payment mode breakdown
+  const loadXReport = useCallback(async () => {
+    if (!selectedDate || outletId === 'all') {
+      setXReportData(null);
+      return;
+    }
+    try {
+      const data = await apiFetch(`/api/xreports/${selectedDate}?outletId=${outletId}`);
+      setXReportData(data);
+    } catch (err) {
+      setXReportData(null);
+    }
+  }, [selectedDate, outletId]);
+
+  useEffect(() => { loadXReport(); }, [loadXReport]);
 
   const accessibleOutlets = useMemo(() => {
     try {
@@ -592,415 +610,304 @@ export default function AdminDailyBalanceSheet() {
     return expenditures.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
   }, [expenditures]);
 
-  // ── Generate PDF with premium enterprise design ───────────────────────────────
-  const generateBalanceSheetPDF = useCallback((logoDataUrl) => {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 15;
-    const primary = [230, 57, 70]; // #E63946 - Softshape AI red
-    const dark = [30, 41, 59]; // #1E293B
-    const gray = [241, 245, 249]; // #F1F5F9
-    const border = [226, 232, 240]; // #E2E8F0
+  // ── Helper: Convert number to words (Indian Rupees) ───────────────────────
+  function numberToWords(num) {
+    if (num === 0) return 'Zero Only';
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+      'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+      'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
     
-    // Helper: number to words
-    const numberToWords = (num) => {
-      if (num === 0) return 'Zero Rupees Only';
-      const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 
-                    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-      const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-      
-      const convertLessThanThousand = (n) => {
-        if (n === 0) return '';
-        if (n < 20) return ones[n];
-        const digit = n % 10;
-        if (n < 100) return tens[Math.floor(n / 10)] + (digit ? ' ' + ones[digit] : '');
-        const hundred = Math.floor(n / 100);
-        const remainder = n % 100;
-        return ones[hundred] + ' Hundred' + (remainder ? ' and ' + convertLessThanThousand(remainder) : '');
-      };
-      
-      const convert = (n) => {
-        if (n === 0) return 'Zero';
-        if (n < 1000) return convertLessThanThousand(n);
-        const lakh = Math.floor(n / 100000);
-        const lakhRemainder = n % 100000;
-        if (lakh > 0) {
-          return convertLessThanThousand(lakh) + ' Lakh' + (lakhRemainder ? ' ' + convert(lakhRemainder) : '');
-        }
-        const thousand = Math.floor(n / 1000);
-        const thousandRemainder = n % 1000;
-        return convertLessThanThousand(thousand) + ' Thousand' + (thousandRemainder ? ' ' + convert(thousandRemainder) : '');
-      };
-      
-      return convert(Math.round(num)) + ' Rupees Only';
+    function convertLessThanThousand(n) {
+      if (n === 0) return '';
+      if (n < 20) return ones[n];
+      if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + ones[n % 10] : '');
+      return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 !== 0 ? ' ' + convertLessThanThousand(n % 100) : '');
+    }
+    
+    function convert(n) {
+      if (n === 0) return 'Zero';
+      let result = '';
+      if (Math.floor(n / 10000000) > 0) {
+        result += convertLessThanThousand(Math.floor(n / 10000000)) + ' Crore ';
+        n %= 10000000;
+      }
+      if (Math.floor(n / 100000) > 0) {
+        result += convertLessThanThousand(Math.floor(n / 100000)) + ' Lakh ';
+        n %= 100000;
+      }
+      if (Math.floor(n / 1000) > 0) {
+        result += convertLessThanThousand(Math.floor(n / 1000)) + ' Thousand ';
+        n %= 1000;
+      }
+      result += convertLessThanThousand(n);
+      return result.trim();
+    }
+    
+    return convert(Math.round(num)) + ' Only';
+  }
+
+  // ── Generate PDF using HTML-to-image pipeline ───────────────────────────
+  const generateBalanceSheetPDF = useCallback(async () => {
+    const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
+    const dateObj = new Date(selectedDate + 'T00:00:00');
+    const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    const now = new Date();
+    const generatedOn = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' + 
+                      now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    // Payment mode data from xReport
+    const paymentData = {
+      cash: Number(xReportData?.cashAmount) || 0,
+      upi: Number(xReportData?.upiAmount) || 0,
+      card: Number(xReportData?.cardAmount) || 0,
+      credit: Number(xReportData?.otherAmount) || 0,
     };
 
-    // Header section
-    let y = 12;
-    
-    // Logo (larger, better positioned)
-    if (logoDataUrl) {
-      try {
-        doc.addImage(logoDataUrl, 'PNG', margin, y, 50, 20);
-      } catch {
-        // Logo failed to embed
-      }
-    }
-    
-    // Report title and meta info (top right)
-    doc.setTextColor(...dark);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Daily Balance Sheet', pageWidth - margin, y + 12, { align: 'right' });
-    
-    y += 28;
-    
-    // Meta info bar
-    const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-    const now = new Date();
-    const generatedDateTime = now.toLocaleString('en-IN', { 
-      day: '2-digit', month: 'short', year: 'numeric', 
-      hour: '2-digit', minute: '2-digit' 
-    });
-    const generatedBy = user?.name || 'Admin';
-    const reportId = sheet?.id ? `#${sheet.id.slice(0, 8).toUpperCase()}` : 'DRAFT';
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100);
-    doc.text(`Outlet: ${outletName}`, margin, y);
-    doc.text(`Date: ${selectedDate}`, margin, y + 5);
-    doc.text(`Status: ${sheet?.status || 'DRAFT'}`, margin, y + 10);
-    
-    doc.text(`Generated: ${generatedDateTime}`, pageWidth - margin, y, { align: 'right' });
-    doc.text(`By: ${generatedBy}`, pageWidth - margin, y + 5, { align: 'right' });
-    doc.text(`Report ID: ${reportId}`, pageWidth - margin, y + 10, { align: 'right' });
-    
-    y += 18;
-    
-    // Summary Cards (KPIs)
-    const totalSales = computedSales.acBar + computedSales.nonAcBar + computedSales.familyWing + 
-                      computedSales.parcel + computedSales.swiggy + computedSales.zomato;
-    const totalExpendituresVal = totalExpenditures;
-    const totalAdjustmentsVal = adjustments.reduce((sum, a) => sum + Number(a.amount), 0);
-    const grossBalance = totalSales - totalExpendituresVal;
-    
-    const cardWidth = (pageWidth - margin * 2 - 8) / 4;
-    const kpiCardHeight = 24;
-    const cardY = y;
-    
-    const formatPlain = (num) => Math.round(num).toString();
-    
-    const kpiData = [
-      { label: 'Total Sales', value: formatPlain(totalSales), color: [16, 185, 129] },
-      { label: 'Expenditures', value: formatPlain(totalExpendituresVal), color: [239, 68, 68] },
-      { label: 'Adjustments', value: formatPlain(totalAdjustmentsVal), color: [245, 158, 11] },
-      { label: 'Closing Balance', value: formatPlain(balanceCalc.closingBalance), color: [59, 130, 246] },
-    ];
-    
-    kpiData.forEach((kpi, index) => {
-      const cardX = margin + index * (cardWidth + 2.5);
-      
-      // Card background
-      doc.setFillColor(...gray);
-      doc.roundedRect(cardX, cardY, cardWidth, kpiCardHeight, 3, 3, 'F');
-      
-      // Border
-      doc.setDrawColor(...border);
-      doc.roundedRect(cardX, cardY, cardWidth, kpiCardHeight, 3, 3, 'S');
-      
-      // Label
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100);
-      doc.text(kpi.label, cardX + 3, cardY + 7);
-      
-      // Value
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...kpi.color);
-      doc.text(kpi.value, cardX + 3, cardY + 18);
-    });
-    
-    y += kpiCardHeight + 12;
-    
-    // Venue Sales Section
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...dark);
-    doc.text('Venue Sales', margin, y);
-    y += 8;
-    
-    const salesRows = [
-      ['Lounge Sales', computedSales.acBar],
-      ['Non-AC Bar', computedSales.nonAcBar],
-      ['Family', computedSales.familyWing],
-      ['Parcel Counter', computedSales.parcel],
-      ['Swiggy', computedSales.swiggy],
-      ['Zomato', computedSales.zomato],
-    ];
-    
-    const totalVenueSales = salesRows.reduce((sum, row) => sum + row[1], 0);
-    
-    // Draw table header
-    doc.setFillColor(...primary);
-    doc.rect(margin, y, pageWidth - margin * 2, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Venue', margin + 3, y + 5);
-    doc.text('Amount', pageWidth - margin - 3, y + 5, { align: 'right' });
-    y += 7;
-    
-    // Draw table rows
-    doc.setTextColor(60, 60, 60);
-    doc.setFont('helvetica', 'normal');
-    salesRows.forEach((row, index) => {
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-      }
-      doc.text(row[0], margin + 3, y + 4);
-      doc.text(Math.round(row[1]).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 6;
-    });
-    
-    // Total row
-    doc.setFillColor(...gray);
-    doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...dark);
-    doc.text('Total Venue Sales', margin + 3, y + 4);
-    doc.text(Math.round(totalVenueSales).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-    y += 10;
-    
-    // Expenditures Section
-    if (expenditures.length > 0) {
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...dark);
-      doc.text('Expenditures', margin, y);
-      y += 8;
-      
-      const expenditureRows = Object.entries(expenditureGroups).map(([cat, vlist]) => [
-        cat,
-        vlist.reduce((s, v) => s + Number(v.amount), 0)
-      ]);
-      
-      const totalExpend = expenditureRows.reduce((sum, row) => sum + row[1], 0);
-      
-      // Draw table header
-      doc.setFillColor(...primary);
-      doc.rect(margin, y, pageWidth - margin * 2, 7, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Category', margin + 3, y + 5);
-      doc.text('Amount', pageWidth - margin - 3, y + 5, { align: 'right' });
-      y += 7;
-      
-      // Draw table rows
-      doc.setTextColor(60, 60, 60);
-      doc.setFont('helvetica', 'normal');
-      expenditureRows.forEach((row, index) => {
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 250, 252);
-          doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-        }
-        doc.text(row[0], margin + 3, y + 4);
-        const formattedAmount = row[1].toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        doc.text(formattedAmount, pageWidth - margin - 3, y + 4, { align: 'right' });
-        y += 6;
-      });
-      
-      // Total row
-      doc.setFillColor(...gray);
-      doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...dark);
-      doc.text('Total Expenditures', margin + 3, y + 4);
-      doc.text(Math.round(totalExpend).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 10;
-    }
-    
-    // Adjustments Section
-    if (adjustments.length > 0) {
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...dark);
-      doc.text('Adjustments', margin, y);
-      y += 8;
-      
-      const adjustmentRows = adjustments.map((a) => [
-        `${a.sign === 'PLUS' ? '+' : '-'} ${a.label}`,
-        Number(a.amount)
-      ]);
-      
-      const totalAdj = adjustmentRows.reduce((sum, row) => sum + row[1], 0);
-      
-      // Draw table header
-      doc.setFillColor(...primary);
-      doc.rect(margin, y, pageWidth - margin * 2, 7, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Description', margin + 3, y + 5);
-      doc.text('Amount', pageWidth - margin - 3, y + 5, { align: 'right' });
-      y += 7;
-      
-      // Draw table rows
-      doc.setTextColor(60, 60, 60);
-      doc.setFont('helvetica', 'normal');
-      adjustmentRows.forEach((row, index) => {
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 250, 252);
-          doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-        }
-        doc.text(row[0], margin + 3, y + 4);
-        const formattedAmount = row[1].toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        doc.text(formattedAmount, pageWidth - margin - 3, y + 4, { align: 'right' });
-        y += 6;
-      });
-      
-      // Total row
-      doc.setFillColor(...gray);
-      doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...dark);
-      doc.text('Total Adjustments', margin + 3, y + 4);
-      doc.text(Math.round(totalAdj).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 10;
-    }
-    
-    // Calculation Summary Section
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...dark);
-    doc.text('Calculation Summary', margin, y);
-    y += 8;
-    
-    const calcRows = [
-      ['Total Sales', formatPlain(totalSales)],
-      ['- Total Expenditures', formatPlain(totalExpendituresVal)],
-      ['- Total Adjustments', formatPlain(totalAdjustmentsVal)],
-      ['= Net Closing Balance', formatPlain(balanceCalc.closingBalance)],
-    ];
-    
-    // Draw calculation rows manually
-    doc.setFontSize(9);
-    doc.setTextColor(60, 60, 60);
-    doc.setFont('helvetica', 'normal');
-    calcRows.forEach((row, index) => {
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
-      }
-      doc.setFont('helvetica', index === calcRows.length - 1 ? 'bold' : 'normal');
-      doc.text(row[0], margin + 3, y + 4);
-      doc.text(row[1], pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 6;
-    });
-    y += 4;
-    
-    // Net Closing Balance Premium Card
-    const cardTop = y;
-    const closingCardHeight = 35;
-    
-    // Card background with gradient effect (simulated with two rects)
-    doc.setFillColor(...primary);
-    doc.roundedRect(margin, cardTop, pageWidth - margin * 2, closingCardHeight, 6, 6, 'F');
-    
-    // Inner white area for contrast
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(margin + 2, cardTop + 2, pageWidth - margin * 2 - 4, closingCardHeight - 4, 4, 4, 'F');
-    
-    // Label
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100);
-    doc.text('Net Closing Balance', margin + 8, cardTop + 10);
-    
-    // Amount
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...primary);
-    doc.text(Math.round(balanceCalc.closingBalance).toString(), margin + 8, cardTop + 24);
-    
-    // Amount in words
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(120);
-    const amountInWords = numberToWords(balanceCalc.closingBalance);
-    doc.text(amountInWords, margin + 8, cardTop + 31);
-    
-    y = cardTop + closingCardHeight + 12;
-    
-    // Footer
-    const footerY = pageHeight - 25;
-    
-    // Line separator
-    doc.setDrawColor(...border);
-    doc.line(margin, footerY - 8, pageWidth - margin, footerY - 8);
-    
-    // Footer content
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120);
-    
-    doc.text(`Generated: ${generatedDateTime}`, margin, footerY - 4);
-    doc.text(`By: ${generatedBy}`, margin, footerY + 1);
-    doc.text(`Report ID: ${reportId}`, margin, footerY + 6);
-    
-    doc.text('Softshape AI', pageWidth - margin, footerY - 4, { align: 'right' });
-    doc.text('Page 1 of 1', pageWidth - margin, footerY + 1, { align: 'right' });
-    doc.text('Software that shapes your business from Day 1', pageWidth - margin, footerY + 6, { align: 'right' });
-    
-    // Disclaimer
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(150);
-    doc.text('This report is auto-generated. Please verify important figures before making financial decisions.', 
-             pageWidth / 2, footerY + 6, { align: 'center' });
+    // Calculate gross balance (sales - expenditure)
+    const grossBalance = totalSales - totalExpenditures;
 
-    return doc;
-  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, sheet?.id, computedSales, expenditures.length, expenditureGroups, adjustments, balanceCalc.closingBalance, totalExpenditures, user]);
+    // Build template data
+    const templateData = {
+      outletName,
+      date: dateStr,
+      weekday,
+      status: sheet?.status || 'DRAFT',
+      reportId: `DBS-${selectedDate.replace(/-/g, '')}-001`,
+      generatedOn,
+      generatedBy: user?.name || 'Admin',
+      totalSales,
+      totalSalesSourcesCount: 6,
+      totalExpenditure: totalExpenditures,
+      totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
+      totalAdjustments: adjustments.reduce((sum, a) => sum + Number(a.amount), 0),
+      totalAdjustmentsEntriesCount: adjustments.length,
+      grossBalance,
+      netClosingBalance: balanceCalc.closingBalance,
+      otherIncome: 0,
+      amountInWords: numberToWords(balanceCalc.closingBalance),
+      venueSales: [
+        { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
+        { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
+        { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
+        { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
+        { icon: null, label: 'Swiggy', amount: computedSales.swiggy, color: '#F97316' },
+        { icon: null, label: 'Zomato', amount: computedSales.zomato, color: '#E53935' },
+      ],
+      expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
+        label: cat,
+        amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
+      })),
+      adjustments: adjustments.map(a => ({
+        label: a.label,
+        amount: Number(a.amount),
+      })),
+      payment: paymentData,
+    };
 
-  // ── WhatsApp share: open chat immediately, then generate PDF ───────────────
+    // Create off-screen container
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '900px';
+    container.style.background = 'white';
+    document.body.appendChild(container);
+
+    try {
+      // Render template to container
+      const { createRoot } = await import('react-dom/client');
+      const root = createRoot(container);
+      root.render(
+        <BalanceSheetReportTemplate 
+          data={templateData} 
+          logoSrc={logoBase64 || '/logo softshape.ai.png'} 
+        />
+      );
+
+      // Wait for render
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Capture with html2canvas
+      const canvas = await html2canvas(container, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+
+      // Cleanup React root
+      root.unmount();
+      document.body.removeChild(container);
+
+      // Convert to PDF
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = 190; // A4 width in mm (210mm - 20mm margin)
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      const doc = new jsPDF('p', 'mm', 'a4');
+      doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+      
+      return doc;
+    } catch (err) {
+      if (container.parentNode) {
+        document.body.removeChild(container);
+      }
+      throw err;
+    }
+  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, xReportData, user?.name, logoBase64]);
+
+  // ── WhatsApp share: generate PNG and share via Web Share API ───────────────
   const handleWhatsAppShare = async () => {
     setStatusLoading(true);
     setError(null);
     try {
       const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
-      const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
+      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}`;
 
-      // Open WhatsApp first (before async PDF work) so the browser does not block the popup
-      if (!isNative) {
-        const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-        if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
-          setError('WhatsApp was blocked by the browser. Please allow popups for this site, or use the downloaded PDF to share manually.');
+      // Generate PNG from the template
+      const dateObj = new Date(selectedDate + 'T00:00:00');
+      const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+      const now = new Date();
+      const generatedOn = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' + 
+                        now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+      const paymentData = {
+        cash: Number(xReportData?.cashAmount) || 0,
+        upi: Number(xReportData?.upiAmount) || 0,
+        card: Number(xReportData?.cardAmount) || 0,
+        credit: Number(xReportData?.otherAmount) || 0,
+      };
+
+      const grossBalance = totalSales - totalExpenditures;
+
+      const templateData = {
+        outletName,
+        date: dateStr,
+        weekday,
+        status: sheet?.status || 'DRAFT',
+        reportId: `DBS-${selectedDate.replace(/-/g, '')}-001`,
+        generatedOn,
+        generatedBy: user?.name || 'Admin',
+        totalSales,
+        totalSalesSourcesCount: 6,
+        totalExpenditure: totalExpenditures,
+        totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
+        totalAdjustments: adjustments.reduce((sum, a) => sum + Number(a.amount), 0),
+        totalAdjustmentsEntriesCount: adjustments.length,
+        grossBalance,
+        netClosingBalance: balanceCalc.closingBalance,
+        otherIncome: 0,
+        amountInWords: numberToWords(balanceCalc.closingBalance),
+        venueSales: [
+          { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
+          { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
+          { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
+          { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
+          { icon: null, label: 'Swiggy', amount: computedSales.swiggy, color: '#F97316' },
+          { icon: null, label: 'Zomato', amount: computedSales.zomato, color: '#E53935' },
+        ],
+        expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
+          label: cat,
+          amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
+        })),
+        adjustments: adjustments.map(a => ({
+          label: a.label,
+          amount: Number(a.amount),
+        })),
+        payment: paymentData,
+      };
+
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '900px';
+      container.style.background = 'white';
+      document.body.appendChild(container);
+
+      try {
+        const { createRoot } = await import('react-dom/client');
+        const root = createRoot(container);
+        root.render(
+          <BalanceSheetReportTemplate 
+            data={templateData} 
+            logoSrc={logoBase64 || '/logo softshape.ai.png'} 
+          />
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const canvas = await html2canvas(container, {
+          scale: 3,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+        });
+
+        root.unmount();
+        document.body.removeChild(container);
+
+        // Convert canvas to PNG blob
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            throw new Error('Failed to generate PNG');
+          }
+
+          const file = new File([blob], `Daily-Balance-Sheet-${selectedDate}.png`, { type: 'image/png' });
+          const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
+
+          if (isNative) {
+            // Capacitor native app: write PNG to cache and open native share dialog
+            const base64 = await blobToBase64(blob);
+            await Filesystem.writeFile({
+              path: file.name,
+              data: base64,
+              directory: Directory.Cache,
+              recursive: true,
+            });
+            const fileUri = await Filesystem.getUri({
+              path: file.name,
+              directory: Directory.Cache,
+            });
+            await Share.share({
+              title: 'Daily Balance Sheet',
+              text: message,
+              url: fileUri.uri,
+              dialogTitle: 'Share via',
+            });
+          } else if (navigator.share && navigator.canShare({ files: [file] })) {
+            // Web: use Web Share API with file
+            await navigator.share({
+              title: 'Daily Balance Sheet',
+              text: message,
+              files: [file],
+            });
+          } else {
+            // Fallback: download PNG and open WhatsApp with text
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+          }
+        }, 'image/png');
+      } catch (err) {
+        if (container.parentNode) {
+          document.body.removeChild(container);
         }
+        throw err;
       }
-
-      let logoDataUrl = logoBase64;
-      if (!logoDataUrl) {
-        try {
-          logoDataUrl = await loadImageAsBase64('/logo softshape.ai.png');
-          setLogoBase64(logoDataUrl);
-        } catch {
-          logoDataUrl = null;
-        }
-      }
-      const doc = generateBalanceSheetPDF(logoDataUrl);
-      const blob = doc.output('blob');
-      const filename = `Daily-Balance-Sheet-${selectedDate}.pdf`;
-
-      // Share / download the PDF
-      await shareOrDownloadPDF(blob, filename);
     } catch (err) {
-      setError(err.message || 'Failed to generate PDF for WhatsApp');
+      setError(err.message || 'Failed to generate image for WhatsApp');
     } finally {
       setStatusLoading(false);
     }
