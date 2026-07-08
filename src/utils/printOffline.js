@@ -359,10 +359,16 @@ export async function printLocal(job) {
     if (!targetPrinter) {
       return await queuePrintJob(job, text, 'No printer mapped');
     }
+    // Use escposData (proper ESC/POS) when available, fall back to plain text bytes
+    let printBytes = bytes;
+    if (job.escposData && Array.isArray(job.escposData) && job.escposData.length > 0) {
+      const rawString = job.escposData.map((d) => d.data || '').join('');
+      printBytes = Array.from(new TextEncoder().encode(rawString));
+    }
     try {
       await window.__TAURI__.invoke('print_raw', {
         printerName: targetPrinter,
-        bytes,
+        bytes: printBytes,
       });
       logOfflinePrint({ status: 'success', message: 'Tauri print_raw succeeded', detail: targetPrinter });
       return { printed: true, queued: false };
