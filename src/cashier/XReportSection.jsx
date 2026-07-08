@@ -65,9 +65,10 @@ export default function XReportSection() {
     + Number(report.upiAmount || 0)
     + Number(report.otherAmount || 0)
   );
+  const expenditureTotal = round2(expenditures.reduce((sum, v) => sum + Number(v.amount || 0), 0));
   const finalAmount = round2(
     paymentBreakdownTotal
-    - Number(report.expenditureAmount || 0)
+    - expenditureTotal
   );
 
   // Check if payment breakdown (Card + Cash + UPI + Other) matches total sales (tips excluded)
@@ -471,7 +472,7 @@ export default function XReportSection() {
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <div className="flex justify-between items-center">
                 <span className="text-sm font-black text-gray-700 uppercase tracking-wide">Expenditure</span>
-                <span className="text-lg font-black text-purple-900 tabular-nums">₹{round2(Number(report.expenditureAmount || 0)).toFixed(2)}</span>
+                <span className="text-lg font-black text-purple-900 tabular-nums">₹{round2(expenditures.reduce((sum, v) => sum + Number(v.amount || 0), 0)).toFixed(2)}</span>
               </div>
               {expenditures.length > 0 ? (
                 <div className="mt-3 overflow-x-auto">
