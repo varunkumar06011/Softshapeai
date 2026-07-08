@@ -142,7 +142,6 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
-  const isFreeWorkflow = dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
   const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
   const mergedKotHistory = (Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : []);
 
@@ -171,6 +170,23 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   if (!activeOrder && existingOrder && row.status !== 'AVAILABLE') {
     activeOrder = existingOrder;
   }
+
+  // Ghost detection: if backend claims non-Free but has no billable items, no bill, and no guests,
+  // the table is in a corrupt state (active order with zero items after settle/terminate).
+  // Force it to Free to prevent stable incorrect display.
+  const incomingOrders = Array.isArray(row.orders) ? row.orders : [];
+  const incomingItemCount = incomingOrders.reduce((sum, o) => {
+    if (!Array.isArray(o?.items)) return sum;
+    return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
+  }, 0);
+  const hasNoSession = incomingItemCount === 0 && (row.currentBill ?? 0) === 0 && (row.guests ?? 0) === 0;
+  const claimsNonFree = row.workflowStatus !== 'Free' && row.status !== 'Free' && dbStatus !== 'AVAILABLE';
+  const isGhost = claimsNonFree && hasNoSession;
+  if (isGhost) {
+    console.warn('[BarTableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
+  }
+
+  const isFreeWorkflow = isGhost || dbStatus === 'AVAILABLE' || row.workflowStatus === 'Free' || row.status === 'Free';
 
   const base = {
     backendId: row.id,
@@ -479,6 +495,30 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
                 console.warn('[BarTableSync] Skipping stale AVAILABLE event for occupied table', t.number);
                 return t;
               }
+            }
+            // Safety: skip ghost occupied/preparing events (claims occupied but has no
+            // active session data — no orders, no bill, no guests). Such an event carries
+            // no real session and is a stale rebroadcast; accepting it flips the card back
+            // to Occupied/Preparing and causes flicker. Skip regardless of the current
+            // local status so an already-flipped ghost state cannot keep ping-ponging.
+            // Count actual live items across all incoming orders. A stale/ghost event
+            // often carries an order object whose items array is empty (order was settled
+            // or all items removed), so orders.length alone is not a reliable session signal.
+            const incomingOrders = Array.isArray(updatedTable.orders) ? updatedTable.orders : [];
+            const incomingItemCount = incomingOrders.reduce((sum, o) => {
+              if (!Array.isArray(o?.items)) return sum;
+              return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
+            }, 0);
+            const hasNoSession = incomingItemCount === 0 && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
+            // Any non-Free claim (Occupied / Preparing / Confirmed / Ready / Waiting Bill)
+            // is contradictory when the table carries no billable items, no bill and no
+            // guests — a genuinely active table always has at least one billable item.
+            // These are stale/corrupt rebroadcasts (e.g. an order left in an active status
+            // with all items removed after settle/terminate) and must never flip the card.
+            const claimsNonFree = !incomingIsAvailable;
+            if (claimsNonFree && hasNoSession) {
+              console.warn('[BarTableSync] Skipping ghost non-Free event (no session data) for table', t.number, updatedTable.workflowStatus || updatedTable.status);
+              return t;
             }
             const before = t;
             const after = mapBackendTable(updatedTable, t);

@@ -540,7 +540,10 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             // often carries an order object whose items array is empty (order was settled
             // or all items removed), so orders.length alone is not a reliable session signal.
             const incomingOrders = Array.isArray(updatedTable.orders) ? updatedTable.orders : [];
-            const incomingItemCount = incomingOrders.reduce((sum, o) => sum + (Array.isArray(o?.items) ? o.items.length : 0), 0);
+            const incomingItemCount = incomingOrders.reduce((sum, o) => {
+              if (!Array.isArray(o?.items)) return sum;
+              return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
+            }, 0);
             const hasNoSession = incomingItemCount === 0 && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
             // Any non-Free claim (Occupied / Preparing / Confirmed / Ready / Waiting Bill)
             // is contradictory when the table carries no billable items, no bill and no
