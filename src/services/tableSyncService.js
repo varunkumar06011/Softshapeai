@@ -500,9 +500,14 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             // skip this update — it's a stale/race event. Wait for the correct one.
             // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
             // legitimate settlement confirmation and must be accepted.
-            if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
-              console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
-              return t;
+            if (incomingIsAvailable && !isRecentlyTerminated(t.backendId)) {
+              // Use tablesRef.current (synchronously updated) instead of prev (pre-commit state)
+              // to correctly check if this table was just cleared by terminate/settle.
+              const refTable = tablesRef.current.find(rt => rt.backendId === updatedTable.id);
+              if (refTable?.activeOrder) {
+                console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+                return t;
+              }
             }
             const incomingTableUpdated = updatedTable.updatedAt ? new Date(updatedTable.updatedAt).getTime() : 0;
             const existingTableUpdated = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
@@ -638,6 +643,9 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           // Deduplicate after persisting changes
           const finalDeduped = Array.from(new Map(updated.map(t => [t.backendId, t])).values());
           writeCache(finalDeduped);
+          // Keep the synchronously-read ref in sync with committed state so that
+          // subsequent socket-event guards (e.g. stale AVAILABLE check) read fresh data.
+          tablesRef.current = finalDeduped;
           return finalDeduped;
         });
       });
