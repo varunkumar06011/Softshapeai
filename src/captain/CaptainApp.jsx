@@ -3056,7 +3056,7 @@ export default function CaptainApp({ onLogout }) {
 
     try {
 
-      await cancelOrderItem(
+      const cancelResult = await cancelOrderItem(
 
         activeOrderIdRef.current,
 
@@ -3072,7 +3072,7 @@ export default function CaptainApp({ onLogout }) {
 
       );
 
-      addNotification(`${kotItem.n} cancelled`, 'success');
+      addNotification(cancelResult?.offline ? `${kotItem.n} cancelled (sync pending)` : `${kotItem.n} cancelled`, cancelResult?.offline ? 'warning' : 'success');
 
       // Wait for CANCEL_KOT print ack (best-effort, 12s timeout)
       const socket = getSocket();
@@ -3188,8 +3188,11 @@ export default function CaptainApp({ onLogout }) {
     if (orderId) {
       try {
 
-        await requestBilling(orderId);
+        const billingResult = await requestBilling(orderId);
 
+        if (billingResult?.offline) {
+          addNotification('Billing requested — will sync when online', 'warning');
+        }
         setView('tables');
         setActiveTableId(null);
 

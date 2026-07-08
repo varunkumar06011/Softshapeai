@@ -145,7 +145,7 @@ export class BackgroundQueue {
       } catch (error) {
         console.error(`[BackgroundQueue:${this.name}] Task failed:`, error);
         // Re-queue for retry (limit retries)
-        if (task.retryCount < 3) {
+        if ((task.retryCount || 0) < 3) {
           task.retryCount = (task.retryCount || 0) + 1;
           this.queue.push(task);
         }

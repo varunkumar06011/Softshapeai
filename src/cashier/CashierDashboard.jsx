@@ -59,7 +59,7 @@ import ItemAnalytics from './ItemAnalytics';
 import ExpenditureModule from './ExpenditureModule';
 import XReportSection from './XReportSection';
 import VenueSectionView from '../shared/components/VenueSectionView';
-import { API_BASE, getAuthHeaders, apiFetch } from '../services/apiConfig';
+import { API_BASE, getAuthHeaders, apiFetch, isBackendReachable } from '../services/apiConfig';
 import { getItemCategory } from '../utils/itemHelpers';
 import QuantityPicker from '../shared/components/LiquorQtyPicker';
 import DateInputButton from '../shared/components/DateInputButton';
@@ -1202,8 +1202,12 @@ const CashierDashboard = ({ onLogout }) => {
   const handleConfirmPaymentSubmit = useCallback(async () => {
     if (!confirmPaymentTxn) return;
     try {
-      await confirmPayment(confirmPaymentTxn.id);
-      addNotification('Payment Confirmed', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} marked as completed.`, 'success');
+      const result = await confirmPayment(confirmPaymentTxn.id);
+      if (result?.offline) {
+        addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
+      } else {
+        addNotification('Payment Confirmed', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} marked as completed.`, 'success');
+      }
       setShowConfirmPaymentModal(false);
       setConfirmPaymentTxn(null);
       loadTransactions(txnDateFilterRef.current, null, { silent: true });
@@ -1720,6 +1724,7 @@ const CashierDashboard = ({ onLogout }) => {
   useEffect(() => {
     const pollInterval = socket?.connected ? 60_000 : 30_000;
     const interval = setInterval(() => {
+      if (!isBackendReachable()) return;
       if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
       refetchRestaurantTables();
     }, pollInterval);
@@ -2030,7 +2035,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     setIsSwappingItems(true);
     try {
-      await transferItems(
+      const transferResult = await transferItems(
         selectedTable.backendId,
         itemSwapTargetId,
         itemSwapSelectedIds,
@@ -2094,11 +2099,11 @@ const CashierDashboard = ({ onLogout }) => {
       setItemSwapSelectedIds([]);
       setItemSwapTargetId(null);
       addNotification(
-        'Items Transferred',
+        transferResult?.offline ? 'Items Transferred (Sync Pending)' : 'Items Transferred',
         `${itemSwapSelectedIds.length} items moved to ${activeOutlet === 'bar'
           ? `B${selectedItemSwapTarget?.number ?? selectedItemSwapTarget?.id}`
           : `T${selectedItemSwapTarget?.id}`}`,
-        'success',
+        transferResult?.offline ? 'warning' : 'success',
       );
     } catch (err) {
       addNotification('Transfer Failed', err.message, 'error');
@@ -3480,9 +3485,9 @@ const CashierDashboard = ({ onLogout }) => {
             tableId: null,
             method,
             amount: txnAmount,
-            offline: false,
+            offline: !!txnData?.offline,
             status: 'success',
-            syncedAt: Date.now(),
+            syncedAt: txnData?.offline ? null : Date.now(),
           });
 
           // Merge returned transaction into pastTransactions
@@ -3705,21 +3710,31 @@ const CashierDashboard = ({ onLogout }) => {
         addedItems: billAdditions,
         editedBy: 'Cashier',
       });
-      // Update local table state so bill total reflects immediately
-      setActiveTables(prev => prev.map(t => {
-        if (t.backendId !== selectedTable.backendId) return t;
-        return {
-          ...t,
-          currentBill: updatedOrder.totalAmount,
-          activeOrder: { ...t.activeOrder, ...updatedOrder },
-        };
-      }));
-      setBillRemovals([]);
-      setBillEditQuantities({});
-      setBillAdditions([]);
-      setBillEditSearch('');
-      setShowBillEditor(false);
-      addNotification('Bill Updated', 'Changes saved successfully.', 'success');
+      if (updatedOrder?.offline) {
+        // Offline: don't merge server fields (they don't exist). Keep local state as-is.
+        setBillRemovals([]);
+        setBillEditQuantities({});
+        setBillAdditions([]);
+        setBillEditSearch('');
+        setShowBillEditor(false);
+        addNotification('Bill Edit Queued', 'Changes saved locally — will sync when online.', 'warning');
+      } else {
+        // Update local table state so bill total reflects immediately
+        setActiveTables(prev => prev.map(t => {
+          if (t.backendId !== selectedTable.backendId) return t;
+          return {
+            ...t,
+            currentBill: updatedOrder.totalAmount,
+            activeOrder: { ...t.activeOrder, ...updatedOrder },
+          };
+        }));
+        setBillRemovals([]);
+        setBillEditQuantities({});
+        setBillAdditions([]);
+        setBillEditSearch('');
+        setShowBillEditor(false);
+        addNotification('Bill Updated', 'Changes saved successfully.', 'success');
+      }
     } catch (err) {
       addNotification('Edit Failed', err.message, 'error');
     } finally {
@@ -7201,7 +7216,7 @@ const CashierDashboard = ({ onLogout }) => {
                   if (!swapTargetId || !selectedTable?.backendId || isSwapping) return;
                   setIsSwapping(true);
                   try {
-                    await swapTable(selectedTable.backendId, swapTargetId, 'Cashier', selectedTable.section?.restaurantId || activeRestaurantId);
+                    const swapResult = await swapTable(selectedTable.backendId, swapTargetId, 'Cashier', selectedTable.section?.restaurantId || activeRestaurantId);
 
                     // Immediately apply swap in local state without waiting for socket
                     const sourceId = selectedTable.backendId;
@@ -7237,7 +7252,7 @@ const CashierDashboard = ({ onLogout }) => {
                     setSwapTargetId(null);
                     setSelectedTable(null);
                     setCart([]);
-                    addNotification('Table Moved', 'Session transferred successfully', 'success');
+                    addNotification(swapResult?.offline ? 'Table Moved (Sync Pending)' : 'Table Moved', 'Session transferred successfully', swapResult?.offline ? 'warning' : 'success');
                   } catch (err) {
                     addNotification('Move Failed', err.message || 'Could not move table', 'error');
                   } finally {
@@ -7642,7 +7657,7 @@ const CashierDashboard = ({ onLogout }) => {
 
             try {
               // ONE API call → ONE CANCEL_KOT socket event → ONE printed slip
-              await cancelOrderItems(
+              const cancelResult = await cancelOrderItems(
                 liveOrder.id,
                 batchItems,
                 'Cashier',
@@ -7650,6 +7665,9 @@ const CashierDashboard = ({ onLogout }) => {
                 batchRequestId
               );
               clearTimeout(cancelTimeout);
+              if (cancelResult?.offline) {
+                addNotification('Cancel Queued', 'Item cancellation saved locally — will sync when online.', 'warning');
+              }
 
               const cancelQtyMap = new Map(batchItems.map(b => [b.orderItemId, b.cancelQuantity]));
               const applyCancelToItems = (items) => items.map(i => {

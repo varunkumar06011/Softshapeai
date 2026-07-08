@@ -173,7 +173,10 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const handleDelete = async (txn) => {
     setDeleting(true);
     try {
-      await deleteTransaction(txn.id, txn.restaurantId);
+      const result = await deleteTransaction(txn.id, txn.restaurantId);
+      if (result?.offline) {
+        alert('Transaction delete queued — will sync when online.');
+      }
       setTransactions(prev => prev.filter(t => t.id !== txn.id));
       setConfirmDeleteId(null);
       if (onStatsRefresh) onStatsRefresh();
@@ -188,11 +191,16 @@ export default function AdminTransactions({ onStatsRefresh }) {
     setConfirmingId(txn.id);
     try {
       const result = await confirmPayment(txn.id, { paymentMethod });
-      const updatedTxn = result?.transaction;
-      if (updatedTxn) {
-        setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: updatedTxn.status || 'COMPLETED', rawStatus: updatedTxn.status || 'COMPLETED', method: updatedTxn.method || paymentMethod } : t));
-      } else {
+      if (result?.offline) {
         setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED', method: paymentMethod } : t));
+        alert('Payment confirm queued — will sync when online.');
+      } else {
+        const updatedTxn = result?.transaction;
+        if (updatedTxn) {
+          setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: updatedTxn.status || 'COMPLETED', rawStatus: updatedTxn.status || 'COMPLETED', method: updatedTxn.method || paymentMethod } : t));
+        } else {
+          setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED', method: paymentMethod } : t));
+        }
       }
       if (onStatsRefresh) onStatsRefresh();
     } catch (err) {

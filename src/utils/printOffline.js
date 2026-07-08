@@ -340,44 +340,6 @@ export async function printLocal(job) {
     : JSON.stringify(job.data || {}));
   const bytes = Array.from(textToEscpos(text));
 
-  // ── Tauri desktop: raw print via Rust command (fast path for offline) ──
-  if (platform === 'tauri') {
-    let targetPrinter = printerName;
-    if (!targetPrinter && window.__TAURI__) {
-      try {
-        const printers = await window.__TAURI__.invoke('list_printers');
-        logOfflinePrint({ status: 'info', message: 'Tauri list_printers', detail: `${printers.length} printers` });
-        if (printers && printers.length > 0) {
-          const defaultPrinter = printers.find(p => p.isDefault) || printers[0];
-          targetPrinter = defaultPrinter?.name || printers[0].name;
-          logOfflinePrint({ status: 'info', message: 'Falling back to default Tauri printer', detail: targetPrinter });
-        }
-      } catch (err) {
-        logOfflinePrint({ status: 'error', message: 'list_printers failed', detail: err?.message || String(err) });
-      }
-    }
-    if (!targetPrinter) {
-      return await queuePrintJob(job, text, 'No printer mapped');
-    }
-    // Use escposData (proper ESC/POS) when available, fall back to plain text bytes
-    let printBytes = bytes;
-    if (job.escposData && Array.isArray(job.escposData) && job.escposData.length > 0) {
-      const rawString = job.escposData.map((d) => d.data || '').join('');
-      printBytes = Array.from(new TextEncoder().encode(rawString));
-    }
-    try {
-      await window.__TAURI__.invoke('print_raw', {
-        printerName: targetPrinter,
-        bytes: printBytes,
-      });
-      logOfflinePrint({ status: 'success', message: 'Tauri print_raw succeeded', detail: targetPrinter });
-      return { printed: true, queued: false };
-    } catch (err) {
-      logOfflinePrint({ status: 'error', message: 'Tauri print_raw failed', detail: err?.message || String(err) });
-      return await queuePrintJob(job, text, err?.message || String(err));
-    }
-  }
-
   // ── Primary: local Print Agent HTTP endpoint (multi-URL discovery) ──
   // Try multiple candidate URLs (configured, backend-reported, cached, localhost)
   // to support captain on WiFi/LAN (direct HTTP) and mobile data (socket fallback).
