@@ -181,10 +181,10 @@ describe('Integration: Offline Settlement → Sync', () => {
 
     await syncPendingActions();
 
-    // Conflict resolver says 'adopt_server' for already paid → action kept as conflict
-    // (adopt_server doesn't remove, it stays for UI surfacing)
+    // Conflict resolver says 'adopt_server' for already paid → auto-resolved and removed
+    // (conflict is surfaced in the in-memory conflict store for UI, not kept in IndexedDB)
     const count = await getPendingCount();
-    expect(count).toBe(1);
+    expect(count).toBe(0);
   });
 
   it('should handle bill total mismatch (409 → manual resolution)', async () => {

@@ -25,7 +25,7 @@
 import { getDeviceId } from './deviceId';
 
 const DB_NAME = 'softshape-offline';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -99,6 +99,16 @@ function openDB() {
         store.createIndex('status', 'status', { unique: false });
         store.createIndex('createdAt', 'createdAt', { unique: false });
       }
+
+      // v5 stores — orderIdMap for offline→real ID mapping, inventoryCache for local stock
+      if (!db.objectStoreNames.contains('orderIdMap')) {
+        db.createObjectStore('orderIdMap', { keyPath: 'offlineId' });
+      }
+
+      if (!db.objectStoreNames.contains('inventoryCache')) {
+        const store = db.createObjectStore('inventoryCache', { keyPath: 'menuItemId' });
+        store.createIndex('name', 'name', { unique: false });
+      }
     };
 
     req.onsuccess = () => resolve(req.result);
@@ -108,7 +118,8 @@ function openDB() {
 
 // ── pendingActions ──────────────────────────────────────────────────────────
 
-const MAX_PENDING_ACTIONS = 200;
+const MAX_PENDING_ACTIONS = 2000;
+const WARN_PENDING_ACTIONS = 1500;
 
 export async function getPendingCount() {
   const db = await openDB();
@@ -123,9 +134,9 @@ export async function getPendingCount() {
 export async function addPendingAction(action) {
   const count = await getPendingCount();
   if (count >= MAX_PENDING_ACTIONS) {
-    const err = new Error(`Offline queue is full (${MAX_PENDING_ACTIONS} actions). Please connect to the internet to sync before taking more orders.`);
-    err.code = 'QUEUE_FULL';
-    throw err;
+    console.warn(`[OfflineDB] Pending actions at ${count} (cap: ${MAX_PENDING_ACTIONS}). Writing anyway — pruning will catch up.`);
+  } else if (count >= WARN_PENDING_ACTIONS) {
+    console.warn(`[OfflineDB] Pending actions at ${count} — approaching cap. Sync recommended.`);
   }
 
   const db = await openDB();
@@ -717,5 +728,141 @@ export async function getNextOfflineKotNumber() {
       resolve(next);
     };
     req.onerror = () => reject(req.error);
+  });
+}
+
+// ── orderIdMap (offline → real ID mapping) ──────────────────────────────────
+
+export async function setOrderIdMapping(offlineId, realId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('orderIdMap', 'readwrite');
+    tx.objectStore('orderIdMap').put({
+      offlineId,
+      realId,
+      syncedAt: Date.now(),
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getRealOrderId(offlineId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('orderIdMap', 'readonly');
+    const req = tx.objectStore('orderIdMap').get(offlineId);
+    req.onsuccess = () => resolve(req.result?.realId || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getAllOrderIdMappings() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('orderIdMap', 'readonly');
+    const req = tx.objectStore('orderIdMap').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function updatePendingActionEntityIds(oldOfflineId, realId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pendingActions', 'readwrite');
+    const store = tx.objectStore('pendingActions');
+    const idx = store.index('entityId');
+    const req = idx.getAll(oldOfflineId);
+    req.onsuccess = () => {
+      const actions = req.result || [];
+      for (const action of actions) {
+        const updated = { ...action, entityId: realId };
+        if (updated.body?.orderId === oldOfflineId) {
+          updated.body = { ...updated.body, orderId: realId };
+        }
+        if (updated.url && updated.url.includes(oldOfflineId)) {
+          updated.url = updated.url.replace(oldOfflineId, realId);
+        }
+        if (updated.dependsOnOrderId === oldOfflineId) {
+          updated.dependsOnOrderId = null;
+        }
+        store.put(updated);
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ── inventoryCache (local stock tracking) ───────────────────────────────────
+
+export async function cacheInventory(items) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('inventoryCache', 'readwrite');
+    const store = tx.objectStore('inventoryCache');
+    for (const item of items) {
+      store.put({
+        ...item,
+        lastSyncedAt: Date.now(),
+      });
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getInventoryItem(menuItemId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('inventoryCache', 'readonly');
+    const req = tx.objectStore('inventoryCache').get(menuItemId);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getAllInventoryItems() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('inventoryCache', 'readonly');
+    const req = tx.objectStore('inventoryCache').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function decrementLocalInventory(menuItemId, quantity) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('inventoryCache', 'readwrite');
+    const store = tx.objectStore('inventoryCache');
+    const req = store.get(menuItemId);
+    req.onsuccess = () => {
+      const item = req.result;
+      if (!item) return;
+      const newStock = (item.currentStock || 0) - quantity;
+      store.put({ ...item, currentStock: newStock, lastSyncedAt: Date.now() });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function restoreLocalInventory(menuItemId, quantity) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('inventoryCache', 'readwrite');
+    const store = tx.objectStore('inventoryCache');
+    const req = store.get(menuItemId);
+    req.onsuccess = () => {
+      const item = req.result;
+      if (!item) return;
+      const newStock = (item.currentStock || 0) + quantity;
+      store.put({ ...item, currentStock: newStock, lastSyncedAt: Date.now() });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
 }

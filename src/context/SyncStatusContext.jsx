@@ -22,9 +22,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus, clearAuthExpired } from '../utils/syncEngine';
+import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus, clearAuthExpired, subscribeStuckActions } from '../utils/syncEngine';
 import { subscribeConflicts, clearConflict, clearAllConflicts } from '../utils/conflictResolver';
-import { isBackendReachable, checkBackendReachability } from '../services/apiConfig';
+import { isBackendReachable, subscribeReachability } from '../services/apiConfig';
 
 const SyncStatusContext = createContext(null);
 
@@ -35,6 +35,7 @@ export function SyncStatusProvider({ children }) {
     lastSyncAt: null,
     lastError: null,
     authExpired: false,
+    stuckCount: 0,
     isOnline: isBackendReachable(),
   });
 
@@ -54,33 +55,26 @@ export function SyncStatusProvider({ children }) {
       setConflicts(newConflicts);
     });
 
-    // Track online/offline status based on actual backend reachability
-    const handleOnline = async () => {
-      const reachable = await checkBackendReachability();
-      setStatus((prev) => ({ ...prev, isOnline: reachable }));
-    };
-    const handleOffline = () => {
-      setStatus((prev) => ({ ...prev, isOnline: false }));
-    };
+    // Fix D: Subscribe to stuck-action count for blocking cashier alerts
+    const unsubscribeStuckActions = subscribeStuckActions((count) => {
+      setStatus((prev) => (prev.stuckCount !== count ? { ...prev, stuckCount: count } : prev));
+    });
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    // Subscribe to the shared reachability state from apiConfig.
+    // This replaces the old duplicate 30s polling interval — apiConfig
+    // runs a single interval and notifies all subscribers.
+    const unsubscribeReachability = subscribeReachability((reachable) => {
+      setStatus((prev) => (prev.isOnline !== reachable ? { ...prev, isOnline: reachable } : prev));
+    });
 
     // Set initial online status
     setStatus((prev) => ({ ...prev, isOnline: isBackendReachable() }));
 
-    // Refresh reachability periodically so the UI badge reflects reality
-    const reachabilityInterval = setInterval(async () => {
-      const reachable = await checkBackendReachability();
-      setStatus((prev) => (prev.isOnline !== reachable ? { ...prev, isOnline: reachable } : prev));
-    }, 30000);
-
     return () => {
       unsubscribe();
       unsubscribeConflicts();
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      clearInterval(reachabilityInterval);
+      unsubscribeStuckActions();
+      unsubscribeReachability();
     };
   }, []);
 
@@ -105,6 +99,7 @@ export function SyncStatusProvider({ children }) {
     isOffline: !status.isOnline,
     hasPending: status.pendingCount > 0,
     hasConflicts: conflicts.length > 0,
+    hasStuckActions: status.stuckCount > 0,
     conflicts,
     triggerSync,
     dismissConflict,
@@ -129,10 +124,12 @@ export function useSyncStatus() {
       lastSyncAt: null,
       lastError: null,
       authExpired: false,
+      stuckCount: 0,
       isOnline: isBackendReachable(),
       isOffline: !isBackendReachable(),
       hasPending: false,
       hasConflicts: false,
+      hasStuckActions: false,
       conflicts: [],
       triggerSync: () => {},
       dismissConflict: () => {},

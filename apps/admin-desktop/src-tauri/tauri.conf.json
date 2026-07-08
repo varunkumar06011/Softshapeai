@@ -1,17 +1,19 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SoftShape Admin",
+  "version": "9.0.0",
+  "identifier": "ai.softshape.admin",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:5173",
-    "distDir": "../../../dist"
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../../dist"
   },
-  "package": {
-    "productName": "SoftShape Admin",
-    "version": "7.0.0"
-  },
-  "tauri": {
+  "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "SoftShape Admin",
         "url": "https://www.softshape.in/admin",
         "width": 1440,
@@ -23,10 +25,11 @@
         "center": true
       }
     ],
-    "devtools": true,
     "security": {
       "csp": null
-    },
+    }
+  },
+  "plugins": {
     "updater": {
       "active": true,
       "endpoints": [
@@ -34,21 +37,20 @@
       ],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwRDQwOUM5NEExNzc2MDcKUldRSGRoZEt5UW5VUUI3R1hEUUNLNE5sZitnZVRaaXJURjhReWN3Qld6WFVzSTNDREcrcWRka0UK"
-    },
-    "bundle": {
-      "identifier": "ai.softshape.admin",
-      "active": true,
-      "targets": ["nsis", "msi"],
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.ico"
-      ],
-      "windows": {
-        "webviewInstallMode": {
-          "type": "embedBootstrapper"
-        }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
       }
     }
   }

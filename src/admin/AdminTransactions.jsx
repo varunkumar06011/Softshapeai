@@ -13,8 +13,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { History, Trash2, Check, X, RefreshCw } from 'lucide-react';
-import { fetchTransactions, deleteTransaction } from '../services/orderApi';
+import { History, Trash2, Check, X, RefreshCw, RotateCcw } from 'lucide-react';
+import { fetchTransactions, deleteTransaction, confirmPayment } from '../services/orderApi';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -60,6 +60,8 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const [expandedTxnId, setExpandedTxnId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [txnStatusFilter, setTxnStatusFilter] = useState('all');
+  const [confirmingId, setConfirmingId] = useState(null);
   const [fetchedSections, setFetchedSections] = useState([]);
 
   useEffect(() => {
@@ -143,6 +145,8 @@ export default function AdminTransactions({ onStatsRefresh }) {
         captainId: txn.captainId || 'CASHIER',
         captainName: txn.captainName || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
         method: txn.method || 'OTHER',
+        status: txn.status || 'COMPLETED',
+        rawStatus: txn.status || 'COMPLETED',
         tipAmount: Number(txn.tipAmount ?? 0),
         tableNumber: txn.tableNumber ? formatTxnTableLabel(txn.tableNumber, txn.sectionTag) : null,
         source: (() => {
@@ -169,7 +173,10 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const handleDelete = async (txn) => {
     setDeleting(true);
     try {
-      await deleteTransaction(txn.id, txn.restaurantId);
+      const result = await deleteTransaction(txn.id, txn.restaurantId);
+      if (result?.offline) {
+        alert('Transaction delete queued — will sync when online.');
+      }
       setTransactions(prev => prev.filter(t => t.id !== txn.id));
       setConfirmDeleteId(null);
       if (onStatsRefresh) onStatsRefresh();
@@ -180,9 +187,33 @@ export default function AdminTransactions({ onStatsRefresh }) {
     }
   };
 
+  const handleConfirmPayment = async (txn, paymentMethod = 'CASH') => {
+    setConfirmingId(txn.id);
+    try {
+      const result = await confirmPayment(txn.id, { paymentMethod });
+      if (result?.offline) {
+        setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED', method: paymentMethod } : t));
+        alert('Payment confirm queued — will sync when online.');
+      } else {
+        const updatedTxn = result?.transaction;
+        if (updatedTxn) {
+          setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: updatedTxn.status || 'COMPLETED', rawStatus: updatedTxn.status || 'COMPLETED', method: updatedTxn.method || paymentMethod } : t));
+        } else {
+          setTransactions(prev => prev.map(t => t.id === txn.id ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED', method: paymentMethod } : t));
+        }
+      }
+      if (onStatsRefresh) onStatsRefresh();
+    } catch (err) {
+      alert('Confirm payment failed: ' + err.message);
+    } finally {
+      setConfirmingId(null);
+    }
+  };
+
   const filtered = useMemo(() => {
     let list = transactions;
     if (txnSourceFilter !== 'all') list = list.filter(t => t.source === txnSourceFilter);
+    if (txnStatusFilter !== 'all') list = list.filter(t => t.status === txnStatusFilter);
     if (txnMethodFilter !== 'all') list = list.filter(t => t.method === txnMethodFilter);
     if (txnSearch.trim()) {
       const q = txnSearch.trim().toLowerCase();
@@ -194,7 +225,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
       );
     }
     return list;
-  }, [transactions, txnSourceFilter, txnMethodFilter, txnSearch]);
+  }, [transactions, txnSourceFilter, txnMethodFilter, txnStatusFilter, txnSearch]);
 
   const resetFilters = (newDateFilter) => {
     setTxnDateFilter(newDateFilter);
@@ -202,6 +233,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
     setTxnSearch('');
     setTxnCustomDate('');
     setTxnSourceFilter('all');
+    setTxnStatusFilter('all');
   };
 
   return (
@@ -214,9 +246,9 @@ export default function AdminTransactions({ onStatsRefresh }) {
             <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] rounded-xl p-4 flex flex-col gap-1 shadow-lg">
               <span className="text-[10px] font-black uppercase tracking-widest text-red-100">Total Amount</span>
               <span className="text-3xl font-black text-white">
-                ₹{filtered.reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(2)}
+                ₹{filtered.filter(t => t.status === 'COMPLETED').reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0).toFixed(2)}
               </span>
-              <span className="text-[10px] font-bold text-red-100">{filtered.length} transactions</span>
+              <span className="text-[10px] font-bold text-red-100">{filtered.filter(t => t.status === 'COMPLETED').length} completed / {filtered.length} total</span>
             </div>
           </div>
 
@@ -227,8 +259,8 @@ export default function AdminTransactions({ onStatsRefresh }) {
               { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
               { label: 'Other', method: 'OTHER', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
             ].map(({ label, method, color, bg, border }) => {
-              const total = filtered.filter(t => t.method === method).reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
-              const count = filtered.filter(t => t.method === method).length;
+              const total = filtered.filter(t => t.method === method && t.status === 'COMPLETED').reduce((sum, t) => sum + Number(t.grandTotal ?? t.amount ?? 0), 0);
+              const count = filtered.filter(t => t.method === method && t.status === 'COMPLETED').length;
               return (
                 <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
                   <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
@@ -245,6 +277,25 @@ export default function AdminTransactions({ onStatsRefresh }) {
                 key={f.key}
                 onClick={() => setTxnSourceFilter(f.key)}
                 className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key ? 'bg-[#E53935] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap border-b border-gray-100">
+            {[
+              { key: 'all', label: 'All Status' },
+              { key: 'COMPLETED', label: 'Completed' },
+              { key: 'PENDING', label: 'Pending' },
+              { key: 'CANCELLED', label: 'Cancelled' },
+              { key: 'FAILED', label: 'Failed' },
+              { key: 'REFUNDED', label: 'Refunded' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setTxnStatusFilter(f.key)}
+                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-[0.99] ${txnStatusFilter === f.key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
               >
                 {f.label}
               </button>
@@ -317,15 +368,16 @@ export default function AdminTransactions({ onStatsRefresh }) {
                   <th className="p-4 text-xs font-black uppercase text-gray-500">Source</th>
                   <th className="p-4 text-xs font-black uppercase text-gray-500">Table</th>
                   <th className="p-4 text-xs font-black uppercase text-gray-500">Captain</th>
+                  <th className="p-4 text-xs font-black uppercase text-gray-500">Status</th>
                   <th className="p-4 text-xs font-black uppercase text-gray-500">Method</th>
                   <th className="p-4 text-xs font-black uppercase text-gray-500 text-right">Amount</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500 text-center">Delete</th>
+                  <th className="p-4 text-xs font-black uppercase text-gray-500 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading && filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-12 text-center">
+                    <td colSpan={8} className="p-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
@@ -334,7 +386,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-12 text-center">
+                    <td colSpan={8} className="p-12 text-center">
                       <History size={32} className="text-gray-300 mb-2 mx-auto" />
                       <p className="text-xs font-black text-gray-400 uppercase tracking-widest">No Transactions Found</p>
                     </td>
@@ -361,6 +413,17 @@ export default function AdminTransactions({ onStatsRefresh }) {
                           <span className="text-xs font-bold text-gray-500 uppercase">{txn.captainName}</span>
                         </td>
                         <td className="p-4">
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
+                            txn.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                            txn.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                            txn.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                            txn.status === 'FAILED' ? 'bg-gray-200 text-gray-700' :
+                            'bg-purple-100 text-purple-700'
+                          }`}>
+                            {txn.status === 'COMPLETED' ? 'Done' : txn.status === 'PENDING' ? 'Pending' : txn.status === 'CANCELLED' ? 'Cancelled' : txn.status === 'FAILED' ? 'Failed' : txn.status}
+                          </span>
+                        </td>
+                        <td className="p-4">
                           <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' : txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' : txn.method === 'CARD' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
                             {txn.method}
                           </span>
@@ -370,35 +433,49 @@ export default function AdminTransactions({ onStatsRefresh }) {
                           <span className="block text-xs text-gray-400 font-bold">{txn.items} items</span>
                         </td>
                         <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                          {confirmDeleteId === txn.id ? (
-                            <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
+                            {txn.status !== 'COMPLETED' && (
                               <button
-                                onClick={() => handleDelete(txn)}
-                                disabled={deleting}
-                                className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                                onClick={() => handleConfirmPayment(txn, 'CASH')}
+                                disabled={confirmingId === txn.id}
+                                title="Confirm payment"
+                                className="p-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
                               >
-                                <Check size={13} />
+                                <RotateCcw size={13} />
                               </button>
-                              <button
-                                onClick={() => setConfirmDeleteId(null)}
-                                className="p-1.5 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
-                              >
-                                <X size={13} />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setConfirmDeleteId(txn.id)}
-                              className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          )}
+                            )}
+                            {confirmDeleteId === txn.id ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => handleDelete(txn)}
+                                  disabled={deleting}
+                                  className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                                >
+                                  <Check size={13} />
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="p-1.5 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              txn.status !== 'COMPLETED' && (
+                                <button
+                                  onClick={() => setConfirmDeleteId(txn.id)}
+                                  className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )
+                            )}
+                          </div>
                         </td>
                       </tr>
                       {expandedTxnId === txn.id && (
                         <tr key={`${txn.id}-detail`} className="bg-gray-50">
-                          <td colSpan={7} className="px-6 pb-4 pt-2">
+                          <td colSpan={8} className="px-6 pb-4 pt-2">
                             {txn.itemsList && txn.itemsList.length > 0 ? (
                               <div className="flex flex-col gap-2">
                                 <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Order Items</p>

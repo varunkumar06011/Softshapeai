@@ -151,7 +151,7 @@ export async function apiFetch(path, options = {}) {
 /** Ping the backend to wake it up. Useful before heavy requests. */
 export async function pingBackend() {
   try {
-    await fetch(apiUrl('/api/health'), { method: 'GET', cache: 'no-store' });
+    await fetch(apiUrl('/health'), { method: 'GET', cache: 'no-store' });
     return true;
   } catch {
     return false;
@@ -162,21 +162,64 @@ export async function pingBackend() {
 // null = unknown (fall back to navigator.onLine), true/false = last ping result.
 let backendReachable = null;
 
+// ── Grace period: require 1 consecutive failure before declaring offline ──
+// Changed from 2 to 1 for instant offline detection. Transient slowness is handled
+// by the 10s timeout per check; a single timeout means the backend is genuinely unreachable.
+let consecutiveFailures = 0;
+const FAILURE_THRESHOLD = 1;
+
+// ── Shared reachability pub/sub ──
+// Single source of truth for reachability. useOnlineStatus and SyncStatusContext
+// subscribe to this instead of running their own duplicate polling intervals.
+const reachabilitySubscribers = new Set();
+
+function notifyReachabilitySubscribers() {
+  const value = backendReachable ?? navigator.onLine;
+  reachabilitySubscribers.forEach((cb) => {
+    try { cb(value); } catch { /* ignore subscriber errors */ }
+  });
+}
+
+/** Subscribe to reachability changes. Returns an unsubscribe function. */
+export function subscribeReachability(callback) {
+  reachabilitySubscribers.add(callback);
+  return () => reachabilitySubscribers.delete(callback);
+}
+
 export async function checkBackendReachability() {
   const controller = new AbortController();
+  // 3s timeout — fast offline detection. If backend is truly down, cashier should know immediately.
+  // The 10s timeout was too slow for offline scenarios; transient slowness is rare in production.
   const timeout = setTimeout(() => controller.abort(), 3000);
   try {
-    const res = await fetch(apiUrl('/api/health'), {
+    // Use /health (no DB query, instant) instead of /api/health (does SELECT 1).
+    // /health returns 200 in ~50ms even under max load; /api/health queues
+    // behind 30 active DB connections and can take >3s during rush hours.
+    const res = await fetch(apiUrl('/health'), {
       method: 'GET',
       cache: 'no-store',
       signal: controller.signal,
     });
-    backendReachable = res.ok;
+    if (res.ok) {
+      consecutiveFailures = 0; // reset on success
+      backendReachable = true;
+    } else {
+      consecutiveFailures++;
+      if (consecutiveFailures >= FAILURE_THRESHOLD) {
+        backendReachable = false;
+      }
+    }
   } catch {
-    backendReachable = false;
+    consecutiveFailures++;
+    // Only declare offline after 2 consecutive failures (grace period).
+    // A single timeout or network blip should NOT take the cashier offline.
+    if (consecutiveFailures >= FAILURE_THRESHOLD) {
+      backendReachable = false;
+    }
   } finally {
     clearTimeout(timeout);
   }
+  notifyReachabilitySubscribers();
   return backendReachable;
 }
 
@@ -187,23 +230,31 @@ export function isBackendReachable() {
 
 export function setBackendReachable(value) {
   backendReachable = value;
+  if (value) consecutiveFailures = 0;
+  notifyReachabilitySubscribers();
 }
 
 console.log("[API] Backend base:", API_BASE);
 
-// Keep backend warm — ping every 10 minutes
+// Keep backend warm — ping every 10 minutes (use lightweight /health)
 (function startKeepAlive() {
-  const ping = () => fetch(apiUrl('/api/health'), { method: 'GET', cache: 'no-store' }).catch(() => {});
+  const ping = () => fetch(apiUrl('/health'), { method: 'GET', cache: 'no-store' }).catch(() => {});
   ping(); // immediate ping on load
   setInterval(ping, 10 * 60 * 1000);
 })();
 
 // In browser/Tauri, refresh reachability on network events and periodically.
+// SINGLE polling source — useOnlineStatus and SyncStatusContext subscribe via subscribeReachability().
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => checkBackendReachability());
-  window.addEventListener('offline', () => { backendReachable = false; });
+  window.addEventListener('offline', () => {
+    consecutiveFailures = FAILURE_THRESHOLD; // immediate offline on browser offline event
+    backendReachable = false;
+    notifyReachabilitySubscribers();
+  });
   // First ping after a short delay so tests that import the module early don't get
   // an immediate fetch racing against their mocks.
   setTimeout(checkBackendReachability, 1000);
+  // Single 30s interval — subscribers are notified, no need for duplicate intervals.
   setInterval(checkBackendReachability, 30000);
 }

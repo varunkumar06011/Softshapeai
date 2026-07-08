@@ -181,11 +181,27 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     }
   }
 
-  // Fall back to existing if no incoming order and table is not free (prevents wipe on partial payloads)
-  const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
-  if (!activeOrder && existing?.activeOrder && !isFreeWorkflow) {
-    activeOrder = existing.activeOrder;
+  // Don't fall back to existing activeOrder on partial REST payloads — server is authoritative.
+  // If the REST sync omits order data, activeOrder will be null and the next socket event
+  // or explicit fetch will populate it. Preserving stale activeOrder risks showing items
+  // from a settled order.
+
+  // Ghost detection: if backend claims non-Free but has no billable items, no bill, and no guests,
+  // the table is in a corrupt state (active order with zero items after settle/terminate).
+  // Force it to Free to prevent stable incorrect display.
+  const incomingOrders = Array.isArray(row.orders) ? row.orders : [];
+  const incomingItemCount = incomingOrders.reduce((sum, o) => {
+    if (!Array.isArray(o?.items)) return sum;
+    return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
+  }, 0);
+  const hasNoSession = incomingItemCount === 0 && (row.currentBill ?? 0) === 0 && (row.guests ?? 0) === 0;
+  const claimsNonFree = row.workflowStatus !== 'Free' && row.status !== 'Free' && dbStatus !== 'AVAILABLE';
+  const isGhost = claimsNonFree && hasNoSession;
+  if (isGhost) {
+    console.warn('[TableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
   }
+
+  const isFreeWorkflow = isGhost || row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
 
   // kotHistory: normalize DB kots relation (authoritative), fall back to legacy kotHistory
   const incomingKot = (Array.isArray(row.kots) && row.kots.length > 0)
@@ -259,6 +275,15 @@ function findTableIndex(tables, backendId) {
   return tables.findIndex((t) => t.backendId === backendId);
 }
 
+// Server is authoritative — directly use incoming order
+function mergeOrder(incoming, existing) {
+  return incoming;
+}
+
+function mergeOrderItems(existing = [], incoming = []) {
+  return incoming;
+}
+
 let sharedSocket = null;
 let socketRefCount = 0;
 let socketListenersAttached = false;
@@ -310,16 +335,20 @@ function acquireSocket(handlers) {
 
     sharedSocket.emit("join", getCurrentRestaurantId());
 
-    const { onUpdated, onCreated, onDeleted } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
+    if (onOrderCreated) sharedSocket.on("order:created", onOrderCreated);
+    if (onOrderUpdated) sharedSocket.on("order:updated", onOrderUpdated);
     socketRefCount += 1;
 
     return () => {
       sharedSocket?.off("table:updated", onUpdated);
       sharedSocket?.off("table:created", onCreated);
       sharedSocket?.off("table:deleted", onDeleted);
+      if (onOrderCreated) sharedSocket?.off("order:created", onOrderCreated);
+      if (onOrderUpdated) sharedSocket?.off("order:updated", onOrderUpdated);
       socketRefCount = Math.max(0, socketRefCount - 1);
     };
   } catch (err) {
@@ -487,9 +516,14 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             // skip this update — it's a stale/race event. Wait for the correct one.
             // EXCEPTION: if this table was recently terminated, the AVAILABLE update is the
             // legitimate settlement confirmation and must be accepted.
-            if (incomingIsAvailable && t.activeOrder && !isRecentlyTerminated(t.backendId)) {
-              console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
-              return t;
+            if (incomingIsAvailable && !isRecentlyTerminated(t.backendId)) {
+              // Use tablesRef.current (synchronously updated) instead of prev (pre-commit state)
+              // to correctly check if this table was just cleared by terminate/settle.
+              const refTable = tablesRef.current.find(rt => rt.backendId === updatedTable.id);
+              if (refTable?.activeOrder) {
+                console.warn('[TableSync] Skipping stale AVAILABLE event for occupied table', t.number);
+                return t;
+              }
             }
             const incomingTableUpdated = updatedTable.updatedAt ? new Date(updatedTable.updatedAt).getTime() : 0;
             const existingTableUpdated = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
@@ -497,11 +531,28 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
               console.warn('[TableSync] Skipping stale table:updated event for', t.number, { incoming: incomingTableUpdated, existing: existingTableUpdated });
               return t;
             }
-            // Safety: skip ghost occupied events (claims occupied but has no active session data)
-            const hasNoSession = (!updatedTable.orders || updatedTable.orders.length === 0) && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
-            const claimsOccupied = updatedTable.status === 'OCCUPIED' && updatedTable.workflowStatus !== 'Free';
-            if (claimsOccupied && hasNoSession && t.status === 'Free') {
-              console.warn('[TableSync] Skipping ghost OCCUPIED event for free table', t.number);
+            // Safety: skip ghost occupied/preparing events (claims occupied but has no
+            // active session data — no orders, no bill, no guests). Such an event carries
+            // no real session and is a stale rebroadcast; accepting it flips the card back
+            // to Occupied/Preparing and causes flicker. Skip regardless of the current
+            // local status so an already-flipped ghost state cannot keep ping-ponging.
+            // Count actual live items across all incoming orders. A stale/ghost event
+            // often carries an order object whose items array is empty (order was settled
+            // or all items removed), so orders.length alone is not a reliable session signal.
+            const incomingOrders = Array.isArray(updatedTable.orders) ? updatedTable.orders : [];
+            const incomingItemCount = incomingOrders.reduce((sum, o) => {
+              if (!Array.isArray(o?.items)) return sum;
+              return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
+            }, 0);
+            const hasNoSession = incomingItemCount === 0 && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
+            // Any non-Free claim (Occupied / Preparing / Confirmed / Ready / Waiting Bill)
+            // is contradictory when the table carries no billable items, no bill and no
+            // guests — a genuinely active table always has at least one billable item.
+            // These are stale/corrupt rebroadcasts (e.g. an order left in an active status
+            // with all items removed after settle/terminate) and must never flip the card.
+            const claimsNonFree = !incomingIsAvailable;
+            if (claimsNonFree && hasNoSession) {
+              console.warn('[TableSync] Skipping ghost non-Free event (no session data) for table', t.number, updatedTable.workflowStatus || updatedTable.status);
               return t;
             }
             const before = t;
@@ -531,6 +582,54 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
         if (restaurantId && restaurantId !== getCurrentRestaurantId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderCreated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[TableSync] Ignoring stale order:created for settled table', t.number);
+              return t;
+            }
+            return {
+              ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              items: mergeOrderItems(t.items || [], order.items || []),
+              currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
+            };
+          });
+          writeCache(next);
+          return next;
+        });
+      },
+      onOrderUpdated: (payload) => {
+        const order = payload?.order || payload;
+        if (!order?.tableId) return;
+        if (isRecentlyTerminated(order.tableId)) return;
+        setTablesState((prev) => {
+          const next = prev.map((t) => {
+            if (t.backendId !== order.tableId) return t;
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
+            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
+              console.warn('[TableSync] Ignoring stale order:updated for settled table', t.number);
+              return t;
+            }
+            return {
+              ...t,
+              activeOrder: mergeOrder(order, t.activeOrder),
+              items: mergeOrderItems(t.items || [], order.items || []),
+              currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
+            };
+          });
           writeCache(next);
           return next;
         });
@@ -577,6 +676,9 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           // Deduplicate after persisting changes
           const finalDeduped = Array.from(new Map(updated.map(t => [t.backendId, t])).values());
           writeCache(finalDeduped);
+          // Keep the synchronously-read ref in sync with committed state so that
+          // subsequent socket-event guards (e.g. stale AVAILABLE check) read fresh data.
+          tablesRef.current = finalDeduped;
           return finalDeduped;
         });
       });

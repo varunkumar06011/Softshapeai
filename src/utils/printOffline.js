@@ -199,7 +199,7 @@ async function discoverPrintAgentUrls() {
   // 2. Backend-reported URL (from Print Agent registration/heartbeat)
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1000);
+    const timeout = setTimeout(() => controller.abort(), 300);
     const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
       method: 'GET',
       headers: getAuthHeaders(),
@@ -265,9 +265,23 @@ async function tryPrintAgentUrls(body, jobType) {
     return null;
   };
 
-  // Race all URLs in parallel — first success wins, others are ignored.
-  const results = await Promise.all(urls.map(tryUrl));
-  const workingUrl = results.find(Boolean);
+  // First-success-wins: resolve as soon as any URL succeeds, don't wait for others to timeout
+  const workingUrl = await new Promise((resolve) => {
+    let settled = false;
+    let remaining = urls.length;
+    urls.forEach(async (url) => {
+      const result = await tryUrl(url);
+      if (!settled && result) {
+        settled = true;
+        resolve(result);
+      } else {
+        remaining--;
+        if (remaining === 0 && !settled) {
+          resolve(null);
+        }
+      }
+    });
+  });
 
   if (workingUrl) {
     console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${workingUrl}`);
@@ -325,38 +339,6 @@ export async function printLocal(job) {
     ? buildKotText(job.data || {})
     : JSON.stringify(job.data || {}));
   const bytes = Array.from(textToEscpos(text));
-
-  // ── Tauri desktop: raw print via Rust command (fast path for offline) ──
-  if (platform === 'tauri') {
-    let targetPrinter = printerName;
-    if (!targetPrinter && window.__TAURI__) {
-      try {
-        const printers = await window.__TAURI__.invoke('list_printers');
-        logOfflinePrint({ status: 'info', message: 'Tauri list_printers', detail: `${printers.length} printers` });
-        if (printers && printers.length > 0) {
-          const defaultPrinter = printers.find(p => p.isDefault) || printers[0];
-          targetPrinter = defaultPrinter?.name || printers[0].name;
-          logOfflinePrint({ status: 'info', message: 'Falling back to default Tauri printer', detail: targetPrinter });
-        }
-      } catch (err) {
-        logOfflinePrint({ status: 'error', message: 'list_printers failed', detail: err?.message || String(err) });
-      }
-    }
-    if (!targetPrinter) {
-      return await queuePrintJob(job, text, 'No printer mapped');
-    }
-    try {
-      await window.__TAURI__.invoke('print_raw', {
-        printerName: targetPrinter,
-        bytes,
-      });
-      logOfflinePrint({ status: 'success', message: 'Tauri print_raw succeeded', detail: targetPrinter });
-      return { printed: true, queued: false };
-    } catch (err) {
-      logOfflinePrint({ status: 'error', message: 'Tauri print_raw failed', detail: err?.message || String(err) });
-      return await queuePrintJob(job, text, err?.message || String(err));
-    }
-  }
 
   // ── Primary: local Print Agent HTTP endpoint (multi-URL discovery) ──
   // Try multiple candidate URLs (configured, backend-reported, cached, localhost)

@@ -24,7 +24,7 @@ global.localStorage = {
   clear: () => { for (const k of Object.keys(store)) delete store[k]; },
 };
 
-global.import = { meta: { env: { DEV: false, VITE_API_URL: 'http://localhost:3000' } } };
+vi.stubEnv('VITE_API_URL', 'http://localhost:3000');
 
 // Helper to create a JWT token with a given payload
 function makeToken(payload) {
@@ -62,6 +62,7 @@ describe('authService', () => {
     vi.clearAllMocks();
     // Re-import to get fresh module
     vi.resetModules();
+    vi.stubEnv('VITE_API_URL', 'http://localhost:3000');
     authService = (await import('../authService')).authService;
   });
 
