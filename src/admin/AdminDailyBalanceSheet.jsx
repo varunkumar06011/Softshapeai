@@ -301,6 +301,11 @@ export default function AdminDailyBalanceSheet() {
   const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS' });
   const [statusLoading, setStatusLoading] = useState(false);
   const [logoBase64, setLogoBase64] = useState(null);
+<<<<<<< HEAD
+=======
+  const [xReportData, setXReportData] = useState(null);
+  const [venueSalesData, setVenueSalesData] = useState(null);
+>>>>>>> 8054c64 (heal)
   const saveTimerRef = useRef(null);
   const dragItemRef = useRef(null);
   const saveSeqRef = useRef(0);
@@ -315,6 +320,39 @@ export default function AdminDailyBalanceSheet() {
       .catch(() => setLogoBase64(null));
   }, []);
 
+<<<<<<< HEAD
+=======
+  // Fetch X-Report data for payment mode breakdown
+  const loadXReport = useCallback(async () => {
+    if (!selectedDate || outletId === 'all') {
+      setXReportData(null);
+      return;
+    }
+    try {
+      const data = await apiFetch(`/api/xreports/${selectedDate}?outletId=${outletId}`);
+      setXReportData(data);
+    } catch (err) {
+      setXReportData(null);
+    }
+  }, [selectedDate, outletId]);
+
+  // Fetch venue sales data from backend
+  const loadVenueSales = useCallback(async () => {
+    if (!selectedDate || outletId === 'all') {
+      setVenueSalesData(null);
+      return;
+    }
+    try {
+      const data = await apiFetch(`/api/xreports/${selectedDate}/venue-sales?outletId=${outletId}`);
+      setVenueSalesData(data);
+    } catch (err) {
+      setVenueSalesData(null);
+    }
+  }, [selectedDate, outletId]);
+
+  useEffect(() => { loadXReport(); }, [loadXReport]);
+
+>>>>>>> 8054c64 (heal)
   const accessibleOutlets = useMemo(() => {
     try {
       const raw = localStorage.getItem('ss_accessible_outlets');
