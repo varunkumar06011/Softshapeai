@@ -58,19 +58,19 @@ export default function XReportSection() {
   });
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  // Balance = Total Sales - Expenditure (tips not deducted since they're not part of total sales)
-  const finalAmount = round2(
-    Number(report.totalSales)
-    - Number(report.expenditureAmount || 0)
-  );
-
-  // Check if payment breakdown (Card + Cash + UPI + Other) matches total sales (tips excluded)
+  // Balance = Payment Breakdown (Cash + Card + UPI + Other) - Expenditure
   const paymentBreakdownTotal = round2(
     Number(report.cardAmount || 0)
     + Number(report.cashAmount || 0)
     + Number(report.upiAmount || 0)
     + Number(report.otherAmount || 0)
   );
+  const finalAmount = round2(
+    paymentBreakdownTotal
+    - Number(report.expenditureAmount || 0)
+  );
+
+  // Check if payment breakdown (Card + Cash + UPI + Other) matches total sales (tips excluded)
   const hasDiscrepancy = Math.abs(paymentBreakdownTotal - Number(report.totalSales)) > 1;
 
   const loadReport = useCallback(async (date) => {
@@ -507,7 +507,7 @@ export default function XReportSection() {
             <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 flex flex-col items-center justify-center gap-1">
               <span className="text-xs font-black uppercase tracking-widest text-blue-700">Balance</span>
               <span className="text-3xl md:text-4xl font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
-              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Total Sales - Expenditure</span>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Payment Breakdown - Expenditure</span>
             </div>
 
             {/* Denomination Count */}
