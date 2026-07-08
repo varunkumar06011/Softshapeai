@@ -515,11 +515,15 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
               console.warn('[TableSync] Skipping stale table:updated event for', t.number, { incoming: incomingTableUpdated, existing: existingTableUpdated });
               return t;
             }
-            // Safety: skip ghost occupied events (claims occupied but has no active session data)
+            // Safety: skip ghost occupied/preparing events (claims occupied but has no
+            // active session data — no orders, no bill, no guests). Such an event carries
+            // no real session and is a stale rebroadcast; accepting it flips the card back
+            // to Occupied/Preparing and causes flicker. Skip regardless of the current
+            // local status so an already-flipped ghost state cannot keep ping-ponging.
             const hasNoSession = (!updatedTable.orders || updatedTable.orders.length === 0) && (updatedTable.currentBill ?? 0) === 0 && (updatedTable.guests ?? 0) === 0;
-            const claimsOccupied = updatedTable.status === 'OCCUPIED' && updatedTable.workflowStatus !== 'Free';
-            if (claimsOccupied && hasNoSession && t.status === 'Free') {
-              console.warn('[TableSync] Skipping ghost OCCUPIED event for free table', t.number);
+            const claimsOccupied = (updatedTable.status === 'OCCUPIED' || updatedTable.workflowStatus === 'Preparing' || updatedTable.workflowStatus === 'Occupied') && !incomingIsAvailable;
+            if (claimsOccupied && hasNoSession) {
+              console.warn('[TableSync] Skipping ghost OCCUPIED/Preparing event (no session data) for table', t.number);
               return t;
             }
             const before = t;
