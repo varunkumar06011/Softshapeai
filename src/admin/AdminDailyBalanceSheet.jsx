@@ -940,8 +940,27 @@ export default function AdminDailyBalanceSheet() {
               ₹{totalSales.toLocaleString('en-IN')}
             </span>
           </div>
-          <div className="mt-1 text-xs text-gray-500">
-            Expenditures (₹{expenditureSubtotal.toLocaleString('en-IN')}) are deducted automatically from Total Sales in the running total below.
+        </div>
+      </div>
+
+      {/* ── Running total strip (moved here to show after Total Sales) ───── */}
+      <div className="rounded-xl bg-gray-900 p-4">
+        <div className="space-y-1">
+          {balanceCalc.steps.map((step, i) => (
+            <div key={i} className="flex items-center justify-between text-sm">
+              <span className={`font-bold ${i === 0 ? 'text-gray-300' : 'text-gray-400'}`}>{step.label}</span>
+              <span className={`font-black ${i === balanceCalc.steps.length - 1 ? 'text-white text-lg' : 'text-gray-200'}`}>
+                ₹{Number(step.value).toLocaleString('en-IN')}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 border-t border-gray-700 pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-gray-300">Closing Balance</span>
+            <span className="text-lg font-black text-white">
+              ₹{balanceCalc.closingBalance.toLocaleString('en-IN')}
+            </span>
           </div>
         </div>
       </div>
@@ -1069,28 +1088,6 @@ export default function AdminDailyBalanceSheet() {
               onDrop={handleDrop}
             />
           ))}
-        </div>
-      </div>
-
-      {/* ── Running total strip ───────────────────────────────────────────── */}
-      <div className="rounded-xl bg-gray-900 p-4">
-        <div className="space-y-1">
-          {balanceCalc.steps.map((step, i) => (
-            <div key={i} className="flex items-center justify-between text-sm">
-              <span className={`font-bold ${i === 0 ? 'text-gray-300' : 'text-gray-400'}`}>{step.label}</span>
-              <span className={`font-black ${i === balanceCalc.steps.length - 1 ? 'text-white text-lg' : 'text-gray-200'}`}>
-                ₹{Number(step.value).toLocaleString('en-IN')}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 border-t border-gray-700 pt-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-gray-300">Closing Balance</span>
-            <span className="text-2xl font-black text-white">
-              ₹{Number(balanceCalc.closingBalance).toLocaleString('en-IN')}
-            </span>
-          </div>
         </div>
       </div>
 
