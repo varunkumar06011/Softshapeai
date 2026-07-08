@@ -1163,6 +1163,13 @@ const CashierDashboard = ({ onLogout }) => {
     return list;
   }, [pastTransactions, txnMethodFilter, txnSearch, txnSourceFilter, txnStatusFilter, activeVenueFilter]);
 
+  // Completed-only transactions for sales/revenue calculations.
+  // CANCELLED and PENDING transactions are excluded so terminated bills
+  // don't inflate totals until confirmed via Past Transactions.
+  const completedTransactions = useMemo(() => {
+    return filteredTransactions.filter(txn => (txn.status || 'COMPLETED') === 'COMPLETED');
+  }, [filteredTransactions]);
+
   const txnTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / TXN_PAGE_SIZE));
   const paginatedTransactions = useMemo(() => {
     const start = (txnPage - 1) * TXN_PAGE_SIZE;
@@ -2114,11 +2121,11 @@ const CashierDashboard = ({ onLogout }) => {
   // Total Sales = sum of grandTotal (with GST, after discount — the final bill amount)
   // Expenditure Amount = total non-voided expenditures for the selected dashboard date
   // Final Amount = Total Sales − Expenditure Amount (cashier-only "X Report")
-  // These use filteredTransactions so they respect the active date/source/method filters
+  // These use completedTransactions so CANCELLED/PENDING bills are excluded from totals
   const dashboardTotalSales = useMemo(() => {
-    return filteredTransactions
+    return completedTransactions
       .reduce((sum, txn) => sum + Number(txn.grandTotal ?? txn.amount ?? 0), 0);
-  }, [filteredTransactions]);
+  }, [completedTransactions]);
 
   // Expenditure + final amount shown only on the cashier dashboard
   const dashboardExpenditureAmount = useMemo(() => {
@@ -2129,10 +2136,10 @@ const CashierDashboard = ({ onLogout }) => {
     return dashboardTotalSales - dashboardExpenditureAmount;
   }, [dashboardTotalSales, dashboardExpenditureAmount]);
 
-  // Total discounts given for the selected dashboard date (sum of discountAmount across filtered transactions)
+  // Total discounts given for the selected dashboard date (sum of discountAmount across completed transactions)
   const dashboardTotalDiscounts = useMemo(() => {
-    return filteredTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
-  }, [filteredTransactions]);
+    return completedTransactions.reduce((sum, txn) => sum + Number(txn.discountAmount ?? 0), 0);
+  }, [completedTransactions]);
 
   const [dashboardDate, setDashboardDate] = useState(null);
 
@@ -4603,7 +4610,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const settlementBreakdown = useMemo(() => {
     const breakdown = { CASH: 0, CARD: 0, UPI: 0, OTHER: 0, count: 0 };
-    for (const txn of filteredTransactions) {
+    for (const txn of completedTransactions) {
       const method = (txn.method || '').toUpperCase();
       const amt = Number(txn.grandTotal ?? txn.amount ?? 0);
       if (method === 'CASH') breakdown.CASH += amt;
@@ -4613,11 +4620,11 @@ const CashierDashboard = ({ onLogout }) => {
       breakdown.count++;
     }
     return breakdown;
-  }, [filteredTransactions]);
+  }, [completedTransactions]);
 
   const stats = [
-    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${filteredTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
-    { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${filteredTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${completedTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${completedTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "Expenditures", value: `₹${Number(dashboardExpenditureAmount).toFixed(2)}`, change: `${expenditureSummary?.count || 0} expenditures ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Expenditures", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
   ];
@@ -5289,10 +5296,10 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="bg-gradient-to-br from-[#5C85BB] to-[#4A6A9A] border border-blue-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-blue-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
-                              ₹{filteredTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
+                              ₹{completedTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
                             </span>
                             <span className="text-[10px] font-bold text-blue-100">
-                              {filteredTransactions.length} transactions · Grand Total: ₹{filteredTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(2)}
+                              {completedTransactions.length} transactions · Grand Total: ₹{completedTransactions.reduce((sum, t) => sum + Number(t.grandTotal ?? 0), 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -5305,10 +5312,10 @@ const CashierDashboard = ({ onLogout }) => {
                             { label: 'Card', method: 'CARD', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
                             { label: 'Other', method: 'OTHER', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
                           ].map(({ label, method, color, bg, border }) => {
-                            const total = filteredTransactions
+                            const total = completedTransactions
                               .filter(t => t.method === method)
                               .reduce((sum, t) => sum + netTotal(t), 0);
-                            const count = filteredTransactions.filter(t => t.method === method).length;
+                            const count = completedTransactions.filter(t => t.method === method).length;
                             return (
                               <div key={method} className={`${bg} border ${border} rounded-xl p-3 flex flex-col gap-0.5`}>
                                 <span className={`text-[9px] font-black uppercase tracking-widest ${color}`}>{label}</span>
@@ -5320,7 +5327,7 @@ const CashierDashboard = ({ onLogout }) => {
                         </div>
                         {/* Tips summary — separate from sales */}
                         {(() => {
-                          const tipTxns = filteredTransactions.filter(t => Number(t.tipAmount ?? 0) > 0);
+                          const tipTxns = completedTransactions.filter(t => Number(t.tipAmount ?? 0) > 0);
                           const totalTips = tipTxns.reduce((sum, t) => sum + Number(t.tipAmount ?? 0), 0);
                           if (totalTips <= 0) return null;
                           return (
