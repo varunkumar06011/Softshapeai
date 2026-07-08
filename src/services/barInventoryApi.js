@@ -47,13 +47,22 @@ function normalizeInventoryArray(items) {
 }
 
 // Get all inventory items
-export async function fetchBarInventory() {
-  const res = await fetch(apiUrl(`/api/bar/inventory/items?restaurantId=${getCurrentRestaurantId()}`), {
-    cache: 'no-store',
-    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
-  });
-  const data = await parseResponse(res);
-  return normalizeInventoryArray(data);
+export async function fetchBarInventory(date = '') {
+  try {
+    const rId = getCurrentRestaurantId();
+    if (!rId) throw new Error('No restaurant context');
+    let url = `/api/bar/inventory/items?restaurantId=${rId}`;
+    if (date) url += `&date=${encodeURIComponent(date)}`;
+    
+    const res = await fetch(apiUrl(url), {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() }
+    });
+    const data = await parseResponse(res);
+    return normalizeInventoryArray(data);
+  } catch (error) {
+    throw error;
+  }
 }
 
 // Create new inventory item
@@ -137,4 +146,24 @@ export async function fetchLowStockItems() {
   });
   const data = await parseResponse(res);
   return normalizeInventoryArray(data);
+}
+
+// Get top 3 selling liquor items
+export async function fetchBarTopSelling(filters = {}) {
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), ...filters });
+  const res = await fetch(apiUrl(`/api/bar/inventory/top-selling?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// Check deduction for a specific order
+export async function fetchBarDeductionCheck(orderId) {
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), orderId });
+  const res = await fetch(apiUrl(`/api/bar/inventory/deduction-check?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
 }
