@@ -58,40 +58,15 @@ describe('Concurrent settle race condition', () => {
     });
 
     // Simulate the server response: first succeeds, second gets 409 (already paid)
-    // This is what the backend SHOULD do given the transaction + order.status PAID check
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
-        // First settle succeeds
-        return {
-          ok: true,
-          json: async () => ({
-            results: [{
-              requestId: 'device-A-settle-001',
-              actionType: 'settle',
-              status: 'success',
-              statusCode: 200,
-              data: { transaction: { txnNumber: 'TXN-RACE-001' } },
-            }],
-          }),
-        };
-      } else {
-        // Second settle should get 409 — order already paid
-        return {
-          ok: true,
-          json: async () => ({
-            results: [{
-              requestId: 'device-B-settle-001',
-              actionType: 'settle',
-              status: 'error',
-              statusCode: 409,
-              error: 'Order is already paid',
-              data: { transaction: { txnNumber: 'TXN-RACE-001' } },
-            }],
-          }),
-        };
-      }
+    // Both results returned in one bulk sync response
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { requestId: 'device-A-settle-001', actionType: 'settle', status: 'success', statusCode: 200, data: { transaction: { txnNumber: 'TXN-RACE-001' } } },
+          { requestId: 'device-B-settle-001', actionType: 'settle', status: 'error', statusCode: 409, error: 'Order is already paid', data: { transaction: { txnNumber: 'TXN-RACE-001' } } },
+        ],
+      }),
     });
 
     await syncPendingActions();
@@ -102,13 +77,11 @@ describe('Concurrent settle race condition', () => {
     const remainingIds = remaining.map(a => a.requestId);
 
     // Both should be cleared — device-A succeeded, device-B's conflict was resolved as adopt_server
-    // Note: adopt_server keeps the action in conflict state for UI surfacing
-    // So device-B's action stays — this is correct behavior (cashier needs to see the conflict)
+    // (conflict is surfaced in the in-memory conflict store for UI, not kept in IndexedDB)
     expect(remainingIds).not.toContain('device-A-settle-001');
 
-    // Device-B's action stays as a conflict (adopt_server resolution)
-    // The syncEngine keeps it so the UI can surface "another device settled this"
-    expect(remainingIds).toContain('device-B-settle-001');
+    // Device-B's action was auto-resolved (adopt_server) and removed from queue
+    expect(remainingIds).not.toContain('device-B-settle-001');
 
     // Bulk sync sends both actions in one fetch call
     // Only one txnNumber was issued (TXN-RACE-001), not two
@@ -151,8 +124,9 @@ describe('Concurrent settle race condition', () => {
 
     // bulk-A succeeded → removed
     expect(remainingIds).not.toContain('bulk-A-001');
-    // bulk-B got 409 already paid → adopt_server → stays as conflict for UI
-    expect(remainingIds).toContain('bulk-B-001');
+    // bulk-B got 409 already paid → adopt_server → auto-resolved and removed from queue
+    // (conflict is surfaced in the in-memory conflict store for UI, not kept in IndexedDB)
+    expect(remainingIds).not.toContain('bulk-B-001');
 
     // Only one fetch call (bulk), one txnNumber
     expect(global.fetch).toHaveBeenCalledTimes(1);
