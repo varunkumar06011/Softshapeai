@@ -481,6 +481,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
+  const [showConfirmPaymentModal, setShowConfirmPaymentModal] = useState(false);
+  const [confirmPaymentTxn, setConfirmPaymentTxn] = useState(null);
   const [tipInput, setTipInput] = useState('');
   const [selectedSettleMethod, setSelectedSettleMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
@@ -1167,7 +1169,7 @@ const CashierDashboard = ({ onLogout }) => {
   // CANCELLED and PENDING transactions are excluded so terminated bills
   // don't inflate totals until confirmed via Past Transactions.
   const completedTransactions = useMemo(() => {
-    return filteredTransactions.filter(txn => (txn.status || 'COMPLETED') === 'COMPLETED');
+    return filteredTransactions.filter(txn => txn.status === 'COMPLETED');
   }, [filteredTransactions]);
 
   const txnTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / TXN_PAGE_SIZE));
@@ -1193,15 +1195,28 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleConfirmPayment = useCallback(async (txn) => {
+    setConfirmPaymentTxn(txn);
+    setShowConfirmPaymentModal(true);
+  }, []);
+
+  const handleConfirmPaymentSubmit = useCallback(async () => {
+    if (!confirmPaymentTxn) return;
     try {
-      await confirmPayment(txn.id);
-      addNotification('Payment Confirmed', `Bill ${txn.displayId || txn.id} marked as completed.`, 'success');
+      await confirmPayment(confirmPaymentTxn.id);
+      addNotification('Payment Confirmed', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} marked as completed.`, 'success');
+      setShowConfirmPaymentModal(false);
+      setConfirmPaymentTxn(null);
       loadTransactions(txnDateFilterRef.current, null, { silent: true });
     } catch (err) {
       console.error('[ConfirmPayment] error:', err);
       addNotification('Confirm Failed', err.message || 'Could not confirm payment.', 'error');
     }
-  }, [loadTransactions]);
+  }, [confirmPaymentTxn, loadTransactions]);
+
+  const handleConfirmPaymentCancel = useCallback(() => {
+    setShowConfirmPaymentModal(false);
+    setConfirmPaymentTxn(null);
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
@@ -7458,6 +7473,46 @@ const CashierDashboard = ({ onLogout }) => {
                       : `T${selectedItemSwapTarget?.id}`}`
                     : 'Select items and table'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM PAYMENT MODAL */}
+      {showConfirmPaymentModal && confirmPaymentTxn && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Confirm Payment</p>
+                <p className="text-2xl font-black text-gray-900 mt-1">{confirmPaymentTxn.displayId || confirmPaymentTxn.id}</p>
+                <p className="text-sm font-bold text-gray-600 mt-1">₹{Number(confirmPaymentTxn.grandTotal || confirmPaymentTxn.amount || 0).toFixed(2)}</p>
+              </div>
+              <button
+                onClick={handleConfirmPaymentCancel}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-6">
+                Are you sure you want to confirm this payment? This will mark the bill as completed and add it to total sales.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleConfirmPaymentCancel}
+                  className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmPaymentSubmit}
+                  className="flex-1 py-3 px-4 rounded-xl bg-green-600 text-white font-black uppercase text-sm hover:bg-green-700 transition-colors"
+                >
+                  Confirm
+                </button>
+              </div>
             </div>
           </div>
         </div>
