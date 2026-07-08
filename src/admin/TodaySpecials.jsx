@@ -260,7 +260,7 @@ export default function TodaySpecials() {
     try {
       await Promise.all(
         Array.from(selectedSpecialIds).map(id =>
-          updateMenuItem(id, { isAvailable: true, syncToAllOutlets: true })
+          updateMenuItem(id, { isAvailable: true, isSpecial: true, syncToAllOutlets: true })
         )
       );
       await refreshMenu();

@@ -17,14 +17,29 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function calculateBalance(sales, totalExpenditures, adjustments) {
-  const totalSales = round2(sales.acBar) + round2(sales.nonAcBar) + round2(sales.familyWing) + round2(sales.parcel) + round2(sales.swiggy) + round2(sales.zomato);
-  const afterSales = round2(totalSales);
-  const afterExpenditures = round2(afterSales - totalExpenditures);
+function calculateBalance(openingBalance, sales, totalExpenditures, adjustments) {
+  const ob = round2(openingBalance);
+  
+  // Cash sales (in-hand cash)
+  const cashSales = round2(sales.acBar) + round2(sales.nonAcBar) + round2(sales.familyWing) + round2(sales.parcel);
+  
+  // Aggregator sales (settled later, not cash-in-hand)
+  const aggregatorSales = round2(sales.swiggy) + round2(sales.zomato);
+  
+  // Total sales for display
+  const totalSales = round2(cashSales + aggregatorSales);
+
+  // Closing balance: opening + cash sales - aggregator sales - expenditures - adjustments
+  // Aggregator sales are deducted because they're not cash-in-hand
+  const afterCashSales = round2(ob + cashSales);
+  const afterAggregatorDeduction = round2(afterCashSales - aggregatorSales);
+  const afterExpenditures = round2(afterAggregatorDeduction - totalExpenditures);
 
   const sorted = [...adjustments].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const steps = [
-    { label: '+ Total Sales', value: afterSales },
+    { label: 'Opening Balance', value: ob },
+    { label: '+ Cash Sales', value: afterCashSales },
+    { label: '- Aggregator Sales (Swiggy/Zomato)', value: afterAggregatorDeduction },
     { label: '- Expenditures', value: afterExpenditures },
   ];
 
@@ -36,7 +51,7 @@ function calculateBalance(sales, totalExpenditures, adjustments) {
     steps.push({ label: `${adj.sign === 'PLUS' ? '+' : '−'} ${adj.label}`, value: running });
   }
 
-  return { afterSales, afterExpenditures, closingBalance: running, steps };
+  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps };
 }
 
 // ── Helper: get today's date in IST ───────────────────────────────────────────
@@ -418,8 +433,8 @@ export default function AdminDailyBalanceSheet() {
 
   // ── Live balance calculation ───────────────────────────────────────────────
   const balanceCalc = useMemo(() => {
-    return calculateBalance(computedSales, totalExpenditures, adjustments);
-  }, [computedSales, totalExpenditures, adjustments]);
+    return calculateBalance(overrides.openingBalance, computedSales, totalExpenditures, adjustments);
+  }, [overrides.openingBalance, computedSales, totalExpenditures, adjustments]);
 
   // ── Manual save ────────────────────────────────────────────────────────────
   const doSave = useCallback(async () => {
@@ -441,6 +456,7 @@ export default function AdminDailyBalanceSheet() {
           sign: a.sign,
           sortOrder: a.sortOrder ?? i,
         })),
+        expectedUpdatedAt: sheet?.updatedAt,
       };
       const updated = await apiFetch(`/api/balance-sheet/${selectedDate}`, {
         method: 'PUT',
