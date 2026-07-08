@@ -592,141 +592,379 @@ export default function AdminDailyBalanceSheet() {
     return expenditures.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
   }, [expenditures]);
 
-  // ── Generate PDF in admin panel theme ────────────────────────────────────────
+  // ── Generate PDF with premium enterprise design ───────────────────────────────
   const generateBalanceSheetPDF = useCallback((logoDataUrl) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 14;
-    const primary = [229, 57, 53]; // #E53935
-    const dark = [17, 24, 39]; // #111827
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const primary = [230, 57, 70]; // #E63946 - Softshape AI red
+    const dark = [30, 41, 59]; // #1E293B
+    const gray = [241, 245, 249]; // #F1F5F9
+    const border = [226, 232, 240]; // #E2E8F0
+    
+    // Helper: number to words
+    const numberToWords = (num) => {
+      if (num === 0) return 'Zero Rupees Only';
+      const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 
+                    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+      const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+      
+      const convertLessThanThousand = (n) => {
+        if (n === 0) return '';
+        if (n < 20) return ones[n];
+        const digit = n % 10;
+        if (n < 100) return tens[Math.floor(n / 10)] + (digit ? ' ' + ones[digit] : '');
+        const hundred = Math.floor(n / 100);
+        const remainder = n % 100;
+        return ones[hundred] + ' Hundred' + (remainder ? ' and ' + convertLessThanThousand(remainder) : '');
+      };
+      
+      const convert = (n) => {
+        if (n === 0) return 'Zero';
+        if (n < 1000) return convertLessThanThousand(n);
+        const lakh = Math.floor(n / 100000);
+        const lakhRemainder = n % 100000;
+        if (lakh > 0) {
+          return convertLessThanThousand(lakh) + ' Lakh' + (lakhRemainder ? ' ' + convert(lakhRemainder) : '');
+        }
+        const thousand = Math.floor(n / 1000);
+        const thousandRemainder = n % 1000;
+        return convertLessThanThousand(thousand) + ' Thousand' + (thousandRemainder ? ' ' + convert(thousandRemainder) : '');
+      };
+      
+      return convert(Math.round(num)) + ' Rupees Only';
+    };
 
-    // Logo (centered at top, 100mm x 40mm)
+    // Header section
+    let y = 12;
+    
+    // Logo (larger, better positioned)
     if (logoDataUrl) {
-      const logoWidth = 100;
-      const logoHeight = 40;
-      const logoX = (pageWidth - logoWidth) / 2;
       try {
-        doc.addImage(logoDataUrl, 'PNG', logoX, 10, logoWidth, logoHeight);
+        doc.addImage(logoDataUrl, 'PNG', margin, y, 50, 20);
       } catch {
-        // Logo failed to embed; continue without it
+        // Logo failed to embed
       }
     }
-
-    // Header bar
-    doc.setFillColor(...primary);
-    doc.rect(0, 56, pageWidth, 24, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
+    
+    // Report title and meta info (top right)
+    doc.setTextColor(...dark);
+    doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
-    doc.text('Daily Balance Sheet', margin, 72);
-
-    // Meta
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
+    doc.text('Daily Balance Sheet', pageWidth - margin, y + 12, { align: 'right' });
+    
+    y += 28;
+    
+    // Meta info bar
     const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-    doc.text(`Outlet: ${outletName}`, margin, 88);
-    doc.text(`Date: ${selectedDate}`, margin, 94);
-    doc.text(`Status: ${sheet?.status || 'DRAFT'}`, margin, 100);
-
-    let y = 108;
-
-    // Venue Sales
-    doc.setFontSize(13);
+    const now = new Date();
+    const generatedDateTime = now.toLocaleString('en-IN', { 
+      day: '2-digit', month: 'short', year: 'numeric', 
+      hour: '2-digit', minute: '2-digit' 
+    });
+    const generatedBy = user?.name || 'Admin';
+    const reportId = sheet?.id ? `#${sheet.id.slice(0, 8).toUpperCase()}` : 'DRAFT';
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text(`Outlet: ${outletName}`, margin, y);
+    doc.text(`Date: ${selectedDate}`, margin, y + 5);
+    doc.text(`Status: ${sheet?.status || 'DRAFT'}`, margin, y + 10);
+    
+    doc.text(`Generated: ${generatedDateTime}`, pageWidth - margin, y, { align: 'right' });
+    doc.text(`By: ${generatedBy}`, pageWidth - margin, y + 5, { align: 'right' });
+    doc.text(`Report ID: ${reportId}`, pageWidth - margin, y + 10, { align: 'right' });
+    
+    y += 18;
+    
+    // Summary Cards (KPIs)
+    const totalSales = computedSales.acBar + computedSales.nonAcBar + computedSales.familyWing + 
+                      computedSales.parcel + computedSales.swiggy + computedSales.zomato;
+    const totalExpendituresVal = totalExpenditures;
+    const totalAdjustmentsVal = adjustments.reduce((sum, a) => sum + Number(a.amount), 0);
+    const grossBalance = totalSales - totalExpendituresVal;
+    
+    const cardWidth = (pageWidth - margin * 2 - 8) / 4;
+    const kpiCardHeight = 24;
+    const cardY = y;
+    
+    const formatPlain = (num) => Math.round(num).toString();
+    
+    const kpiData = [
+      { label: 'Total Sales', value: formatPlain(totalSales), color: [16, 185, 129] },
+      { label: 'Expenditures', value: formatPlain(totalExpendituresVal), color: [239, 68, 68] },
+      { label: 'Adjustments', value: formatPlain(totalAdjustmentsVal), color: [245, 158, 11] },
+      { label: 'Closing Balance', value: formatPlain(balanceCalc.closingBalance), color: [59, 130, 246] },
+    ];
+    
+    kpiData.forEach((kpi, index) => {
+      const cardX = margin + index * (cardWidth + 2.5);
+      
+      // Card background
+      doc.setFillColor(...gray);
+      doc.roundedRect(cardX, cardY, cardWidth, kpiCardHeight, 3, 3, 'F');
+      
+      // Border
+      doc.setDrawColor(...border);
+      doc.roundedRect(cardX, cardY, cardWidth, kpiCardHeight, 3, 3, 'S');
+      
+      // Label
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100);
+      doc.text(kpi.label, cardX + 3, cardY + 7);
+      
+      // Value
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...kpi.color);
+      doc.text(kpi.value, cardX + 3, cardY + 18);
+    });
+    
+    y += kpiCardHeight + 12;
+    
+    // Venue Sales Section
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...dark);
     doc.text('Venue Sales', margin, y);
-    y += 6;
-
+    y += 8;
+    
     const salesRows = [
-      ['Lounge Sales', `₹${computedSales.acBar.toLocaleString('en-IN')}`],
-      ['Non-AC Bar', `₹${computedSales.nonAcBar.toLocaleString('en-IN')}`],
-      ['Family', `₹${computedSales.familyWing.toLocaleString('en-IN')}`],
-      ['Parcel Counter', `₹${computedSales.parcel.toLocaleString('en-IN')}`],
-      ['Swiggy', `₹${computedSales.swiggy.toLocaleString('en-IN')}`],
-      ['Zomato', `₹${computedSales.zomato.toLocaleString('en-IN')}`],
+      ['Lounge Sales', computedSales.acBar],
+      ['Non-AC Bar', computedSales.nonAcBar],
+      ['Family', computedSales.familyWing],
+      ['Parcel Counter', computedSales.parcel],
+      ['Swiggy', computedSales.swiggy],
+      ['Zomato', computedSales.zomato],
     ];
-
-    doc.autoTable({
-      startY: y,
-      head: [['Venue', 'Amount']],
-      body: salesRows,
-      theme: 'grid',
-      headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 10, cellPadding: 2 },
-      margin: { left: margin, right: margin },
-    });
-    y = (doc.lastAutoTable?.finalY || y) + 8;
-
-    // Expenditures
-    if (expenditures.length > 0) {
-      doc.setFontSize(13);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Expenditures', margin, y);
+    
+    const totalVenueSales = salesRows.reduce((sum, row) => sum + row[1], 0);
+    
+    // Draw table header
+    doc.setFillColor(...primary);
+    doc.rect(margin, y, pageWidth - margin * 2, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Venue', margin + 3, y + 5);
+    doc.text('Amount', pageWidth - margin - 3, y + 5, { align: 'right' });
+    y += 7;
+    
+    // Draw table rows
+    doc.setTextColor(60, 60, 60);
+    doc.setFont('helvetica', 'normal');
+    salesRows.forEach((row, index) => {
+      if (index % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+      }
+      doc.text(row[0], margin + 3, y + 4);
+      doc.text(Math.round(row[1]).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
       y += 6;
-
+    });
+    
+    // Total row
+    doc.setFillColor(...gray);
+    doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...dark);
+    doc.text('Total Venue Sales', margin + 3, y + 4);
+    doc.text(Math.round(totalVenueSales).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
+    y += 10;
+    
+    // Expenditures Section
+    if (expenditures.length > 0) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...dark);
+      doc.text('Expenditures', margin, y);
+      y += 8;
+      
       const expenditureRows = Object.entries(expenditureGroups).map(([cat, vlist]) => [
         cat,
-        `₹${vlist.reduce((s, v) => s + Number(v.amount), 0).toLocaleString('en-IN')}`,
+        vlist.reduce((s, v) => s + Number(v.amount), 0)
       ]);
-      doc.autoTable({
-        startY: y,
-        head: [['Category', 'Amount']],
-        body: expenditureRows,
-        theme: 'grid',
-        headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 10, cellPadding: 2 },
-        margin: { left: margin, right: margin },
-      });
-      y = (doc.lastAutoTable?.finalY || y) + 8;
-    }
-
-    // Adjustments
-    if (adjustments.length > 0) {
-      doc.setFontSize(13);
+      
+      const totalExpend = expenditureRows.reduce((sum, row) => sum + row[1], 0);
+      
+      // Draw table header
+      doc.setFillColor(...primary);
+      doc.rect(margin, y, pageWidth - margin * 2, 7, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
+      doc.text('Category', margin + 3, y + 5);
+      doc.text('Amount', pageWidth - margin - 3, y + 5, { align: 'right' });
+      y += 7;
+      
+      // Draw table rows
+      doc.setTextColor(60, 60, 60);
+      doc.setFont('helvetica', 'normal');
+      expenditureRows.forEach((row, index) => {
+        if (index % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+        }
+        doc.text(row[0], margin + 3, y + 4);
+        const formattedAmount = row[1].toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        doc.text(formattedAmount, pageWidth - margin - 3, y + 4, { align: 'right' });
+        y += 6;
+      });
+      
+      // Total row
+      doc.setFillColor(...gray);
+      doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...dark);
+      doc.text('Total Expenditures', margin + 3, y + 4);
+      doc.text(Math.round(totalExpend).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
+      y += 10;
+    }
+    
+    // Adjustments Section
+    if (adjustments.length > 0) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...dark);
       doc.text('Adjustments', margin, y);
-      y += 6;
-
+      y += 8;
+      
       const adjustmentRows = adjustments.map((a) => [
         `${a.sign === 'PLUS' ? '+' : '-'} ${a.label}`,
-        `₹${Number(a.amount).toLocaleString('en-IN')}`,
+        Number(a.amount)
       ]);
-
-      doc.autoTable({
-        startY: y,
-        head: [['Description', 'Amount']],
-        body: adjustmentRows,
-        theme: 'grid',
-        headStyles: { fillColor: primary, textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 10, cellPadding: 2 },
-        margin: { left: margin, right: margin },
+      
+      const totalAdj = adjustmentRows.reduce((sum, row) => sum + row[1], 0);
+      
+      // Draw table header
+      doc.setFillColor(...primary);
+      doc.rect(margin, y, pageWidth - margin * 2, 7, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Description', margin + 3, y + 5);
+      doc.text('Amount', pageWidth - margin - 3, y + 5, { align: 'right' });
+      y += 7;
+      
+      // Draw table rows
+      doc.setTextColor(60, 60, 60);
+      doc.setFont('helvetica', 'normal');
+      adjustmentRows.forEach((row, index) => {
+        if (index % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+        }
+        doc.text(row[0], margin + 3, y + 4);
+        const formattedAmount = row[1].toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        doc.text(formattedAmount, pageWidth - margin - 3, y + 4, { align: 'right' });
+        y += 6;
       });
-      y = (doc.lastAutoTable?.finalY || y) + 8;
+      
+      // Total row
+      doc.setFillColor(...gray);
+      doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...dark);
+      doc.text('Total Adjustments', margin + 3, y + 4);
+      doc.text(Math.round(totalAdj).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
+      y += 10;
     }
-
-    // Closing Balance bar
-    doc.setFillColor(...dark);
-    doc.rect(margin, y, pageWidth - margin * 2, 14, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(13);
+    
+    // Calculation Summary Section
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('Closing Balance', margin + 4, y + 9);
-    doc.text(`₹${balanceCalc.closingBalance.toLocaleString('en-IN')}`, pageWidth - margin - 4, y + 9, { align: 'right' });
-
-    // Footer — right after closing balance
-    y += 22;
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Softshape AI — Software that shapes your business from Day 1.', margin, y);
-    doc.setTextColor(120);
-    doc.setFontSize(7);
+    doc.setTextColor(...dark);
+    doc.text('Calculation Summary', margin, y);
+    y += 8;
+    
+    const calcRows = [
+      ['Total Sales', formatPlain(totalSales)],
+      ['- Total Expenditures', formatPlain(totalExpendituresVal)],
+      ['- Total Adjustments', formatPlain(totalAdjustmentsVal)],
+      ['= Net Closing Balance', formatPlain(balanceCalc.closingBalance)],
+    ];
+    
+    // Draw calculation rows manually
+    doc.setFontSize(9);
+    doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
-    doc.text('Softshape AI can make mistakes. Please cross-check important information before relying on it.', margin, y + 5);
+    calcRows.forEach((row, index) => {
+      if (index % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+      }
+      doc.setFont('helvetica', index === calcRows.length - 1 ? 'bold' : 'normal');
+      doc.text(row[0], margin + 3, y + 4);
+      doc.text(row[1], pageWidth - margin - 3, y + 4, { align: 'right' });
+      y += 6;
+    });
+    y += 4;
+    
+    // Net Closing Balance Premium Card
+    const cardTop = y;
+    const closingCardHeight = 35;
+    
+    // Card background with gradient effect (simulated with two rects)
+    doc.setFillColor(...primary);
+    doc.roundedRect(margin, cardTop, pageWidth - margin * 2, closingCardHeight, 6, 6, 'F');
+    
+    // Inner white area for contrast
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(margin + 2, cardTop + 2, pageWidth - margin * 2 - 4, closingCardHeight - 4, 4, 4, 'F');
+    
+    // Label
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text('Net Closing Balance', margin + 8, cardTop + 10);
+    
+    // Amount
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...primary);
+    doc.text(Math.round(balanceCalc.closingBalance).toString(), margin + 8, cardTop + 24);
+    
+    // Amount in words
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(120);
+    const amountInWords = numberToWords(balanceCalc.closingBalance);
+    doc.text(amountInWords, margin + 8, cardTop + 31);
+    
+    y = cardTop + closingCardHeight + 12;
+    
+    // Footer
+    const footerY = pageHeight - 25;
+    
+    // Line separator
+    doc.setDrawColor(...border);
+    doc.line(margin, footerY - 8, pageWidth - margin, footerY - 8);
+    
+    // Footer content
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120);
+    
+    doc.text(`Generated: ${generatedDateTime}`, margin, footerY - 4);
+    doc.text(`By: ${generatedBy}`, margin, footerY + 1);
+    doc.text(`Report ID: ${reportId}`, margin, footerY + 6);
+    
+    doc.text('Softshape AI', pageWidth - margin, footerY - 4, { align: 'right' });
+    doc.text('Page 1 of 1', pageWidth - margin, footerY + 1, { align: 'right' });
+    doc.text('Software that shapes your business from Day 1', pageWidth - margin, footerY + 6, { align: 'right' });
+    
+    // Disclaimer
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(150);
+    doc.text('This report is auto-generated. Please verify important figures before making financial decisions.', 
+             pageWidth / 2, footerY + 6, { align: 'center' });
 
     return doc;
-  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, computedSales, expenditures.length, expenditureGroups, adjustments, balanceCalc.closingBalance]);
+  }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, sheet?.id, computedSales, expenditures.length, expenditureGroups, adjustments, balanceCalc.closingBalance, totalExpenditures, user]);
 
   // ── WhatsApp share: open chat immediately, then generate PDF ───────────────
   const handleWhatsAppShare = async () => {
