@@ -399,24 +399,26 @@ export default function VoucherModule() {
               <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
             </div>
             {showPaidToDropdown && (
-              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-80 overflow-y-auto pb-1">
                 {filteredCategories.length > 0 && (
-                  <div className="sticky top-0 z-10 bg-white p-1 border-b border-gray-100">
-                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Expense Categories</p>
-                    {filteredCategories.map((c) => (
-                      <button
-                        key={c.value}
-                        onClick={() => handlePaidToSelect(c)}
-                        className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
-                      >
-                        {c.label}
-                      </button>
-                    ))}
+                  <div className="border-b border-gray-100">
+                    <p className="sticky top-0 z-10 text-[10px] font-black uppercase text-gray-400 px-3 py-2 bg-white">Expense Categories</p>
+                    <div className="p-1">
+                      {filteredCategories.map((c) => (
+                        <button
+                          key={c.value}
+                          onClick={() => handlePaidToSelect(c)}
+                          className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {filteredStaff.length > 0 && (
                   <div className="p-1">
-                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">Staff</p>
+                    <p className="sticky top-0 z-10 text-[10px] font-black uppercase text-gray-400 px-2 py-1 bg-white">Staff</p>
                     {filteredStaff.map((s) => (
                       <button
                         key={s.id}
