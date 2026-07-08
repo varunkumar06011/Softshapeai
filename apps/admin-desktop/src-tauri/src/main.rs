@@ -74,10 +74,12 @@ fn get_app_version() -> String {
 /// Check for updates using Tauri's built-in updater.
 #[tauri::command]
 async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
-    let update = app.updater()?.check().await
+    let update = app.updater()
+        .map_err(|e| format!("Updater init failed: {}", e))?
+        .check().await
         .map_err(|e| format!("Update check failed: {}", e))?;
     if let Some(update) = update {
-        update.download_and_install().await
+        update.download_and_install(|_, _| {}, || {}).await
             .map_err(|e| format!("Update install failed: {}", e))?;
         Ok(true)
     } else {
