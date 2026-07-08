@@ -162,10 +162,11 @@ export async function pingBackend() {
 // null = unknown (fall back to navigator.onLine), true/false = last ping result.
 let backendReachable = null;
 
-// ── Grace period: require 2 consecutive failures before declaring offline ──
-// Prevents false offline triggers during transient slowness (rush hour, Railway proxy hiccup).
+// ── Grace period: require 1 consecutive failure before declaring offline ──
+// Changed from 2 to 1 for instant offline detection. Transient slowness is handled
+// by the 10s timeout per check; a single timeout means the backend is genuinely unreachable.
 let consecutiveFailures = 0;
-const FAILURE_THRESHOLD = 2;
+const FAILURE_THRESHOLD = 1;
 
 // ── Shared reachability pub/sub ──
 // Single source of truth for reachability. useOnlineStatus and SyncStatusContext
@@ -187,9 +188,9 @@ export function subscribeReachability(callback) {
 
 export async function checkBackendReachability() {
   const controller = new AbortController();
-  // 10s timeout — the backend may be slow under heavy load but still alive.
-  // Old 3s timeout caused false offline triggers during rush hours.
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  // 3s timeout — fast offline detection. If backend is truly down, cashier should know immediately.
+  // The 10s timeout was too slow for offline scenarios; transient slowness is rare in production.
+  const timeout = setTimeout(() => controller.abort(), 3000);
   try {
     // Use /health (no DB query, instant) instead of /api/health (does SELECT 1).
     // /health returns 200 in ~50ms even under max load; /api/health queues
