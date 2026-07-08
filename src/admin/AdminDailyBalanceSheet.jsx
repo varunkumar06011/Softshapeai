@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import domtoimage from 'dom-to-image-more';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -304,6 +305,8 @@ export default function AdminDailyBalanceSheet() {
   const dragItemRef = useRef(null);
   const saveSeqRef = useRef(0);
   const lastAppliedSeqRef = useRef(0);
+  const balanceSheetRef = useRef(null);
+  const venueSalesRef = useRef(null);
 
   // Preload logo for PDF branding
   useEffect(() => {
@@ -434,6 +437,27 @@ export default function AdminDailyBalanceSheet() {
   );
 
   const totalExpenditures = Number(sheet?.totalExpenditures) || 0;
+
+  // ── Refresh sales from current transactions ─────────────────────────────────
+  const handleRefreshSales = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      const data = await apiFetch(`/api/balance-sheet/${selectedDate}/refresh-sales?${params.toString()}`);
+      setOverrides(prev => ({
+        ...prev,
+        acBarSaleOverride: data.acBarSale,
+        nonAcBarSaleOverride: data.nonAcBarSale,
+        familyWingSaleOverride: data.familyWingSale,
+        parcelSaleOverride: data.parcelSale,
+        swiggySale: data.swiggySale,
+        zomatoSale: data.zomatoSale,
+      }));
+      setSavedMsg('Sales refreshed from current transactions');
+    } catch (err) {
+      setError('Failed to refresh sales: ' + err.message);
+    }
+  };
 
   // ── Live balance calculation ───────────────────────────────────────────────
   const balanceCalc = useMemo(() => {
@@ -638,6 +662,24 @@ export default function AdminDailyBalanceSheet() {
 
     // Header section
     let y = 12;
+    const footerHeight = 15;
+    const contentMaxHeight = pageHeight - margin - footerHeight;
+    
+    // Helper function to check if we need a new page
+    const checkPageBreak = (requiredHeight = 10) => {
+      // Only add page break if we're truly running out of space
+      // Allow content to overflow slightly to avoid unnecessary page breaks
+      if (y + requiredHeight > contentMaxHeight + 20) {
+        doc.addPage();
+        y = margin;
+        // Add header to new page
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...dark);
+        doc.text('Daily Balance Sheet (Continued)', margin, y);
+        y += 10;
+      }
+    };
     
     // Logo (larger, better positioned)
     if (logoDataUrl) {
@@ -655,6 +697,7 @@ export default function AdminDailyBalanceSheet() {
     doc.text('Daily Balance Sheet', pageWidth - margin, y + 12, { align: 'right' });
     
     y += 28;
+    checkPageBreak(20);
     
     // Meta info bar
     const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
@@ -678,6 +721,7 @@ export default function AdminDailyBalanceSheet() {
     doc.text(`Report ID: ${reportId}`, pageWidth - margin, y + 10, { align: 'right' });
     
     y += 18;
+    checkPageBreak(40);
     
     // Summary Cards (KPIs)
     const totalSales = computedSales.acBar + computedSales.nonAcBar + computedSales.familyWing + 
@@ -690,13 +734,13 @@ export default function AdminDailyBalanceSheet() {
     const kpiCardHeight = 24;
     const cardY = y;
     
-    const formatPlain = (num) => Math.round(num).toString();
+    const formatCurrency = (num) => `₹${Math.round(num).toLocaleString('en-IN')}`;
     
     const kpiData = [
-      { label: 'Total Sales', value: formatPlain(totalSales), color: [16, 185, 129] },
-      { label: 'Expenditures', value: formatPlain(totalExpendituresVal), color: [239, 68, 68] },
-      { label: 'Adjustments', value: formatPlain(totalAdjustmentsVal), color: [245, 158, 11] },
-      { label: 'Closing Balance', value: formatPlain(balanceCalc.closingBalance), color: [59, 130, 246] },
+      { label: 'Total Sales', value: formatCurrency(totalSales), color: [16, 185, 129] },
+      { label: 'Expenditures', value: formatCurrency(totalExpendituresVal), color: [239, 68, 68] },
+      { label: 'Adjustments', value: formatCurrency(totalAdjustmentsVal), color: [245, 158, 11] },
+      { label: 'Closing Balance', value: formatCurrency(balanceCalc.closingBalance), color: [59, 130, 246] },
     ];
     
     kpiData.forEach((kpi, index) => {
@@ -759,21 +803,21 @@ export default function AdminDailyBalanceSheet() {
     salesRows.forEach((row, index) => {
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
       }
-      doc.text(row[0], margin + 3, y + 4);
-      doc.text(Math.round(row[1]).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 6;
+      doc.text(row[0], margin + 3, y + 5);
+      doc.text(formatCurrency(row[1]), pageWidth - margin - 3, y + 5, { align: 'right' });
+      y += 8;
     });
     
     // Total row
     doc.setFillColor(...gray);
-    doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+    doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...dark);
-    doc.text('Total Venue Sales', margin + 3, y + 4);
-    doc.text(Math.round(totalVenueSales).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-    y += 10;
+    doc.text('Total Venue Sales', margin + 3, y + 5);
+    doc.text(formatCurrency(totalVenueSales), pageWidth - margin - 3, y + 5, { align: 'right' });
+    y += 12;
     
     // Expenditures Section
     if (expenditures.length > 0) {
@@ -806,26 +850,26 @@ export default function AdminDailyBalanceSheet() {
       expenditureRows.forEach((row, index) => {
         if (index % 2 === 0) {
           doc.setFillColor(248, 250, 252);
-          doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+          doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
         }
-        doc.text(row[0], margin + 3, y + 4);
-        const formattedAmount = row[1].toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        doc.text(formattedAmount, pageWidth - margin - 3, y + 4, { align: 'right' });
-        y += 6;
+        doc.text(row[0], margin + 3, y + 5);
+        doc.text(formatCurrency(row[1]), pageWidth - margin - 3, y + 5, { align: 'right' });
+        y += 8;
       });
       
       // Total row
       doc.setFillColor(...gray);
-      doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+      doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...dark);
-      doc.text('Total Expenditures', margin + 3, y + 4);
-      doc.text(Math.round(totalExpend).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 10;
+      doc.text('Total Expenditures', margin + 3, y + 5);
+      doc.text(formatCurrency(totalExpend), pageWidth - margin - 3, y + 5, { align: 'right' });
+      y += 12;
     }
     
     // Adjustments Section
     if (adjustments.length > 0) {
+      checkPageBreak(50);
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...dark);
@@ -855,36 +899,46 @@ export default function AdminDailyBalanceSheet() {
       adjustmentRows.forEach((row, index) => {
         if (index % 2 === 0) {
           doc.setFillColor(248, 250, 252);
-          doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+          doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
         }
-        doc.text(row[0], margin + 3, y + 4);
-        const formattedAmount = row[1].toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        doc.text(formattedAmount, pageWidth - margin - 3, y + 4, { align: 'right' });
-        y += 6;
+        doc.text(row[0], margin + 3, y + 5);
+        doc.text(formatCurrency(row[1]), pageWidth - margin - 3, y + 5, { align: 'right' });
+        y += 8;
       });
       
       // Total row
       doc.setFillColor(...gray);
-      doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+      doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...dark);
-      doc.text('Total Adjustments', margin + 3, y + 4);
-      doc.text(Math.round(totalAdj).toString(), pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 10;
+      doc.text('Total Adjustments', margin + 3, y + 5);
+      doc.text(formatCurrency(totalAdj), pageWidth - margin - 3, y + 5, { align: 'right' });
+      y += 12;
     }
     
     // Calculation Summary Section
+    // Try to fit on current page without page break to avoid blank spaces
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...dark);
     doc.text('Calculation Summary', margin, y);
     y += 8;
     
+    // Get opening balance from overrides
+    const openingBalance = overrides.openingBalance || 0;
+    const swiggyZomatoTotal = computedSales.swiggy + computedSales.zomato;
+    const cashSales = totalSales - swiggyZomatoTotal;
+    const balanceAfterSales = openingBalance + cashSales;
+    const balanceAfterExpenditures = balanceAfterSales - totalExpendituresVal;
+    
     const calcRows = [
-      ['Total Sales', formatPlain(totalSales)],
-      ['- Total Expenditures', formatPlain(totalExpendituresVal)],
-      ['- Total Adjustments', formatPlain(totalAdjustmentsVal)],
-      ['= Net Closing Balance', formatPlain(balanceCalc.closingBalance)],
+      ['Opening Balance', formatCurrency(openingBalance)],
+      ['+ Cash Sales (Total - Swiggy/Zomato)', formatCurrency(cashSales)],
+      ['= Balance After Sales', formatCurrency(balanceAfterSales)],
+      ['- Total Expenditures', formatCurrency(totalExpendituresVal)],
+      ['= Balance After Expenditures', formatCurrency(balanceAfterExpenditures)],
+      ['± Total Adjustments', formatCurrency(totalAdjustmentsVal)],
+      ['= Net Closing Balance', formatCurrency(balanceCalc.closingBalance)],
     ];
     
     // Draw calculation rows manually
@@ -894,14 +948,14 @@ export default function AdminDailyBalanceSheet() {
     calcRows.forEach((row, index) => {
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y, pageWidth - margin * 2, 6, 'F');
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
       }
       doc.setFont('helvetica', index === calcRows.length - 1 ? 'bold' : 'normal');
-      doc.text(row[0], margin + 3, y + 4);
-      doc.text(row[1], pageWidth - margin - 3, y + 4, { align: 'right' });
-      y += 6;
+      doc.text(row[0], margin + 3, y + 5);
+      doc.text(row[1], pageWidth - margin - 3, y + 5, { align: 'right' });
+      y += 8;
     });
-    y += 4;
+    y += 6;
     
     // Net Closing Balance Premium Card
     const cardTop = y;
@@ -925,7 +979,7 @@ export default function AdminDailyBalanceSheet() {
     doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...primary);
-    doc.text(Math.round(balanceCalc.closingBalance).toString(), margin + 8, cardTop + 24);
+    doc.text(formatCurrency(balanceCalc.closingBalance), margin + 8, cardTop + 24);
     
     // Amount in words
     doc.setFontSize(8);
@@ -935,6 +989,7 @@ export default function AdminDailyBalanceSheet() {
     doc.text(amountInWords, margin + 8, cardTop + 31);
     
     y = cardTop + closingCardHeight + 12;
+    checkPageBreak(30);
     
     // Footer
     const footerY = pageHeight - 25;
@@ -966,24 +1021,11 @@ export default function AdminDailyBalanceSheet() {
     return doc;
   }, [restaurant?.name, outletId, accessibleOutlets, selectedDate, sheet?.status, sheet?.id, computedSales, expenditures.length, expenditureGroups, adjustments, balanceCalc.closingBalance, totalExpenditures, user]);
 
-  // ── WhatsApp share: open chat immediately, then generate PDF ───────────────
-  const handleWhatsAppShare = async () => {
+  // ── Download PDF ─────────────────────────────────────────────────────────
+  const handleDownloadPDF = async () => {
     setStatusLoading(true);
     setError(null);
     try {
-      const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\n\nPDF downloaded. Please attach the downloaded file here.`;
-      const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
-
-      // Open WhatsApp first (before async PDF work) so the browser does not block the popup
-      if (!isNative) {
-        const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-        if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
-          setError('WhatsApp was blocked by the browser. Please allow popups for this site, or use the downloaded PDF to share manually.');
-        }
-      }
-
       let logoDataUrl = logoBase64;
       if (!logoDataUrl) {
         try {
@@ -996,14 +1038,86 @@ export default function AdminDailyBalanceSheet() {
       const doc = generateBalanceSheetPDF(logoDataUrl);
       const blob = doc.output('blob');
       const filename = `Daily-Balance-Sheet-${selectedDate}.pdf`;
-
-      // Share / download the PDF
       await shareOrDownloadPDF(blob, filename);
     } catch (err) {
-      setError(err.message || 'Failed to generate PDF for WhatsApp');
+      setError(err.message || 'Failed to generate PDF');
     } finally {
       setStatusLoading(false);
     }
+  };
+
+  // ── WhatsApp share: capture UI as image and share ───────────────────────
+  const handleWhatsAppShare = async () => {
+    setStatusLoading(true);
+    setError(null);
+    try {
+      if (!venueSalesRef.current) {
+        throw new Error('Venue sales element not found');
+      }
+
+      // Capture only the Venue Sales section as an image
+      const dataUrl = await domtoimage.toPng(venueSalesRef.current, {
+        quality: 1,
+        bgcolor: '#ffffff',
+        style: {
+          transform: 'scale(1)',
+          transformOrigin: 'top left',
+        },
+      });
+
+      // Convert data URL to blob
+      const blob = await fetch(dataUrl).then(res => res.blob());
+
+      const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
+      const message = `Venue Sales Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nTotal Sales: ₹${totalSales.toLocaleString('en-IN')}`;
+
+      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
+
+      if (isNative) {
+        // Native: Save file and share
+        const fileName = `venue-sales-${selectedDate}.png`;
+        const file = await Filesystem.writeFile({
+          path: fileName,
+          data: await blobToBase64(blob),
+          directory: Directory.Cache,
+        });
+
+        const fileUri = file.uri;
+        await Share.share({
+          title: 'Venue Sales Report',
+          text: message,
+          url: fileUri,
+        });
+      } else {
+        // Web: Download image and open WhatsApp
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `venue-sales-${selectedDate}.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+
+        const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message + '\n\nImage downloaded. Please attach it here.')}`;
+        const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+        if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
+          setError('WhatsApp was blocked by the browser. Please allow popups for this site.');
+        }
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to generate image for WhatsApp');
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
+  // Helper: convert blob to base64
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1016,7 +1130,7 @@ export default function AdminDailyBalanceSheet() {
   }
 
   return (
-    <div className="space-y-4 p-4 max-w-5xl mx-auto">
+    <div ref={balanceSheetRef} className="space-y-4 p-4 max-w-5xl mx-auto">
       {/* ── Header: Date navigator + outlet selector ─────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
@@ -1123,7 +1237,7 @@ export default function AdminDailyBalanceSheet() {
       )}
 
       {/* ── Sales tiles ───────────────────────────────────────────────────── */}
-      <div>
+      <div ref={venueSalesRef}>
         <h3 className="text-sm font-black text-gray-800 mb-2">Venue Sales</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <SalesTile
@@ -1178,9 +1292,18 @@ export default function AdminDailyBalanceSheet() {
         <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-bold text-gray-700">Total Sales</span>
-            <span className="text-lg font-black text-gray-900">
-              ₹{totalSales.toLocaleString('en-IN')}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-black text-gray-900">
+                ₹{totalSales.toLocaleString('en-IN')}
+              </span>
+              <button
+                onClick={handleRefreshSales}
+                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                title="Refresh from current transactions"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1399,6 +1522,14 @@ export default function AdminDailyBalanceSheet() {
           )
         ) : (
           <>
+            <button
+              onClick={handleDownloadPDF}
+              disabled={statusLoading}
+              className="flex items-center justify-center gap-2 rounded-lg bg-gray-600 px-4 py-2 text-sm font-bold text-white hover:bg-gray-700 disabled:opacity-50"
+            >
+              {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              Download PDF
+            </button>
             <button
               onClick={handleWhatsAppShare}
               disabled={statusLoading}

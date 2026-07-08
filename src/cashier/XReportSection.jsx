@@ -49,13 +49,29 @@ export default function XReportSection() {
     notes20: 0,
     notes10: 0,
   });
+  const [autoCalculatedAmounts, setAutoCalculatedAmounts] = useState({
+    cardAmount: 0,
+    cashAmount: 0,
+    upiAmount: 0,
+    otherAmount: 0,
+    tipsAmount: 0,
+  });
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  // Balance = Total Sales - Expenditure
+  // Balance = Total Sales - Expenditure (tips not deducted since they're not part of total sales)
   const finalAmount = round2(
     Number(report.totalSales)
     - Number(report.expenditureAmount || 0)
   );
+
+  // Check if payment breakdown (Card + Cash + UPI + Other) matches total sales (tips excluded)
+  const paymentBreakdownTotal = round2(
+    Number(report.cardAmount || 0)
+    + Number(report.cashAmount || 0)
+    + Number(report.upiAmount || 0)
+    + Number(report.otherAmount || 0)
+  );
+  const hasDiscrepancy = Math.abs(paymentBreakdownTotal - Number(report.totalSales)) > 1;
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
@@ -80,6 +96,13 @@ export default function XReportSection() {
         notes20: data.notes20 || 0,
         notes10: data.notes10 || 0,
       });
+      setAutoCalculatedAmounts({
+        cardAmount: Number(data.cardAmount) || 0,
+        cashAmount: Number(data.cashAmount) || 0,
+        upiAmount: Number(data.upiAmount) || 0,
+        otherAmount: Number(data.otherAmount) || 0,
+        tipsAmount: Number(data.tipsAmount) || 0,
+      });
       setExpenditures((expenditures || []).filter((v) => v.status !== 'VOIDED'));
     } catch (err) {
       setError(err.message || 'Failed to load X Report');
@@ -95,6 +118,43 @@ export default function XReportSection() {
   const handleFieldChange = (field, value) => {
     setReport(prev => ({ ...prev, [field]: value }));
     setSavedMsg(null);
+  };
+
+  const handleResetToAutoCalculated = () => {
+    setReport(prev => ({
+      ...prev,
+      cardAmount: autoCalculatedAmounts.cardAmount,
+      cashAmount: autoCalculatedAmounts.cashAmount,
+      upiAmount: autoCalculatedAmounts.upiAmount,
+      otherAmount: autoCalculatedAmounts.otherAmount,
+      tipsAmount: autoCalculatedAmounts.tipsAmount,
+    }));
+    setSavedMsg('Reset to auto-calculated values from transactions');
+  };
+
+  const handleRefreshTotalSales = async () => {
+    try {
+      const data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
+      setReport(prev => ({
+        ...prev,
+        totalSales: Number(data.totalSales) || 0,
+        cardAmount: Number(data.cardAmount) || 0,
+        cashAmount: Number(data.cashAmount) || 0,
+        upiAmount: Number(data.upiAmount) || 0,
+        otherAmount: Number(data.otherAmount) || 0,
+        tipsAmount: Number(data.tipsAmount) || 0,
+      }));
+      setAutoCalculatedAmounts({
+        cardAmount: Number(data.cardAmount) || 0,
+        cashAmount: Number(data.cashAmount) || 0,
+        upiAmount: Number(data.upiAmount) || 0,
+        otherAmount: Number(data.otherAmount) || 0,
+        tipsAmount: Number(data.tipsAmount) || 0,
+      });
+      setSavedMsg('Total Sales refreshed from current transactions');
+    } catch (err) {
+      setError('Failed to refresh Total Sales: ' + err.message);
+    }
   };
 
   const handleSave = async () => {
@@ -304,6 +364,11 @@ export default function XReportSection() {
             {savedMsg}
           </div>
         )}
+        {hasDiscrepancy && (
+          <div className="mb-3 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs font-bold text-yellow-700">
+            ⚠️ Payment breakdown (₹{paymentBreakdownTotal.toFixed(2)}) doesn't match Total Sales (₹{Number(report.totalSales).toFixed(2)}). Difference: ₹{Math.abs(paymentBreakdownTotal - Number(report.totalSales)).toFixed(2)}
+          </div>
+        )}
 
         {!loading && (
           <div className="flex flex-col gap-4">
@@ -311,9 +376,28 @@ export default function XReportSection() {
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <div className="flex justify-between items-center pb-2 border-b border-gray-200 mb-2">
                 <span className="text-sm font-black text-gray-700 uppercase tracking-wide">Total Sale</span>
-                <span className="text-lg font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
+                  <button
+                    onClick={handleRefreshTotalSales}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                    title="Refresh from current transactions"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Manual entry:</p>
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Manual entry:</p>
+                {hasDiscrepancy && (
+                  <button
+                    onClick={handleResetToAutoCalculated}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Reset to auto-calculated
+                  </button>
+                )}
+              </div>
               <div className="flex flex-col gap-2 pl-2">
                 <div className="flex justify-between items-center py-1 gap-3">
                   <span className="text-sm font-bold text-gray-600">Cash</span>
