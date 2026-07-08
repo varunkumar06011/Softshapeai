@@ -7429,7 +7429,7 @@ export function KitchenInventory() {
 
               if (items.length === 0) return;
 
-              const headers = ['S.NO', 'INGREDIENT', 'CATEGORY', 'PRICE', 'STOCK', 'SCALE', 'REORDER'];
+              const headers = ['S.NO', 'ITEM NAME', 'UNITS', 'RATE', 'OPENING', 'PURCHASE', 'CLOSING'];
 
               const rows = items.map((item, index) => {
 
@@ -7439,19 +7439,25 @@ export function KitchenInventory() {
 
                 const scaleCell    = (item.unit && item.unit.trim() !== '') ? item.unit : 'N/A';
 
-                const stockCell    = Number(item.currentStock || 0).toFixed(2);
+                const safeName     = item.name.includes(',') ? `"${item.name}"` : item.name;
 
-                const reorderCell  = Number(item.reorderLevel || 0).toFixed(2);
+                const safeScale    = scaleCell.includes(',') ? `"${scaleCell}"` : scaleCell;
 
-                const categoryCell = (item.category && item.category.trim() !== '') ? item.category.trim() : 'N/A';
+                const hasEntry = !!item.todayEntry;
 
-                const safeName     = item.name.includes(',')         ? `"${item.name}"`     : item.name;
+                const opening  = hasEntry ? Number(item.todayEntry.openingStock  ?? 0) : 0;
 
-                const safeScale    = scaleCell.includes(',')         ? `"${scaleCell}"`    : scaleCell;
+                const purchase = hasEntry ? Number(item.todayEntry.addedStock    ?? 0) : 0;
 
-                const safeCategory = categoryCell.includes(',')      ? `"${categoryCell}"` : categoryCell;
+                const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : Number(item.currentStock || 0);
 
-                return [index + 1, safeName, safeCategory, priceCell, stockCell, safeScale, reorderCell].join(',');
+                const openingCell  = opening.toFixed(2);
+
+                const purchaseCell = purchase.toFixed(2);
+
+                const closingCell  = closingStock.toFixed(2);
+
+                return [index + 1, safeName, safeScale, priceCell, openingCell, purchaseCell, closingCell].join(',');
 
               });
 
@@ -10857,7 +10863,7 @@ function LowStockReport({ inventory }) {
 
                   const restockQty = Math.max(0, reorder - current);
 
-                  const category = item.category || item.menuItem?.category || '';
+                  const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
 
                   const isBeer = String(category || '').toLowerCase() === 'beer';
 
@@ -10895,7 +10901,7 @@ function LowStockReport({ inventory }) {
 
                       <td className="px-4 py-3 text-sm text-gray-700">
 
-                        {item.category || item.menuItem?.category || 'N/A'}
+                        {item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || 'N/A'}
 
                       </td>
 
@@ -12709,7 +12715,7 @@ export function Inventory() {
     
     // Quick escape if value hasn't changed
     const originalVal = field === 'name' ? (item.name || item.menuItem?.name) :
-                        field === 'category' ? (item.category || item.menuItem?.category) :
+                        field === 'category' ? (item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category)) :
                         field === 'bottleSize' ? item.bottleSize :
                         field === 'price' ? item.menuItem?.price :
                         field === 'opening' ? item.todayEntry?.openingStock :
@@ -12757,7 +12763,7 @@ export function Inventory() {
       loadInventory(); // reload to get fresh todayEntry
     } catch (err) {
       console.error('Failed to update inline:', err);
-      showNotification('Failed to update value', 'error');
+      showNotification(`Failed to update value: ${err.message}`, 'error');
     } finally {
       setEditBarSaving(false);
       setEditingBarCell(null);
@@ -13225,12 +13231,14 @@ export function Inventory() {
         });
       }
 
+      /* Temporarily disabled: do not delete from POS menu
       if (item.menuItemId) {
         await fetch(apiUrl(`/api/bar/menu/items/${item.menuItemId}`), {
           method: 'DELETE',
           headers: { ...getAuthHeaders() },
         });
       }
+      */
 
       loadBarMenu();
       loadInventory();
@@ -13302,7 +13310,7 @@ export function Inventory() {
 
     const currentStock = parseFloat(item.currentStock) || 0;
 
-    const category = item.category || item.menuItem?.category || '';
+    const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
 
     const isBeer = String(category || '').toLowerCase() === 'beer';
 
@@ -13324,51 +13332,14 @@ export function Inventory() {
 
 
 
-  // Merge menu items with inventory - show all menu items with their inventory status
-
-  const displayItems = menuItems
-
-    .filter(menuItem => menuItem && menuItem.id) // Filter out invalid items
-
-    .map(menuItem => {
-
-      const existingInventory = inventory.find(inv => inv && inv.menuItemId === menuItem.id);
-
-      if (existingInventory) {
-
-        return existingInventory;
-
-      }
-
-      // Create virtual inventory item with 0 stock
-
-      const isBeer = String(menuItem.category || '').toLowerCase() === 'beer';
-
-      return {
-
-        id: `virtual-${menuItem.id}`,
-
-        menuItemId: menuItem.id,
-
-        menuItem: menuItem,
-
-        bottleSize: isBeer ? 650 : 750,
-
-        currentStock: 0,
-
-        reorderLevel: 5000,
-
-        costPerBottle: 0,
-
-        unitOfMeasure: 'ml',
-
-        isVirtual: true, // Flag to indicate this needs to be created
-
-      };
-
+  // Use only actual inventory items, decoupling the display from the POS menu's virtual items
+  const displayItems = [...inventory]
+    .filter(inv => inv && inv.id) // Filter out invalid items
+    .sort((a, b) => {
+      const nameA = (a.name || a.menuItem?.name || '').toLowerCase();
+      const nameB = (b.name || b.menuItem?.name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
     });
-
-
 
   const filteredInventory = displayItems.filter(item => {
 
@@ -13384,6 +13355,10 @@ export function Inventory() {
 
     return matchesSearch && matchesFilter;
 
+  }).sort((a, b) => {
+    const nameA = (a.name || a.menuItem?.name || '').toLowerCase();
+    const nameB = (b.name || b.menuItem?.name || '').toLowerCase();
+    return nameA.localeCompare(nameB);
   });
 
 
@@ -13425,6 +13400,7 @@ export function Inventory() {
           if (!resInv.ok) success = false;
         }
 
+        /* Temporarily disabled: do not delete from POS menu
         if (item.menuItemId) {
           const resMenu = await fetch(apiUrl(`/api/bar/menu/items/${item.menuItemId}`), {
             method: 'DELETE',
@@ -13432,6 +13408,7 @@ export function Inventory() {
           });
           if (!resMenu.ok) success = false;
         }
+        */
 
         if (!success) failed++;
       } catch {
@@ -13528,12 +13505,12 @@ export function Inventory() {
           {displayValue} {unit}
         </span>
         <button
-          onClick={() => setEditingBarCell({ 
+          onClick={() => !item.isVirtual && setEditingBarCell({ 
             itemId: item.id, 
             field, 
             value: String(
               field === 'name' ? (item.name || item.menuItem?.name || '') : 
-              field === 'category' ? (item.category || item.menuItem?.category || '') : 
+              field === 'category' ? (item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '') : 
               field === 'bottleSize' ? (item.bottleSize || '') : 
               field === 'price' ? (item.menuItem?.price || 0) : 
               field === 'opening' ? (item.todayEntry?.openingStock ?? 0) : 
@@ -13588,12 +13565,12 @@ export function Inventory() {
           </div>
           <button
             onClick={() => {
-              if (inventory.length === 0) return;
+              if (displayItems.length === 0) return;
               const headers = ['S.NO', 'ITEM', 'CATEGORY', 'PRICE', 'STOCK(ml)', 'BOTTLE_SIZE(ml)', 'REORDER(bottles)', 'COST_PER_BOTTLE'];
-              const rows = inventory.map((item, index) => {
+              const rows = displayItems.map((item, index) => {
                 const name = item.name || item.menuItem?.name || '';
-                const category = item.category || item.menuItem?.category || '';
-                const price = parseFloat(item.menuItem?.price || 0);
+                const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
+                const price = parseFloat(item.menuItem?.basePrice || item.menuItem?.price || 0);
                 const stock = parseFloat(item.currentStock || 0);
                 const bottleSize = parseInt(item.bottleSize || 750);
                 const reorder = parseFloat(item.reorderLevel || 0);
@@ -13611,7 +13588,7 @@ export function Inventory() {
               a.click();
               URL.revokeObjectURL(url);
             }}
-            disabled={inventory.length === 0}
+            disabled={displayItems.length === 0}
             className="w-full sm:w-auto text-xs font-bold bg-[#F4F4F5] text-gray-700 px-6 py-4 rounded-2xl hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Download size={14} /> CSV
@@ -13857,7 +13834,7 @@ export function Inventory() {
                 if (!item) return null;
                 const stockStatus = getStockStatus(item);
                 const currentStock = parseFloat(item.currentStock) || 0;
-                const category = item.category || item.menuItem?.category || '';
+                const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
                 const isBeer = String(category || '').toLowerCase() === 'beer';
                 const rawBottleSize = item.bottleSize || item.menuItem?.bottleSize || '';
                 const bottleSize = (rawBottleSize && rawBottleSize !== 'undefined' && rawBottleSize !== '') ? parseInt(rawBottleSize) : (isBeer ? 650 : 750);
@@ -13926,7 +13903,7 @@ export function Inventory() {
                             <div className="flex items-center gap-1 group/name">
                               <p className="font-black text-gray-900 text-sm">{toTitleCase(item.name || item.menuItem?.name || 'Unknown Item')}</p>
                               <button
-                                onClick={() => setEditingBarCell({ itemId: item.id, field: 'name', value: item.name || item.menuItem?.name || '' })}
+                                onClick={() => !item.isVirtual && setEditingBarCell({ itemId: item.id, field: 'name', value: item.name || item.menuItem?.name || '' })}
                                 className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/name:opacity-100 transition-opacity"
                               >
                                 <Pencil size={11} />
@@ -13958,7 +13935,7 @@ export function Inventory() {
                             {category || 'Uncategorized'}
                           </span>
                           <button
-                            onClick={() => setEditingBarCell({ itemId: item.id, field: 'category', value: category || '' })}
+                            onClick={() => !item.isVirtual && setEditingBarCell({ itemId: item.id, field: 'category', value: category || '' })}
                             className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/cat:opacity-100 transition-opacity"
                           >
                             <Pencil size={11} />
@@ -13985,7 +13962,7 @@ export function Inventory() {
                         <div className="flex items-center justify-start gap-1 group/unit">
                           <span>{bottleSize} ml</span>
                           <button
-                            onClick={() => setEditingBarCell({ itemId: item.id, field: 'bottleSize', value: String(bottleSize || '') })}
+                            onClick={() => !item.isVirtual && setEditingBarCell({ itemId: item.id, field: 'bottleSize', value: String(bottleSize || '') })}
                             className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/unit:opacity-100 transition-opacity"
                           >
                             <Pencil size={11} />
@@ -14030,7 +14007,7 @@ export function Inventory() {
 
           const currentStock = parseFloat(item.currentStock) || 0;
 
-          const category = item.category || item.menuItem?.category || '';
+          const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
 
           const isBeer = String(category || '').toLowerCase() === 'beer';
 
@@ -14989,7 +14966,7 @@ function AdjustStockModal({ item, onClose, onSave, isSubmitting }) {
 
   const currentStock = parseFloat(item.currentStock) || 0;
 
-  const category = item.category || item.menuItem?.category || '';
+  const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
 
   const isBeer = String(category || '').toLowerCase() === 'beer';
 
