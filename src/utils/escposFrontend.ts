@@ -227,22 +227,24 @@ export function buildXReportEscpos(data: XReportData): object[] {
   // Total Sale + indented Cash/Card/Tips breakdown
   cmds.push(LEFT, BOLD_ON, xrRow('Total Sale', xrCurrency(data.totalSales)), BOLD_OFF);
   cmds.push('\n');
-  cmds.push(xrRow('  Cash', xrCurrency(data.cashAmount)));
+  cmds.push(xrRow('  Cash ', xrCurrency(data.cashAmount)));
   cmds.push('\n');
-  cmds.push(xrRow('  Card', xrCurrency(data.cardAmount)));
+  cmds.push(xrRow('  Card ', xrCurrency(data.cardAmount)));
   cmds.push('\n');
-  cmds.push(xrRow('  UPI', xrCurrency(data.upiAmount || 0)));
+  cmds.push(xrRow('  UPI  ', xrCurrency(data.upiAmount || 0)));
   cmds.push('\n');
   cmds.push(xrRow('  Other', xrCurrency(data.otherAmount || 0)));
   cmds.push('\n');
-  cmds.push(xrRow('  Tips', xrCurrency(data.tipsAmount || 0)));
+  cmds.push(xrRow('  Tips ', xrCurrency(data.tipsAmount || 0)));
   cmds.push('\n');
   cmds.push(separator('-'));
 
   // Section 1: Sales Summary
   cmds.push(xrBorder(), '\n', BOLD_ON, xrTitle('1. SALES SUMMARY'), BOLD_OFF, '\n', xrBorder(), '\n');
-  cmds.push(xrRow('Cash Sales', xrCurrency(data.cashAmount)), '\n');
-  cmds.push(xrRow('Card Sales', xrCurrency(data.cardAmount)), '\n');
+  cmds.push(xrRow('Cash Sales ', xrCurrency(data.cashAmount)), '\n');
+  cmds.push(xrRow('Card Sales ', xrCurrency(data.cardAmount)), '\n');
+  cmds.push(xrRow('UPI Sales  ', xrCurrency(data.upiAmount || 0)), '\n');
+  cmds.push(xrRow('Other Sales', xrCurrency(data.otherAmount || 0)), '\n');
   cmds.push(xrRow('Tips Received', xrCurrency(data.tipsAmount || 0)), '\n');
   cmds.push(xrBorder(), '\n');
   cmds.push(BOLD_ON, xrRow('TOTAL SALES', xrCurrency(data.totalSales)), BOLD_OFF, '\n');
@@ -271,7 +273,7 @@ export function buildXReportEscpos(data: XReportData): object[] {
   cmds.push(BOLD_ON, xrRow('TOTAL EXPENDITURE', xrCurrency(data.expenditureAmount)), BOLD_OFF, '\n');
   cmds.push(xrBorder(), '\n');
 
-  // Section 3: Net Balance Calculation
+  // Section 3: Net Balance Calcul       ation
   cmds.push(xrBorder(), '\n', BOLD_ON, xrTitle('3. NET BALANCE CALCULATION'), BOLD_OFF, '\n', xrBorder(), '\n');
   cmds.push(xrRow('Total Sales (A)', xrCurrency(data.totalSales)), '\n');
   cmds.push(xrRow('Total Expenditure (B)', xrCurrency(data.expenditureAmount)), '\n');
