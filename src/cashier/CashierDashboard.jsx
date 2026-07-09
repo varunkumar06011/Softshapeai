@@ -1019,14 +1019,18 @@ const CashierDashboard = ({ onLogout }) => {
             return `T${num}`;
           })(),
           source,
+          sectionTag: txn.sectionTag || null,
           restaurantId: txn._sourceRestaurantId,
         };
       });
 
       // Filter by active outlet: bar sees bar sources, restaurant sees restaurant sources, both sees all
+      // Transactions without a sectionTag or with an orphaned sectionTag are always included —
+      // the backend already filters by restaurantId.
       const isolated = mapped.filter(txn => {
-        if (activeOutlet === 'bar') return barSourcesRef.current.has(txn.source);
-        if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(txn.source);
+        if (!txn.sectionTag) return true;
+        if (activeOutlet === 'bar') return barSourcesRef.current.has(txn.source) || !restaurantSourcesRef.current.has(txn.source);
+        if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(txn.source) || !barSourcesRef.current.has(txn.source);
         return true; // 'both' sees everything
       });
 
@@ -1053,6 +1057,7 @@ const CashierDashboard = ({ onLogout }) => {
           .filter(t => !t.synced && isTxnInDateFilter(t.createdAt))
           .map(mapOfflineTransaction)
           .filter(t => {
+            if (!t.sectionTag) return true;
             if (activeOutlet === 'bar') return barSourcesRef.current.has(t.source);
             if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(t.source);
             return true;
@@ -1113,6 +1118,7 @@ const CashierDashboard = ({ onLogout }) => {
           .map(mapOfflineTransaction)
           .filter(t => !cachedOrderIds.has(t.orderId))
           .filter(t => {
+            if (!t.sectionTag) return true;
             if (activeOutlet === 'bar') return barSourcesRef.current.has(t.source);
             if (activeOutlet === 'restaurant') return restaurantSourcesRef.current.has(t.source);
             return true;
@@ -1993,6 +1999,7 @@ const CashierDashboard = ({ onLogout }) => {
       tableNumber: num,
       tableDisplayName,
       source,
+      sectionTag: txn.sectionTag || null,
       restaurantId: activeRestaurantId,
       _optimistic: true,
       _offline: true,

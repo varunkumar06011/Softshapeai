@@ -13,7 +13,8 @@ const EXPENSE_CATEGORIES = [
 
 const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
 
-export default function CreateExpenditureModal({ isOpen, onClose, onSaved }) {
+export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editExpenditure }) {
+  const isEditMode = !!editExpenditure;
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [approverOptions, setApproverOptions] = useState(CROSS_OUTLET_APPROVERS);
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
@@ -55,9 +56,29 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved }) {
   useEffect(() => {
     if (isOpen) {
       loadData();
-      setExpenditureDate(getKolkataDateString());
+      if (isEditMode && editExpenditure) {
+        const exp = editExpenditure;
+        setPaidToType(exp.paidToType || 'STAFF');
+        setPaidToSearch(exp.paidToName || '');
+        setPaidToName(exp.paidToName || '');
+        setAmount(String(exp.amount || ''));
+        setNarration(exp.narration || '');
+        setNarrationDebounce(exp.narration || '');
+        setExpenditureDate(exp.expenditureDate || getKolkataDateString());
+        setSelectedApprover(exp.approvedByName || exp.approvedBy?.name || null);
+        setApproverSearch(exp.approvedByName || exp.approvedBy?.name || '');
+        if (exp.paidToType === 'STAFF') {
+          setSelectedEmployee(exp.employee ? { ...exp.employee, type: 'STAFF' } : null);
+          setSelectedCategory(null);
+        } else {
+          setSelectedEmployee(null);
+          setSelectedCategory(exp.category || null);
+        }
+      } else {
+        setExpenditureDate(getKolkataDateString());
+      }
     }
-  }, [isOpen, loadData]);
+  }, [isOpen, loadData, isEditMode, editExpenditure]);
 
   useEffect(() => {
     const timer = setTimeout(() => setNarrationDebounce(narration), 300);
@@ -152,37 +173,62 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved }) {
 
     setSaving(true);
     try {
-      const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random()}`;
+      if (isEditMode) {
+        const body = {
+          paidToType,
+          paidToName: paidToName.trim() || paidToSearch.trim(),
+          employeeId: paidToType === 'STAFF'
+            ? (selectedEmployee?.id === 'NEW'
+                ? undefined
+                : (selectedEmployee?.employeeId || selectedEmployee?.id))
+            : undefined,
+          amount: parseFloat(amount),
+          narration: narration.trim() || undefined,
+          category: paidToType === 'STAFF' ? undefined : selectedCategory,
+          approvedByName: selectedApprover || approverSearch.trim() || undefined,
+          expenditureDate,
+        };
 
-      const body = {
-        paidToType,
-        paidToName: paidToName.trim() || paidToSearch.trim(),
-        employeeId: paidToType === 'STAFF'
-          ? (selectedEmployee?.id === 'NEW'
-              ? undefined
-              : (selectedEmployee?.employeeId || selectedEmployee?.id))
-          : undefined,
-        createEmployeeIfMissing: paidToType === 'STAFF' && selectedEmployee?.id === 'NEW',
-        createdVia: 'ADMIN',
-        amount: parseFloat(amount),
-        narration: narration.trim() || undefined,
-        category: paidToType === 'STAFF' ? undefined : selectedCategory,
-        approvedByName: selectedApprover || approverSearch.trim() || undefined,
-        idempotencyKey,
-        expenditureDate,
-      };
+        const result = await apiFetch(`/api/expenditures/${editExpenditure.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        });
 
-      const result = await apiFetch('/api/expenditures', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+        onSaved?.(result);
+        handleClose();
+      } else {
+        const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
 
-      onSaved?.(result);
-      handleClose();
+        const body = {
+          paidToType,
+          paidToName: paidToName.trim() || paidToSearch.trim(),
+          employeeId: paidToType === 'STAFF'
+            ? (selectedEmployee?.id === 'NEW'
+                ? undefined
+                : (selectedEmployee?.employeeId || selectedEmployee?.id))
+            : undefined,
+          createEmployeeIfMissing: paidToType === 'STAFF' && selectedEmployee?.id === 'NEW',
+          createdVia: 'ADMIN',
+          amount: parseFloat(amount),
+          narration: narration.trim() || undefined,
+          category: paidToType === 'STAFF' ? undefined : selectedCategory,
+          approvedByName: selectedApprover || approverSearch.trim() || undefined,
+          idempotencyKey,
+          expenditureDate,
+        };
+
+        const result = await apiFetch('/api/expenditures', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+
+        onSaved?.(result);
+        handleClose();
+      }
     } catch (err) {
-      setError(err.message || 'Failed to create expenditure');
+      setError(err.message || (isEditMode ? 'Failed to update expenditure' : 'Failed to create expenditure'));
     } finally {
       setSaving(false);
     }
@@ -196,7 +242,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved }) {
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between">
           <h3 className="text-sm font-black uppercase tracking-widest text-gray-800 flex items-center gap-2">
             <Wallet size={18} className="text-[#E53935]" />
-            Create Expenditure
+            {isEditMode ? 'Edit Expenditure' : 'Create Expenditure'}
           </h3>
           <button onClick={handleClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
             <X size={18} />
@@ -420,7 +466,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved }) {
             ) : (
               <>
                 <Save size={16} />
-                Save Expenditure
+                {isEditMode ? 'Update Expenditure' : 'Save Expenditure'}
               </>
             )}
           </button>

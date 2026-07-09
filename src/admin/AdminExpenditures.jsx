@@ -9,6 +9,7 @@ import {
   Filter,
   Download,
   Plus,
+  Pencil,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import CreateExpenditureModal from './CreateExpenditureModal';
@@ -25,6 +26,8 @@ export default function AdminExpenditures() {
   });
   const [actionLoading, setActionLoading] = useState({});
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editExpenditure, setEditExpenditure] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const loadExpenditures = useCallback(async () => {
     setLoading(true);
@@ -234,6 +237,17 @@ export default function AdminExpenditures() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditExpenditure(v);
+                            setShowEditModal(true);
+                          }}
+                          disabled={v.status === 'VOIDED'}
+                          title="Edit"
+                          className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          <Pencil size={14} />
+                        </button>
                         {v.status === 'UNVERIFIED' && (
                           <button
                             onClick={() => handleAction(v.id, 'verify')}
@@ -276,6 +290,20 @@ export default function AdminExpenditures() {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSaved={() => loadExpenditures()}
+      />
+
+      <CreateExpenditureModal
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditExpenditure(null);
+        }}
+        onSaved={() => {
+          loadExpenditures();
+          setShowEditModal(false);
+          setEditExpenditure(null);
+        }}
+        editExpenditure={editExpenditure}
       />
     </div>
   );

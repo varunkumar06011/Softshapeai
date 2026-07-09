@@ -18,7 +18,7 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function calculateBalance(openingBalance, sales, totalExpenditures, adjustments) {
+function calculateBalance(openingBalance, sales, totalExpenditures, adjustments, totalSalesOverride, totalExpendituresOverride) {
   const ob = round2(openingBalance);
   
   // Cash sales (in-hand cash)
@@ -29,8 +29,15 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments)
   const zomato = round2(sales.zomato);
   const aggregatorSales = round2(swiggy + zomato);
   
-  // Total sales for display (includes aggregators)
-  const totalSales = round2(cashSales + aggregatorSales);
+  // Total sales for display (includes aggregators) — override if provided
+  const totalSales = totalSalesOverride != null
+    ? round2(totalSalesOverride)
+    : round2(cashSales + aggregatorSales);
+
+  // Effective expenditures — override if provided
+  const effectiveExpenditures = totalExpendituresOverride != null
+    ? round2(totalExpendituresOverride)
+    : round2(totalExpenditures);
 
   // Step-by-step calculation:
   // 1. Opening Balance + Total Sales
@@ -38,14 +45,14 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments)
   // 2. Minus Aggregator Sales (Swiggy + Zomato)
   const afterAggregatorDeduction = round2(afterTotalSales - aggregatorSales);
   // 3. Minus Expenditures
-  const afterExpenditures = round2(afterAggregatorDeduction - totalExpenditures);
+  const afterExpenditures = round2(afterAggregatorDeduction - effectiveExpenditures);
 
   const sorted = [...adjustments].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const steps = [
     { label: 'Opening Balance', value: ob },
     { label: `+ Total Sales (₹${totalSales.toLocaleString('en-IN')})`, value: afterTotalSales },
     { label: `- Swiggy + Zomato (₹${aggregatorSales.toLocaleString('en-IN')})`, value: afterAggregatorDeduction },
-    { label: `- Expenditures (₹${totalExpenditures.toLocaleString('en-IN')})`, value: afterExpenditures },
+    { label: `- Expenditures (₹${effectiveExpenditures.toLocaleString('en-IN')})`, value: afterExpenditures },
   ];
 
   let running = afterExpenditures;
@@ -56,7 +63,7 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments)
     steps.push({ label: `${adj.sign === 'PLUS' ? '+' : '−'} ${adj.label} (₹${amt.toLocaleString('en-IN')})`, value: running });
   }
 
-  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps };
+  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps, effectiveExpenditures };
 }
 
 // ── Helper: get today's date in IST ───────────────────────────────────────────
@@ -283,7 +290,16 @@ export default function AdminDailyBalanceSheet() {
   const { restaurant, user } = useAuth();
   const [today, setToday] = useState(getTodayIST);
   const [selectedDate, setSelectedDate] = useState(today);
-  const [outletId, setOutletId] = useState('all');
+  const [outletId, setOutletId] = useState(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      const outlets = raw ? JSON.parse(raw) : [];
+      if (outlets.length > 1) return 'all';
+      if (outlets.length === 1) return outlets[0].id;
+    } catch {}
+    const rid = user?.activeRestaurantId || user?.restaurantId || restaurant?.id;
+    return rid || 'all';
+  });
 
   // Refresh "today" periodically so the next-day arrow stays accurate in long-lived sessions
   useEffect(() => {
@@ -398,6 +414,8 @@ export default function AdminDailyBalanceSheet() {
     nonAcBarSaleOverride: null,
     familyWingSaleOverride: null,
     parcelSaleOverride: null,
+    totalSalesOverride: null,
+    totalExpendituresOverride: null,
     swiggySale: null,
     zomatoSale: null,
   });
@@ -421,6 +439,8 @@ export default function AdminDailyBalanceSheet() {
       nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : 0,
       familyWingSaleOverride: sheet.familyWingSaleOverride != null ? Number(sheet.familyWingSaleOverride) : null,
       parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : 0,
+      totalSalesOverride: sheet.totalSalesOverride != null ? Number(sheet.totalSalesOverride) : null,
+      totalExpendituresOverride: sheet.totalExpendituresOverride != null ? Number(sheet.totalExpendituresOverride) : null,
       swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : 0,
       zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : 0,
     });
@@ -442,7 +462,7 @@ export default function AdminDailyBalanceSheet() {
     zomato: overrides.zomatoSale || 0,
   };
 
-  const totalSales = round2(
+  const computedTotalSales = round2(
     computedSales.acBar +
     computedSales.nonAcBar +
     computedSales.familyWing +
@@ -451,12 +471,19 @@ export default function AdminDailyBalanceSheet() {
     computedSales.zomato
   );
 
+  const totalSales = overrides.totalSalesOverride != null
+    ? round2(overrides.totalSalesOverride)
+    : computedTotalSales;
+
   const totalExpenditures = Number(sheet?.totalExpenditures) || 0;
+  const effectiveTotalExpenditures = overrides.totalExpendituresOverride != null
+    ? round2(overrides.totalExpendituresOverride)
+    : round2(totalExpenditures);
 
   // ── Live balance calculation ───────────────────────────────────────────────
   const balanceCalc = useMemo(() => {
-    return calculateBalance(overrides.openingBalance, computedSales, totalExpenditures, adjustments);
-  }, [overrides.openingBalance, computedSales, totalExpenditures, adjustments]);
+    return calculateBalance(overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride);
+  }, [overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride]);
 
   // ── Manual save ────────────────────────────────────────────────────────────
   const doSave = useCallback(async () => {
@@ -470,6 +497,8 @@ export default function AdminDailyBalanceSheet() {
         nonAcBarSaleOverride: overrides.nonAcBarSaleOverride,
         familyWingSaleOverride: overrides.familyWingSaleOverride,
         parcelSaleOverride: overrides.parcelSaleOverride,
+        totalSalesOverride: overrides.totalSalesOverride,
+        totalExpendituresOverride: overrides.totalExpendituresOverride,
         swiggySale: overrides.swiggySale,
         zomatoSale: overrides.zomatoSale,
         adjustments: adjustments.map((a, i) => ({
@@ -480,7 +509,9 @@ export default function AdminDailyBalanceSheet() {
         })),
         expectedUpdatedAt: sheet?.updatedAt,
       };
-      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}`, {
+      const params = new URLSearchParams();
+      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}?${params.toString()}`, {
         method: 'PUT',
         body: JSON.stringify(body),
       });
@@ -568,7 +599,9 @@ export default function AdminDailyBalanceSheet() {
   const handleSubmit = async () => {
     setStatusLoading(true);
     try {
-      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/submit`, { method: 'POST' });
+      const params = new URLSearchParams();
+      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/submit?${params.toString()}`, { method: 'POST' });
       setSheet(updated);
     } catch (err) { setError(err.message); }
     finally { setStatusLoading(false); }
@@ -578,7 +611,9 @@ export default function AdminDailyBalanceSheet() {
     if (!confirm('Lock this balance sheet? It cannot be edited after locking.')) return;
     setStatusLoading(true);
     try {
-      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/lock`, { method: 'POST' });
+      const params = new URLSearchParams();
+      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/lock?${params.toString()}`, { method: 'POST' });
       setSheet(updated);
     } catch (err) { setError(err.message); }
     finally { setStatusLoading(false); }
@@ -588,7 +623,9 @@ export default function AdminDailyBalanceSheet() {
     if (!confirm('Unlock this balance sheet? It will become editable again.')) return;
     setStatusLoading(true);
     try {
-      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/unlock`, { method: 'POST' });
+      const params = new URLSearchParams();
+      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/unlock?${params.toString()}`, { method: 'POST' });
       setSheet(updated);
     } catch (err) { setError(err.message); }
     finally { setStatusLoading(false); }
@@ -1082,13 +1119,15 @@ export default function AdminDailyBalanceSheet() {
             onChange={(v) => handleFieldChange('zomatoSale', v)}
           />
         </div>
-        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-gray-700">Total Sales</span>
-            <span className="text-lg font-black text-gray-900">
-              ₹{totalSales.toLocaleString('en-IN')}
-            </span>
-          </div>
+        <div className="mt-3">
+          <SalesTile
+            label="Total Sales"
+            computedValue={computedTotalSales}
+            overrideValue={overrides.totalSalesOverride}
+            isManual={overrides.totalSalesOverride != null}
+            isLocked={isLocked}
+            onChange={(v) => handleFieldChange('totalSalesOverride', v)}
+          />
         </div>
       </div>
 
@@ -1159,20 +1198,12 @@ export default function AdminDailyBalanceSheet() {
               ₹{balanceCalc.closingBalance.toLocaleString('en-IN')}
             </span>
           </div>
-          <div className="mt-1 text-xs text-gray-500">
-            Amount left after all deductions
-          </div>
         </div>
       </div>
 
       {/* ── Expenditures section ──────────────────────────────────────────── */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-black text-gray-800">Expenditures</h3>
-          <span className="text-sm font-bold text-gray-500">
-            Total: ₹{expenditureSubtotal.toLocaleString('en-IN')}
-          </span>
-        </div>
+        <h3 className="text-sm font-black text-gray-800 mb-2">Expenditures</h3>
         {expendituresLoading ? (
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Loader2 size={14} className="animate-spin" /> Loading expenditures...
@@ -1206,6 +1237,16 @@ export default function AdminDailyBalanceSheet() {
             ))}
           </div>
         )}
+        <div className="mt-3">
+          <SalesTile
+            label="Total Expenditures"
+            computedValue={expenditureSubtotal}
+            overrideValue={overrides.totalExpendituresOverride}
+            isManual={overrides.totalExpendituresOverride != null}
+            isLocked={isLocked}
+            onChange={(v) => handleFieldChange('totalExpendituresOverride', v)}
+          />
+        </div>
       </div>
 
       {/* ── Adjustments section ───────────────────────────────────────────── */}
