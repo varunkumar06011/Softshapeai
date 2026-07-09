@@ -126,12 +126,6 @@ export const authService = {
       // ignore network errors on logout
     }
     const restaurantId = this.getRestaurantId();
-    try {
-      const { disconnectSocket } = await import('../hooks/useSocket');
-      disconnectSocket();
-    } catch {
-      // ignore — socket may not be initialized
-    }
     localStorage.removeItem('ss_token');
     localStorage.removeItem('ss_preauth_token');
     localStorage.removeItem('ss_user');
