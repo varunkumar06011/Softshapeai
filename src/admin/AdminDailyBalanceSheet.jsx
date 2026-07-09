@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-  Calendar, ChevronLeft, ChevronRight, Store, Loader2, Lock, Unlock,
+  Calendar, Store, Loader2, Lock, Unlock,
   Plus, Minus, Trash2, Save, Send, CheckCircle, TrendingUp, Wallet,
   ArrowRight, Edit3, X,
 } from 'lucide-react';
@@ -86,12 +86,6 @@ function getTodayIST() {
   const now = new Date();
   const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
   return ist.toISOString().slice(0, 10);
-}
-
-function shiftDate(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 function WhatsAppIcon({ size = 16 }) {
@@ -332,7 +326,7 @@ export default function AdminDailyBalanceSheet() {
   const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS' });
   const [statusLoading, setStatusLoading] = useState(false);
   const [logoBase64, setLogoBase64] = useState(null);
-  const [xReportData, setXReportData] = useState(null);
+  const [allOutletsPaymentSummary, setAllOutletsPaymentSummary] = useState(null);
   const saveTimerRef = useRef(null);
   const dragItemRef = useRef(null);
   const saveSeqRef = useRef(0);
@@ -345,21 +339,37 @@ export default function AdminDailyBalanceSheet() {
       .catch(() => setLogoBase64(null));
   }, []);
 
-  // Fetch X-Report data for payment mode breakdown
-  const loadXReport = useCallback(async () => {
-    if (!selectedDate || outletId === 'all') {
-      setXReportData(null);
+  // Fetch aggregated payment-mode summary across all accessible outlets for the selected date.
+  // The X report is per-outlet, so we use the reports/payment-methods endpoint with a
+  // single-day range to get the all-outlet cash/card/upi totals and percentages.
+  const loadAllOutletsPaymentSummary = useCallback(async () => {
+    if (!selectedDate) {
+      setAllOutletsPaymentSummary(null);
       return;
     }
     try {
-      const data = await apiFetch(`/api/xreports/${selectedDate}?outletId=${outletId}`);
-      setXReportData(data);
+      const params = new URLSearchParams({ startDate: selectedDate, endDate: selectedDate });
+      const data = await apiFetch(`/api/reports/payment-methods?${params.toString()}`);
+      const byMethod = (method) => data.methods.find((m) => m.method === method)?.amount || 0;
+      const pctByMethod = (method) => data.methods.find((m) => m.method === method)?.percent || 0;
+      setAllOutletsPaymentSummary({
+        cash: byMethod('CASH'),
+        card: byMethod('CARD'),
+        upi: byMethod('UPI'),
+        credit: byMethod('OTHER'),
+        pctCash: pctByMethod('CASH'),
+        pctCard: pctByMethod('CARD'),
+        pctUpi: pctByMethod('UPI'),
+        pctCredit: pctByMethod('OTHER'),
+        totalAmount: data.summary?.totalAmount || 0,
+      });
     } catch (err) {
-      setXReportData(null);
+      console.error('[BalanceSheet] Failed to load all-outlet payment summary:', err);
+      setAllOutletsPaymentSummary(null);
     }
-  }, [selectedDate, outletId]);
+  }, [selectedDate]);
 
-  useEffect(() => { loadXReport(); }, [loadXReport]);
+  useEffect(() => { loadAllOutletsPaymentSummary(); }, [loadAllOutletsPaymentSummary]);
 
   const accessibleOutlets = useMemo(() => {
     try {
@@ -437,6 +447,12 @@ export default function AdminDailyBalanceSheet() {
   const [adjustments, setAdjustments] = useState([]);
   const [dirty, setDirty] = useState(false);
 
+  // Refs mirror the latest overrides/adjustments so doSave can read synchronous
+  // values even when onBlur hasn't flushed a state update yet (e.g. user clicks
+  // Save while still focused on an input).
+  const overridesRef = useRef(overrides);
+  const adjustmentsRef = useRef(adjustments);
+
   useEffect(() => {
     if (!sheet) return;
 
@@ -448,7 +464,7 @@ export default function AdminDailyBalanceSheet() {
     }
     lastAppliedSeqRef.current = saveSeqRef.current;
 
-    setOverrides({
+    const freshOverrides = {
       openingBalance: Number(sheet.openingBalance) || 0,
       acBarSaleOverride: sheet.acBarSaleOverride != null ? Number(sheet.acBarSaleOverride) : null,
       nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : 0,
@@ -458,11 +474,17 @@ export default function AdminDailyBalanceSheet() {
       totalExpendituresOverride: sheet.totalExpendituresOverride != null ? Number(sheet.totalExpendituresOverride) : null,
       swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : 0,
       zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : 0,
-    });
-    // Only overwrite local adjustments from server data on fresh fetches
-    // (date change, initial load, external refresh) — not from our own save echoes.
+    };
+    // Only overwrite local state from server data on fresh fetches
+    // (date change, initial load, external refresh) — not from our own save
+    // echoes.  This prevents a save response from wiping out edits the user
+    // made while the save was in flight.
     if (!isSaveResponse) {
-      setAdjustments(sheet.adjustments || []);
+      overridesRef.current = freshOverrides;
+      setOverrides(freshOverrides);
+      const freshAdjustments = sheet.adjustments || [];
+      adjustmentsRef.current = freshAdjustments;
+      setAdjustments(freshAdjustments);
       setDirty(false);
     }
   }, [sheet]);
@@ -506,17 +528,19 @@ export default function AdminDailyBalanceSheet() {
     setSaving(true);
     const thisSeq = ++saveSeqRef.current;
     try {
-      const body = {
-        openingBalance: overrides.openingBalance,
-        acBarSaleOverride: overrides.acBarSaleOverride,
-        nonAcBarSaleOverride: overrides.nonAcBarSaleOverride,
-        familyWingSaleOverride: overrides.familyWingSaleOverride,
-        parcelSaleOverride: overrides.parcelSaleOverride,
-        totalSalesOverride: overrides.totalSalesOverride,
-        totalExpendituresOverride: overrides.totalExpendituresOverride,
-        swiggySale: overrides.swiggySale,
-        zomatoSale: overrides.zomatoSale,
-        adjustments: adjustments.map((a, i) => ({
+      const curOverrides = overridesRef.current;
+    const curAdjustments = adjustmentsRef.current;
+    const body = {
+        openingBalance: curOverrides.openingBalance,
+        acBarSaleOverride: curOverrides.acBarSaleOverride,
+        nonAcBarSaleOverride: curOverrides.nonAcBarSaleOverride,
+        familyWingSaleOverride: curOverrides.familyWingSaleOverride,
+        parcelSaleOverride: curOverrides.parcelSaleOverride,
+        totalSalesOverride: curOverrides.totalSalesOverride,
+        totalExpendituresOverride: curOverrides.totalExpendituresOverride,
+        swiggySale: curOverrides.swiggySale,
+        zomatoSale: curOverrides.zomatoSale,
+        adjustments: curAdjustments.map((a, i) => ({
           label: a.label,
           amount: Number(a.amount),
           sign: a.sign,
@@ -543,10 +567,11 @@ export default function AdminDailyBalanceSheet() {
       }
     } catch (err) {
       console.error('[BalanceSheet] Save failed:', err);
+      setError(err.message || 'Failed to save balance sheet');
     } finally {
       setSaving(false);
     }
-  }, [isLocked, sheet, overrides, adjustments, selectedDate, outletId, loadSheet]);
+  }, [isLocked, sheet, selectedDate, outletId, loadSheet]);
 
   const handleSave = () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -554,7 +579,9 @@ export default function AdminDailyBalanceSheet() {
   };
 
   const handleFieldChange = (field, value) => {
-    setOverrides((prev) => ({ ...prev, [field]: value }));
+    const next = { ...overridesRef.current, [field]: value };
+    overridesRef.current = next;
+    setOverrides(next);
     setDirty(true);
   };
 
@@ -566,9 +593,10 @@ export default function AdminDailyBalanceSheet() {
       label: newAdj.label.trim(),
       amount: Math.max(0, Number(newAdj.amount)),
       sign: newAdj.sign,
-      sortOrder: adjustments.length,
+      sortOrder: adjustmentsRef.current.length,
     };
-    const updated = [...adjustments, adj];
+    const updated = [...adjustmentsRef.current, adj];
+    adjustmentsRef.current = updated;
     setAdjustments(updated);
     setNewAdj({ label: '', amount: '', sign: 'MINUS' });
     setShowAddAdj(false);
@@ -582,13 +610,15 @@ export default function AdminDailyBalanceSheet() {
 
   const handleEditAdjustment = (updated) => {
     const safe = { ...updated, amount: Math.max(0, Number(updated.amount)) };
-    const next = adjustments.map((a) => (a.id === safe.id ? safe : a));
+    const next = adjustmentsRef.current.map((a) => (a.id === safe.id ? safe : a));
+    adjustmentsRef.current = next;
     setAdjustments(next);
     setDirty(true);
   };
 
   const handleDeleteAdjustment = (adj) => {
-    const next = adjustments.filter((a) => a.id !== adj.id);
+    const next = adjustmentsRef.current.filter((a) => a.id !== adj.id);
+    adjustmentsRef.current = next;
     setAdjustments(next);
     setDirty(true);
   };
@@ -598,13 +628,14 @@ export default function AdminDailyBalanceSheet() {
   const handleDrop = (target) => {
     const dragged = dragItemRef.current;
     if (!dragged || dragged.id === target.id) return;
-    const reordered = [...adjustments];
+    const reordered = [...adjustmentsRef.current];
     const dragIdx = reordered.findIndex((a) => a.id === dragged.id);
     const targetIdx = reordered.findIndex((a) => a.id === target.id);
     if (dragIdx === -1 || targetIdx === -1) return;
     const [moved] = reordered.splice(dragIdx, 1);
     reordered.splice(targetIdx, 0, moved);
     const reindexed = reordered.map((a, i) => ({ ...a, sortOrder: i }));
+    adjustmentsRef.current = reindexed;
     setAdjustments(reindexed);
     dragItemRef.current = null;
     setDirty(true);
@@ -709,12 +740,12 @@ export default function AdminDailyBalanceSheet() {
     const generatedOn = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' + 
                       now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-    // Payment mode data from xReport
+    // Payment mode data aggregated across all accessible outlets for the day
     const paymentData = {
-      cash: Number(xReportData?.cashAmount) || 0,
-      upi: Number(xReportData?.upiAmount) || 0,
-      card: Number(xReportData?.cardAmount) || 0,
-      credit: Number(xReportData?.otherAmount) || 0,
+      cash: Number(allOutletsPaymentSummary?.cash) || 0,
+      upi: Number(allOutletsPaymentSummary?.upi) || 0,
+      card: Number(allOutletsPaymentSummary?.card) || 0,
+      credit: Number(allOutletsPaymentSummary?.credit) || 0,
     };
 
     // Calculate gross balance (sales - expenditure)
@@ -726,7 +757,6 @@ export default function AdminDailyBalanceSheet() {
       date: dateStr,
       weekday,
       status: sheet?.status || 'DRAFT',
-      reportId: `DBS-${selectedDate.replace(/-/g, '')}-001`,
       generatedOn,
       generatedBy: user?.name || 'Admin',
       totalSales,
@@ -809,7 +839,7 @@ export default function AdminDailyBalanceSheet() {
       }
       throw err;
     }
-  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, xReportData, user?.name, logoBase64]);
+  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, allOutletsPaymentSummary, user?.name, logoBase64]);
 
   // ── WhatsApp share: generate PNG and share via Web Share API ───────────────
   const handleWhatsAppShare = async () => {
@@ -828,10 +858,10 @@ export default function AdminDailyBalanceSheet() {
                         now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
       const paymentData = {
-        cash: Number(xReportData?.cashAmount) || 0,
-        upi: Number(xReportData?.upiAmount) || 0,
-        card: Number(xReportData?.cardAmount) || 0,
-        credit: Number(xReportData?.otherAmount) || 0,
+        cash: Number(allOutletsPaymentSummary?.cash) || 0,
+        upi: Number(allOutletsPaymentSummary?.upi) || 0,
+        card: Number(allOutletsPaymentSummary?.card) || 0,
+        credit: Number(allOutletsPaymentSummary?.credit) || 0,
       };
 
       const grossBalance = totalSales - totalExpenditures;
@@ -841,7 +871,6 @@ export default function AdminDailyBalanceSheet() {
         date: dateStr,
         weekday,
         status: sheet?.status || 'DRAFT',
-        reportId: `DBS-${selectedDate.replace(/-/g, '')}-001`,
         generatedOn,
         generatedBy: user?.name || 'Admin',
         totalSales,
@@ -981,13 +1010,7 @@ export default function AdminDailyBalanceSheet() {
       {/* ── Header: Date navigator + outlet selector ─────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
-            className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <div className="relative flex-1">
+          <div className="relative">
             <Calendar size={16} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="date"
@@ -997,34 +1020,9 @@ export default function AdminDailyBalanceSheet() {
               className="w-full rounded-lg border border-gray-200 pl-8 pr-2 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
             />
           </div>
-          <button
-            onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
-            disabled={selectedDate >= today}
-            className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 disabled:opacity-30"
-          >
-            <ChevronRight size={18} />
-          </button>
           {selectedDate === today && (
             <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[10px] font-bold text-[#B71C1C]">TODAY</span>
           )}
-          <div className="flex items-center gap-1 ml-1">
-            <input
-              type="month"
-              value={selectedDate.slice(0, 7)}
-              onChange={(e) => {
-                const ym = e.target.value;
-                if (!ym) return;
-                const firstOfMonth = ym + '-01';
-                const todayIst = getTodayIST();
-                if (firstOfMonth > todayIst) return;
-                const lastDay = new Date(parseInt(ym.slice(0, 4)), parseInt(ym.slice(5, 7)), 0).getDate();
-                const lastOfMonth = ym + '-' + String(lastDay).padStart(2, '0');
-                setSelectedDate(lastOfMonth > todayIst ? todayIst : lastOfMonth);
-              }}
-              max={today.slice(0, 7)}
-              className="rounded-lg border border-gray-200 px-2 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
-            />
-          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1324,7 +1322,7 @@ export default function AdminDailyBalanceSheet() {
       {/* ── Action buttons ────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
         {isLocked ? (
-          isAdmin && (
+          isAdmin ? (
             <button
               onClick={handleUnlock}
               disabled={statusLoading}
@@ -1333,6 +1331,8 @@ export default function AdminDailyBalanceSheet() {
               {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Unlock size={16} />}
               Unlock to Edit
             </button>
+          ) : (
+            <p className="text-[12px] font-bold text-gray-400">You don't have access, contact admin</p>
           )
         ) : (
           <>
@@ -1363,6 +1363,9 @@ export default function AdminDailyBalanceSheet() {
                 {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
                 Lock
               </button>
+            )}
+            {!isAdmin && (
+              <p className="text-[12px] font-bold text-gray-400">You don't have access, contact admin</p>
             )}
           </>
         )}

@@ -290,6 +290,8 @@ function AnimatedRoutes() {
         <Route path="/cashier/dashboard" element={<ErrorBoundary><AnimatedPage><CashierDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/captain" element={<AnimatedPage><CaptainLoginWrapper /></AnimatedPage>} />
         <Route path="/captain/dashboard/*" element={<ErrorBoundary><AnimatedPage><CaptainAppWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/manager" element={<AnimatedPage><ManagerLoginWrapper /></AnimatedPage>} />
+        <Route path="/manager/dashboard/*" element={<ErrorBoundary><AnimatedPage><ManagerDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/kitchen" element={<ErrorBoundary><AnimatedPage><KitchenView /></AnimatedPage></ErrorBoundary>} />
         <Route path="/print-station" element={<ErrorBoundary><AnimatedPage><PrintStation /></AnimatedPage></ErrorBoundary>} />
         <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
@@ -356,7 +358,7 @@ function CashierDashboardWrapper() {
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
-  const isLoggedIn = user && token && isTokenValid(token) && ['CAPTAIN', 'CASHIER'].includes(user.role);
+  const isLoggedIn = user && token && isTokenValid(token) && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
   return (
     <LoginScreen role="captain" onLogin={() => {}} onBack={() => navigate('/')} />
@@ -366,7 +368,7 @@ function CaptainLoginWrapper() {
 function CaptainAppWrapper() {
   const navigate = useNavigate();
   const { user, token, logout } = useAuth();
-  if (!(user && token && isTokenValid(token) && ['CAPTAIN', 'CASHIER'].includes(user.role))) {
+  if (!(user && token && isTokenValid(token) && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role))) {
     logout();
     return <Navigate to="/captain" replace />;
   }
@@ -375,6 +377,26 @@ function CaptainAppWrapper() {
       onLogout={() => { logout(); navigate('/captain'); }}
     />
   );
+}
+
+function ManagerLoginWrapper() {
+  const navigate = useNavigate();
+  const { user, token } = useAuth();
+  const isLoggedIn = user && token && isTokenValid(token) && ['MANAGER'].includes(user.role);
+  if (isLoggedIn) return <Navigate to="/manager/dashboard" replace />;
+  return (
+    <LoginScreen role="manager" onLogin={() => {}} onBack={() => navigate('/')} />
+  );
+}
+
+function ManagerDashboardWrapper() {
+  const navigate = useNavigate();
+  const { user, token, logout } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['MANAGER'].includes(user.role))) {
+    logout();
+    return <Navigate to="/manager" replace />;
+  }
+  return <AdminDashboard role="manager" basePath="/manager/dashboard" onLogout={() => { logout(); navigate('/manager'); }} />;
 }
 
 export default App;

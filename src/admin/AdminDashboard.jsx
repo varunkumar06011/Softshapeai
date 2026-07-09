@@ -49,11 +49,11 @@ import { authService } from '../services/authService';
 import { reconnectSocket } from '../hooks/useSocket';
 import { sendSpireMessage } from '../services/spireAgent';
 
-import { adminRoutes, managerRoutes, isRouteEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
+import { adminRoutes, isRouteEnabled, isManagerTabEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
 import AdminRouteGuard from './AdminRouteGuard';
 import SortableSidebar from './components/SortableSidebar';
 
-const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
+const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin/dashboard' }) => {
   const role = roleProp?.toLowerCase() || 'admin';
   const { shouldReduce } = useMotionConfig();
   const location = useLocation();
@@ -62,7 +62,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   // Derive current section from URL — the URL is the single source of truth.
   // No more useState + localStorage for active tab.
   const page = useMemo(() => {
-    const subPath = location.pathname.replace('/admin/dashboard/', '').replace('/admin/dashboard', '');
+    const subPath = location.pathname.replace(`${basePath}/`, '').replace(basePath, '');
     return subPath.split('/')[0] || 'dashboard';
   }, [location.pathname]);
 
@@ -284,7 +284,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
     return adminRoutes
       .map(r => r.key === 'kitchen-inventory' ? { ...r, label: getInventoryLabel(enabledModules) } : r)
       .filter(r => {
-        if (role === 'manager' && !managerRoutes.includes(r.key)) return false;
+        if (role === 'manager' && !isManagerTabEnabled(r.key, enabledModules)) return false;
         return isRouteEnabled(r.key, enabledModules);
       });
   }, [enabledModules, role]);
@@ -294,19 +294,19 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
   // Helper passed to SettingsPage instead of raw setPage — child components
   // never construct URL paths themselves.
   const goToSection = useCallback((key) => {
-    navigate(`/admin/dashboard/${key}`);
-  }, [navigate]);
+    navigate(`${basePath}/${key}`);
+  }, [navigate, basePath]);
 
   // Context object for passing props to route elements via cloneElement.
   // Built once per render, consumed by routes that declare a props function.
   const routeCtx = useMemo(() => ({
     revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading,
-    activeOutlet, loadStats, dashboardScope,
+    activeOutlet, loadStats, dashboardScope, role,
     onAddDish: () => setDishModalOpen(true),
     goToSection,
     mUpload, setMUpload, mUploadRef, mGenerated, setMGenerated, mPosted, setMPosted,
   }), [revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
-       goToSection, mUpload, mGenerated, mPosted, dashboardScope]);
+       goToSection, mUpload, mGenerated, mPosted, dashboardScope, role]);
 
   const handleQuickSwitch = async (outletId) => {
     setShowOutletSwitcher(false);
@@ -467,7 +467,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#B71C1C] text-white transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#B71C1C] text-white transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:!translate-x-0`}
         style={{ width: sidebarWidth }}
       >
         <div className="flex flex-col flex-grow overflow-hidden p-4">
@@ -490,7 +490,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
             <SortableSidebar
               visibleRoutes={visibleRoutes}
               activePage={page}
-              onNavigate={(key) => { navigate(`/admin/dashboard/${key}`); setIsSidebarOpen(false); }}
+              onNavigate={(key) => { navigate(`${basePath}/${key}`); setIsSidebarOpen(false); }}
               hrExpanded={hrExpanded}
               onToggleHr={() => setHrExpanded(prev => !prev)}
               userId={user?.id}
@@ -516,7 +516,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
         />
       </aside>
 
-      <div className="flex flex-col h-[100dvh] overflow-hidden md:ml-[var(--sidebar-width)]" style={{ ['--sidebar-width']: `${sidebarWidth}px` }}>
+      <div className="flex flex-col h-[100dvh] overflow-hidden md:!ml-[var(--sidebar-width)]" style={{ ['--sidebar-width']: `${sidebarWidth}px` }}>
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6 shadow-sm">
           <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
             <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
@@ -580,7 +580,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
                       ))}
                       <div className="border-t border-gray-100 mt-1 pt-1">
                         <button
-                          onClick={() => { setShowOutletSwitcher(false); navigate('/admin/dashboard/outlets-overview'); }}
+                          onClick={() => { setShowOutletSwitcher(false); navigate(`${basePath}/outlets-overview`); }}
                           className="flex w-full items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-[#B71C1C]"
                         >
                           <ArrowRight size={14} /> Manage all outlets
@@ -619,6 +619,8 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout }) => {
                       routeKey={r.key}
                       enabledModules={enabledModules}
                       isRouteEnabledFn={isRouteEnabled}
+                      isManagerTabEnabledFn={isManagerTabEnabled}
+                      basePath={basePath}
                     >
                       {elementWithProps}
                     </AdminRouteGuard>

@@ -18184,7 +18184,9 @@ export function BarMenuPage() {
 
 
 
-export function StaffManagement() {
+export function StaffManagement({ role }) {
+
+  const isManagerReadOnly = role === 'manager';
 
   const DESIGNATIONS = [
     'helper', 'cleaning', 'master', 'assistant', 'family cleaning', 'washroom cleaning', 'supervisor',
@@ -18261,6 +18263,20 @@ export function StaffManagement() {
 
   };
 
+  const handleAccessDenied = () => alert('You don\'t have access, contact admin');
+
+  const handleEdit = (member) => {
+    if (isManagerReadOnly) return handleAccessDenied();
+    setEditing(member);
+    setForm({ name: member.name, role: member.role, designation: member.designation || member.role, pin: '', permissions: member.permissions || {} });
+    setModalOpen(true);
+  };
+
+  const handleDeactivateWithCheck = (id) => {
+    if (isManagerReadOnly) return handleAccessDenied();
+    handleDeactivate(id);
+  };
+
 
 
   const handleSave = async () => {
@@ -18279,7 +18295,7 @@ export function StaffManagement() {
 
       const body = editing
 
-        ? { name: form.name, designation: form.designation, pin: form.pin, permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
+        ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
 
         : form.role === 'OWNER'
 
@@ -18449,6 +18465,7 @@ export function StaffManagement() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 border border-gray-200 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 w-48"
           />
+          {!isManagerReadOnly && (
           <button
             onClick={() => setImportModalOpen(true)}
             className="px-3 py-1.5 bg-gray-900 text-white text-[12px] font-bold rounded-xl hover:bg-gray-800 transition flex items-center gap-1"
@@ -18456,9 +18473,10 @@ export function StaffManagement() {
             <Upload size={14} />
             Import Staff
           </button>
+          )}
           <button
-            onClick={() => setModalOpen(true)}
-            className="px-3 py-1.5 bg-[#E53935] text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition"
+            onClick={() => isManagerReadOnly ? handleAccessDenied() : setModalOpen(true)}
+            className={`px-3 py-1.5 text-white text-[12px] font-bold rounded-xl transition ${isManagerReadOnly ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#E53935] hover:bg-red-700'}`}
           >
             + Add Staff
           </button>
@@ -18480,6 +18498,8 @@ export function StaffManagement() {
 
               <th className="px-4 py-2 text-left font-bold text-gray-500">Role</th>
 
+              <th className="px-4 py-2 text-left font-bold text-gray-500">PIN</th>
+
               <th className="px-4 py-2 text-right font-bold text-gray-500">Actions</th>
 
             </tr>
@@ -18500,7 +18520,7 @@ export function StaffManagement() {
 
                 <td className="px-4 py-3 text-gray-600">
 
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : member.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
 
                     {member.designation || member.role}
 
@@ -18508,11 +18528,23 @@ export function StaffManagement() {
 
                 </td>
 
+                <td className="px-4 py-3 text-gray-600">
+
+                  {member.role === 'OWNER' ? (
+                    <span className="text-[10px] font-bold text-gray-400">—</span>
+                  ) : member.hasPin ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700">Set</span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700">Not Set</span>
+                  )}
+
+                </td>
+
                 <td className="px-4 py-3 text-right">
 
                   <button
 
-                    onClick={() => { setEditing(member); setForm({ name: member.name, role: member.role, designation: member.designation || member.role, pin: '', permissions: member.permissions || {} }); setModalOpen(true); }}
+                    onClick={() => handleEdit(member)}
 
                     className="text-[10px] font-bold text-gray-500 hover:text-[#E53935] mr-3"
 
@@ -18524,7 +18556,7 @@ export function StaffManagement() {
 
                   <button
 
-                    onClick={() => handleDeactivate(member.id)}
+                    onClick={() => handleDeactivateWithCheck(member.id)}
 
                     className="text-[10px] font-bold text-red-500 hover:text-red-700"
 
@@ -18544,7 +18576,7 @@ export function StaffManagement() {
 
               <tr>
 
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-[12px] font-bold">
 
                   No staff members found.
 
@@ -18626,6 +18658,8 @@ export function StaffManagement() {
                   <option value="CAPTAIN">Captain</option>
 
                   <option value="CASHIER">Cashier</option>
+
+                  <option value="MANAGER">Manager</option>
 
                   <option value="OWNER">Owner</option>
 

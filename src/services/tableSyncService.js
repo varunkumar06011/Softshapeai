@@ -307,7 +307,7 @@ function attachSocketLogging(socket) {
     socket.emit("join", getCurrentRestaurantId());
 
     // Re-fetch on every reconnect to recover orders missed during the gap.
-    if (_reconnectRefetch) {
+    if (_reconnectRefetch && getCurrentRestaurantId() && localStorage.getItem('ss_token')) {
       console.log("[Socket] Reconnected — refetching tables to recover missed events");
       _reconnectRefetch().catch((err) =>
         console.warn("[Socket] Reconnect refetch failed:", err.message)
@@ -428,6 +428,12 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
   }, [tables]);
 
   const loadTables = useCallback(async () => {
+    const rid = getCurrentRestaurantId();
+    const token = localStorage.getItem('ss_token');
+    if (!rid || !token) {
+      setIsSyncing(false);
+      return;
+    }
     if (isFetchingRef.current) {
       console.log('[TableSync] Fetch already in progress, skipping');
       return;
@@ -439,7 +445,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
     let apiTables = null;
 
     try {
-      apiTables = flattenSections(await fetchTables(getCurrentRestaurantId(), abortControllerRef.current.signal));
+      apiTables = flattenSections(await fetchTables(rid, abortControllerRef.current.signal));
     } catch (err) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         console.log('[TableSync] Fetch aborted');

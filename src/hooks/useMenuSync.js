@@ -47,7 +47,7 @@ export function useMenuSync() {
 
   return {
     menuItems,           // Filtered list for Cashier, Captain, Admin POS
-    allMenuItems: globalMenu, // Full list including expired specials for TodaySpecials archive
+    allMenuItems: globalMenu, // Full list from backend (expired specials now filtered server-side)
     updateMenu: setGlobalMenu,
     setMenuItems: setGlobalMenu,
     setGlobalMenu,

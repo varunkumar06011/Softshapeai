@@ -4398,7 +4398,11 @@ export default function CaptainApp({ onLogout }) {
 
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide scroll-smooth flex-grow">
 
-                          {categories.map(cat => (
+                          {categories.map(cat => {
+
+                            const isSpecialCat = cat === 'Today Special';
+
+                            return (
 
                             <button
 
@@ -4406,36 +4410,31 @@ export default function CaptainApp({ onLogout }) {
 
                               onClick={() => setActiveCategory(cat)}
 
-                              className={`px-5 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all border shrink-0 ${activeCategory === cat
-
-                                  ? 'bg-gradient-to-r from-[#E53935] to-[#B71C1C] text-white border-transparent shadow-[0_4px_12px_rgba(229,57,53,0.2)] scale-[1.02]'
-
-                                  : 'bg-white border-gray-200 text-gray-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700'
-
-                                }`}
+                              className={`px-5 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all border shrink-0 flex items-center gap-1.5 ${
+                                isSpecialCat
+                                  ? activeCategory === cat
+                                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-transparent shadow-[0_4px_12px_rgba(245,158,11,0.2)] scale-[1.02]'
+                                    : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400'
+                                  : activeCategory === cat
+                                    ? 'bg-gradient-to-r from-[#E53935] to-[#B71C1C] text-white border-transparent shadow-[0_4px_12px_rgba(229,57,53,0.2)] scale-[1.02]'
+                                    : 'bg-white border-gray-200 text-gray-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700'
+                              }`}
 
                             >
+
+                              {isSpecialCat && <Flame size={12} className={activeCategory === cat ? 'text-white' : 'text-amber-500'} />}
 
                               {cat}
 
                             </button>
 
-                          ))}
+                            );
+
+                          })}
 
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => setActiveCategory(activeCategory === 'Today Special' ? 'All' : 'Today Special')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all border ${activeCategory === 'Today Special'
-                              ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-sm'
-                              : 'bg-white border-gray-200 text-gray-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700'
-                              }`}
-                          >
-                            <Flame size={12} className={activeCategory === 'Today Special' ? 'text-amber-600' : 'text-gray-400'} />
-                            Today Special
-                          </button>
-
                           <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shadow-sm">
 
                             {['All', 'veg', 'non'].map(diet => (
@@ -4530,7 +4529,11 @@ export default function CaptainApp({ onLogout }) {
 
                       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
 
-                        {categories.map(cat => (
+                        {categories.map(cat => {
+
+                          const isSpecialCat = cat === 'Today Special';
+
+                          return (
 
                           <button
 
@@ -4538,36 +4541,31 @@ export default function CaptainApp({ onLogout }) {
 
                             onClick={() => setActiveCategory(cat)}
 
-                            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 ${activeCategory === cat
-
-                                ? 'bg-gradient-to-r from-[#E53935] to-[#FF7043] text-white border-transparent shadow-[0_8px_16px_rgba(229,57,53,0.15)] scale-[1.03]'
-
-                                : 'bg-white border-gray-100 text-gray-400 hover:bg-red-50/10 hover:text-gray-700'
-
+                            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shrink-0 flex items-center gap-1.5 ${
+                              isSpecialCat
+                                ? activeCategory === cat
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-transparent shadow-[0_4px_12px_rgba(245,158,11,0.2)] scale-[1.02]'
+                                  : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400'
+                                : activeCategory === cat
+                                  ? 'bg-gradient-to-r from-[#E53935] to-[#FF7043] text-white border-transparent shadow-[0_8px_16px_rgba(229,57,53,0.15)] scale-[1.03]'
+                                  : 'bg-white border-gray-100 text-gray-400 hover:bg-red-50/10 hover:text-gray-700'
                               }`}
 
                           >
+
+                            {isSpecialCat && <Flame size={12} className={activeCategory === cat ? 'text-white' : 'text-amber-500'} />}
 
                             {cat}
 
                           </button>
 
-                        ))}
+                          );
+
+                        })}
 
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => setActiveCategory(activeCategory === 'Today Special' ? 'All' : 'Today Special')}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${activeCategory === 'Today Special'
-                            ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-sm'
-                            : 'bg-white border-gray-200 text-gray-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700'
-                            }`}
-                        >
-                          <Flame size={12} className={activeCategory === 'Today Special' ? 'text-amber-600' : 'text-gray-400'} />
-                          Today Special
-                        </button>
-
                         <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200">
 
                           {['All', 'veg', 'non'].map(diet => (
@@ -4818,7 +4816,11 @@ export default function CaptainApp({ onLogout }) {
 
                         return (
 
-                          <ItemCard key={idx} item={item} onAdd={(item) => handleItemClick({ stopPropagation: () => {} }, item)} className="cursor-pointer bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden">
+                          <ItemCard key={idx} item={item} onAdd={(item) => handleItemClick({ stopPropagation: () => {} }, item)} className={`cursor-pointer rounded-2xl p-3.5 flex gap-4 items-center group transition-all duration-300 active:scale-[0.98] relative overflow-hidden ${
+                            item.isSpecial
+                              ? 'bg-gradient-to-br from-amber-50 to-white border border-amber-300 hover:border-amber-500 hover:shadow-[0_12px_30px_rgba(245,158,11,0.12)] shadow-[0_4px_20px_rgba(245,158,11,0.05)]'
+                              : 'bg-white border border-gray-100 hover:border-[#E53935]/40 hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] shadow-[0_4px_20px_rgba(0,0,0,0.015)]'
+                          }`}>
 
                             {/* Chef Special Badge */}
 
@@ -4826,7 +4828,7 @@ export default function CaptainApp({ onLogout }) {
 
                               <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
 
-                                <StarIcon size={6} className="fill-white" /> Special
+                                <Flame size={7} className="fill-white" /> Special
 
                               </div>
 

@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Store, MapPin, Users, Hash, ArrowRight, Loader2, CheckCircle, XCircle, Building2, Calendar, Plus, X, Copy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
@@ -39,6 +39,8 @@ const VENUE_ICONS = {
 
 const OutletsOverview = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const basePath = location.pathname.replace('/outlets-overview', '');
   const { restaurant, setAuth } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -74,7 +76,7 @@ const OutletsOverview = () => {
       const { token, user, restaurant: newRestaurant } = await authService.switchOutlet(outletId);
       setAuth({ token, user, restaurant: newRestaurant });
       reconnectSocket(token);
-      navigate('/admin/dashboard');
+      navigate(basePath);
     } catch (err) {
       setError(err.message || 'Failed to switch outlet');
     } finally {

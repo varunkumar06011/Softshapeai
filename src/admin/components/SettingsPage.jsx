@@ -38,7 +38,9 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Briefcase,
 } from 'lucide-react';
+import { adminRoutes } from '../adminRoutes';
 import PhoneOtpVerifier from '../../shared/components/PhoneOtpVerifier';
 import EmailOtpVerifier from '../../shared/components/EmailOtpVerifier';
 
@@ -166,6 +168,9 @@ function SettingsPage({ onNavigate }) {
     halfBottleMl: 375,
   });
 
+  // Manager tab visibility config — stored in enabledModules.managerTabs
+  const [managerTabs, setManagerTabs] = useState({});
+
   // Venue list for menu import targeting
   const [venues, setVenues] = useState([]);
   const [venuesLoading, setVenuesLoading] = useState(false);
@@ -236,6 +241,7 @@ function SettingsPage({ onNavigate }) {
           fullBottleMl: r.fullBottleMl ?? 750,
           halfBottleMl: r.halfBottleMl ?? 375,
         });
+        setManagerTabs(r.enabledModules?.managerTabs || {});
 
         // Load staff counts
         try {
@@ -496,6 +502,13 @@ function SettingsPage({ onNavigate }) {
         >
           <UserCog size={16} />
           Account
+        </button>
+        <button
+          onClick={() => setTab('manager')}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${tab === 'manager' ? 'bg-red-50 text-[#E53935]' : 'text-gray-500 hover:bg-gray-50'}`}
+        >
+          <Briefcase size={16} />
+          Manager
         </button>
       </div>
 
@@ -895,6 +908,55 @@ function SettingsPage({ onNavigate }) {
       )}
 
       {tab === 'apps' && <AppsSection />}
+
+      {tab === 'manager' && (
+        <div className="space-y-6">
+          <SectionCard title="Manager Access" icon={Briefcase}>
+            <p className="text-sm text-gray-500 mb-4">
+              Toggle which tabs are visible to Manager users. Only enabled tabs will appear in the Manager dashboard sidebar.
+            </p>
+            <div className="space-y-1">
+              {adminRoutes
+                .filter(r => r.key !== 'settings')
+                .map(r => {
+                  const Icon = r.icon;
+                  const isHr = r.group === 'hr';
+                  const isFirstHr = isHr && !adminRoutes.some(x => x.group === 'hr' && adminRoutes.indexOf(x) < adminRoutes.indexOf(r));
+                  return (
+                    <React.Fragment key={r.key}>
+                      {isFirstHr && (
+                        <div className="pt-3 pb-1">
+                          <p className="text-[11px] font-black uppercase tracking-wider text-gray-400">HR Group</p>
+                        </div>
+                      )}
+                      <div className={`flex items-center justify-between rounded-lg ${isHr ? 'ml-4 bg-gray-50 px-3 py-2' : 'px-3 py-2 hover:bg-gray-50'}`}>
+                        <div className="flex items-center gap-3">
+                          {Icon && <Icon size={18} className="text-gray-400 flex-shrink-0" />}
+                          <p className="text-sm font-medium text-gray-900">{r.label}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setManagerTabs(prev => ({ ...prev, [r.key]: !prev[r.key] }))}
+                          className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ${managerTabs[r.key] === true ? 'bg-[#E53935]' : 'bg-gray-300'}`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${managerTabs[r.key] === true ? 'translate-x-6' : ''}`}
+                          />
+                        </button>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+            </div>
+            <SaveButton
+              saving={savingSection === 'manager'}
+              saved={savedSection === 'manager'}
+              error={sectionErrorName === 'manager' ? sectionError : null}
+              onSave={() => handleSave('manager', managerTabs, { managerTabs })}
+            />
+          </SectionCard>
+        </div>
+      )}
 
       {tab === 'account' && (
         <div className="space-y-6">

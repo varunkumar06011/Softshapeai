@@ -71,11 +71,11 @@ export const authService = {
     return data;
   },
 
-  async captainLogin(restaurantId, userId, pin, restaurantCode) {
+  async captainLogin(restaurantId, userId, pin, restaurantCode, role) {
     const res = await fetch(`${getApiBase()}/api/auth/captain-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurantId, userId, pin, restaurantCode }),
+      body: JSON.stringify({ restaurantId, userId, pin, restaurantCode, role }),
     });
     const data = await res.json();
     if (!res.ok) {

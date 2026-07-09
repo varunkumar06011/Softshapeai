@@ -107,6 +107,7 @@ export function mapFlatMenuItems(items) {
       unit: item.unit ?? (isLiquor ? "ml" : null),
       mlPerUnit: isLiquor ? 30 : null,
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
+      printerName: item.printerName || null,
       venuePrices: item.venuePrices || {},
       gstEnabled: item.gstEnabled !== false,
       isSpecial: item.isSpecial === true,
