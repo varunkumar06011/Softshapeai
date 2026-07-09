@@ -178,6 +178,8 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
       <div className="mt-6 flex gap-3">
         <KpiCard icon={TrendingUp} label="Total Sales" value={data.totalSales}
           sub={`from ${data.totalSalesSourcesCount} sources`} color="#16A34A" bg="#F0FDF4" />
+        <KpiCard icon={TrendingUp} label="Net Sales" value={data.netSales}
+          sub="After Aggregator Deduction" color="#0EA5E9" bg="#F0F9FF" />
         <KpiCard icon={ArrowDownCircle} label="Total Expenditure" value={data.totalExpenditure}
           sub={`from ${data.totalExpenditureCategoriesCount} categories`} color="#3B82F6" bg="#EFF6FF" />
         <KpiCard icon={SlidersHorizontal} label="Total Adjustments" value={data.totalAdjustments}
@@ -242,7 +244,7 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
       <div className="mt-6">
         <SectionBadge n={4}>CALCULATION SUMMARY</SectionBadge>
         <div className="flex items-center gap-2">
-          <CalcBox label="Total Sales" value={data.totalSales} />
+          <CalcBox label="Net Sales" value={data.netSales} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
           <CalcBox label="Other Income" value={data.otherIncome || 0} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>−</span>

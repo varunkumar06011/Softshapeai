@@ -20,50 +20,65 @@ function round2(n) {
 
 function calculateBalance(openingBalance, sales, totalExpenditures, adjustments, totalSalesOverride, totalExpendituresOverride) {
   const ob = round2(openingBalance);
-  
+
   // Cash sales (in-hand cash)
   const cashSales = round2(sales.acBar) + round2(sales.nonAcBar) + round2(sales.familyWing) + round2(sales.parcel);
-  
+
   // Aggregator sales (settled later, not cash-in-hand)
   const swiggy = round2(sales.swiggy);
   const zomato = round2(sales.zomato);
   const aggregatorSales = round2(swiggy + zomato);
-  
+
   // Total sales for display (includes aggregators) — override if provided
   const totalSales = totalSalesOverride != null
     ? round2(totalSalesOverride)
     : round2(cashSales + aggregatorSales);
+
+  // Net sales = Total Sales minus aggregator sales
+  const netSales = round2(totalSales - aggregatorSales);
 
   // Effective expenditures — override if provided
   const effectiveExpenditures = totalExpendituresOverride != null
     ? round2(totalExpendituresOverride)
     : round2(totalExpenditures);
 
-  // Step-by-step calculation:
-  // 1. Opening Balance + Total Sales
-  const afterTotalSales = round2(ob + totalSales);
-  // 2. Minus Aggregator Sales (Swiggy + Zomato)
-  const afterAggregatorDeduction = round2(afterTotalSales - aggregatorSales);
-  // 3. Minus Expenditures
-  const afterExpenditures = round2(afterAggregatorDeduction - effectiveExpenditures);
-
   const sorted = [...adjustments].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const minusAdjustments = sorted.filter(a => a.sign !== 'PLUS');
+  const plusAdjustments = sorted.filter(a => a.sign === 'PLUS');
+  const otherIncome = round2(plusAdjustments.reduce((sum, a) => sum + Number(a.amount), 0));
+
+  // Steps show amounts only (no running balance after each step)
   const steps = [
-    { label: 'Opening Balance', value: ob },
-    { label: `+ Total Sales (₹${totalSales.toLocaleString('en-IN')})`, value: afterTotalSales },
-    { label: `- Swiggy + Zomato (₹${aggregatorSales.toLocaleString('en-IN')})`, value: afterAggregatorDeduction },
-    { label: `- Expenditures (₹${effectiveExpenditures.toLocaleString('en-IN')})`, value: afterExpenditures },
+    { label: 'Opening Balance', amount: ob },
+    { label: '+ Total Sales', amount: totalSales },
+    { label: '\u2212 Swiggy', amount: swiggy },
+    { label: '\u2212 Zomato', amount: zomato },
+    { label: '= Net Sales', amount: netSales },
+    { label: '\u2212 Expenditures', amount: effectiveExpenditures },
   ];
+
+  for (const adj of minusAdjustments) {
+    const amt = round2(Number(adj.amount) || 0);
+    steps.push({ label: `\u2212 ${adj.label}`, amount: amt });
+  }
+
+  if (otherIncome > 0) {
+    steps.push({ label: '+ Other Income', amount: otherIncome });
+  }
+
+  // Closing balance calculation (same logic as before)
+  const afterTotalSales = round2(ob + totalSales);
+  const afterAggregatorDeduction = round2(afterTotalSales - aggregatorSales);
+  const afterExpenditures = round2(afterAggregatorDeduction - effectiveExpenditures);
 
   let running = afterExpenditures;
   for (const adj of sorted) {
     const amt = round2(Number(adj.amount) || 0);
     if (adj.sign === 'PLUS') running = round2(running + amt);
     else running = round2(running - amt);
-    steps.push({ label: `${adj.sign === 'PLUS' ? '+' : '−'} ${adj.label} (₹${amt.toLocaleString('en-IN')})`, value: running });
   }
 
-  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps, effectiveExpenditures };
+  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps, effectiveExpenditures, netSales, totalSales, otherIncome };
 }
 
 // ── Helper: get today's date in IST ───────────────────────────────────────────
@@ -715,14 +730,15 @@ export default function AdminDailyBalanceSheet() {
       generatedOn,
       generatedBy: user?.name || 'Admin',
       totalSales,
+      netSales: balanceCalc.netSales,
       totalSalesSourcesCount: 6,
       totalExpenditure: totalExpenditures,
       totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
-      totalAdjustments: adjustments.reduce((sum, a) => sum + Number(a.amount), 0),
-      totalAdjustmentsEntriesCount: adjustments.length,
+      totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
+      totalAdjustmentsEntriesCount: adjustments.filter(a => a.sign !== 'PLUS').length,
       grossBalance,
       netClosingBalance: balanceCalc.closingBalance,
-      otherIncome: 0,
+      otherIncome: adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
       amountInWords: numberToWords(balanceCalc.closingBalance),
       venueSales: [
         { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
@@ -736,7 +752,7 @@ export default function AdminDailyBalanceSheet() {
         label: cat,
         amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
       })),
-      adjustments: adjustments.map(a => ({
+      adjustments: adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
         label: a.label,
         amount: Number(a.amount),
       })),
@@ -829,14 +845,15 @@ export default function AdminDailyBalanceSheet() {
         generatedOn,
         generatedBy: user?.name || 'Admin',
         totalSales,
+        netSales: balanceCalc.netSales,
         totalSalesSourcesCount: 6,
         totalExpenditure: totalExpenditures,
         totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
-        totalAdjustments: adjustments.reduce((sum, a) => sum + Number(a.amount), 0),
-        totalAdjustmentsEntriesCount: adjustments.length,
+        totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
+        totalAdjustmentsEntriesCount: adjustments.filter(a => a.sign !== 'PLUS').length,
         grossBalance,
         netClosingBalance: balanceCalc.closingBalance,
-        otherIncome: 0,
+        otherIncome: adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
         amountInWords: numberToWords(balanceCalc.closingBalance),
         venueSales: [
           { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
@@ -850,7 +867,7 @@ export default function AdminDailyBalanceSheet() {
           label: cat,
           amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
         })),
-        adjustments: adjustments.map(a => ({
+        adjustments: adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
           label: a.label,
           amount: Number(a.amount),
         })),
@@ -1131,62 +1148,34 @@ export default function AdminDailyBalanceSheet() {
         </div>
       </div>
 
-      {/* ── Swiggy + Zomato Deduction Breakdown ────────────────────────────── */}
-      <div className="rounded-xl bg-orange-50 border border-orange-200 p-4">
-        <div className="mb-2">
-          <h4 className="text-xs font-bold text-orange-700 uppercase tracking-wider">Aggregator Sales (to be deducted)</h4>
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-orange-800">Swiggy</span>
-            <span className="font-bold text-orange-900">₹{computedSales.swiggy.toLocaleString('en-IN')}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-orange-800">Zomato</span>
-            <span className="font-bold text-orange-900">₹{computedSales.zomato.toLocaleString('en-IN')}</span>
-          </div>
-          <div className="mt-2 pt-2 border-t border-orange-300">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-orange-700">Total Aggregator Sales</span>
-              <span className="text-lg font-black text-orange-900">
-                ₹{(computedSales.swiggy + computedSales.zomato).toLocaleString('en-IN')}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="mt-2 text-xs text-orange-600">
-          These sales are settled later by aggregators and not cash-in-hand
+      {/* ── Net Sales display ───────────────────────────────────────────── */}
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-blue-700">Net Sales (after Swiggy + Zomato deduction)</span>
+          <span className="text-lg font-black text-blue-900">
+            ₹{balanceCalc.netSales.toLocaleString('en-IN')}
+          </span>
         </div>
       </div>
 
-      {/* ── Clear step-by-step calculation breakdown ──────────────────────── */}
+      {/* ── Balance Calculation (amounts only, no running balance) ──────── */}
       <div className="rounded-xl bg-gray-900 p-4">
         <div className="mb-3">
           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Balance Calculation</h4>
         </div>
         <div className="space-y-3">
           {balanceCalc.steps.map((step, i) => {
-            const isLastStep = i === balanceCalc.steps.length - 1;
-            const isClosingBalance = isLastStep;
-            const showEquals = i > 0 && (step.label.startsWith('-') || step.label.startsWith('+'));
-            
+            const isNetSales = step.label.startsWith('= Net Sales');
             return (
               <div key={i}>
                 <div className="flex items-center justify-between">
-                  <span className={`text-sm font-bold ${isClosingBalance ? 'text-white' : 'text-gray-300'}`}>
+                  <span className={`text-sm font-bold ${isNetSales ? 'text-blue-400' : 'text-gray-300'}`}>
                     {step.label}
                   </span>
-                  <span className={`font-black ${isClosingBalance ? 'text-xl text-white' : 'text-lg text-gray-200'}`}>
-                    ₹{Number(step.value).toLocaleString('en-IN')}
+                  <span className={`font-black ${isNetSales ? 'text-lg text-blue-400' : 'text-lg text-gray-200'}`}>
+                    ₹{Number(step.amount).toLocaleString('en-IN')}
                   </span>
                 </div>
-                {showEquals && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <div className="h-px bg-gray-600 flex-1" />
-                    <span className="text-xs text-gray-500">= Balance after this step</span>
-                    <div className="h-px bg-gray-600 flex-1" />
-                  </div>
-                )}
               </div>
             );
           })}
