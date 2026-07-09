@@ -73,11 +73,7 @@ function getVenueTableLabel(sectionTag, tableNumber) {
   return String(tableNumber);
 }
 
-const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 const TXN_PAGE_SIZE = 100;
-
-// Background queue for final bill + inventory deduction
-const settlementQueue = new BackgroundQueue('settlement');
 
 const toFrontendTableStatus = (backendStatus) => {
   const map = {
@@ -255,6 +251,8 @@ const CashierDashboard = ({ onLogout }) => {
   console.log('[BUILD] CashierDashboard loaded — version 5.0.0');
   const { user, restaurant } = useAuth();
   const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
+  const settlementQueueRef = useRef(null);
+  if (!settlementQueueRef.current) settlementQueueRef.current = new BackgroundQueue('settlement');
   const enabledModules = restaurant?.enabledModules || {};
   const defaultOutlet = enabledModules.bar && enabledModules.food ? 'both'
     : enabledModules.bar && !enabledModules.food ? 'bar'
@@ -3491,7 +3489,7 @@ const CashierDashboard = ({ onLogout }) => {
     const commitFn = async () => {
       setIsSettling(true);
       // Add to background queue for final bill + inventory deduction
-      await settlementQueue.add(async () => {
+      await settlementQueueRef.current.add(async () => {
         // Call backend settle endpoint (creates transaction, marks paid, resets table)
         // NO PRINTING - that already happened in handleFinalBill
         if (orderId) {
