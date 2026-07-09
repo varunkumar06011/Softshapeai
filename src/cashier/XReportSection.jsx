@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Printer, Save, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Printer, Save, Calendar, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { printLocal } from '../utils/printOffline';
 import { buildXReportEscpos } from '../utils/escposFrontend';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../hooks/useSocket';
 
 const DENOMINATIONS = [
   { key: 'notes500', value: 500, label: '₹500' },
@@ -27,12 +28,16 @@ function round2(n) {
 
 export default function XReportSection() {
   const { user, restaurant } = useAuth();
+  const restaurantId = restaurant?.id || null;
+  const socket = useSocket(restaurantId);
   const [reportDate, setReportDate] = useState(getTodayDate());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [savedMsg, setSavedMsg] = useState(null);
   const [expenditures, setExpenditures] = useState([]);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const pauseAutoRefreshRef = useRef(false);
 
   const [report, setReport] = useState({
     totalSales: 0,
@@ -75,7 +80,9 @@ export default function XReportSection() {
   );
 
   // Check if payment breakdown (Card + Cash + UPI + Other) matches total sales (tips excluded)
-  const hasDiscrepancy = Math.abs(paymentBreakdownTotal - Number(report.totalSales)) > 1;
+  const discrepancyAmount = Math.abs(paymentBreakdownTotal - Number(report.totalSales));
+  const hasDiscrepancy = discrepancyAmount > 1;
+  const discrepancySeverity = discrepancyAmount > 100 ? 'high' : discrepancyAmount > 10 ? 'medium' : 'low';
 
   const loadReport = useCallback(async (date) => {
     setLoading(true);
@@ -120,6 +127,30 @@ export default function XReportSection() {
     loadReport(reportDate);
   }, [reportDate, loadReport]);
 
+  // Auto-refresh total sales every 30s, but pause while user is editing fields
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!pauseAutoRefreshRef.current) {
+        handleRefreshTotalSales();
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [handleRefreshTotalSales]);
+
+  // Real-time refresh on order:paid events
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderPaid = () => {
+      if (!pauseAutoRefreshRef.current) {
+        handleRefreshTotalSales();
+      }
+    };
+    socket.on('order:paid', onOrderPaid);
+    return () => {
+      socket.off('order:paid', onOrderPaid);
+    };
+  }, [socket, handleRefreshTotalSales]);
+
   const handleFieldChange = (field, value) => {
     setReport(prev => ({ ...prev, [field]: value }));
     setSavedMsg(null);
@@ -127,6 +158,14 @@ export default function XReportSection() {
     if (['cashAmount', 'cardAmount', 'upiAmount', 'otherAmount', 'tipsAmount'].includes(field)) {
       setManuallyEditedFields(prev => new Set([...prev, field]));
     }
+  };
+
+  const handleInputFocus = () => {
+    pauseAutoRefreshRef.current = true;
+  };
+
+  const handleInputBlur = () => {
+    pauseAutoRefreshRef.current = false;
   };
 
   const handleResetToAutoCalculated = () => {
@@ -141,30 +180,34 @@ export default function XReportSection() {
     setSavedMsg('Reset to auto-calculated values from transactions');
   };
 
-  const handleRefreshTotalSales = async () => {
+  const handleRefreshTotalSales = useCallback(async () => {
     try {
       const data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
-      setReport(prev => ({
-        ...prev,
-        totalSales: Number(data.totalSales) || 0,
+      const freshAmounts = {
         cardAmount: Number(data.cardAmount) || 0,
         cashAmount: Number(data.cashAmount) || 0,
         upiAmount: Number(data.upiAmount) || 0,
         otherAmount: Number(data.otherAmount) || 0,
         tipsAmount: Number(data.tipsAmount) || 0,
-      }));
-      setAutoCalculatedAmounts({
-        cardAmount: Number(data.cardAmount) || 0,
-        cashAmount: Number(data.cashAmount) || 0,
-        upiAmount: Number(data.upiAmount) || 0,
-        otherAmount: Number(data.otherAmount) || 0,
-        tipsAmount: Number(data.tipsAmount) || 0,
+      };
+
+      setReport(prev => {
+        const next = { ...prev, totalSales: Number(data.totalSales) || 0 };
+        // Only overwrite payment fields that haven't been manually edited
+        for (const field of Object.keys(freshAmounts)) {
+          if (!manuallyEditedFields.has(field)) {
+            next[field] = freshAmounts[field];
+          }
+        }
+        return next;
       });
+      setAutoCalculatedAmounts(freshAmounts);
+      setLastUpdated(new Date());
       setSavedMsg('Total Sales refreshed from current transactions');
     } catch (err) {
       setError('Failed to refresh Total Sales: ' + err.message);
     }
-  };
+  }, [reportDate, manuallyEditedFields]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -365,7 +408,14 @@ export default function XReportSection() {
     <div className="flex flex-col gap-4 h-full">
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider">X Report</h2>
+          <div>
+            <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider">X Report</h2>
+            {lastUpdated && (
+              <p className="text-[10px] font-bold text-gray-400 mt-0.5">
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Calendar size={18} className="text-gray-400" />
             <input
@@ -389,8 +439,20 @@ export default function XReportSection() {
           </div>
         )}
         {hasDiscrepancy && (
-          <div className="mb-3 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs font-bold text-yellow-700">
-            ⚠️ Payment breakdown (₹{paymentBreakdownTotal.toFixed(2)}) doesn't match Total Sales (₹{Number(report.totalSales).toFixed(2)}). Difference: ₹{Math.abs(paymentBreakdownTotal - Number(report.totalSales)).toFixed(2)}
+          <div className={`mb-3 px-3 py-2 rounded-lg text-xs font-bold ${
+            discrepancySeverity === 'high'
+              ? 'bg-red-50 border border-red-200 text-red-700'
+              : discrepancySeverity === 'medium'
+                ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                : 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+          }`}>
+            ⚠️ Payment breakdown (₹{paymentBreakdownTotal.toFixed(2)}) doesn't match Total Sales (₹{Number(report.totalSales).toFixed(2)}). Difference: ₹{discrepancyAmount.toFixed(2)}
+            <div className="mt-1 flex gap-2 text-[10px] opacity-90">
+              <span>Cash: ₹{Number(report.cashAmount || 0).toFixed(2)}</span>
+              <span>Card: ₹{Number(report.cardAmount || 0).toFixed(2)}</span>
+              <span>UPI: ₹{Number(report.upiAmount || 0).toFixed(2)}</span>
+              <span>Other: ₹{Number(report.otherAmount || 0).toFixed(2)}</span>
+            </div>
           </div>
         )}
 
@@ -404,10 +466,10 @@ export default function XReportSection() {
                   <span className="text-lg font-black text-gray-900 tabular-nums">₹{round2(Number(report.totalSales)).toFixed(2)}</span>
                   <button
                     onClick={handleRefreshTotalSales}
-                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                    className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
                     title="Refresh from current transactions"
                   >
-                    Refresh
+                    <RefreshCw size={12} /> Refresh
                   </button>
                 </div>
               </div>
@@ -430,6 +492,8 @@ export default function XReportSection() {
                     min="0"
                     value={report.cashAmount}
                     onChange={(e) => handleFieldChange('cashAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
                     step="0.01"
@@ -443,6 +507,8 @@ export default function XReportSection() {
                     min="0"
                     value={report.cardAmount}
                     onChange={(e) => handleFieldChange('cardAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
                     step="0.01"
@@ -456,6 +522,8 @@ export default function XReportSection() {
                     min="0"
                     value={report.upiAmount}
                     onChange={(e) => handleFieldChange('upiAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
                     step="0.01"
@@ -469,6 +537,8 @@ export default function XReportSection() {
                     min="0"
                     value={report.otherAmount}
                     onChange={(e) => handleFieldChange('otherAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
                     step="0.01"
@@ -482,6 +552,8 @@ export default function XReportSection() {
                     min="0"
                     value={report.tipsAmount}
                     onChange={(e) => handleFieldChange('tipsAmount', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
                     onWheel={(e) => e.target.blur()}
                     className="w-32 md:w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 tabular-nums text-right"
                     step="0.01"

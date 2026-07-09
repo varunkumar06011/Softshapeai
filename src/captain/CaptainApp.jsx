@@ -4424,32 +4424,45 @@ export default function CaptainApp({ onLogout }) {
 
                         </div>
 
-                        <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0 shadow-sm">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => setActiveCategory(activeCategory === 'Today Special' ? 'All' : 'Today Special')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all border ${activeCategory === 'Today Special'
+                              ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-sm'
+                              : 'bg-white border-gray-200 text-gray-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700'
+                              }`}
+                          >
+                            <Flame size={12} className={activeCategory === 'Today Special' ? 'text-amber-600' : 'text-gray-400'} />
+                            Today Special
+                          </button>
 
-                          {['All', 'veg', 'non'].map(diet => (
+                          <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shadow-sm">
 
-                            <button
+                            {['All', 'veg', 'non'].map(diet => (
 
-                              key={diet}
+                              <button
 
-                              onClick={() => setActiveDiet(diet)}
+                                key={diet}
 
-                              className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
+                                onClick={() => setActiveDiet(diet)}
 
-                                ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
+                                className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
 
-                                : 'text-gray-400 hover:text-gray-600 bg-transparent'
+                                  ? (diet === 'All' ? 'bg-gray-800 text-white shadow-sm' : diet === 'veg' ? 'bg-green-600 text-white shadow-sm' : 'bg-red-600 text-white shadow-sm')
 
-                                }`}
+                                  : 'text-gray-400 hover:text-gray-600 bg-transparent'
 
-                            >
+                                  }`}
 
-                              {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
+                              >
 
-                            </button>
+                                {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non'}
 
-                          ))}
+                              </button>
 
+                            ))}
+
+                          </div>
                         </div>
 
                       </div>
@@ -4543,32 +4556,45 @@ export default function CaptainApp({ onLogout }) {
 
                       </div>
 
-                      <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setActiveCategory(activeCategory === 'Today Special' ? 'All' : 'Today Special')}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${activeCategory === 'Today Special'
+                            ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700'
+                            }`}
+                        >
+                          <Flame size={12} className={activeCategory === 'Today Special' ? 'text-amber-600' : 'text-gray-400'} />
+                          Today Special
+                        </button>
 
-                        {['All', 'veg', 'non'].map(diet => (
+                        <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200">
 
-                          <button
+                          {['All', 'veg', 'non'].map(diet => (
 
-                            key={diet}
+                            <button
 
-                            onClick={() => setActiveDiet(diet)}
+                              key={diet}
 
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
+                              onClick={() => setActiveDiet(diet)}
 
-                              ? 'bg-white text-gray-900 shadow-sm'
+                              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeDiet === diet
 
-                              : 'text-gray-400 hover:text-gray-600'
+                                ? 'bg-white text-gray-900 shadow-sm'
 
-                              }`}
+                                : 'text-gray-400 hover:text-gray-600'
 
-                          >
+                                }`}
 
-                            {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non-Veg'}
+                            >
 
-                          </button>
+                              {diet === 'All' ? 'All' : diet === 'veg' ? 'Veg' : 'Non-Veg'}
 
-                        ))}
+                            </button>
 
+                          ))}
+
+                        </div>
                       </div>
 
                     </div>

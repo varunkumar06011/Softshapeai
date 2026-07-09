@@ -29,10 +29,11 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Tag
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
+import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
@@ -487,6 +488,14 @@ const CashierDashboard = ({ onLogout }) => {
   const [confirmCashInput, setConfirmCashInput] = useState('');
   const [confirmCardInput, setConfirmCardInput] = useState('');
   const [confirmTipInput, setConfirmTipInput] = useState('');
+  const [showSpecialsModal, setShowSpecialsModal] = useState(false);
+  const [specialsRows, setSpecialsRows] = useState([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
+  const [specialsSaving, setSpecialsSaving] = useState(false);
+  const [specialsError, setSpecialsError] = useState(null);
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
+  const [bulkConfirmProgress, setBulkConfirmProgress] = useState({ current: 0, total: 0 });
+  const [bulkConfirmResults, setBulkConfirmResults] = useState(null);
+  const [bulkConfirmSaving, setBulkConfirmSaving] = useState(false);
   const [tipInput, setTipInput] = useState('');
   const [otherCashInput, setOtherCashInput] = useState('');
   const [otherCardInput, setOtherCardInput] = useState('');
@@ -579,7 +588,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   // ── Moved up: these must be declared before activeTablesRef ──
-  const { menuItems, categories, loading: restaurantMenuLoading } = useMenu();
+  const { menuItems, categories, loading: restaurantMenuLoading, refreshMenu } = useMenu();
 
   // FREEZE: skip table updates when bill is printed (not yet settled) or during KOT submission
   const shouldSkipSyncUpdate = useCallback((t) => {
@@ -1222,6 +1231,7 @@ const CashierDashboard = ({ onLogout }) => {
         paymentMethod: effectiveMethod,
         cashAmount: cashAmt,
         cardAmount: cardAmt,
+        tipAmount: tipAmt,
       });
       if (result?.offline) {
         addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
@@ -1257,6 +1267,158 @@ const CashierDashboard = ({ onLogout }) => {
     setConfirmCardInput('');
     setConfirmTipInput('');
   }, []);
+
+  const handleOpenSpecialsModal = useCallback(() => {
+    setShowSpecialsModal(true);
+    setSpecialsError(null);
+    setSpecialsRows([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
+  }, []);
+
+  const handleCloseSpecialsModal = useCallback(() => {
+    setShowSpecialsModal(false);
+    setSpecialsError(null);
+    setSpecialsRows([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
+  }, []);
+
+  const handleSpecialRowChange = useCallback((index, field, value) => {
+    setSpecialsRows(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
+  }, []);
+
+  const handleAddSpecialRow = useCallback(() => {
+    setSpecialsRows(prev => [...prev, { name: '', price: '', category: 'Main Course', isVeg: true }]);
+  }, []);
+
+  const handleRemoveSpecialRow = useCallback((index) => {
+    setSpecialsRows(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleSaveSpecials = useCallback(async () => {
+    const validRows = specialsRows.filter(row => row.name.trim() && Number(row.price) > 0);
+    if (validRows.length === 0) {
+      setSpecialsError('Please add at least one valid special with name and price.');
+      return;
+    }
+
+    const names = validRows.map(row => row.name.trim().toLowerCase());
+    const duplicates = names.filter((name, i) => names.indexOf(name) !== i);
+    if (duplicates.length > 0) {
+      setSpecialsError(`Duplicate names found: ${[...new Set(duplicates)].join(', ')}`);
+      return;
+    }
+
+    setSpecialsSaving(true);
+    setSpecialsError(null);
+
+    try {
+      const payload = validRows.map(row => ({
+        name: row.name.trim(),
+        category: row.category.trim() || 'Main Course',
+        price: Number(row.price),
+        isVeg: row.isVeg,
+        menuType: 'FOOD',
+        specialChannel: 'BOTH',
+      }));
+
+      await bulkImportSpecials(payload, true);
+      addNotification('Today Specials Saved', `${payload.length} item(s) added and synced to all outlets.`, 'success');
+      handleCloseSpecialsModal();
+      if (refreshMenu) await refreshMenu();
+    } catch (err) {
+      console.error('[SaveSpecials] error:', err);
+      setSpecialsError(err.message || 'Failed to save Today Specials.');
+      addNotification('Save Failed', err.message || 'Could not save Today Specials.', 'error');
+    } finally {
+      setSpecialsSaving(false);
+    }
+  }, [specialsRows, refreshMenu, addNotification, handleCloseSpecialsModal]);
+
+  const bulkConfirmAbortRef = useRef(false);
+
+  const handleBulkConfirmPayment = useCallback(async () => {
+    if (bulkConfirmSaving) return; // prevent double-click / concurrent runs
+    const pendingTxns = pastTransactions.filter(
+      t => (t.status || 'COMPLETED') === 'PENDING' && t.id
+    );
+    if (pendingTxns.length === 0) {
+      addNotification('No Pending Bills', 'There are no pending bills to confirm.', 'warning');
+      return;
+    }
+
+    bulkConfirmAbortRef.current = false;
+    setBulkConfirmSaving(true);
+    setBulkConfirmProgress({ current: 0, total: pendingTxns.length });
+    setBulkConfirmResults(null);
+    setShowBulkConfirmModal(true);
+
+    const results = { success: [], failed: [], offline: [] };
+    const chunkSize = 5;
+
+    try {
+      for (let i = 0; i < pendingTxns.length; i += chunkSize) {
+        if (bulkConfirmAbortRef.current) break;
+        const chunk = pendingTxns.slice(i, i + chunkSize);
+        const chunkResults = await Promise.allSettled(
+          chunk.map(async (txn) => {
+            try {
+              const res = await confirmPayment(txn.id, {
+                paymentMethod: 'CASH',
+                cashAmount: Number(txn.grandTotal || txn.amount || 0),
+              });
+              if (res?.offline) {
+                return { type: 'offline', txn };
+              }
+              return { type: 'success', txn };
+            } catch (err) {
+              return { type: 'failed', txn, error: err.message || 'Payment confirmation failed' };
+            }
+          })
+        );
+
+        if (bulkConfirmAbortRef.current) break;
+
+        for (const r of chunkResults) {
+          if (r.status === 'fulfilled') {
+            const value = r.value;
+            if (value.type === 'offline') results.offline.push(value.txn);
+            else if (value.type === 'success') results.success.push(value.txn);
+            else results.failed.push({ txn: value.txn, error: value.error });
+          } else {
+            results.failed.push({ txn: r.reason?.txn, error: r.reason?.error || 'Unknown error' });
+          }
+        }
+
+        setBulkConfirmProgress({ current: Math.min(i + chunkSize, pendingTxns.length), total: pendingTxns.length });
+      }
+
+      setBulkConfirmResults(results);
+
+      const successCount = results.success.length;
+      const failedCount = results.failed.length;
+      const offlineCount = results.offline.length;
+
+      if (failedCount === 0 && offlineCount === 0) {
+        addNotification('Bulk Confirm Complete', `${successCount} bill${successCount !== 1 ? 's' : ''} confirmed as cash.`, 'success');
+        setShowBulkConfirmModal(false);
+      } else if (failedCount > 0) {
+        addNotification('Bulk Confirm Partial', `${successCount} confirmed, ${failedCount} failed, ${offlineCount} queued.`, 'error');
+      } else {
+        addNotification('Bulk Confirm Queued', `${successCount} confirmed, ${offlineCount} queued for sync.`, 'warning');
+        setShowBulkConfirmModal(false);
+      }
+    } finally {
+      setBulkConfirmSaving(false);
+      loadTransactions(txnDateFilterRef.current, null, { silent: true, force: true });
+    }
+  }, [pastTransactions, bulkConfirmSaving, confirmPayment, addNotification, loadTransactions]);
+
+  const handleCloseBulkConfirmModal = useCallback(() => {
+    if (bulkConfirmSaving) {
+      bulkConfirmAbortRef.current = true;
+    }
+    setShowBulkConfirmModal(false);
+    setBulkConfirmResults(null);
+    setBulkConfirmProgress({ current: 0, total: 0 });
+  }, [bulkConfirmSaving]);
 
   useEffect(() => {
     if (!socket) return;
@@ -4681,7 +4843,14 @@ const CashierDashboard = ({ onLogout }) => {
     for (const txn of completedTransactions) {
       const method = (txn.method || '').toUpperCase();
       const amt = Number(txn.grandTotal ?? txn.amount ?? 0);
-      if (method === 'CASH') breakdown.CASH += amt;
+      if (method === 'MIXED') {
+        const cash = Number(txn.cashAmount ?? 0);
+        const card = Number(txn.cardAmount ?? 0);
+        const other = Math.max(0, amt - cash - card);
+        breakdown.CASH += cash;
+        breakdown.CARD += card;
+        breakdown.OTHER += other;
+      } else if (method === 'CASH') breakdown.CASH += amt;
       else if (method === 'CARD') breakdown.CARD += amt;
       else if (method === 'UPI') breakdown.UPI += amt;
       else breakdown.OTHER += amt;
@@ -5350,12 +5519,29 @@ const CashierDashboard = ({ onLogout }) => {
                                   </p>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => setTxnStatusFilter('PENDING')}
-                                className="text-xs font-black text-amber-700 bg-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition"
-                              >
-                                View →
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={handleBulkConfirmPayment}
+                                  disabled={bulkConfirmSaving}
+                                  className={`text-xs font-black text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
+                                    bulkConfirmSaving
+                                      ? 'bg-green-400 cursor-not-allowed'
+                                      : 'bg-green-600 hover:bg-green-700'
+                                  }`}
+                                >
+                                  {bulkConfirmSaving ? (
+                                    <><Loader2 size={12} className="animate-spin" /> Confirming...</>
+                                  ) : (
+                                    <><CheckCircle2 size={12} /> Confirm All</>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => setTxnStatusFilter('PENDING')}
+                                  className="text-xs font-black text-amber-700 bg-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition"
+                                >
+                                  View →
+                                </button>
+                              </div>
                             </div>
                           );
                         })()}
@@ -6128,23 +6314,33 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
 
                     <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
-                      {!menuLoading && activeOutlet === 'restaurant' && todaySpecials.length > 0 && (
+                      {!menuLoading && activeOutlet === 'restaurant' && (
                         <div className="mb-4">
-                          <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 mb-2 flex items-center gap-2">
-                            <StarIcon size={14} className="fill-amber-500" /> Today Specials
-                          </h4>
-                          <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1">
-                            {todaySpecials.map(special => (
-                              <button
-                                key={special.id}
-                                onClick={() => handleAddItem(special)}
-                                className="shrink-0 flex flex-col items-start bg-gradient-to-br from-amber-50 to-white border border-amber-200 hover:border-amber-400 rounded-xl px-3 py-2 shadow-sm active:scale-95 transition-all text-left"
-                              >
-                                <span className="text-xs font-black text-gray-900 line-clamp-1 max-w-[140px]">{special.n}</span>
-                                <span className="text-xs font-black text-[#5C85BB]">₹{special.p}</span>
-                              </button>
-                            ))}
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 flex items-center gap-2">
+                              <StarIcon size={14} className="fill-amber-500" /> Today Specials
+                            </h4>
+                            <button
+                              onClick={handleOpenSpecialsModal}
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-wider hover:bg-amber-200 transition-colors"
+                            >
+                              <Sparkles size={12} /> Manage
+                            </button>
                           </div>
+                          {todaySpecials.length > 0 && (
+                            <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1">
+                              {todaySpecials.map(special => (
+                                <button
+                                  key={special.id}
+                                  onClick={() => handleAddItem(special)}
+                                  className="shrink-0 flex flex-col items-start bg-gradient-to-br from-amber-50 to-white border border-amber-200 hover:border-amber-400 rounded-xl px-3 py-2 shadow-sm active:scale-95 transition-all text-left"
+                                >
+                                  <span className="text-xs font-black text-gray-900 line-clamp-1 max-w-[140px]">{special.n}</span>
+                                  <span className="text-xs font-black text-[#5C85BB]">₹{special.p}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                       {menuLoading ? (
@@ -7729,6 +7925,240 @@ const CashierDashboard = ({ onLogout }) => {
                   Confirm
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TODAY SPECIALS MANAGEMENT MODAL */}
+      {showSpecialsModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl border border-gray-200 animate-slide-in">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center sticky top-0">
+              <div>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Cashier</p>
+                <p className="text-xl font-black text-gray-900 mt-1 flex items-center gap-2">
+                  <Sparkles size={22} className="text-amber-500" /> Manage Today Specials
+                </p>
+              </div>
+              <button
+                onClick={handleCloseSpecialsModal}
+                disabled={specialsSaving}
+                className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Add food items that will be published as Today Specials. These will be available to Cashier and Captain for 24 hours and sync to all outlets.
+              </p>
+
+              {specialsError && (
+                <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm font-bold text-red-700">
+                  {specialsError}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {specialsRows.map((row, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-3 items-start bg-gray-50 p-3 rounded-xl">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Item Name</label>
+                      <input
+                        type="text"
+                        value={row.name}
+                        onChange={(e) => handleSpecialRowChange(index, 'name', e.target.value)}
+                        placeholder="e.g. Paneer Tikka"
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Price (₹)</label>
+                      <input
+                        type="number"
+                        value={row.price}
+                        onChange={(e) => handleSpecialRowChange(index, 'price', e.target.value)}
+                        placeholder="0"
+                        min="0"
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Category</label>
+                      <input
+                        type="text"
+                        value={row.category}
+                        onChange={(e) => handleSpecialRowChange(index, 'category', e.target.value)}
+                        placeholder="Main Course"
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                      />
+                    </div>
+                    <div className="col-span-1 pt-5">
+                      {specialsRows.length > 1 && (
+                        <button
+                          onClick={() => handleRemoveSpecialRow(index)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="col-span-12 flex items-center gap-4 mt-1">
+                      <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={row.isVeg}
+                          onChange={() => handleSpecialRowChange(index, 'isVeg', true)}
+                          className="accent-green-600"
+                        />
+                        Veg
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={!row.isVeg}
+                          onChange={() => handleSpecialRowChange(index, 'isVeg', false)}
+                          className="accent-red-600"
+                        />
+                        Non-Veg
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleAddSpecialRow}
+                disabled={specialsSaving}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 font-black text-xs uppercase tracking-wider hover:border-[#E53935] hover:text-[#E53935] transition-colors w-full justify-center"
+              >
+                <Plus size={16} /> Add Another Item
+              </button>
+            </div>
+
+            <div className="p-6 border-t border-gray-100 bg-gray-50 flex gap-3 sticky bottom-0">
+              <button
+                onClick={handleCloseSpecialsModal}
+                disabled={specialsSaving}
+                className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveSpecials}
+                disabled={specialsSaving}
+                className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors flex items-center justify-center gap-2 ${
+                  specialsSaving
+                    ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                    : 'bg-[#E53935] text-white hover:bg-red-700'
+                }`}
+              >
+                {specialsSaving && <Loader2 size={16} className="animate-spin" />}
+                {specialsSaving ? 'Saving...' : 'Publish Specials'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK CONFIRM PAYMENT MODAL */}
+      {showBulkConfirmModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Bulk Action</p>
+                <p className="text-xl font-black text-gray-900 mt-1 flex items-center gap-2">
+                  <CheckCircle2 size={22} className="text-green-600" /> Confirm Pending Bills
+                </p>
+              </div>
+              {!bulkConfirmSaving && (
+                <button
+                  onClick={handleCloseBulkConfirmModal}
+                  className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
+                >
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+
+            <div className="p-6 space-y-4">
+              {bulkConfirmSaving && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm font-bold text-gray-700">
+                    <span>Confirming payments...</span>
+                    <span>{bulkConfirmProgress.current} / {bulkConfirmProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${bulkConfirmProgress.total > 0 ? (bulkConfirmProgress.current / bulkConfirmProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">Processing in chunks of 5 to prevent server overload.</p>
+                </div>
+              )}
+
+              {bulkConfirmResults && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-green-700">{bulkConfirmResults.success.length}</p>
+                      <p className="text-[10px] font-bold text-green-600 uppercase">Success</p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-amber-700">{bulkConfirmResults.offline.length}</p>
+                      <p className="text-[10px] font-bold text-amber-600 uppercase">Queued</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-red-700">{bulkConfirmResults.failed.length}</p>
+                      <p className="text-[10px] font-bold text-red-600 uppercase">Failed</p>
+                    </div>
+                  </div>
+
+                  {bulkConfirmResults.failed.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+                      <p className="text-xs font-black text-red-700 mb-2">Failed bills:</p>
+                      <ul className="space-y-1">
+                        {bulkConfirmResults.failed.map((f, idx) => (
+                          <li key={idx} className="text-xs text-red-600">
+                            {f.txn?.displayId || f.txn?.billNumber || f.txn?.id} — {f.error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-100 bg-gray-50 flex gap-3">
+              {bulkConfirmResults?.failed.length > 0 ? (
+                <>
+                  <button
+                    onClick={handleCloseBulkConfirmModal}
+                    className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-100 transition-colors"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={handleBulkConfirmPayment}
+                    className="flex-1 py-3 px-4 rounded-xl bg-green-600 text-white font-black uppercase text-sm hover:bg-green-700 transition-colors"
+                  >
+                    Retry Failed
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleCloseBulkConfirmModal}
+                  disabled={bulkConfirmSaving}
+                  className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-100 transition-colors"
+                >
+                  {bulkConfirmSaving ? 'Confirming...' : 'Close'}
+                </button>
+              )}
             </div>
           </div>
         </div>

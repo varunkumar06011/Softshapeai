@@ -939,10 +939,15 @@ export async function deleteTransaction(transactionId, restaurantId) {
   }
 }
 
-export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount } = {}) {
+export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount, tipAmount } = {}) {
   const body = { paymentMethod };
-  if (cashAmount != null) body.cashAmount = Number(cashAmount);
-  if (cardAmount != null) body.cardAmount = Number(cardAmount);
+  if (paymentMethod === 'MIXED') {
+    body.cashAmount = cashAmount != null ? Number(cashAmount) : 0;
+    body.cardAmount = cardAmount != null ? Number(cardAmount) : 0;
+  } else if (paymentMethod === 'CASH' && cashAmount != null) {
+    body.cashAmount = Number(cashAmount);
+  }
+  if (tipAmount != null) body.tipAmount = Number(tipAmount);
 
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {

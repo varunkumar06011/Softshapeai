@@ -15,7 +15,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame
+  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame, Store, MapPin
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -24,7 +24,7 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
 import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials } from '../services/menuService';
-import { API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
 export default function TodaySpecials() {
@@ -70,6 +70,10 @@ export default function TodaySpecials() {
     zomatoSynced: false,
   });
   const [staffSold, setStaffSold] = useState([]);
+  const [specialsSold, setSpecialsSold] = useState([]);
+  const [outletStats, setOutletStats] = useState([]);
+  const [outlets, setOutlets] = useState([]);
+  const [selectedOutletId, setSelectedOutletId] = useState('all');
   const restaurantId = getCurrentRestaurantId();
   const socket = useSocket(restaurantId);
 
@@ -82,25 +86,93 @@ export default function TodaySpecials() {
   }, []);
 
   useEffect(() => {
-    const loadStaffSold = async () => {
+    apiFetch('/api/restaurant/outlets-overview')
+      .then(data => {
+        if (data?.outlets && Array.isArray(data.outlets)) {
+          setOutlets(data.outlets.map(o => ({ id: o.id, name: o.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Real-time staff/sold analytics (lightweight — called on mount and every order:paid)
+  useEffect(() => {
+    const loadSoldAnalytics = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff`, {
-          headers: { ...getAuthHeaders() },
-        });
-        if (!res.ok) throw new Error('Failed to fetch staff specials');
-        const data = await res.json();
-        setStaffSold(data.staff || []);
+        const outletQuery = selectedOutletId !== 'all' ? `?outletId=${encodeURIComponent(selectedOutletId)}` : '';
+
+        const [staffRes, soldRes] = await Promise.all([
+          fetch(`${API_BASE}/api/analytics/today-specials-by-staff${outletQuery}`, {
+            headers: { ...getAuthHeaders() },
+          }),
+          fetch(`${API_BASE}/api/analytics/today-specials-sold${outletQuery}`, {
+            headers: { ...getAuthHeaders() },
+          }),
+        ]);
+
+        if (!staffRes.ok) throw new Error('Failed to fetch staff specials');
+        if (!soldRes.ok) throw new Error('Failed to fetch specials sold');
+
+        const staffData = await staffRes.json();
+        const soldData = await soldRes.json();
+
+        setStaffSold(staffData.staff || []);
+        setSpecialsSold(soldData.specials || []);
       } catch (err) {
-        console.error('[TodaySpecials] Failed to load staff sold:', err);
+        console.error('[TodaySpecials] Failed to load sold analytics:', err);
       }
     };
-    loadStaffSold();
+
+    loadSoldAnalytics();
     if (!socket) return;
-    socket.on('order:paid', loadStaffSold);
+    socket.on('order:paid', loadSoldAnalytics);
     return () => {
-      socket.off('order:paid', loadStaffSold);
+      socket.off('order:paid', loadSoldAnalytics);
     };
-  }, [socket]);
+  }, [socket, selectedOutletId]);
+
+  // Outlet-wise stats: heavier N+1 fetch, only runs when outlets/filter change, not on every order:paid
+  useEffect(() => {
+    const loadOutletStats = async () => {
+      if (selectedOutletId !== 'all' || outlets.length === 0) {
+        setOutletStats([]);
+        return;
+      }
+
+      // Defensive cap: avoid hammering the server if an org has many outlets
+      const OUTLET_STATS_CAP = 10;
+      const outletsToFetch = outlets.slice(0, OUTLET_STATS_CAP);
+
+      try {
+        const perOutletStats = await Promise.all(
+          outletsToFetch.map(async (o) => {
+            try {
+              const r = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${encodeURIComponent(o.id)}`, {
+                headers: { ...getAuthHeaders() },
+              });
+              if (!r.ok) return { id: o.id, name: o.name, soldCount: 0, revenue: 0 };
+              const d = await r.json();
+              const items = d.specials || [];
+              const soldCount = items.reduce((sum, s) => sum + (s.soldCount || 0), 0);
+              const revenue = items.reduce((sum, s) => {
+                const special = specials.find(sp => sp.id === s.id);
+                return sum + ((special ? special.p : 0) * (s.soldCount || 0));
+              }, 0);
+              return { id: o.id, name: o.name, soldCount, revenue };
+            } catch {
+              return { id: o.id, name: o.name, soldCount: 0, revenue: 0 };
+            }
+          })
+        );
+        setOutletStats(perOutletStats);
+      } catch (err) {
+        console.error('[TodaySpecials] Failed to load outlet stats:', err);
+        setOutletStats([]);
+      }
+    };
+
+    loadOutletStats();
+  }, [selectedOutletId, outlets, specials]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -311,7 +383,19 @@ export default function TodaySpecials() {
           </h2>
           <p className="text-xs font-bold text-gray-500 mt-1">Manage daily recommendations & captain targets</p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+          {outlets.length > 1 && (
+            <select
+              value={selectedOutletId}
+              onChange={(e) => setSelectedOutletId(e.target.value)}
+              className="px-3 py-2.5 text-xs font-bold border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E53935] bg-white cursor-pointer"
+            >
+              <option value="all">All Outlets</option>
+              {outlets.map(o => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => setIsTargetModalOpen(true)}
             className="flex-1 md:flex-none px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-black uppercase tracking-widest hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-center gap-2"
@@ -335,14 +419,24 @@ export default function TodaySpecials() {
 
       {/* STAFF LEADERBOARD */}
       <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
-        <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
-          <Users size={16} className="text-[#E53935]" /> Top Specials Sellers Today
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+            <Users size={16} className="text-[#E53935]" /> Captain Leaderboard
+          </h3>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+            {selectedOutletId === 'all' ? 'All Outlets' : outlets.find(o => o.id === selectedOutletId)?.name || 'Selected Outlet'}
+          </span>
+        </div>
         {staffSold.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {staffSold.map(staff => (
-              <div key={staff.userId} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-                <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+            {staffSold.slice(0, 5).map((staff, idx) => (
+              <div key={staff.userId} className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${idx === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-black w-5 h-5 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-700 shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+                </div>
                 <div className="text-right shrink-0">
                   <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
                   <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
@@ -354,6 +448,35 @@ export default function TodaySpecials() {
           <p className="text-xs font-bold text-gray-400">No specials sold yet. Sales will appear here once a captain or cashier settles a bill containing a special.</p>
         )}
       </div>
+
+      {/* OUTLET-WISE PERFORMANCE */}
+      {selectedOutletId === 'all' && outletStats.length > 0 && (
+        <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
+            <Store size={16} className="text-[#E53935]" /> Outlet-wise Special Sales
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {outletStats.map(outlet => (
+              <div key={outlet.id} className="flex flex-col bg-gray-50 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin size={14} className="text-gray-400" />
+                  <span className="text-sm font-bold text-gray-900 truncate">{outlet.name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-lg font-black text-[#E53935]">{outlet.soldCount}</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">items</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-gray-900">₹{outlet.revenue.toLocaleString('en-IN')}</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase ml-1 block">revenue</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* BULK SELECTION TOOLBAR */}
       {specials.length > 0 && (
@@ -422,6 +545,19 @@ export default function TodaySpecials() {
                   <span className="text-sm font-black text-[#E53935]">₹{special.p}</span>
                 </div>
                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{special.c}</span>
+
+                {(() => {
+                  const sold = specialsSold.find(s => s.id === special.id);
+                  return sold && sold.soldCount > 0 ? (
+                    <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wider">
+                      <Flame size={12} /> {sold.soldCount} sold
+                    </div>
+                  ) : (
+                    <div className="mt-2 inline-flex items-center gap-1.5 bg-gray-50 text-gray-400 rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wider">
+                      <Flame size={12} /> 0 sold
+                    </div>
+                  );
+                })()}
 
                 <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-2">
