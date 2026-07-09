@@ -127,6 +127,35 @@ export default function XReportSection() {
     loadReport(reportDate);
   }, [reportDate, loadReport]);
 
+  const handleRefreshTotalSales = useCallback(async () => {
+    try {
+      const data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
+      const freshAmounts = {
+        cardAmount: Number(data.cardAmount) || 0,
+        cashAmount: Number(data.cashAmount) || 0,
+        upiAmount: Number(data.upiAmount) || 0,
+        otherAmount: Number(data.otherAmount) || 0,
+        tipsAmount: Number(data.tipsAmount) || 0,
+      };
+
+      setReport(prev => {
+        const next = { ...prev, totalSales: Number(data.totalSales) || 0 };
+        // Only overwrite payment fields that haven't been manually edited
+        for (const field of Object.keys(freshAmounts)) {
+          if (!manuallyEditedFields.has(field)) {
+            next[field] = freshAmounts[field];
+          }
+        }
+        return next;
+      });
+      setAutoCalculatedAmounts(freshAmounts);
+      setLastUpdated(new Date());
+      setSavedMsg('Total Sales refreshed from current transactions');
+    } catch (err) {
+      setError('Failed to refresh Total Sales: ' + err.message);
+    }
+  }, [reportDate, manuallyEditedFields]);
+
   // Auto-refresh total sales every 30s, but pause while user is editing fields
   useEffect(() => {
     const interval = setInterval(() => {
@@ -179,35 +208,6 @@ export default function XReportSection() {
     }));
     setSavedMsg('Reset to auto-calculated values from transactions');
   };
-
-  const handleRefreshTotalSales = useCallback(async () => {
-    try {
-      const data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
-      const freshAmounts = {
-        cardAmount: Number(data.cardAmount) || 0,
-        cashAmount: Number(data.cashAmount) || 0,
-        upiAmount: Number(data.upiAmount) || 0,
-        otherAmount: Number(data.otherAmount) || 0,
-        tipsAmount: Number(data.tipsAmount) || 0,
-      };
-
-      setReport(prev => {
-        const next = { ...prev, totalSales: Number(data.totalSales) || 0 };
-        // Only overwrite payment fields that haven't been manually edited
-        for (const field of Object.keys(freshAmounts)) {
-          if (!manuallyEditedFields.has(field)) {
-            next[field] = freshAmounts[field];
-          }
-        }
-        return next;
-      });
-      setAutoCalculatedAmounts(freshAmounts);
-      setLastUpdated(new Date());
-      setSavedMsg('Total Sales refreshed from current transactions');
-    } catch (err) {
-      setError('Failed to refresh Total Sales: ' + err.message);
-    }
-  }, [reportDate, manuallyEditedFields]);
 
   const handleSave = async () => {
     setSaving(true);
