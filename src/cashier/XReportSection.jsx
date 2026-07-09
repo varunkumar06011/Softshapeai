@@ -66,7 +66,7 @@ export default function XReportSection() {
   const [manuallyEditedFields, setManuallyEditedFields] = useState(new Set());
 
   const cashFromNotes = DENOMINATIONS.reduce((sum, d) => sum + (report[d.key] || 0) * d.value, 0);
-  // Balance = Payment Breakdown (Cash + Card + UPI + Other) - Expenditure
+  // Balance = Total Sales - Payment Breakdown (Cash + Card + UPI + Other) - Expenditure
   const paymentBreakdownTotal = round2(
     Number(report.cardAmount || 0)
     + Number(report.cashAmount || 0)
@@ -75,7 +75,8 @@ export default function XReportSection() {
   );
   const expenditureTotal = round2(expenditures.reduce((sum, v) => sum + Number(v.amount || 0), 0));
   const finalAmount = round2(
-    paymentBreakdownTotal
+    Number(report.totalSales || 0)
+    - paymentBreakdownTotal
     - expenditureTotal
   );
 
@@ -293,7 +294,7 @@ export default function XReportSection() {
     lines.push(line);
     lines.push(center('BALANCE'));
     lines.push(center('₹' + finalAmount.toFixed(2)));
-    lines.push(center('(Total Sales - Expenditure)'));
+    lines.push(center('(Total Sales - Payments - Expenditure)'));
     lines.push(line);
     lines.push('Denomination breakdown:');
     DENOMINATIONS.forEach(d => {
@@ -603,7 +604,7 @@ export default function XReportSection() {
             <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 flex flex-col items-center justify-center gap-1">
               <span className="text-xs font-black uppercase tracking-widest text-blue-700">Balance</span>
               <span className="text-3xl md:text-4xl font-black text-blue-900 tabular-nums">₹{finalAmount.toFixed(2)}</span>
-              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Payment Breakdown - Expenditure</span>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Total Sales - Payments - Expenditure</span>
             </div>
 
             {/* Denomination Count */}
