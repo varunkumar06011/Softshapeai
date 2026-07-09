@@ -217,7 +217,7 @@ export default function XReportSection() {
       const payload = {
         reportDate,
         totalSales: Number(report.totalSales),
-        expenditureAmount: Number(report.expenditureAmount || 0),
+        expenditureAmount: expenditureTotal,
         notes500: Number(report.notes500 || 0),
         notes200: Number(report.notes200 || 0),
         notes100: Number(report.notes100 || 0),
