@@ -15,7 +15,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import pkg from './package.json' with { type: 'json' }
+import { readFileSync } from 'fs';
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
 
 const PRINT_AGENT_DOWNLOAD_URL = process.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
 if (!PRINT_AGENT_DOWNLOAD_URL) {
@@ -88,12 +89,5 @@ export default defineConfig({
         },
       },
     },
-    // Rolldown's minifier (Vite 8 default) has a known bug with framer-motion v12
-    // ESM circular references — it produces incorrect initialization order, causing
-    // "Cannot access 'X' before initialization" (TDZ) at runtime.
-    // Using esbuild as the minifier is the stable workaround.
-    // Additionally, manualChunks isolates framer-motion into its own chunk so
-    // its internal circular references cannot cause TDZ in the main bundle.
-    minify: 'esbuild',
   },
 })
