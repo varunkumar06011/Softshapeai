@@ -91,7 +91,7 @@ export default function XReportSection() {
     try {
       const [data, expenditures] = await Promise.all([
         apiFetch(`/api/xreports/${date}`, { timeout: 60000 }),
-        apiFetch(`/api/expenditures?date=${date}`, { timeout: 60000 }),
+        apiFetch(`/api/expenditures?date=${date}&outletId=${restaurantId}`, { timeout: 60000 }),
       ]);
       setReport({
         totalSales: Number(data.totalSales) || 0,
