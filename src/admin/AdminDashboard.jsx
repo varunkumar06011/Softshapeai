@@ -284,6 +284,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
     return adminRoutes
       .map(r => r.key === 'kitchen-inventory' ? { ...r, label: getInventoryLabel(enabledModules) } : r)
       .filter(r => {
+        if (!r.roles.includes(role)) return false;
         if (role === 'manager' && !isManagerTabEnabled(r.key, enabledModules)) return false;
         return isRouteEnabled(r.key, enabledModules);
       });

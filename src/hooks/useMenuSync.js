@@ -36,14 +36,15 @@ export function useMenuSync() {
   const categories = useMemo(() => {
     const ordered = [];
     const seen = new Set();
-    for (const item of menuItems) {
-      if (!seen.has(item.c)) {
-        seen.add(item.c);
-        ordered.push(item.c);
+    for (const item of globalMenu) {
+      const category = item.c;
+      if (category && !seen.has(category)) {
+        seen.add(category);
+        ordered.push(category);
       }
     }
     return ["All", ...ordered];
-  }, [menuItems]);
+  }, [globalMenu]);
 
   return {
     menuItems,           // Filtered list for Cashier, Captain, Admin POS
