@@ -316,6 +316,9 @@ export default function AdminDailyBalanceSheet() {
     const timer = setInterval(() => setToday(getTodayIST()), 60 * 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Keep selectedDateRef in sync so doSave can detect date changes mid-save
+  useEffect(() => { selectedDateRef.current = selectedDate; }, [selectedDate]);
   const [sheet, setSheet] = useState(null);
   const [expenditures, setExpenditures] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -331,6 +334,7 @@ export default function AdminDailyBalanceSheet() {
   const dragItemRef = useRef(null);
   const saveSeqRef = useRef(0);
   const lastAppliedSeqRef = useRef(0);
+  const selectedDateRef = useRef(selectedDate);
 
   // Preload logo for PDF branding
   useEffect(() => {
@@ -467,13 +471,13 @@ export default function AdminDailyBalanceSheet() {
     const freshOverrides = {
       openingBalance: Number(sheet.openingBalance) || 0,
       acBarSaleOverride: sheet.acBarSaleOverride != null ? Number(sheet.acBarSaleOverride) : null,
-      nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : 0,
+      nonAcBarSaleOverride: sheet.nonAcBarSaleOverride != null ? Number(sheet.nonAcBarSaleOverride) : null,
       familyWingSaleOverride: sheet.familyWingSaleOverride != null ? Number(sheet.familyWingSaleOverride) : null,
-      parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : 0,
+      parcelSaleOverride: sheet.parcelSaleOverride != null ? Number(sheet.parcelSaleOverride) : null,
       totalSalesOverride: sheet.totalSalesOverride != null ? Number(sheet.totalSalesOverride) : null,
       totalExpendituresOverride: sheet.totalExpendituresOverride != null ? Number(sheet.totalExpendituresOverride) : null,
-      swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : 0,
-      zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : 0,
+      swiggySale: sheet.swiggySale != null ? Number(sheet.swiggySale) : null,
+      zomatoSale: sheet.zomatoSale != null ? Number(sheet.zomatoSale) : null,
     };
     // Only overwrite local state from server data on fresh fetches
     // (date change, initial load, external refresh) — not from our own save
@@ -527,6 +531,7 @@ export default function AdminDailyBalanceSheet() {
     if (isLocked || !sheet) return;
     setSaving(true);
     const thisSeq = ++saveSeqRef.current;
+    const saveDate = selectedDate;
     try {
       const curOverrides = overridesRef.current;
     const curAdjustments = adjustmentsRef.current;
@@ -555,7 +560,7 @@ export default function AdminDailyBalanceSheet() {
         body: JSON.stringify(body),
       });
       // Only apply if no newer save has been issued since this one started
-      if (thisSeq === saveSeqRef.current) {
+      if (thisSeq === saveSeqRef.current && selectedDateRef.current === saveDate) {
         if (outletId === 'all') {
           // All-Outlets view is an aggregate; the backend saves against the active outlet,
           // so reload the aggregate to keep the view consistent.
