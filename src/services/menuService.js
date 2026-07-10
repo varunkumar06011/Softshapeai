@@ -110,7 +110,7 @@ export function mapFlatMenuItems(items) {
       menuType,
       // isAvailable is only present on admin endpoint items;
       // POS /items filters to available=true so field is absent there — default true
-      isAvailable: toBool(item.isAvailable),
+      isAvailable: item.isAvailable === undefined ? true : toBool(item.isAvailable),
       variants: item.variants || [],
       unit: item.unit ?? (isLiquor ? "ml" : null),
       mlPerUnit: isLiquor ? 30 : null,
