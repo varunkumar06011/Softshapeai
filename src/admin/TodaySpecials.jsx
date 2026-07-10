@@ -25,7 +25,7 @@ import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
-import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials } from '../services/menuService';
+import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials, mapFlatMenuItems } from '../services/menuService';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
@@ -101,7 +101,7 @@ export default function TodaySpecials() {
   const [customEnd, setCustomEnd] = useState('');
   const restaurantId = getCurrentRestaurantId();
   const socket = useSocket(restaurantId);
-  const { restaurant } = useAuth();
+  const { restaurant, setRestaurant } = useAuth();
   const configuredPrinters = restaurant?.printerConfig?.printers || [];
   const allPrinterOptions = useMemo(() => {
     const map = new Map();
@@ -310,10 +310,28 @@ export default function TodaySpecials() {
 
     setSaving(true);
     try {
+      let response;
       if (formData.id) {
-        await updateMenuItem(formData.id, payload);
+        response = await updateMenuItem(formData.id, payload);
       } else {
-        await createMenuItem(payload);
+        response = await createMenuItem(payload);
+      }
+      // Optimistically update the specials list using the backend response
+      const savedItems = Array.isArray(response) ? response : [response];
+      const mappedSpecials = mapFlatMenuItems(savedItems).filter(i => i.isSpecial);
+      if (mappedSpecials.length > 0) {
+        setSpecials(prev => {
+          const next = [...prev];
+          mappedSpecials.forEach(special => {
+            const idx = next.findIndex(i => i.id === special.id);
+            if (idx >= 0) {
+              next[idx] = special;
+            } else {
+              next.unshift(special);
+            }
+          });
+          return next;
+        });
       }
       await refreshMenu();
       await fetchSpecials();
