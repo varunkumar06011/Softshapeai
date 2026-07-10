@@ -83,13 +83,13 @@ export default function TodaySpecials() {
     swiggySynced: false,
     zomatoSynced: false,
     duration: '1 Day',
-    customExpiry: '',
     gstEnabled: true,
     printerTarget: '',
     printerName: '',
     venuePrices: {},
     unit: '',
     menuType: 'FOOD',
+    outletSelection: 'all',
   });
   const [staffSold, setStaffSold] = useState([]);
   const [specialsSold, setSpecialsSold] = useState([]);
@@ -99,6 +99,7 @@ export default function TodaySpecials() {
   const [leaderboardPeriod, setLeaderboardPeriod] = useState('Today');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [expandedStaff, setExpandedStaff] = useState(null);
   const restaurantId = getCurrentRestaurantId();
   const socket = useSocket(restaurantId);
   const { restaurant, setRestaurant } = useAuth();
@@ -292,10 +293,10 @@ export default function TodaySpecials() {
       specialExpiresAt: (() => {
         if (formData.expiresAt) return new Date(formData.expiresAt).toISOString();
         if (formData.id) return null;
+        if (formData.duration === 'No Expiry') return null;
         const now = Date.now();
         if (formData.duration === '1 Week') return new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
         if (formData.duration === '1 Month') return new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
-        if (formData.duration === 'Custom' && formData.customExpiry) return new Date(formData.customExpiry).toISOString();
         return new Date(now + 24 * 60 * 60 * 1000).toISOString();
       })(),
       gstEnabled: formData.gstEnabled !== false,
@@ -305,7 +306,8 @@ export default function TodaySpecials() {
         ? { venuePrices: Object.fromEntries(Object.entries(formData.venuePrices).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)])) }
         : {}),
       ...(formData.unit ? { unit: formData.unit } : {}),
-      syncToAllOutlets: true,
+      syncToAllOutlets: formData.outletSelection === 'all',
+      ...(formData.outletSelection !== 'all' ? { targetOutletId: formData.outletSelection } : {}),
     };
   };
 
@@ -323,7 +325,7 @@ export default function TodaySpecials() {
       await refreshMenu();
       await fetchSpecials();
       setFormData({
-        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', customExpiry: '', gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {}, unit: '', menuType: 'FOOD'
+        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all'
       });
       setIsModalOpen(false);
       simulatePush();
@@ -568,20 +570,43 @@ export default function TodaySpecials() {
         {staffSold.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {staffSold.slice(0, 10).map((staff, idx) => (
-              <div key={staff.userId} className={`flex items-center justify-between rounded-xl px-3 py-2.5 border ${idx === 0 ? 'bg-amber-50 border-amber-200' : idx === 1 ? 'bg-gray-50 border-gray-200' : idx === 2 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${idx === 0 ? 'bg-amber-500 text-white' : idx === 1 ? 'bg-gray-500 text-white' : idx === 2 ? 'bg-orange-500 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>
-                    {idx + 1}
-                  </span>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{staff.revenue > 0 ? `₹${Math.round(staff.revenue).toLocaleString('en-IN')}` : 'No revenue'}</span>
+              <div key={staff.userId} className={`rounded-xl border overflow-hidden ${idx === 0 ? 'bg-amber-50 border-amber-200' : idx === 1 ? 'bg-gray-50 border-gray-200' : idx === 2 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
+                <div
+                  className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-opacity-80 transition-colors"
+                  onClick={() => setExpandedStaff(expandedStaff === staff.userId ? null : staff.userId)}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${idx === 0 ? 'bg-amber-500 text-white' : idx === 1 ? 'bg-gray-500 text-white' : idx === 2 ? 'bg-orange-500 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>
+                      {idx + 1}
+                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{staff.revenue > 0 ? `₹${Math.round(staff.revenue).toLocaleString('en-IN')}` : 'No revenue'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="text-right">
+                      <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
+                    </div>
+                    {staff.items && staff.items.length > 0 && (
+                      <span className="text-gray-400 text-xs">{expandedStaff === staff.userId ? '▲' : '▼'}</span>
+                    )}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
-                </div>
+                {expandedStaff === staff.userId && staff.items && staff.items.length > 0 && (
+                  <div className="px-3 pb-2.5 pt-1 space-y-1 border-t border-gray-200/50">
+                    {staff.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] py-1">
+                        <span className="font-bold text-gray-700 truncate pr-2">{item.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-black text-[#E53935]">{item.soldCount}x</span>
+                          {item.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(item.revenue).toLocaleString('en-IN')}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -729,7 +754,7 @@ export default function TodaySpecials() {
                           <Pause size={12} /> Deactivate
                         </button>
                         <button
-                          onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', customExpiry: '', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD' }); setIsModalOpen(true); }}
+                          onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD', outletSelection: special.outletId || 'all' }); setIsModalOpen(true); }}
                           className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         >
                           <Edit2 size={14} />
@@ -913,10 +938,26 @@ export default function TodaySpecials() {
                 </select>
               </div>
 
+              {outlets.length > 1 && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Add To</label>
+                  <select
+                    value={formData.outletSelection || 'all'}
+                    onChange={e => setFormData({ ...formData, outletSelection: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                  >
+                    <option value="all">All Outlets</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Duration</label>
                 <div className="flex gap-2">
-                  {['1 Day', '1 Week', '1 Month', 'Custom'].map(d => (
+                  {['No Expiry', '1 Day', '1 Week', '1 Month'].map(d => (
                     <button
                       key={d}
                       onClick={() => setFormData({ ...formData, duration: d })}
@@ -926,14 +967,6 @@ export default function TodaySpecials() {
                     </button>
                   ))}
                 </div>
-                {formData.duration === 'Custom' && (
-                  <input
-                    type="datetime-local"
-                    value={formData.customExpiry}
-                    onChange={e => setFormData({ ...formData, customExpiry: e.target.value })}
-                    className="mt-2 w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-                  />
-                )}
               </div>
 
               <div className="flex items-center gap-6 pt-1">
