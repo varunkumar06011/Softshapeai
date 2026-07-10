@@ -36,11 +36,8 @@ export default function TodaySpecials() {
 
   const fetchSpecials = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/menu/items/admin/all-outlets');
-      console.log('[TodaySpecials] /api/menu/items/admin/all-outlets status:', res.status, res.ok);
-      if (!res.ok) return;
-      const items = await res.json();
-      console.log('[TodaySpecials] /api/menu/items/admin/all-outlets returned', items.length, 'items');
+      const items = await apiFetch('/api/menu/items/admin/all-outlets');
+      console.log('[TodaySpecials] /api/menu/items/admin/all-outlets returned', items?.length ?? 0, 'items');
       const mapped = mapFlatMenuItems(items);
       const specialItems = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.id, i])).values());
       console.log('[TodaySpecials] Mapped', mapped.length, 'items,', specialItems.length, 'specials');
