@@ -46,7 +46,7 @@ function StatusDot({ status }) {
 }
 
 export default function PrinterSettingsPage() {
-  const { user, restaurant } = useAuth();
+  const { user, restaurant, setRestaurant } = useAuth();
   const [agentStatus, setAgentStatus] = useState(null);
   const [setupToken, setSetupToken] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -176,6 +176,9 @@ export default function PrinterSettingsPage() {
         body: JSON.stringify({ printerConfig: mergedConfig }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+      if (restaurant) {
+        setRestaurant({ ...restaurant, printerConfig: mergedConfig });
+      }
       setConfigMessage({ type: 'success', text: 'Printer config saved.' });
     } catch (err) {
       setConfigMessage({ type: 'error', text: err.message || 'Failed to save printer config' });

@@ -20,6 +20,14 @@ const PortalSelection = ({ onSelect }) => {
       {/* Abstract Background Elements */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#E53935]/5 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#B71C1C]/5 rounded-full blur-[120px] pointer-events-none" />
+
+      {/* Manager Login link — top right */}
+      <button
+        onClick={() => onSelect('manager')}
+        className="absolute top-6 right-6 z-20 text-sm font-bold text-[#E53935] hover:text-[#B71C1C] transition-colors"
+      >
+        Manager Login →
+      </button>
       
       <div className="mb-6 text-center z-10 animate-fade-in">
         <div className="flex flex-col items-center justify-center gap-4">

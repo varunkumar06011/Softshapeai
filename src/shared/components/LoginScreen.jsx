@@ -61,7 +61,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
 
   // Pre-fill restaurant code from ?code= query param for cashier/captain logins
   useEffect(() => {
-    if (!isCashier && role !== 'captain') return;
+    if (!isCashier && role !== 'captain' && role !== 'manager') return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (code) setSlug(code);
@@ -128,9 +128,13 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load staff');
       }
-      const staff = isCashier ? data.cashiers : data.captains;
+      const staff = isCashier ? data.cashiers : role === 'manager' ? data.managers : data.captains;
       if (!staff || staff.length === 0) {
-        throw new Error('No staff found for this restaurant.');
+        const roleLabel = isCashier ? 'cashiers' : role === 'manager' ? 'managers' : 'captains';
+        const hint = role === 'manager'
+          ? ' Ask an owner/admin to create a Manager in Staff Management.'
+          : '';
+        throw new Error(`No ${roleLabel} found for this restaurant.${hint}`);
       }
       setStaffList(staff);
       setRestaurantId(data.outletId || data.restaurantId);
@@ -154,7 +158,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedUser.id, pin, slug.trim());
+      const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedUser.id, pin, '', role);
       localStorage.setItem('ss_trust_terminal', String(trustTerminal));
       setAuth({ token, user, restaurant });
       reconnectSocket(token);
@@ -208,7 +212,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
         )}
 
         <div className="space-y-6">
-          {isCashier || role === 'captain' ? (
+          {isCashier || role === 'captain' || role === 'manager' ? (
             <div className="space-y-6 py-4">
               {step === 'slug' && (
                 <>

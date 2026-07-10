@@ -64,6 +64,9 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
 }
 
 export async function fetchTables(restaurantId = getCurrentRestaurantId(), signal) {
+  if (!restaurantId) {
+    throw new Error('No restaurant ID available');
+  }
   const res = await fetchWithRetry(apiUrl(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}`), {
     method: "GET",
     cache: "no-store",

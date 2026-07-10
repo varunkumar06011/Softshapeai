@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -3964,7 +3964,8 @@ const CashierDashboard = ({ onLogout }) => {
       : items.filter(i => i.menuType === 'LIQUOR');
     const cats = filtered.map(i => i.category || i.c).filter(Boolean);
     const now = Date.now();
-    const hasTodaySpecial = activeOutlet === 'restaurant' && menuItems.some(
+    const allItemsForSpecials = activeOutlet === 'restaurant' ? menuItems : barMenuItems;
+    const hasTodaySpecial = allItemsForSpecials.some(
       item => item.isSpecial && item.active && (!item.expiresAt || now < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH')
     );
     return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...new Set(cats)];
@@ -3972,10 +3973,11 @@ const CashierDashboard = ({ onLogout }) => {
 
   const todaySpecials = useMemo(() => {
     const now = Date.now();
-    return (menuItems || []).filter(
+    const source = activeOutlet === 'restaurant' ? menuItems : barMenuItems;
+    return (source || []).filter(
       i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CASHIER' || i.specialChannel === 'BOTH')
     );
-  }, [menuItems]);
+  }, [menuItems, barMenuItems, activeOutlet]);
 
   const activeMenuItems = useMemo(() => {
     let itemsToFilter = [];
@@ -6301,25 +6303,34 @@ const CashierDashboard = ({ onLogout }) => {
                         {/* Row 2 — Subcategory Pills (only shown when a menu type is selected) */}
                         {selectedMenuType !== 'ALL' && menuTypeSubcategories.length > 1 && (
                           <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
-                            {menuTypeSubcategories.map(cat => (
-                              <button
-                                key={cat}
-                                onClick={() => setSelectedCategory(cat)}
-                                className={`px-6 py-4 rounded-xl text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 ${selectedCategory === cat
-                                  ? 'bg-[#5C85BB] border-[#5C85BB] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
-                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F6F9FC] hover:border-[#D4D8E8] hover:text-[#5C85BB]'
+                            {menuTypeSubcategories.map(cat => {
+                              const isSpecialPill = cat === 'Today Special';
+                              return (
+                                <button
+                                  key={cat}
+                                  onClick={() => setSelectedCategory(cat)}
+                                  className={`px-6 py-4 rounded-xl text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 flex items-center gap-2 ${
+                                    isSpecialPill
+                                      ? selectedCategory === cat
+                                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-transparent text-white shadow-lg shadow-amber-500/30 scale-[1.04] z-10'
+                                        : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400'
+                                      : selectedCategory === cat
+                                        ? 'bg-[#5C85BB] border-[#5C85BB] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
+                                        : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F6F9FC] hover:border-[#D4D8E8] hover:text-[#5C85BB]'
                                   }`}
-                              >
-                                {cat}
-                              </button>
-                            ))}
+                                >
+                                  {isSpecialPill && <Flame size={18} className={selectedCategory === cat ? 'text-white' : 'text-amber-500'} />}
+                                  {cat}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
                     </div>
 
                     <div className="flex-grow overflow-y-auto p-4 bg-gray-50/30 custom-scrollbar">
-                      {!menuLoading && activeOutlet === 'restaurant' && (
+                      {!menuLoading && (
                         <div className="mb-4">
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 flex items-center gap-2">
@@ -6385,11 +6396,22 @@ const CashierDashboard = ({ onLogout }) => {
                         <div
                           className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
                         >
-                          {activeMenuItems.map((item) => (
+                          {activeMenuItems.map((item) => {
+                            const isSpecial = item.isSpecial && item.active && (!item.expiresAt || Date.now() < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH');
+                            return (
                             <div
                               key={item.id || item.n}
-                              className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#5C85BB] hover:shadow-xl transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[132px] p-3 sm:p-4 gap-2 justify-between"
+                              className={`rounded-2xl border-2 overflow-hidden transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[132px] p-3 sm:p-4 gap-2 justify-between relative ${
+                                isSpecial
+                                  ? 'bg-gradient-to-br from-amber-50 to-white border-amber-300 hover:border-amber-500 hover:shadow-amber-200/50'
+                                  : 'bg-white border-gray-200 hover:border-[#5C85BB] hover:shadow-xl'
+                              }`}
                             >
+                              {isSpecial && (
+                                <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[8px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
+                                  <Flame size={8} className="fill-white" /> Special
+                                </div>
+                              )}
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
                                 <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
@@ -6409,13 +6431,18 @@ const CashierDashboard = ({ onLogout }) => {
 
                               {/* Price + Add button */}
                               <div className="flex items-center justify-between mt-auto">
-                                <p className="text-lg md:text-xl font-black text-[#5C85BB]">₹{item.p}</p>
-                                <div onClick={(e) => { e.stopPropagation(); handleAddItem(item); }} className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center text-gray-500 group-hover:bg-[#5C85BB] group-hover:text-white transition-colors duration-150 shadow-sm active:scale-90 shrink-0 cursor-pointer">
+                                <p className={`text-lg md:text-xl font-black ${isSpecial ? 'text-amber-600' : 'text-[#5C85BB]'}`}>₹{item.p}</p>
+                                <div onClick={(e) => { e.stopPropagation(); handleAddItem(item); }} className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors duration-150 shadow-sm active:scale-90 shrink-0 cursor-pointer ${
+                                  isSpecial
+                                    ? 'bg-amber-100 border-amber-200 text-amber-600 group-hover:bg-amber-500 group-hover:text-white'
+                                    : 'bg-gray-100 border-gray-150 text-gray-500 group-hover:bg-[#5C85BB] group-hover:text-white'
+                                }`}>
                                   <Plus className="w-5 h-5" />
                                 </div>
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>

@@ -12,27 +12,40 @@
 // Captain targets are used in reports to track performance vs goals.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame, Store, MapPin
+  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame, Store, MapPin, Clock, Pause, Printer
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
+import { useAuth } from '../context/AuthContext';
+import { useVenueSections } from '../hooks/useVenueSections';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
-import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials } from '../services/menuService';
+import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials, mapFlatMenuItems } from '../services/menuService';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
 export default function TodaySpecials() {
   const { shouldReduce } = useMotionConfig();
-  const { allMenuItems, refreshMenu } = useMenu();
-  const specials = allMenuItems
-    ? Array.from(new Map(allMenuItems.filter(i => i.isSpecial).map(i => [i.n, i])).values())
-    : [];
+  const { refreshMenu, categories: menuCategories } = useMenu();
+  const [specials, setSpecials] = useState([]);
+
+  const fetchSpecials = useCallback(async () => {
+    try {
+      const items = await apiFetch('/api/menu/items/admin/all-outlets');
+      console.log('[TodaySpecials] /api/menu/items/admin/all-outlets returned', items?.length ?? 0, 'items');
+      const mapped = mapFlatMenuItems(items);
+      const specialItems = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.id, i])).values());
+      console.log('[TodaySpecials] Mapped', mapped.length, 'items,', specialItems.length, 'specials');
+      setSpecials(specialItems);
+    } catch (err) {
+      console.error('[TodaySpecials] Failed to fetch specials:', err);
+    }
+  }, []);
 
   const [targets, setTargets] = useState({});
   const [targetsLoading, setTargetsLoading] = useState(true);
@@ -44,9 +57,10 @@ export default function TodaySpecials() {
   const [selectedCaptain, setSelectedCaptain] = useState(null);
   const [pushStatus, setPushStatus] = useState(null);
   const [bulkRows, setBulkRows] = useState([
-    { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' },
+    { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' },
   ]);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [selectedSpecialIds, setSelectedSpecialIds] = useState(new Set());
 
   // Target assignment states
@@ -68,22 +82,67 @@ export default function TodaySpecials() {
     expiresAt: null,
     swiggySynced: false,
     zomatoSynced: false,
+    duration: '1 Day',
+    gstEnabled: true,
+    printerTarget: '',
+    printerName: '',
+    venuePrices: {},
+    unit: '',
+    menuType: 'FOOD',
+    outletSelection: 'all',
   });
   const [staffSold, setStaffSold] = useState([]);
   const [specialsSold, setSpecialsSold] = useState([]);
   const [outletStats, setOutletStats] = useState([]);
   const [outlets, setOutlets] = useState([]);
   const [selectedOutletId, setSelectedOutletId] = useState('all');
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState('Today');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [expandedStaff, setExpandedStaff] = useState(null);
   const restaurantId = getCurrentRestaurantId();
   const socket = useSocket(restaurantId);
+  const { restaurant, setRestaurant } = useAuth();
+  const configuredPrinters = restaurant?.printerConfig?.printers || [];
+  const allPrinterOptions = useMemo(() => {
+    const map = new Map();
+    configuredPrinters.forEach(p => {
+      if (p.name) map.set(p.name, { name: p.name, type: p.type || '' });
+    });
+    return Array.from(map.values());
+  }, [configuredPrinters]);
+  const { venueColumns } = useVenueSections('restaurant');
 
+  const getRangeForPeriod = (period) => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    if (period === 'Today') return { startDate: today, endDate: today };
+    if (period === 'Weekly') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return { startDate: weekAgo.toISOString().slice(0, 10), endDate: today };
+    }
+    if (period === 'Monthly') {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return { startDate: monthAgo.toISOString().slice(0, 10), endDate: today };
+    }
+    if (period === 'All Time') return { startDate: '2020-01-01', endDate: today };
+    if (period === 'Custom' && customStart && customEnd) return { startDate: customStart, endDate: customEnd };
+    return { startDate: today, endDate: today };
+  };
 
+  const displayedSpecials = useMemo(() => {
+    if (selectedOutletId === 'all') return specials;
+    return specials.filter(s => s.outletId === selectedOutletId);
+  }, [specials, selectedOutletId]);
+
+  const displayedSpecialsCount = displayedSpecials.length;
 
   useEffect(() => {
+    fetchSpecials();
     fetchAllCaptainTargets()
       .then(data => { setTargets(data); setTargetsLoading(false); })
       .catch(() => setTargetsLoading(false));
-  }, []);
+  }, [fetchSpecials]);
 
   useEffect(() => {
     apiFetch('/api/restaurant/outlets-overview')
@@ -99,13 +158,18 @@ export default function TodaySpecials() {
   useEffect(() => {
     const loadSoldAnalytics = async () => {
       try {
-        const outletQuery = selectedOutletId !== 'all' ? `?outletId=${encodeURIComponent(selectedOutletId)}` : '';
+        const { startDate, endDate } = getRangeForPeriod(leaderboardPeriod);
+        const params = new URLSearchParams();
+        if (selectedOutletId !== 'all') params.set('outletId', selectedOutletId);
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+        const queryStr = `?${params.toString()}`;
 
         const [staffRes, soldRes] = await Promise.all([
-          fetch(`${API_BASE}/api/analytics/today-specials-by-staff${outletQuery}`, {
+          fetch(`${API_BASE}/api/analytics/today-specials-by-staff${queryStr}`, {
             headers: { ...getAuthHeaders() },
           }),
-          fetch(`${API_BASE}/api/analytics/today-specials-sold${outletQuery}`, {
+          fetch(`${API_BASE}/api/analytics/today-specials-sold${queryStr}`, {
             headers: { ...getAuthHeaders() },
           }),
         ]);
@@ -129,7 +193,7 @@ export default function TodaySpecials() {
     return () => {
       socket.off('order:paid', loadSoldAnalytics);
     };
-  }, [socket, selectedOutletId]);
+  }, [socket, selectedOutletId, leaderboardPeriod, customStart, customEnd]);
 
   // Outlet-wise stats: heavier N+1 fetch, only runs when outlets/filter change, not on every order:paid
   useEffect(() => {
@@ -142,12 +206,13 @@ export default function TodaySpecials() {
       // Defensive cap: avoid hammering the server if an org has many outlets
       const OUTLET_STATS_CAP = 10;
       const outletsToFetch = outlets.slice(0, OUTLET_STATS_CAP);
+      const { startDate, endDate } = getRangeForPeriod(leaderboardPeriod);
 
       try {
         const perOutletStats = await Promise.all(
           outletsToFetch.map(async (o) => {
             try {
-              const r = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${encodeURIComponent(o.id)}`, {
+              const r = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${encodeURIComponent(o.id)}&startDate=${startDate}&endDate=${endDate}`, {
                 headers: { ...getAuthHeaders() },
               });
               if (!r.ok) return { id: o.id, name: o.name, soldCount: 0, revenue: 0 };
@@ -172,7 +237,7 @@ export default function TodaySpecials() {
     };
 
     loadOutletStats();
-  }, [selectedOutletId, outlets, specials]);
+  }, [selectedOutletId, outlets, specials, leaderboardPeriod, customStart, customEnd]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -221,16 +286,28 @@ export default function TodaySpecials() {
       isVeg: formData.t === 'veg',
       imageUrl: formData.img || null,
       isAvailable: formData.available !== false,
-      menuType: 'FOOD',
+      menuType: formData.menuType || 'FOOD',
       isSpecial: true,
       specialChannel: ['CASHIER', 'CAPTAIN', 'BOTH'].includes(formData.specialChannel) ? formData.specialChannel : 'BOTH',
       specialActive: formData.active !== false,
-      specialExpiresAt: formData.expiresAt
-        ? new Date(formData.expiresAt).toISOString()
-        : formData.id
-          ? null
-          : new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
-      syncToAllOutlets: true,
+      specialExpiresAt: (() => {
+        if (formData.expiresAt) return new Date(formData.expiresAt).toISOString();
+        if (formData.id) return null;
+        if (formData.duration === 'No Expiry') return null;
+        const now = Date.now();
+        if (formData.duration === '1 Week') return new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
+        if (formData.duration === '1 Month') return new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
+        return new Date(now + 24 * 60 * 60 * 1000).toISOString();
+      })(),
+      gstEnabled: formData.gstEnabled !== false,
+      ...(formData.printerTarget ? { printerTarget: formData.printerTarget } : {}),
+      ...(formData.printerName ? { printerName: formData.printerName } : {}),
+      ...(Object.keys(formData.venuePrices || {}).length > 0
+        ? { venuePrices: Object.fromEntries(Object.entries(formData.venuePrices).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)])) }
+        : {}),
+      ...(formData.unit ? { unit: formData.unit } : {}),
+      syncToAllOutlets: formData.outletSelection === 'all',
+      ...(formData.outletSelection !== 'all' ? { targetOutletId: formData.outletSelection } : {}),
     };
   };
 
@@ -238,6 +315,7 @@ export default function TodaySpecials() {
     const payload = buildSpecialPayload();
     if (!payload) return;
 
+    setSaving(true);
     try {
       if (formData.id) {
         await updateMenuItem(formData.id, payload);
@@ -245,14 +323,17 @@ export default function TodaySpecials() {
         await createMenuItem(payload);
       }
       await refreshMenu();
+      await fetchSpecials();
       setFormData({
-        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false
+        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all'
       });
       setIsModalOpen(false);
       simulatePush();
     } catch (err) {
       console.error('[TodaySpecials] Failed to save special:', err);
       alert('Failed to save special. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -272,10 +353,13 @@ export default function TodaySpecials() {
         menuType: r.menuType === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
         specialChannel: r.channel || 'BOTH',
         isAvailable: true,
+        gstEnabled: r.gstEnabled !== false,
+        ...(r.unit ? { unit: r.unit } : {}),
       }));
       await bulkImportSpecials(payload, true);
       await refreshMenu();
-      setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' }]);
+      await fetchSpecials();
+      setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' }]);
       setIsBulkModalOpen(false);
       simulatePush();
     } catch (err) {
@@ -291,6 +375,7 @@ export default function TodaySpecials() {
     try {
       await deleteMenuItem(id);
       await refreshMenu();
+      await fetchSpecials();
     } catch (err) {
       console.error('[TodaySpecials] Failed to delete special:', err);
       alert('Failed to delete special. Please try again.');
@@ -298,13 +383,20 @@ export default function TodaySpecials() {
   };
 
   const handleActivate = async (id) => {
+    const special = specials.find(s => s.id === id);
+    const now = Date.now();
+    const originalExpiry = special?.expiresAt;
+    const newExpiry = (originalExpiry && originalExpiry > now)
+      ? new Date(originalExpiry).toISOString()
+      : new Date(now + 24 * 60 * 60 * 1000).toISOString();
     try {
       await updateMenuItem(id, {
         specialActive: true,
-        specialExpiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+        specialExpiresAt: newExpiry,
         syncToAllOutlets: true,
       });
       await refreshMenu();
+      await fetchSpecials();
       simulatePush();
     } catch (err) {
       console.error('[TodaySpecials] Failed to activate special:', err);
@@ -312,11 +404,26 @@ export default function TodaySpecials() {
     }
   };
 
+  const handleDeactivate = async (id) => {
+    try {
+      await updateMenuItem(id, {
+        specialActive: false,
+        syncToAllOutlets: true,
+      });
+      await refreshMenu();
+      await fetchSpecials();
+      simulatePush();
+    } catch (err) {
+      console.error('[TodaySpecials] Failed to deactivate special:', err);
+      alert('Failed to deactivate special. Please try again.');
+    }
+  };
+
   const toggleSelectAll = () => {
-    if (selectedSpecialIds.size === specials.length) {
+    if (selectedSpecialIds.size === displayedSpecials.length) {
       setSelectedSpecialIds(new Set());
     } else {
-      setSelectedSpecialIds(new Set(specials.map(s => s.id)));
+      setSelectedSpecialIds(new Set(displayedSpecials.map(s => s.id)));
     }
   };
 
@@ -336,6 +443,7 @@ export default function TodaySpecials() {
         )
       );
       await refreshMenu();
+      await fetchSpecials();
       setSelectedSpecialIds(new Set());
       simulatePush();
     } catch (err) {
@@ -381,7 +489,9 @@ export default function TodaySpecials() {
           <h2 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2">
             <StarIcon className="text-amber-500 fill-amber-500" /> Today Specials
           </h2>
-          <p className="text-xs font-bold text-gray-500 mt-1">Manage daily recommendations & captain targets</p>
+          <p className="text-xs font-bold text-gray-500 mt-1">
+            Manage daily recommendations & captain targets · {displayedSpecialsCount} special{displayedSpecialsCount === 1 ? '' : 's'} {selectedOutletId === 'all' ? 'across all outlets' : `in ${outlets.find(o => o.id === selectedOutletId)?.name || 'selected outlet'}`}
+          </p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
           {outlets.length > 1 && (
@@ -419,33 +529,89 @@ export default function TodaySpecials() {
 
       {/* STAFF LEADERBOARD */}
       <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 shrink-0">
             <Users size={16} className="text-[#E53935]" /> Captain Leaderboard
           </h3>
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            {selectedOutletId === 'all' ? 'All Outlets' : outlets.find(o => o.id === selectedOutletId)?.name || 'Selected Outlet'}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider shrink-0">
+              {selectedOutletId === 'all' ? 'All Outlets' : outlets.find(o => o.id === selectedOutletId)?.name || 'Selected Outlet'}
+            </span>
+            <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
+              {['Today', 'Weekly', 'Monthly', 'All Time', 'Custom'].map(p => (
+                <button
+                  key={p}
+                  onClick={() => setLeaderboardPeriod(p)}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${leaderboardPeriod === p ? 'bg-white text-[#E53935] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+        {leaderboardPeriod === 'Custom' && (
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+            />
+            <span className="text-xs text-gray-400">to</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+            />
+          </div>
+        )}
         {staffSold.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {staffSold.slice(0, 5).map((staff, idx) => (
-              <div key={staff.userId} className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${idx === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-black w-5 h-5 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-700 shrink-0">
-                    {idx + 1}
-                  </span>
-                  <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+            {staffSold.slice(0, 10).map((staff, idx) => (
+              <div key={staff.userId} className={`rounded-xl border overflow-hidden ${idx === 0 ? 'bg-amber-50 border-amber-200' : idx === 1 ? 'bg-gray-50 border-gray-200' : idx === 2 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
+                <div
+                  className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-opacity-80 transition-colors"
+                  onClick={() => setExpandedStaff(expandedStaff === staff.userId ? null : staff.userId)}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${idx === 0 ? 'bg-amber-500 text-white' : idx === 1 ? 'bg-gray-500 text-white' : idx === 2 ? 'bg-orange-500 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>
+                      {idx + 1}
+                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{staff.revenue > 0 ? `₹${Math.round(staff.revenue).toLocaleString('en-IN')}` : 'No revenue'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="text-right">
+                      <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
+                    </div>
+                    {staff.items && staff.items.length > 0 && (
+                      <span className="text-gray-400 text-xs">{expandedStaff === staff.userId ? '▲' : '▼'}</span>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
-                </div>
+                {expandedStaff === staff.userId && staff.items && staff.items.length > 0 && (
+                  <div className="px-3 pb-2.5 pt-1 space-y-1 border-t border-gray-200/50">
+                    {staff.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] py-1">
+                        <span className="font-bold text-gray-700 truncate pr-2">{item.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-black text-[#E53935]">{item.soldCount}x</span>
+                          {item.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(item.revenue).toLocaleString('en-IN')}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs font-bold text-gray-400">No specials sold yet. Sales will appear here once a captain or cashier settles a bill containing a special.</p>
+          <p className="text-xs font-bold text-gray-400">Captain Leaderboard will appear here once a special is sold.</p>
         )}
       </div>
 
@@ -479,17 +645,17 @@ export default function TodaySpecials() {
       )}
 
       {/* BULK SELECTION TOOLBAR */}
-      {specials.length > 0 && (
+      {displayedSpecials.length > 0 && (
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={selectedSpecialIds.size === specials.length && specials.length > 0}
+              checked={selectedSpecialIds.size === displayedSpecials.length && displayedSpecials.length > 0}
               onChange={toggleSelectAll}
               className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
             />
             <span className="text-sm font-bold text-gray-700">
-              Select All ({selectedSpecialIds.size}/{specials.length})
+              Select All ({selectedSpecialIds.size}/{displayedSpecials.length})
             </span>
           </label>
           <button
@@ -504,7 +670,7 @@ export default function TodaySpecials() {
 
       {/* SPECIALS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {specials.map(special => {
+        {displayedSpecials.map(special => {
           const isExpired = Date.now() > (special.expiresAt || 0);
           const isActive = special.active && !isExpired;
           return (
@@ -532,6 +698,11 @@ export default function TodaySpecials() {
                 <div className="absolute top-3 right-3 flex gap-2">
                   {special.isCombo && (
                     <span className="bg-amber-500 text-white px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Combo</span>
+                  )}
+                  {selectedOutletId === 'all' && special.outletId && (
+                    <span className="bg-blue-500 text-white px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">
+                      {outlets.find(o => o.id === special.outletId)?.name || special.outletId}
+                    </span>
                   )}
                   <div className={`w-5 h-5 rounded-md flex items-center justify-center bg-white shadow-sm border ${special.t === 'veg' ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}`}>
                     <div className={`w-2 h-2 rounded-full ${special.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -563,7 +734,7 @@ export default function TodaySpecials() {
                   <div className="flex items-center gap-2">
                     <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
                     <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                      {isActive ? (special.available ? 'Active' : 'Hidden') : (isExpired ? 'Expired' : 'Inactive')}
+                      {isActive ? (special.isAvailable ? 'Active' : 'Hidden') : (isExpired ? 'Expired' : 'Inactive')}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -577,7 +748,13 @@ export default function TodaySpecials() {
                     ) : (
                       <>
                         <button
-                          onClick={() => { setFormData(special); setIsModalOpen(true); }}
+                          onClick={() => handleDeactivate(special.id)}
+                          className="px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-300 transition-colors flex items-center gap-1"
+                        >
+                          <Pause size={12} /> Deactivate
+                        </button>
+                        <button
+                          onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD', outletSelection: special.outletId || 'all' }); setIsModalOpen(true); }}
                           className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         >
                           <Edit2 size={14} />
@@ -597,7 +774,7 @@ export default function TodaySpecials() {
           );
         })}
 
-        {specials.length === 0 && (
+        {displayedSpecials.length === 0 && (
           <div className="col-span-full py-16 bg-white rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
             <StarIcon size={40} className="text-gray-300 mb-4" />
             <h3 className="text-lg font-black text-gray-900 mb-2">No Specials Added</h3>
@@ -687,10 +864,11 @@ export default function TodaySpecials() {
                     onChange={e => setFormData({ ...formData, c: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
                   >
-                    <option>Starters</option>
-                    <option>Main Course</option>
-                    <option>Desserts</option>
-                    <option>Drinks</option>
+                    {(menuCategories || [])
+                      .filter(c => c && c !== 'All')
+                      .map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                   </select>
                 </div>
 
@@ -702,6 +880,17 @@ export default function TodaySpecials() {
                     onChange={e => setFormData({ ...formData, p: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
                     placeholder="e.g. 450"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Unit</label>
+                  <input
+                    type="text"
+                    value={formData.unit}
+                    onChange={e => setFormData({ ...formData, unit: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                    placeholder="e.g. plate, bowl, 500ml"
                   />
                 </div>
               </div>
@@ -725,6 +914,18 @@ export default function TodaySpecials() {
               </div>
 
               <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Menu Type</label>
+                <select
+                  value={formData.menuType}
+                  onChange={e => setFormData({ ...formData, menuType: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                >
+                  <option value="FOOD">Food</option>
+                  <option value="LIQUOR">Liquor</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Channel</label>
                 <select
                   value={formData.specialChannel}
@@ -736,6 +937,109 @@ export default function TodaySpecials() {
                   <option value="CAPTAIN">Captain Only</option>
                 </select>
               </div>
+
+              {outlets.length > 1 && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Add To</label>
+                  <select
+                    value={formData.outletSelection || 'all'}
+                    onChange={e => setFormData({ ...formData, outletSelection: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                  >
+                    <option value="all">All Outlets</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Duration</label>
+                <div className="flex gap-2">
+                  {['No Expiry', '1 Day', '1 Week', '1 Month'].map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setFormData({ ...formData, duration: d })}
+                      className={`flex-1 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${formData.duration === d ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      <Clock size={12} /> {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.gstEnabled !== false}
+                    onChange={e => setFormData({ ...formData, gstEnabled: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+                  />
+                  <span className="text-sm font-bold text-gray-700">GST Applicable</span>
+                </label>
+              </div>
+
+              {allPrinterOptions.length > 0 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5 flex items-center gap-1">
+                      <Printer size={12} /> Print To
+                    </label>
+                    <select
+                      value={formData.printerTarget || ''}
+                      onChange={e => setFormData({ ...formData, printerTarget: e.target.value || '' })}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                    >
+                      <option value="">Default (auto-resolve)</option>
+                      {allPrinterOptions.map(opt => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Physical Printer Override</label>
+                    <select
+                      value={formData.printerName || ''}
+                      onChange={e => setFormData({ ...formData, printerName: e.target.value || '' })}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                    >
+                      <option value="">Auto-resolve from Print To</option>
+                      {allPrinterOptions.map(opt => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {venueColumns.length > 1 && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Venue-specific Prices</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {venueColumns.map(venue => (
+                      <div key={venue.id}>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">{venue.label}</span>
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          value={formData.venuePrices?.[venue.id] ?? ''}
+                          onChange={e => setFormData({
+                            ...formData,
+                            venuePrices: { ...(formData.venuePrices || {}), [venue.id]: e.target.value },
+                          })}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Image</label>
@@ -788,10 +1092,10 @@ export default function TodaySpecials() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={!formData.n || !formData.p}
+                disabled={saving || !formData.n || !formData.p}
                 className="flex-1 py-3 bg-[#E53935] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-red-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                <Save size={14} /> Save Special
+                <Save size={14} /> {saving ? 'Saving...' : 'Save Special'}
               </button>
             </div>
           </motion.div>
@@ -866,9 +1170,7 @@ export default function TodaySpecials() {
                       </div>
                       <div>
                         <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Category</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Main Course"
+                        <select
                           value={row.c}
                           onChange={e => {
                             const next = [...bulkRows];
@@ -876,7 +1178,13 @@ export default function TodaySpecials() {
                             setBulkRows(next);
                           }}
                           className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-                        />
+                        >
+                          {(menuCategories || [])
+                            .filter(c => c && c !== 'All')
+                            .map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Price (₹)</label>
@@ -938,12 +1246,41 @@ export default function TodaySpecials() {
                           <option value="CAPTAIN">Captain</option>
                         </select>
                       </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Unit</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. plate"
+                          value={row.unit}
+                          onChange={e => {
+                            const next = [...bulkRows];
+                            next[idx] = { ...next[idx], unit: e.target.value };
+                            setBulkRows(next);
+                          }}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        />
+                      </div>
+                      <div className="flex items-end pb-2.5">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={row.gstEnabled !== false}
+                            onChange={e => {
+                              const next = [...bulkRows];
+                              next[idx] = { ...next[idx], gstEnabled: e.target.checked };
+                              setBulkRows(next);
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+                          />
+                          <span className="text-xs font-bold text-gray-700">GST</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
               <button
-                onClick={() => setBulkRows([...bulkRows, { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH' }])}
+                onClick={() => setBulkRows([...bulkRows, { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' }])}
                 className="w-full px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
               >
                 <Plus size={14} /> Add Another Item

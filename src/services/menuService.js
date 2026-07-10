@@ -30,6 +30,14 @@ export function getMenuStorageKey(restaurantId) {
 // Default placeholder image for items without uploaded images
 const DEFAULT_MENU_IMAGE = "/placeholder.svg";
 
+/** Normalize backend boolean values (true/false/1/0/"true"/"false") to boolean */
+function toBool(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') return value.toLowerCase() === 'true' || value === '1';
+  return Boolean(value);
+}
+
 // 60-second timeout for menu fetch requests (large menus may take time)
 const FETCH_TIMEOUT_MS = 60000;
 
@@ -102,17 +110,19 @@ export function mapFlatMenuItems(items) {
       menuType,
       // isAvailable is only present on admin endpoint items;
       // POS /items filters to available=true so field is absent there — default true
-      isAvailable: item.isAvailable !== false,
+      isAvailable: item.isAvailable === undefined ? true : toBool(item.isAvailable),
       variants: item.variants || [],
       unit: item.unit ?? (isLiquor ? "ml" : null),
       mlPerUnit: isLiquor ? 30 : null,
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
+      printerName: item.printerName || null,
       venuePrices: item.venuePrices || {},
-      gstEnabled: item.gstEnabled !== false,
-      isSpecial: item.isSpecial === true,
+      gstEnabled: toBool(item.gstEnabled),
+      isSpecial: toBool(item.isSpecial),
       specialChannel: item.specialChannel || "BOTH",
-      active: item.specialActive !== false,
+      active: toBool(item.specialActive),
       expiresAt: item.specialExpiresAt ? new Date(item.specialExpiresAt).getTime() : null,
+      outletId: item.outletId || null,
     };
   });
 }

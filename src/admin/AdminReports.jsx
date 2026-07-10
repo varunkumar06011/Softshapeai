@@ -1311,7 +1311,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
     cashAmount: Number(r.cashAmount),
     tipsAmount: Number(r.tipsAmount || 0),
     cashFromNotes: Number(r.cashFromNotes),
-    finalAmount: Number(r.totalSales) - Number(r.expenditureAmount || 0),
+    finalAmount: Number(r.totalSales) - (Number(r.cardAmount || 0) + Number(r.cashAmount || 0) + Number(r.upiAmount || 0) + Number(r.otherAmount || 0)) - Number(r.expenditureAmount || 0),
     printed: r.printed ? 'Yes' : 'No',
   }));
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;

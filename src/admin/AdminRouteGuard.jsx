@@ -11,19 +11,27 @@ export default function AdminRouteGuard({
   routeKey,
   enabledModules,
   isRouteEnabledFn,
-  redirectTo = '/admin/dashboard/tables',
+  isManagerTabEnabledFn,
+  basePath = '/admin/dashboard',
   children,
 }) {
   const normalizedRole = role?.toLowerCase() || 'admin';
 
   // Role check — synchronous, before children render
   if (!allowedRoles.includes(normalizedRole)) {
-    return <Navigate to={redirectTo} replace />;
+    return <Navigate to={basePath} replace />;
   }
 
   // Module gating check — synchronous, before children render
   if (isRouteEnabledFn && !isRouteEnabledFn(routeKey, enabledModules)) {
-    return <Navigate to="/admin/dashboard" replace />;
+    return <Navigate to={basePath} replace />;
+  }
+
+  // Manager tab visibility check — if the role is manager and a specific
+  // tab toggle function is provided, ensure the tab is enabled for managers.
+  // This prevents managers from accessing toggled-off tabs via direct URL.
+  if (normalizedRole === 'manager' && isManagerTabEnabledFn && !isManagerTabEnabledFn(routeKey, enabledModules)) {
+    return <Navigate to={basePath} replace />;
   }
 
   return children;

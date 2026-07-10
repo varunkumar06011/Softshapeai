@@ -134,14 +134,21 @@ export const adminRoutes = [
   { key: 'pricing',           label: 'Pricing',                icon: Sparkles,            roles: ['admin','owner'], element: <Pricing /> },
   { key: 'price-profiles',    label: 'Price Profiles',         icon: Tag,                 roles: ['admin','owner'], element: <PriceProfilesPage /> },
   { key: 'settings',          label: 'Settings',               icon: Settings,            roles: ['admin','owner'], element: <SettingsPage />,                  props: (ctx) => ({ onNavigate: ctx.goToSection }) },
-  { key: 'printers',          label: 'Printers',               icon: Printer,             roles: ['admin','owner'], element: <PrinterSettingsPage /> },
-  { key: 'qr-codes',          label: 'QR Codes',               icon: QrCode,              roles: ['admin','owner'], element: <TableQRCodes /> },
-  { key: 'outlets-overview',  label: 'My Outlets',             icon: Store,               roles: ['admin','owner'], element: <OutletsOverview /> },
+  { key: 'printers',          label: 'Printers',               icon: Printer,             roles: ['admin','owner','manager'], element: <PrinterSettingsPage /> },
+  { key: 'qr-codes',          label: 'QR Codes',               icon: QrCode,              roles: ['admin','owner','manager'], element: <TableQRCodes /> },
+  { key: 'outlets-overview',  label: 'My Outlets',             icon: Store,               roles: ['admin','owner','manager'], element: <OutletsOverview /> },
 ];
 
-// Manager-only routes — managers see only these in the sidebar and can only
-// access these URLs. All other routes redirect synchronously via AdminRouteGuard.
-export const managerRoutes = ['tables', 'captains'];
+// ── Manager tab visibility ──────────────────────────────────────────────────
+// Checks if a specific tab is enabled for the manager role.
+// Admin configures this via Settings → Manager tab (toggles stored in enabledModules.managerTabs).
+// A tab is only visible to managers when it is explicitly toggled ON (true).
+// If managerTabs is not configured, or a tab is not explicitly enabled, it is hidden.
+export function isManagerTabEnabled(key, enabledModules) {
+  const managerTabs = enabledModules?.managerTabs;
+  if (!managerTabs || typeof managerTabs !== 'object') return false;
+  return managerTabs?.[key] === true;
+}
 
 // ── Module gating logic ──────────────────────────────────────────────────────
 // Verbatim extraction of the filter that existed in AdminDashboard.jsx
