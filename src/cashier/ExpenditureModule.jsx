@@ -13,14 +13,7 @@ import {
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { printLocal } from '../utils/printOffline';
-
-const EXPENSE_CATEGORIES = [
-  { value: 'MISCELLANEOUS', label: 'Miscellaneous expenses' },
-  { value: 'MAINTENANCE', label: 'Maintenance' },
-  { value: 'KITCHEN', label: 'Kitchen items' },
-  { value: 'ENTERTAINMENT', label: 'Entertainment' },
-  { value: 'OTHER', label: 'Other' },
-];
+import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 
 export default function ExpenditureModule() {
   const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
@@ -117,10 +110,6 @@ export default function ExpenditureModule() {
     s.name.toLowerCase().includes(paidToSearch.toLowerCase())
   ) || [];
 
-  const filteredCategories = EXPENSE_CATEGORIES.filter((c) =>
-    c.label.toLowerCase().includes(paidToSearch.toLowerCase())
-  );
-
   const filteredApprovers = approverOptions.filter((a) =>
     a.toLowerCase().includes(approverSearch.toLowerCase())
   );
@@ -135,11 +124,6 @@ export default function ExpenditureModule() {
       setPaidToName(item.name);
       setPaidToType('STAFF');
       setSelectedCategory(null);
-    } else {
-      setSelectedEmployee(null);
-      setPaidToType('OTHER');
-      setPaidToName(item.label || '');
-      setSelectedCategory(item.value || null);
     }
     setPaidToSearch(item.name || item.label || '');
     setShowPaidToDropdown(false);
@@ -187,7 +171,9 @@ export default function ExpenditureModule() {
         createEmployeeIfMissing: paidToType === 'STAFF' && selectedEmployee?.id === 'NEW',
         amount: parseFloat(amount),
         narration: narration.trim() || undefined,
-        category: paidToType === 'STAFF' ? undefined : selectedCategory,
+        category: paidToType === 'STAFF' ? undefined : (selectedCategory?.name || undefined),
+        ledgerCategoryId: paidToType === 'STAFF' ? undefined : (selectedCategory?.id || undefined),
+        entryType: paidToType === 'STAFF' ? undefined : 'EXPENSE',
         approvedByName: selectedApprover || approverSearch.trim() || undefined,
         idempotencyKey,
         expenditureDate: summaryDate,
@@ -370,76 +356,106 @@ export default function ExpenditureModule() {
           </div>
         )}
 
-        {/* Paid To - Searchable Dropdown */}
+        {/* Paid To Type Toggle */}
         <div>
-          <label className="text-xs font-black uppercase text-gray-400 mb-1 block">Paid To</label>
-          <div className="relative" ref={paidToRef}>
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search staff or category..."
-                value={paidToSearch}
-                onChange={(e) => {
-                  setPaidToSearch(e.target.value);
-                  setShowPaidToDropdown(true);
-                  setPaidToType('STAFF');
-                  setSelectedEmployee(null);
-                  setSelectedCategory(null);
-                  setPaidToName('');
-                }}
-                onFocus={() => setShowPaidToDropdown(true)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-              />
-              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            </div>
-            {showPaidToDropdown && (
-              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-80 overflow-y-auto pb-1">
-                {filteredCategories.length > 0 && (
-                  <div className="border-b border-gray-100">
-                    <p className="sticky top-0 z-10 text-[10px] font-black uppercase text-gray-400 px-3 py-2 bg-white">Expense Categories</p>
+          <label className="text-xs font-black uppercase text-gray-400 mb-1 block">Paid To Type</label>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => {
+                setPaidToType('STAFF');
+                setSelectedCategory(null);
+                setPaidToSearch('');
+                setPaidToName('');
+                setSelectedEmployee(null);
+              }}
+              className={`flex-1 py-2 text-xs font-black uppercase ${paidToType === 'STAFF' ? 'bg-[#E53935] text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+            >
+              Staff
+            </button>
+            <button
+              onClick={() => {
+                setPaidToType('OTHER');
+                setSelectedEmployee(null);
+                setPaidToSearch('');
+                setPaidToName('');
+                setSelectedCategory(null);
+              }}
+              className={`flex-1 py-2 text-xs font-black uppercase ${paidToType === 'OTHER' ? 'bg-[#E53935] text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+            >
+              Other
+            </button>
+          </div>
+        </div>
+
+        {/* Paid To - Staff search or Category picker */}
+        <div>
+          <label className="text-xs font-black uppercase text-gray-400 mb-1 block">
+            {paidToType === 'STAFF' ? 'Staff Member' : 'Expense Category'}
+          </label>
+          {paidToType === 'OTHER' ? (
+            <LedgerCategoryPicker
+              entryType="EXPENSE"
+              value={selectedCategory}
+              onChange={(cat) => {
+                setSelectedCategory(cat);
+                setPaidToName(cat?.name || '');
+              }}
+              placeholder="Search category..."
+            />
+          ) : (
+            <div className="relative" ref={paidToRef}>
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search staff..."
+                  value={paidToSearch}
+                  onChange={(e) => {
+                    setPaidToSearch(e.target.value);
+                    setShowPaidToDropdown(true);
+                    setSelectedEmployee(null);
+                    setPaidToName('');
+                  }}
+                  onFocus={() => setShowPaidToDropdown(true)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              </div>
+              {showPaidToDropdown && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-80 overflow-y-auto pb-1">
+                  {filteredStaff.length > 0 && (
                     <div className="p-1">
-                      {filteredCategories.map((c) => (
+                      <p className="sticky top-0 z-10 text-[10px] font-black uppercase text-gray-400 px-2 py-1 bg-white">Staff</p>
+                      {filteredStaff.map((s) => (
                         <button
-                          key={c.value}
-                          onClick={() => handlePaidToSelect(c)}
-                          className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
+                          key={s.id}
+                          onClick={() => handlePaidToSelect({ ...s, type: 'STAFF' })}
+                          className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg"
                         >
-                          {c.label}
+                          {s.name}
+                          {s.role && <span className="text-[10px] text-gray-400 ml-2">{s.role}</span>}
                         </button>
                       ))}
                     </div>
-                  </div>
-                )}
-                {filteredStaff.length > 0 && (
-                  <div className="p-1">
-                    <p className="sticky top-0 z-10 text-[10px] font-black uppercase text-gray-400 px-2 py-1 bg-white">Staff</p>
-                    {filteredStaff.map((s) => (
+                  )}
+                  {paidToSearch.trim() && filteredStaff.length === 0 && (
+                    <div className="p-1 border-t border-gray-100">
+                      <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">New staff</p>
                       <button
-                        key={s.id}
-                        onClick={() => handlePaidToSelect({ ...s, type: 'STAFF' })}
-                        className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg"
+                        onClick={() => handlePaidToSelect({ id: 'NEW', name: paidToSearch.trim(), role: 'NEW STAFF', type: 'STAFF' })}
+                        className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
                       >
-                        {s.name}
-                        {s.role && <span className="text-[10px] text-gray-400 ml-2">{s.role}</span>}
+                        Add as staff: {paidToSearch.trim()}
                       </button>
-                    ))}
-                  </div>
-                )}
-                {paidToSearch.trim() && filteredStaff.length === 0 && (
-                  <div className="p-1 border-t border-gray-100">
-                    <p className="text-[10px] font-black uppercase text-gray-400 px-2 py-1">New staff</p>
-                    <button
-                      onClick={() => handlePaidToSelect({ id: 'NEW', name: paidToSearch.trim(), role: 'NEW STAFF', type: 'STAFF' })}
-                      className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-gray-50 rounded-lg text-[#E53935]"
-                    >
-                      Add as staff: {paidToSearch.trim()}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                    </div>
+                  )}
+                  {!paidToSearch.trim() && filteredStaff.length === 0 && (
+                    <p className="px-3 py-3 text-xs text-gray-400 text-center">Start typing to search staff</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Amount */}
