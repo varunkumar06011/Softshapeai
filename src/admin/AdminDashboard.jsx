@@ -171,17 +171,24 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
     return () => { cancelled = true; };
   }, [setRestaurant]);
 
-  // Fallback: refresh enabledModules for existing sessions
+  // Refresh enabledModules on mount. For managers this is essential because
+  // manager tab toggles may be changed after the manager logged in; the
+  // localStorage copy from /api/auth/captain-login would then be stale.
+  // We merge only enabledModules so we don't overwrite other fields.
   useEffect(() => {
-    if (!restaurant?.enabledModules) {
-      apiFetch('/api/auth/me')
-        .then(data => {
-          if (data?.restaurant?.enabledModules) {
-            setRestaurant(prev => ({ ...prev, ...data.restaurant }));
-          }
-        })
-        .catch(() => {});
-    }
+    const needsRefresh = role === 'manager' || !restaurant?.enabledModules;
+    if (!needsRefresh) return;
+    apiFetch('/api/auth/me')
+      .then(data => {
+        if (data?.restaurant?.enabledModules) {
+          setRestaurant(prev => ({
+            ...prev,
+            enabledModules: data.restaurant.enabledModules,
+            sharedKitchenOutletId: data.restaurant.sharedKitchenOutletId ?? prev?.sharedKitchenOutletId,
+          }));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const loadStats = useCallback(async () => {
