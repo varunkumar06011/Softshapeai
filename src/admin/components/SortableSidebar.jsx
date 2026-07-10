@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Users, ChevronDown, GripVertical, RotateCcw } from 'lucide-react';
+import { Users, ChevronDown, GripVertical, RotateCcw, Wallet } from 'lucide-react';
 
 function SortableItem({ route, activePage, onNavigate }) {
   const {
@@ -45,7 +45,7 @@ function SortableItem({ route, activePage, onNavigate }) {
         onClick={() => onNavigate(route.key)}
         className="flex flex-1 items-center gap-2 px-3 py-2 text-sm min-w-0"
       >
-        <route.icon size={route.group === 'hr' ? 14 : 16} />
+        <route.icon size={route.group === 'hr' || route.group === 'finance' ? 14 : 16} />
         <span className="truncate">{route.label}</span>
       </button>
       <button
@@ -65,8 +65,11 @@ function SortableItem({ route, activePage, onNavigate }) {
   );
 }
 
-function SortableHrGroup({
-  hrRoutes,
+function SortableGroup({
+  groupKey,
+  groupLabel,
+  groupIcon: GroupIcon,
+  groupRoutes,
   activePage,
   onNavigate,
   onReorder,
@@ -80,7 +83,7 @@ function SortableHrGroup({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: '__hr_group__' });
+  } = useSortable({ id: groupKey });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -92,13 +95,13 @@ function SortableHrGroup({
   const handleSubDragEnd = (event) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIndex = hrRoutes.findIndex((r) => r.key === active.id);
-      const newIndex = hrRoutes.findIndex((r) => r.key === over.id);
-      onReorder(arrayMove(hrRoutes, oldIndex, newIndex));
+      const oldIndex = groupRoutes.findIndex((r) => r.key === active.id);
+      const newIndex = groupRoutes.findIndex((r) => r.key === over.id);
+      onReorder(arrayMove(groupRoutes, oldIndex, newIndex));
     }
   };
 
-  const isActive = hrRoutes.some((r) => r.key === activePage);
+  const isActive = groupRoutes.some((r) => r.key === activePage);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -106,7 +109,7 @@ function SortableHrGroup({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  if (hrRoutes.length === 0) return null;
+  if (groupRoutes.length === 0) return null;
 
   return (
     <div
@@ -121,8 +124,8 @@ function SortableHrGroup({
             isActive ? 'text-white' : 'text-white hover:bg-white/10'
           }`}
         >
-          <Users size={16} />
-          <span className="truncate">HR</span>
+          <GroupIcon size={16} />
+          <span className="truncate">{groupLabel}</span>
           <ChevronDown
             size={14}
             className={`ml-auto transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -132,8 +135,8 @@ function SortableHrGroup({
           className="ml-1 p-1.5 rounded-md bg-white/10 text-white/70 hover:text-white hover:bg-white/25 cursor-grab active:cursor-grabbing transition-colors"
           {...attributes}
           {...listeners}
-          aria-label="Reorder HR section"
-          title="Drag to move HR section"
+          aria-label={`Reorder ${groupLabel} section`}
+          title={`Drag to move ${groupLabel} section`}
         >
           <GripVertical size={16} />
         </button>
@@ -146,11 +149,11 @@ function SortableHrGroup({
             onDragEnd={handleSubDragEnd}
           >
             <SortableContext
-              items={hrRoutes.map((r) => r.key)}
+              items={groupRoutes.map((r) => r.key)}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-1">
-                {hrRoutes.map((route) => (
+                {groupRoutes.map((route) => (
                   <SortableItem
                     key={route.key}
                     route={route}
@@ -173,10 +176,13 @@ export default function SortableSidebar({
   onNavigate,
   hrExpanded,
   onToggleHr,
+  financeExpanded,
+  onToggleFinance,
   userId,
 }) {
   const storageKey = useMemo(() => `admin-nav-order:${userId || 'default'}`, [userId]);
   const HR_GROUP_KEY = '__hr_group__';
+  const FINANCE_GROUP_KEY = '__finance_group__';
 
   const [order, setOrder] = React.useState(() => {
     try {
@@ -188,31 +194,54 @@ export default function SortableSidebar({
   });
 
   const nonHrRoutes = useMemo(
-    () => visibleRoutes.filter((r) => !r.group),
+    () => visibleRoutes.filter((r) => !r.group || (r.group !== 'hr' && r.group !== 'finance')),
     [visibleRoutes]
   );
   const hrRoutes = useMemo(
     () => visibleRoutes.filter((r) => r.group === 'hr'),
     [visibleRoutes]
   );
+  const financeRoutes = useMemo(
+    () => visibleRoutes.filter((r) => r.group === 'finance'),
+    [visibleRoutes]
+  );
 
   // Migrate old saved order (no group key) to new format
   const effectiveOrder = useMemo(() => {
     if (order.length === 0) return order;
-    if (order.includes(HR_GROUP_KEY)) return order;
-    if (hrRoutes.length === 0) return order;
-    const firstHrIndex = order.findIndex((key) =>
-      hrRoutes.some((r) => r.key === key)
-    );
-    if (firstHrIndex >= 0) {
-      return [
-        ...order.slice(0, firstHrIndex),
-        HR_GROUP_KEY,
-        ...order.slice(firstHrIndex),
-      ];
+    let migrated = order;
+    // Insert HR group key if missing
+    if (!migrated.includes(HR_GROUP_KEY) && hrRoutes.length > 0) {
+      const firstHrIndex = migrated.findIndex((key) =>
+        hrRoutes.some((r) => r.key === key)
+      );
+      if (firstHrIndex >= 0) {
+        migrated = [
+          ...migrated.slice(0, firstHrIndex),
+          HR_GROUP_KEY,
+          ...migrated.slice(firstHrIndex),
+        ];
+      } else {
+        migrated = [...migrated, HR_GROUP_KEY];
+      }
     }
-    return [...order, HR_GROUP_KEY];
-  }, [order, hrRoutes]);
+    // Insert finance group key if missing
+    if (!migrated.includes(FINANCE_GROUP_KEY) && financeRoutes.length > 0) {
+      const firstFinanceIndex = migrated.findIndex((key) =>
+        financeRoutes.some((r) => r.key === key)
+      );
+      if (firstFinanceIndex >= 0) {
+        migrated = [
+          ...migrated.slice(0, firstFinanceIndex),
+          FINANCE_GROUP_KEY,
+          ...migrated.slice(firstFinanceIndex),
+        ];
+      } else {
+        migrated = [...migrated, FINANCE_GROUP_KEY];
+      }
+    }
+    return migrated;
+  }, [order, hrRoutes, financeRoutes]);
 
   React.useEffect(() => {
     if (effectiveOrder !== order && effectiveOrder.length > 0) {
@@ -231,7 +260,11 @@ export default function SortableSidebar({
   );
 
   const mainItems = useMemo(() => {
-    const items = [...nonHrRoutes, { key: HR_GROUP_KEY, label: 'HR', isGroup: true }];
+    const items = [
+      ...nonHrRoutes,
+      { key: HR_GROUP_KEY, label: 'HR', isGroup: 'hr' },
+      { key: FINANCE_GROUP_KEY, label: 'Finance', isGroup: 'finance' },
+    ];
     return items.sort((a, b) => {
       const aIdx = orderMap.get(a.key);
       const bIdx = orderMap.get(b.key);
@@ -253,9 +286,20 @@ export default function SortableSidebar({
     });
   }, [hrRoutes, orderMap]);
 
+  const sortedFinanceRoutes = useMemo(() => {
+    return [...financeRoutes].sort((a, b) => {
+      const aIdx = orderMap.get(a.key);
+      const bIdx = orderMap.get(b.key);
+      if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+      if (aIdx !== undefined) return -1;
+      if (bIdx !== undefined) return 1;
+      return 0;
+    });
+  }, [financeRoutes, orderMap]);
+
   const defaultOrder = useMemo(
-    () => [...nonHrRoutes.map((r) => r.key), HR_GROUP_KEY, ...hrRoutes.map((r) => r.key)],
-    [nonHrRoutes, hrRoutes]
+    () => [...nonHrRoutes.map((r) => r.key), HR_GROUP_KEY, ...hrRoutes.map((r) => r.key), FINANCE_GROUP_KEY, ...financeRoutes.map((r) => r.key)],
+    [nonHrRoutes, hrRoutes, financeRoutes]
   );
   const hasCustomOrder = useMemo(() => {
     if (effectiveOrder.length === 0) return false;
@@ -263,16 +307,22 @@ export default function SortableSidebar({
     return effectiveOrder.some((key, idx) => key !== defaultOrder[idx]);
   }, [effectiveOrder, defaultOrder]);
 
-  const saveOrder = (nextMainOrder, nextHrOrder) => {
-    const groupIndex = nextMainOrder.indexOf(HR_GROUP_KEY);
-    const beforeGroup = nextMainOrder.slice(0, groupIndex);
-    const afterGroup = nextMainOrder.slice(groupIndex + 1);
-    const nextOrder = [
-      ...beforeGroup,
-      HR_GROUP_KEY,
-      ...nextHrOrder,
-      ...afterGroup,
-    ];
+  const saveOrder = (nextMainOrder, nextHrOrder, nextFinanceOrder) => {
+    const hrIndex = nextMainOrder.indexOf(HR_GROUP_KEY);
+    const financeIndex = nextMainOrder.indexOf(FINANCE_GROUP_KEY);
+    // Build the full order by replacing group keys with their children
+    const nextOrder = [];
+    for (const key of nextMainOrder) {
+      if (key === HR_GROUP_KEY) {
+        nextOrder.push(HR_GROUP_KEY);
+        nextOrder.push(...(nextHrOrder || sortedHrRoutes.map((r) => r.key)));
+      } else if (key === FINANCE_GROUP_KEY) {
+        nextOrder.push(FINANCE_GROUP_KEY);
+        nextOrder.push(...(nextFinanceOrder || sortedFinanceRoutes.map((r) => r.key)));
+      } else {
+        nextOrder.push(key);
+      }
+    }
     setOrder(nextOrder);
     try {
       localStorage.setItem(storageKey, JSON.stringify(nextOrder));
@@ -305,7 +355,8 @@ export default function SortableSidebar({
       const reorderedMainItems = arrayMove(mainItems, oldIndex, newIndex);
       saveOrder(
         reorderedMainItems.map((i) => i.key),
-        sortedHrRoutes.map((r) => r.key)
+        sortedHrRoutes.map((r) => r.key),
+        sortedFinanceRoutes.map((r) => r.key)
       );
     }
   };
@@ -313,6 +364,15 @@ export default function SortableSidebar({
   const handleHrReorder = (reordered) => {
     saveOrder(
       mainItems.map((i) => i.key),
+      reordered.map((r) => r.key),
+      sortedFinanceRoutes.map((r) => r.key)
+    );
+  };
+
+  const handleFinanceReorder = (reordered) => {
+    saveOrder(
+      mainItems.map((i) => i.key),
+      sortedHrRoutes.map((r) => r.key),
       reordered.map((r) => r.key)
     );
   };
@@ -330,15 +390,31 @@ export default function SortableSidebar({
         >
           <div className="space-y-1">
             {mainItems.map((item) =>
-              item.isGroup ? (
-                <SortableHrGroup
+              item.isGroup === 'hr' ? (
+                <SortableGroup
                   key={item.key}
-                  hrRoutes={sortedHrRoutes}
+                  groupKey={item.key}
+                  groupLabel="HR"
+                  groupIcon={Users}
+                  groupRoutes={sortedHrRoutes}
                   activePage={activePage}
                   onNavigate={onNavigate}
                   onReorder={handleHrReorder}
                   isExpanded={hrExpanded}
                   onToggle={onToggleHr}
+                />
+              ) : item.isGroup === 'finance' ? (
+                <SortableGroup
+                  key={item.key}
+                  groupKey={item.key}
+                  groupLabel="Finance"
+                  groupIcon={Wallet}
+                  groupRoutes={sortedFinanceRoutes}
+                  activePage={activePage}
+                  onNavigate={onNavigate}
+                  onReorder={handleFinanceReorder}
+                  isExpanded={financeExpanded}
+                  onToggle={onToggleFinance}
                 />
               ) : (
                 <SortableItem

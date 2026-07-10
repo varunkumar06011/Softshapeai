@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Building2, TrendingDown } from 'lucide-react';
+import { Building2, TrendingDown, PiggyBank } from 'lucide-react';
 import AssetLedger from './AssetLedger';
+import LiabilitiesLedger from './LiabilitiesLedger';
+import OwnersEquity from './OwnersEquity';
 
 const SUB_TABS = [
   { key: 'assets', label: 'Asset Ledger', icon: Building2, component: AssetLedger },
-  // Step 6 will add: { key: 'liabilities', label: 'Liabilities & Equity', icon: TrendingDown, component: LiabilitiesLedger }
+  { key: 'liabilities', label: 'Liabilities', icon: TrendingDown, component: LiabilitiesLedger },
+  { key: 'equity', label: "Owner's Equity", icon: PiggyBank, component: OwnersEquity },
 ];
 
 export default function AdminAssetsLiabilities() {

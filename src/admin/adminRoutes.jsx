@@ -2,7 +2,7 @@ import { lazy, useState } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
-  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2,
+  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2, TrendingDown,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useAuth } from '../context/AuthContext';
@@ -30,6 +30,7 @@ const AdminDailyBalanceSheet = lazy(() => import('./AdminDailyBalanceSheet'));
 const OpeningBalanceSetup = lazy(() => import('./OpeningBalanceSetup'));
 const AdminPurchases = lazy(() => import('./AdminPurchases'));
 const AdminAssetsLiabilities = lazy(() => import('./AdminAssetsLiabilities'));
+const AdminCogsReport = lazy(() => import('./AdminCogsReport'));
 const SurveillanceDashboard = lazy(() => import('./SurveillanceDashboard'));
 const TodaySpecials   = lazy(() => import('./TodaySpecials'));
 const AdminTransactions = lazy(() => import('./AdminTransactions'));
@@ -38,6 +39,8 @@ const PrinterSettingsPage = lazy(() => import('./printers/PrinterSettingsPage'))
 const TableQRCodes    = lazy(() => import('./TableQRCodes'));
 const PriceProfilesPage = lazy(() => import('./PriceProfilesPage'));
 const OutletsOverview = lazy(() => import('./OutletsOverview'));
+const AdminAuditTrail = lazy(() => import('./AdminAuditTrail'));
+const AdminReconciliation = lazy(() => import('./AdminReconciliation'));
 const CaptainPerformanceDashboard = lazy(() => import('../captain/CaptainPerformanceDashboard'));
 
 // ── Wrapper components for activeOutlet forking ──────────────────────────────
@@ -119,14 +122,17 @@ export const adminRoutes = [
   { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner'], element: <Orders /> },
   { key: 'transactions',      label: 'Transactions',           icon: Receipt,             roles: ['admin','owner'], element: <AdminTransactions />,            props: (ctx) => ({ onStatsRefresh: ctx.loadStats }) },
   { key: 'reports',           label: 'Reports',                icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <Reports /> },
-  { key: 'balanceSheet',      label: 'Daily Balance Sheet',    icon: Scale,               roles: ['admin','owner'], element: <AdminDailyBalanceSheet /> },
+  { key: 'balanceSheet',      label: 'Daily Balance Sheet',    icon: Scale,               roles: ['admin','owner'], element: <AdminDailyBalanceSheet />, group: 'finance' },
   { key: 'staff',             label: 'Staff',                  icon: Users,               roles: ['admin','owner'], element: <StaffManagement />, group: 'hr' },
   { key: 'captains',          label: 'Captain Analytics',      icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <CaptainPerformanceDashboard /> },
   { key: 'payroll',           label: 'Payroll',                icon: DollarSign,          roles: ['admin','owner'], element: <Payroll />,                       props: (ctx) => ({ onPayslip: () => {} }), group: 'hr' },
-  { key: 'vouchers',          label: 'Expenditures',           icon: Wallet,              roles: ['admin','owner'], element: <AdminExpenditures /> },
+  { key: 'vouchers',          label: 'Expenditures',           icon: Wallet,              roles: ['admin','owner'], element: <AdminExpenditures />, group: 'finance' },
   { key: 'opening-balance',   label: 'Opening Balances',       icon: Landmark,            roles: ['admin','owner'], element: <OpeningBalanceSetup />, group: 'finance' },
   { key: 'purchases',         label: 'Purchases',              icon: Package,             roles: ['admin','owner'], element: <AdminPurchases />, group: 'finance' },
   { key: 'assets-liabilities', label: 'Assets & Liabilities',    icon: Building2,           roles: ['admin','owner'], element: <AdminAssetsLiabilities />, group: 'finance' },
+  { key: 'cogs',              label: 'COGS Report',             icon: TrendingDown,        roles: ['admin','owner'], element: <AdminCogsReport />, group: 'finance' },
+  { key: 'audit-trail',        label: 'Audit Trail',             icon: ClipboardList,       roles: ['admin','owner'], element: <AdminAuditTrail />, group: 'finance' },
+  { key: 'reconciliation',     label: 'Reconciliation',          icon: Scale,               roles: ['admin','owner'], element: <AdminReconciliation />, group: 'finance' },
   { key: 'attendance',        label: 'Attendance',             icon: Users,               roles: ['admin','owner'], element: <Attendance />, group: 'hr' },
   { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner'], element: <InventorySection /> },
   { key: 'marketing',         label: 'Marketing AI',           icon: Megaphone,           roles: ['admin','owner'], element: <Marketing />,                     props: (ctx) => ({ upload: ctx.mUpload, setUpload: ctx.setMUpload, uploadRef: ctx.mUploadRef, generated: ctx.mGenerated, setGenerated: ctx.setMGenerated, posted: ctx.mPosted, setPosted: ctx.setMPosted }) },
@@ -169,6 +175,9 @@ export function isRouteEnabled(key, enabledModules) {
   if (key === 'opening-balance') return true;
   if (key === 'purchases') return true;
   if (key === 'assets-liabilities') return true;
+  if (key === 'cogs') return true;
+  if (key === 'audit-trail') return true;
+  if (key === 'reconciliation') return true;
   if (key === 'balanceSheet') return enabledModules.dailyBalanceSheet !== false;
   if (key === 'attendance') return enabledModules.payroll !== false;
   if (key === 'marketing') return enabledModules.marketing !== false;

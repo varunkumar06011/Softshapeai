@@ -79,6 +79,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   const [dishModalOpen, setDishModalOpen] = useState(false);
   const [showOutletSwitcher, setShowOutletSwitcher] = useState(false);
   const [hrExpanded, setHrExpanded] = useState(false);
+  const [financeExpanded, setFinanceExpanded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const saved = localStorage.getItem('admin-sidebar-width');
@@ -501,6 +502,8 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
               onNavigate={(key) => { navigate(`${basePath}/${key}`); setIsSidebarOpen(false); }}
               hrExpanded={hrExpanded}
               onToggleHr={() => setHrExpanded(prev => !prev)}
+              financeExpanded={financeExpanded}
+              onToggleFinance={() => setFinanceExpanded(prev => !prev)}
               userId={user?.id}
             />
           </div>

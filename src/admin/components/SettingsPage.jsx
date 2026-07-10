@@ -922,6 +922,8 @@ function SettingsPage({ onNavigate }) {
                   const Icon = r.icon;
                   const isHr = r.group === 'hr';
                   const isFirstHr = isHr && !adminRoutes.some(x => x.group === 'hr' && adminRoutes.indexOf(x) < adminRoutes.indexOf(r));
+                  const isFinance = r.group === 'finance';
+                  const isFirstFinance = isFinance && !adminRoutes.some(x => x.group === 'finance' && adminRoutes.indexOf(x) < adminRoutes.indexOf(r));
                   return (
                     <React.Fragment key={r.key}>
                       {isFirstHr && (
@@ -929,7 +931,12 @@ function SettingsPage({ onNavigate }) {
                           <p className="text-[11px] font-black uppercase tracking-wider text-gray-400">HR Group</p>
                         </div>
                       )}
-                      <div className={`flex items-center justify-between rounded-lg ${isHr ? 'ml-4 bg-gray-50 px-3 py-2' : 'px-3 py-2 hover:bg-gray-50'}`}>
+                      {isFirstFinance && (
+                        <div className="pt-3 pb-1">
+                          <p className="text-[11px] font-black uppercase tracking-wider text-gray-400">Finance Group</p>
+                        </div>
+                      )}
+                      <div className={`flex items-center justify-between rounded-lg ${(isHr || isFinance) ? 'ml-4 bg-gray-50 px-3 py-2' : 'px-3 py-2 hover:bg-gray-50'}`}>
                         <div className="flex items-center gap-3">
                           {Icon && <Icon size={18} className="text-gray-400 flex-shrink-0" />}
                           <p className="text-sm font-medium text-gray-900">{r.label}</p>

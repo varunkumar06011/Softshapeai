@@ -407,6 +407,7 @@ export default function TodaySpecials() {
   const handleDeactivate = async (id) => {
     try {
       await updateMenuItem(id, {
+        isSpecial: false,
         specialActive: false,
         syncToAllOutlets: true,
       });
@@ -960,7 +961,14 @@ export default function TodaySpecials() {
                   {['No Expiry', '1 Day', '1 Week', '1 Month'].map(d => (
                     <button
                       key={d}
-                      onClick={() => setFormData({ ...formData, duration: d })}
+                      onClick={() => {
+                        const now = Date.now();
+                        let expiresAt = null;
+                        if (d === '1 Day') expiresAt = now + 24 * 60 * 60 * 1000;
+                        else if (d === '1 Week') expiresAt = now + 7 * 24 * 60 * 60 * 1000;
+                        else if (d === '1 Month') expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+                        setFormData({ ...formData, duration: d, expiresAt });
+                      }}
                       className={`flex-1 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${formData.duration === d ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
                     >
                       <Clock size={12} /> {d}

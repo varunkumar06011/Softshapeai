@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Calendar, Store, Loader2, Lock, Unlock,
   Plus, Minus, Trash2, Save, Send, CheckCircle, TrendingUp, Wallet,
-  ArrowRight, Edit3, X,
+  ArrowRight, Edit3, X, ChevronDown, ChevronRight, Info, CreditCard,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -328,6 +328,9 @@ export default function AdminDailyBalanceSheet() {
   const [showAddAdj, setShowAddAdj] = useState(false);
   const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS' });
   const [statusLoading, setStatusLoading] = useState(false);
+  const [ledgerActivity, setLedgerActivity] = useState(null);
+  const [showLedgerActivity, setShowLedgerActivity] = useState(false);
+  const [ledgerActivityLoading, setLedgerActivityLoading] = useState(false);
   const [logoBase64, setLogoBase64] = useState(null);
   const [allOutletsPaymentSummary, setAllOutletsPaymentSummary] = useState(null);
   const saveTimerRef = useRef(null);
@@ -433,8 +436,24 @@ export default function AdminDailyBalanceSheet() {
     }
   }, [selectedDate, outletId]);
 
+  // ── Load ledger activity for the date ──────────────────────────────────────
+  const loadLedgerActivity = useCallback(async () => {
+    setLedgerActivityLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('outletId', outletId);
+      const data = await apiFetch(`/api/balance-sheet/${selectedDate}/ledger-activity?${params.toString()}`);
+      setLedgerActivity(data);
+    } catch {
+      setLedgerActivity(null);
+    } finally {
+      setLedgerActivityLoading(false);
+    }
+  }, [selectedDate, outletId]);
+
   useEffect(() => { loadSheet(); }, [loadSheet]);
   useEffect(() => { loadExpenditures(); }, [loadExpenditures]);
+  useEffect(() => { loadLedgerActivity(); }, [loadLedgerActivity]);
 
   // ── Local state mirrors for editable fields ────────────────────────────────
   const [overrides, setOverrides] = useState({
@@ -1323,6 +1342,93 @@ export default function AdminDailyBalanceSheet() {
           ))}
         </div>
       </div>
+
+      {/* ── Today's Ledger Activity (read-only informational panel) ──────── */}
+      {ledgerActivity && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/50">
+          <button
+            onClick={() => setShowLedgerActivity(!showLedgerActivity)}
+            className="flex w-full items-center justify-between px-3 py-2 text-left"
+          >
+            <div className="flex items-center gap-1.5">
+              <Info size={14} className="text-blue-500" />
+              <span className="text-xs font-black text-gray-700">Today's Ledger Activity</span>
+              {(ledgerActivity.cashLiabilityPayments?.length > 0 || ledgerActivity.liabilitiesCreatedToday?.length > 0) && (
+                <span className="ml-1 rounded-full bg-blue-200 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">
+                  {ledgerActivity.cashLiabilityPayments.length + ledgerActivity.liabilitiesCreatedToday.length} item{ledgerActivity.cashLiabilityPayments.length + ledgerActivity.liabilitiesCreatedToday.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            {showLedgerActivity ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+          </button>
+
+          {showLedgerActivity && (
+            <div className="space-y-3 px-3 pb-3">
+              {/* Grocery by category */}
+              {ledgerActivity.groceryByCategory?.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] font-bold text-gray-500">Grocery Expenditures (included in total)</div>
+                  <div className="space-y-1">
+                    {ledgerActivity.groceryByCategory.map((g, i) => (
+                      <div key={i} className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs">
+                        <span className="font-bold text-gray-700">{g.categoryName}</span>
+                        <span className="font-bold text-gray-800">{round2(g.amount).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Cash liability payments */}
+              {ledgerActivity.cashLiabilityPayments?.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] font-bold text-gray-500">Cash Vendor Payments (included in total)</div>
+                  <div className="space-y-1">
+                    {ledgerActivity.cashLiabilityPayments.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <Wallet size={10} className="text-green-600" />
+                          <span className="font-bold text-gray-700">{p.vendorName}</span>
+                        </div>
+                        <span className="font-bold text-green-600">{round2(p.amount).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Liabilities created (AP) — not a cash expense */}
+              {ledgerActivity.liabilitiesCreatedToday?.length > 0 && (
+                <div>
+                  <div className="mb-1 flex items-center gap-1 text-[10px] font-bold text-gray-500">
+                    <CreditCard size={10} />
+                    Vendor Bills Created (AP — not a cash expense, does not affect today's till)
+                  </div>
+                  <div className="space-y-1">
+                    {ledgerActivity.liabilitiesCreatedToday.map((l, i) => (
+                      <div key={i} className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs">
+                        <span className="font-bold text-gray-500">{l.vendorName}</span>
+                        <span className="font-bold text-gray-400">{round2(l.amount).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {ledgerActivityLoading && (
+                <div className="flex items-center justify-center py-2"><Loader2 size={14} className="animate-spin text-gray-400" /></div>
+              )}
+              {!ledgerActivityLoading &&
+                !ledgerActivity.groceryByCategory?.length &&
+                !ledgerActivity.cashLiabilityPayments?.length &&
+                !ledgerActivity.liabilitiesCreatedToday?.length && (
+                <div className="py-2 text-center text-xs text-gray-400">No ledger activity for this date.</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Action buttons ────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
