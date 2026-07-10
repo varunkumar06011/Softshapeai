@@ -131,7 +131,7 @@ export async function reserveKotNumber(requestId = null) {
   try {
     const body = {};
     if (requestId) body.requestId = requestId;
-    return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 10000, body: JSON.stringify(body) });
+    return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 3000, body: JSON.stringify(body) });
   } catch (err) {
     // If the API failed because we went offline mid-call, fall back to local number
     if (!isBackendReachable()) {
@@ -142,7 +142,7 @@ export async function reserveKotNumber(requestId = null) {
   }
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
@@ -262,7 +262,7 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 45000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
