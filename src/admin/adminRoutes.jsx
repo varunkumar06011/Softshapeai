@@ -136,10 +136,11 @@ export const adminRoutes = [
 // ── Manager tab visibility ──────────────────────────────────────────────────
 // Checks if a specific tab is enabled for the manager role.
 // Admin configures this via Settings → Manager tab (toggles stored in enabledModules.managerTabs).
-// If managerTabs is not configured, all tabs are shown to managers by default.
+// A tab is only visible to managers when it is explicitly toggled ON (true).
+// If managerTabs is not configured, or a tab is not explicitly enabled, it is hidden.
 export function isManagerTabEnabled(key, enabledModules) {
   const managerTabs = enabledModules?.managerTabs;
-  if (!managerTabs || typeof managerTabs !== 'object') return true;
+  if (!managerTabs || typeof managerTabs !== 'object') return false;
   return managerTabs?.[key] === true;
 }
 
