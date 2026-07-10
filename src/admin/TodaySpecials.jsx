@@ -60,6 +60,7 @@ export default function TodaySpecials() {
     { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' },
   ]);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [selectedSpecialIds, setSelectedSpecialIds] = useState(new Set());
 
   // Target assignment states
@@ -307,6 +308,7 @@ export default function TodaySpecials() {
     const payload = buildSpecialPayload();
     if (!payload) return;
 
+    setSaving(true);
     try {
       if (formData.id) {
         await updateMenuItem(formData.id, payload);
@@ -314,7 +316,7 @@ export default function TodaySpecials() {
         await createMenuItem(payload);
       }
       await refreshMenu();
-      fetchSpecials();
+      await fetchSpecials();
       setFormData({
         id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', customExpiry: '', gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {}, unit: '', menuType: 'FOOD'
       });
@@ -323,6 +325,8 @@ export default function TodaySpecials() {
     } catch (err) {
       console.error('[TodaySpecials] Failed to save special:', err);
       alert('Failed to save special. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -347,7 +351,7 @@ export default function TodaySpecials() {
       }));
       await bulkImportSpecials(payload, true);
       await refreshMenu();
-      fetchSpecials();
+      await fetchSpecials();
       setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' }]);
       setIsBulkModalOpen(false);
       simulatePush();
@@ -364,7 +368,7 @@ export default function TodaySpecials() {
     try {
       await deleteMenuItem(id);
       await refreshMenu();
-      fetchSpecials();
+      await fetchSpecials();
     } catch (err) {
       console.error('[TodaySpecials] Failed to delete special:', err);
       alert('Failed to delete special. Please try again.');
@@ -385,7 +389,7 @@ export default function TodaySpecials() {
         syncToAllOutlets: true,
       });
       await refreshMenu();
-      fetchSpecials();
+      await fetchSpecials();
       simulatePush();
     } catch (err) {
       console.error('[TodaySpecials] Failed to activate special:', err);
@@ -400,7 +404,7 @@ export default function TodaySpecials() {
         syncToAllOutlets: true,
       });
       await refreshMenu();
-      fetchSpecials();
+      await fetchSpecials();
       simulatePush();
     } catch (err) {
       console.error('[TodaySpecials] Failed to deactivate special:', err);
@@ -432,7 +436,7 @@ export default function TodaySpecials() {
         )
       );
       await refreshMenu();
-      fetchSpecials();
+      await fetchSpecials();
       setSelectedSpecialIds(new Set());
       simulatePush();
     } catch (err) {
@@ -1040,10 +1044,10 @@ export default function TodaySpecials() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={!formData.n || !formData.p}
+                disabled={saving || !formData.n || !formData.p}
                 className="flex-1 py-3 bg-[#E53935] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-red-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                <Save size={14} /> Save Special
+                <Save size={14} /> {saving ? 'Saving...' : 'Save Special'}
               </button>
             </div>
           </motion.div>
