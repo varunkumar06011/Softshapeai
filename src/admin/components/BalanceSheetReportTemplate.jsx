@@ -179,7 +179,7 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
 
       {/* ── KPI cards (4 cards) ──────────────────────────────────────────────── */}
       <div className="mt-6 flex gap-3">
-        <KpiCard icon={TrendingUp} label="Total Sales" value={data.totalSales}
+        <KpiCard icon={TrendingUp} label="Gross Sales" value={data.totalSales}
           sub={`from ${data.totalSalesSourcesCount} sources`} color="#16A34A" bg="#F0FDF4" />
         <KpiCard icon={TrendingUp} label="Net Sales" value={data.netSales}
           sub="After Aggregator Deduction" color="#0EA5E9" bg="#F0F9FF" />
@@ -202,6 +202,8 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           {data.venueSales.map((row, idx) => (
             <TableRow key={idx} icon={row.icon} iconColor={row.color} label={row.label} amount={row.amount} />
           ))}
+          <TotalRow label="Gross Sales" amount={data.grossSales} />
+          <TableRow label="Swiggy + Zomato" amount={data.aggregatorSales} muted />
           <TotalRow label="Net Sales (after Swiggy + Zomato deduction)" amount={data.netSales} />
         </div>
 

@@ -50,7 +50,7 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments,
   // Steps show amounts only (no running balance after each step)
   const steps = [
     { label: 'Opening Balance', amount: ob },
-    { label: '+ Total Sales', amount: totalSales },
+    { label: '+ Gross Sales', amount: totalSales },
     { label: '\u2212 Swiggy', amount: swiggy },
     { label: '\u2212 Zomato', amount: zomato },
     { label: '= Net Sales', amount: netSales },
@@ -761,7 +761,7 @@ export default function AdminDailyBalanceSheet() {
       generatedBy: user?.name || 'Admin',
       totalSales,
       netSales: balanceCalc.netSales,
-      totalSalesSourcesCount: 6,
+      totalSalesSourcesCount: 5,
       totalExpenditure: totalExpenditures,
       totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
       totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
@@ -770,13 +770,13 @@ export default function AdminDailyBalanceSheet() {
       netClosingBalance: balanceCalc.closingBalance,
       otherIncome: adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
       amountInWords: numberToWords(balanceCalc.closingBalance),
+      grossSales: totalSales,
+      aggregatorSales: round2(computedSales.swiggy + computedSales.zomato),
       venueSales: [
         { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
         { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
         { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
         { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
-        { icon: null, label: 'Swiggy', amount: computedSales.swiggy, color: '#F97316' },
-        { icon: null, label: 'Zomato', amount: computedSales.zomato, color: '#E53935' },
       ],
       expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
         label: cat,
@@ -875,7 +875,7 @@ export default function AdminDailyBalanceSheet() {
         generatedBy: user?.name || 'Admin',
         totalSales,
         netSales: balanceCalc.netSales,
-        totalSalesSourcesCount: 6,
+        totalSalesSourcesCount: 5,
         totalExpenditure: totalExpenditures,
         totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
         totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
@@ -884,13 +884,13 @@ export default function AdminDailyBalanceSheet() {
         netClosingBalance: balanceCalc.closingBalance,
         otherIncome: adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
         amountInWords: numberToWords(balanceCalc.closingBalance),
+        grossSales: totalSales,
+        aggregatorSales: round2(computedSales.swiggy + computedSales.zomato),
         venueSales: [
           { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
           { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
           { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
           { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
-          { icon: null, label: 'Swiggy', amount: computedSales.swiggy, color: '#F97316' },
-          { icon: null, label: 'Zomato', amount: computedSales.zomato, color: '#E53935' },
         ],
         expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
           label: cat,
@@ -1136,7 +1136,7 @@ export default function AdminDailyBalanceSheet() {
         </div>
         <div className="mt-3">
           <SalesTile
-            label="Total Sales"
+            label="Gross Sales"
             computedValue={computedTotalSales}
             overrideValue={overrides.totalSalesOverride}
             isManual={overrides.totalSalesOverride != null}

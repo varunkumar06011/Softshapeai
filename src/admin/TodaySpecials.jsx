@@ -37,10 +37,13 @@ export default function TodaySpecials() {
   const fetchSpecials = useCallback(async () => {
     try {
       const res = await apiFetch('/api/menu/items/admin');
+      console.log('[TodaySpecials] /api/menu/items/admin status:', res.status, res.ok);
       if (!res.ok) return;
       const items = await res.json();
+      console.log('[TodaySpecials] /api/menu/items/admin returned', items.length, 'items');
       const mapped = mapFlatMenuItems(items);
       const specialItems = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.n, i])).values());
+      console.log('[TodaySpecials] Mapped', mapped.length, 'items,', specialItems.length, 'specials');
       setSpecials(specialItems);
     } catch (err) {
       console.error('[TodaySpecials] Failed to fetch specials:', err);
@@ -310,28 +313,10 @@ export default function TodaySpecials() {
 
     setSaving(true);
     try {
-      let response;
       if (formData.id) {
-        response = await updateMenuItem(formData.id, payload);
+        await updateMenuItem(formData.id, payload);
       } else {
-        response = await createMenuItem(payload);
-      }
-      // Optimistically update the specials list using the backend response
-      const savedItems = Array.isArray(response) ? response : [response];
-      const mappedSpecials = mapFlatMenuItems(savedItems).filter(i => i.isSpecial);
-      if (mappedSpecials.length > 0) {
-        setSpecials(prev => {
-          const next = [...prev];
-          mappedSpecials.forEach(special => {
-            const idx = next.findIndex(i => i.id === special.id);
-            if (idx >= 0) {
-              next[idx] = special;
-            } else {
-              next.unshift(special);
-            }
-          });
-          return next;
-        });
+        await createMenuItem(payload);
       }
       await refreshMenu();
       await fetchSpecials();
