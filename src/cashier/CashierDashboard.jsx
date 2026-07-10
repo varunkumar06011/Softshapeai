@@ -3955,13 +3955,18 @@ const CashierDashboard = ({ onLogout }) => {
   }, [activeOutlet, categories, barMenuItems]);
 
   const menuTypeSubcategories = useMemo(() => {
-    if (selectedMenuType === 'ALL') return [];
     const items = activeOutlet === 'restaurant'
       ? menuItems.filter(i => i.isAvailable !== false)
       : barMenuItems.filter(i => i.isAvailable !== false);
-    const filtered = selectedMenuType === 'FOOD'
-      ? items.filter(i => i.menuType !== 'LIQUOR')
-      : items.filter(i => i.menuType === 'LIQUOR');
+    const filtered = selectedMenuType === 'ALL'
+      ? items
+      : selectedMenuType === 'FOOD'
+        ? items.filter(i => i.menuType !== 'LIQUOR')
+        : selectedMenuType === 'LIQUOR'
+          ? items.filter(i => i.menuType === 'LIQUOR')
+          : selectedMenuType === 'DESSERTS'
+            ? items.filter(i => String(i.c || i.category || '').toLowerCase().includes('dessert'))
+            : items;
     const cats = filtered.map(i => i.category || i.c).filter(Boolean);
     const now = Date.now();
     const allItemsForSpecials = activeOutlet === 'restaurant' ? menuItems : barMenuItems;
@@ -6300,8 +6305,8 @@ const CashierDashboard = ({ onLogout }) => {
                             ))}
                           </div>
                         </div>
-                        {/* Row 2 — Subcategory Pills (only shown when a menu type is selected) */}
-                        {selectedMenuType !== 'ALL' && menuTypeSubcategories.length > 1 && (
+                        {/* Row 2 — Subcategory Pills */}
+                        {menuTypeSubcategories.length > 1 && (
                           <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide scroll-smooth py-1 flex-grow">
                             {menuTypeSubcategories.map(cat => {
                               const isSpecialPill = cat === 'Today Special';
