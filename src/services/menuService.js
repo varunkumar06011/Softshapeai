@@ -122,6 +122,7 @@ export function mapFlatMenuItems(items) {
       specialChannel: item.specialChannel || "BOTH",
       active: toBool(item.specialActive),
       expiresAt: item.specialExpiresAt ? new Date(item.specialExpiresAt).getTime() : null,
+      outletId: item.outletId || null,
     };
   });
 }

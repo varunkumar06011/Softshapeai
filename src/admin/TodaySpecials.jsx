@@ -36,13 +36,13 @@ export default function TodaySpecials() {
 
   const fetchSpecials = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/menu/items/admin');
-      console.log('[TodaySpecials] /api/menu/items/admin status:', res.status, res.ok);
+      const res = await apiFetch('/api/menu/items/admin/all-outlets');
+      console.log('[TodaySpecials] /api/menu/items/admin/all-outlets status:', res.status, res.ok);
       if (!res.ok) return;
       const items = await res.json();
-      console.log('[TodaySpecials] /api/menu/items/admin returned', items.length, 'items');
+      console.log('[TodaySpecials] /api/menu/items/admin/all-outlets returned', items.length, 'items');
       const mapped = mapFlatMenuItems(items);
-      const specialItems = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.n, i])).values());
+      const specialItems = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.id, i])).values());
       console.log('[TodaySpecials] Mapped', mapped.length, 'items,', specialItems.length, 'specials');
       setSpecials(specialItems);
     } catch (err) {
@@ -132,7 +132,12 @@ export default function TodaySpecials() {
     return { startDate: today, endDate: today };
   };
 
+  const displayedSpecials = useMemo(() => {
+    if (selectedOutletId === 'all') return specials;
+    return specials.filter(s => s.outletId === selectedOutletId);
+  }, [specials, selectedOutletId]);
 
+  const displayedSpecialsCount = displayedSpecials.length;
 
   useEffect(() => {
     fetchSpecials();
@@ -416,10 +421,10 @@ export default function TodaySpecials() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedSpecialIds.size === specials.length) {
+    if (selectedSpecialIds.size === displayedSpecials.length) {
       setSelectedSpecialIds(new Set());
     } else {
-      setSelectedSpecialIds(new Set(specials.map(s => s.id)));
+      setSelectedSpecialIds(new Set(displayedSpecials.map(s => s.id)));
     }
   };
 
@@ -485,7 +490,9 @@ export default function TodaySpecials() {
           <h2 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2">
             <StarIcon className="text-amber-500 fill-amber-500" /> Today Specials
           </h2>
-          <p className="text-xs font-bold text-gray-500 mt-1">Manage daily recommendations & captain targets</p>
+          <p className="text-xs font-bold text-gray-500 mt-1">
+            Manage daily recommendations & captain targets · {displayedSpecialsCount} special{displayedSpecialsCount === 1 ? '' : 's'} {selectedOutletId === 'all' ? 'across all outlets' : `in ${outlets.find(o => o.id === selectedOutletId)?.name || 'selected outlet'}`}
+          </p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
           {outlets.length > 1 && (
@@ -563,13 +570,16 @@ export default function TodaySpecials() {
         )}
         {staffSold.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {staffSold.slice(0, 5).map((staff, idx) => (
-              <div key={staff.userId} className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${idx === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
+            {staffSold.slice(0, 10).map((staff, idx) => (
+              <div key={staff.userId} className={`flex items-center justify-between rounded-xl px-3 py-2.5 border ${idx === 0 ? 'bg-amber-50 border-amber-200' : idx === 1 ? 'bg-gray-50 border-gray-200' : idx === 2 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-black w-5 h-5 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-700 shrink-0">
+                  <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${idx === 0 ? 'bg-amber-500 text-white' : idx === 1 ? 'bg-gray-500 text-white' : idx === 2 ? 'bg-orange-500 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>
                     {idx + 1}
                   </span>
-                  <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-bold text-gray-900 truncate">{staff.name || staff.userId}</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{staff.revenue > 0 ? `₹${Math.round(staff.revenue).toLocaleString('en-IN')}` : 'No revenue'}</span>
+                  </div>
                 </div>
                 <div className="text-right shrink-0">
                   <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
@@ -579,7 +589,7 @@ export default function TodaySpecials() {
             ))}
           </div>
         ) : (
-          <p className="text-xs font-bold text-gray-400">No specials sold in this period. Sales will appear here once a captain or cashier settles a bill containing a special.</p>
+          <p className="text-xs font-bold text-gray-400">Captain Leaderboard will appear here once a special is sold.</p>
         )}
       </div>
 
@@ -613,17 +623,17 @@ export default function TodaySpecials() {
       )}
 
       {/* BULK SELECTION TOOLBAR */}
-      {specials.length > 0 && (
+      {displayedSpecials.length > 0 && (
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={selectedSpecialIds.size === specials.length && specials.length > 0}
+              checked={selectedSpecialIds.size === displayedSpecials.length && displayedSpecials.length > 0}
               onChange={toggleSelectAll}
               className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
             />
             <span className="text-sm font-bold text-gray-700">
-              Select All ({selectedSpecialIds.size}/{specials.length})
+              Select All ({selectedSpecialIds.size}/{displayedSpecials.length})
             </span>
           </label>
           <button
@@ -638,7 +648,7 @@ export default function TodaySpecials() {
 
       {/* SPECIALS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {specials.map(special => {
+        {displayedSpecials.map(special => {
           const isExpired = Date.now() > (special.expiresAt || 0);
           const isActive = special.active && !isExpired;
           return (
@@ -666,6 +676,11 @@ export default function TodaySpecials() {
                 <div className="absolute top-3 right-3 flex gap-2">
                   {special.isCombo && (
                     <span className="bg-amber-500 text-white px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Combo</span>
+                  )}
+                  {selectedOutletId === 'all' && special.outletId && (
+                    <span className="bg-blue-500 text-white px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">
+                      {outlets.find(o => o.id === special.outletId)?.name || special.outletId}
+                    </span>
                   )}
                   <div className={`w-5 h-5 rounded-md flex items-center justify-center bg-white shadow-sm border ${special.t === 'veg' ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}`}>
                     <div className={`w-2 h-2 rounded-full ${special.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -737,7 +752,7 @@ export default function TodaySpecials() {
           );
         })}
 
-        {specials.length === 0 && (
+        {displayedSpecials.length === 0 && (
           <div className="col-span-full py-16 bg-white rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
             <StarIcon size={40} className="text-gray-300 mb-4" />
             <h3 className="text-lg font-black text-gray-900 mb-2">No Specials Added</h3>
