@@ -965,21 +965,16 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
     return { offline: true };
   }
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
-    try {
-      const res = await fetch(apiUrl(`/api/transactions/${transactionId}/confirm-payment`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeader() },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to confirm payment');
-      }
-      return res.json();
-    } finally { clearTimeout(timeoutId); }
+    const res = await fetch(apiUrl(`/api/transactions/${transactionId}/confirm-payment`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authService.getAuthHeader() },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to confirm payment');
+    }
+    return res.json();
   } catch (err) {
     if (!isBackendReachable()) {
       console.warn('[Offline] Confirm payment API failed, queuing for sync:', err.message);

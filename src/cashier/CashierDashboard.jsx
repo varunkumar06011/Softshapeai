@@ -482,6 +482,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [showConfirmPaymentModal, setShowConfirmPaymentModal] = useState(false);
   const [confirmPaymentTxn, setConfirmPaymentTxn] = useState(null);
+  const [confirmPaymentSubmitting, setConfirmPaymentSubmitting] = useState(false);
   const [confirmPaymentMethod, setConfirmPaymentMethod] = useState(null);
   const [confirmCashInput, setConfirmCashInput] = useState('');
   const [confirmCardInput, setConfirmCardInput] = useState('');
@@ -1223,7 +1224,8 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
 
   const handleConfirmPaymentSubmit = useCallback(async () => {
-    if (!confirmPaymentTxn || !confirmPaymentMethod) return;
+    if (!confirmPaymentTxn || !confirmPaymentMethod || confirmPaymentSubmitting) return;
+    setConfirmPaymentSubmitting(true);
     try {
       const cashAmt = Number(confirmCashInput) || 0;
       const cardAmt = Number(confirmCardInput) || 0;
@@ -1241,13 +1243,11 @@ const CashierDashboard = ({ onLogout }) => {
         addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
       } else {
         addNotification('Payment Confirmed', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} marked as completed.`, 'success');
-        // Optimistically update status so UI + final sale totals reflect the change immediately
         setPastTransactions(prev => prev.map(t =>
           t.id === confirmPaymentTxn.id
             ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED' }
             : t
         ));
-        // Reset status filter so the confirmed txn is visible and included in final sale
         setTxnStatusFilter('all');
       }
       setShowConfirmPaymentModal(false);
@@ -1259,9 +1259,10 @@ const CashierDashboard = ({ onLogout }) => {
       loadTransactions(txnDateFilterRef.current, null, { silent: true, force: true });
     } catch (err) {
       console.error('[ConfirmPayment] error:', err);
-      addNotification('Confirm Failed', err.message || 'Could not confirm payment.', 'error');
+    } finally {
+      setConfirmPaymentSubmitting(false);
     }
-  }, [confirmPaymentTxn, confirmPaymentMethod, confirmCashInput, confirmCardInput, confirmTipInput, loadTransactions]);
+  }, [confirmPaymentTxn, confirmPaymentMethod, confirmPaymentSubmitting, confirmCashInput, confirmCardInput, confirmTipInput, loadTransactions]);
 
   const handleConfirmPaymentCancel = useCallback(() => {
     setShowConfirmPaymentModal(false);
@@ -7953,13 +7954,13 @@ const CashierDashboard = ({ onLogout }) => {
                 </button>
                 <button
                   onClick={handleConfirmPaymentSubmit}
-                  disabled={!confirmPaymentMethod}
-                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors ${confirmPaymentMethod
+                  disabled={!confirmPaymentMethod || confirmPaymentSubmitting}
+                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors flex items-center justify-center gap-2 ${confirmPaymentMethod && !confirmPaymentSubmitting
                     ? 'bg-green-600 text-white hover:bg-green-700'
                     : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                   }`}
                 >
-                  Confirm
+                  {confirmPaymentSubmitting ? <><Loader2 size={16} className="animate-spin" /> Confirming...</> : 'Confirm'}
                 </button>
               </div>
             </div>
