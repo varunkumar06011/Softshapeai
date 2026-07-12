@@ -508,7 +508,6 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     return { offline: true, transaction: { id: localId, ...body } };
   }
 
-<<<<<<< HEAD
   // Try API first — isBackendReachable() can be falsely negative on slow networks.
   // Only fall back to offline queue if the API call actually fails after retries.
   try {
@@ -517,6 +516,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10_000);
         try {
+          const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
             method: "POST",
             headers: { "Content-Type": "application/json", ...getAuthHeaders() },
             body: JSON.stringify(body),
@@ -539,17 +539,11 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         method: 'POST',
         body,
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-=======
-  return withRetry(
-    async () => {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
       });
-        synced: false,
-        createdAt: Date.now(),
+      const localId = `offline-txn-${Date.now()}`;
+      await addOfflineTransaction({
+        localId, orderId, requestId: settleRequestId,
+        ...extraSettleData, synced: false, createdAt: Date.now(),
       });
       if (import.meta.env.DEV) {
         console.log('[Offline] Settlement queued for sync:', orderId);
@@ -684,12 +678,8 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       actionType: 'cancel-item',
       url: `/api/orders/${orderId}/cancel-item`,
       method: 'PATCH',
-<<<<<<< HEAD
-      body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
-      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-=======
       body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted },
->>>>>>> e6031be (start of heian era)
+      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
     });
     return { offline: true };
   }
@@ -704,7 +694,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
           const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId }),
+            body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted }),
             signal: controller.signal,
           });
           return parseResponse(res);
@@ -722,13 +712,8 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
         actionType: 'cancel-item',
         url: `/api/orders/${orderId}/cancel-item`,
         method: 'PATCH',
-<<<<<<< HEAD
-        body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
+        body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted },
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-=======
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted }),
->>>>>>> e6031be (start of heian era)
       });
       if (import.meta.env.DEV) {
         console.log('[Offline] Cancel item queued for sync:', orderId, orderItemId);
@@ -1011,7 +996,6 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
     return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
   }
 
-<<<<<<< HEAD
   // Try API first — isBackendReachable() can be falsely negative on slow networks.
   // Only fall back to offline queue if the API call actually fails.
   try {
@@ -1062,14 +1046,6 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
     }
     throw apiErr;
   }
-=======
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    signal: AbortSignal.timeout(15000),
-  });
-  return parseResponse(res);
->>>>>>> e6031be (start of heian era)
 }
 
 export { generateRequestId };
@@ -1088,12 +1064,8 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       actionType: 'cancel-items',
       url: `/api/orders/${orderId}/cancel-items`,
       method: 'PATCH',
-<<<<<<< HEAD
-      body: { items, cancelledBy, tableNumber, requestId: cancelRequestId },
-      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-=======
       body: { items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted },
->>>>>>> e6031be (start of heian era)
+      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
     });
     return { offline: true };
   }
@@ -1108,7 +1080,7 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
           const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-items`), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId }),
+            body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted }),
             signal: controller.signal,
           });
           return parseResponse(res);
@@ -1126,13 +1098,8 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
         actionType: 'cancel-items',
         url: `/api/orders/${orderId}/cancel-items`,
         method: 'PATCH',
-<<<<<<< HEAD
-        body: { items, cancelledBy, tableNumber, requestId: cancelRequestId },
+        body: { items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted },
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-=======
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted }),
->>>>>>> e6031be (start of heian era)
       });
       if (import.meta.env.DEV) {
         console.log('[Offline] Cancel items queued for sync:', orderId);
