@@ -29,6 +29,7 @@
 
 import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
+import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap } from './escposFrontend';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
@@ -332,22 +333,62 @@ export async function printLocal(job) {
 
   logOfflinePrint({ status: 'start', message: `${jobType} on ${platform}`, detail: `mapped=${printerName || 'none'}` });
 
-  // Generate text content if not provided (legacy fallback)
-  const text = job.text || (jobType === 'FINAL_BILL' || jobType === 'BILL'
-    ? buildBillText(job.data || {})
-    : jobType === 'KOT' || jobType === 'BAR_KOT'
-    ? buildKotText(job.data || {})
-    : JSON.stringify(job.data || {}));
-  const bytes = Array.from(textToEscpos(text));
+  // ── Generate ESC/POS data using frontend builders (parity with backend) ──
+  // If job.escposData is already provided, use it. Otherwise, build from job.data.
+  let escposData = job.escposData;
+  let text = job.text;
+
+  if (!escposData && job.data) {
+    try {
+      const d = job.data;
+      if (jobType === 'KOT') {
+        escposData = buildFoodKOT({
+          tableNumber: d.tableNumber || d.tableId,
+          orderId: d.orderId || d.tableId,
+          items: (d.items || []).map(i => ({ name: i.name || i.n, quantity: i.quantity || i.q, type: 'food', notes: i.notes })),
+          restaurantName: d.restaurantName,
+          captainName: d.captainName,
+          kotId: d.kotNumber ? String(d.kotNumber) : undefined,
+        });
+      } else if (jobType === 'BAR_KOT') {
+        escposData = buildLiquorKOT({
+          tableNumber: d.tableNumber || d.tableId,
+          orderId: d.orderId || d.tableId,
+          items: (d.items || []).map(i => ({ name: i.name || i.n, quantity: i.quantity || i.q, type: 'liquor', notes: i.notes })),
+          restaurantName: d.restaurantName,
+          captainName: d.captainName,
+          kotId: d.kotNumber ? String(d.kotNumber) : undefined,
+        });
+      } else if (jobType === 'FINAL_BILL' || jobType === 'BILL') {
+        escposData = buildFinalBill(d);
+      } else if (jobType === 'CANCEL_KOT') {
+        escposData = buildCancelKOT(d);
+      } else if (jobType === 'TABLE_SWAP') {
+        escposData = buildTableSwap(d);
+      }
+    } catch (err) {
+      console.warn('[printOffline] ESC/POS build failed, falling back to text:', err.message);
+    }
+  }
+
+  // Legacy text fallback if ESC/POS generation failed
+  if (!text && !escposData) {
+    text = (jobType === 'FINAL_BILL' || jobType === 'BILL'
+      ? buildBillText(job.data || {})
+      : jobType === 'KOT' || jobType === 'BAR_KOT'
+      ? buildKotText(job.data || {})
+      : JSON.stringify(job.data || {}));
+  }
+  const bytes = text ? Array.from(textToEscpos(text)) : [];
 
   // ── Primary: local Print Agent HTTP endpoint (multi-URL discovery) ──
   // Try multiple candidate URLs (configured, backend-reported, cached, localhost)
   // to support captain on WiFi/LAN (direct HTTP) and mobile data (socket fallback).
-  const body = job.escposData
+  const body = escposData
     ? {
         type: jobType,
         printerName: printerName || undefined,
-        escposData: job.escposData,
+        escposData,
         eventId: job.eventId || undefined,
         data: job.data || {},
       }

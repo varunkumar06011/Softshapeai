@@ -180,6 +180,7 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
+import { createMenuItem as edgeCreateMenuItem, updateMenuItem as edgeUpdateMenuItem, deleteMenuItem as edgeDeleteMenuItem, createCategory as edgeCreateCategory, updateCategory as edgeUpdateCategory, deleteCategory as edgeDeleteCategory, createStaff as edgeCreateStaff, updateStaff as edgeUpdateStaff, deleteStaff as edgeDeleteStaff } from '../services/adminApi';
 
 import { fetchVenues, fetchVenuesForOutlet, fetchTablesForOutlet } from '../services/tableApi';
 
@@ -2385,23 +2386,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
-
-        method: 'PATCH',
-
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-        body: JSON.stringify({ name: name.trim() }),
-
-      });
-
-      if (!res.ok) {
-
-        const err = await res.json();
-
-        throw new Error(err.error || 'Failed to rename category');
-
-      }
+      await edgeUpdateCategory(id, { name: name.trim() });
 
       await fetchCategories();
 
@@ -2427,17 +2412,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
-
-        method: 'PATCH',
-
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-        body: JSON.stringify({ sortOrder: newSortOrder }),
-
-      });
-
-      if (!res.ok) throw new Error('Failed to reorder category');
+      await edgeUpdateCategory(id, { sortOrder: newSortOrder });
 
       await fetchCategories();
 
@@ -2463,25 +2438,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
-
-        method: 'DELETE',
-
-        headers: getAuthHeaders(),
-
-      });
-
-      if (res.status === 400) {
-
-        const err = await res.json();
-
-        alert(err.error);
-
-        return;
-
-      }
-
-      if (!res.ok) throw new Error('Failed to delete category');
+      await edgeDeleteCategory(id);
 
       await fetchCategories();
 
@@ -2507,23 +2464,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories`, {
-
-        method: 'POST',
-
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-        body: JSON.stringify({ name: newCatName.trim() }),
-
-      });
-
-      if (!res.ok) {
-
-        const err = await res.json();
-
-        throw new Error(err.error || 'Failed to create category');
-
-      }
+      await edgeCreateCategory({ name: newCatName.trim() });
 
       setNewCatName('');
 
@@ -2655,40 +2596,28 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const endpoint = activeOutlet === 'bar'
+      if (activeOutlet === 'bar') {
 
-        ? `${API_BASE}/api/bar/menu/items/${deletingItem.id}`
-
-        : `${API_BASE}/api/menu/items/${deletingItem.id}`;
-
-      const res = await fetch(endpoint, {
-
-        method: 'DELETE',
-
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-      });
-
-      if (res.ok) {
-
-        // Optimistic update: remove item from local state immediately
-        const deletedId = deletingItem.id;
-        setGlobalMenu(prev => prev.filter(i => i.id !== deletedId));
-        setAdminItems(prev => prev.filter(i => i.id !== deletedId));
-
-        setDeletingItem(null);
-
-        // Background sync to confirm with server (no loading spinner)
-
-        refreshMenu().catch(() => {});
+        await fetch(`${API_BASE}/api/bar/menu/items/${deletingItem.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } });
 
       } else {
 
-        alert('Delete failed');
+        await edgeDeleteMenuItem(deletingItem.id);
 
       }
 
-    } catch {
+      // Optimistic update: remove item from local state immediately
+      const deletedId = deletingItem.id;
+      setGlobalMenu(prev => prev.filter(i => i.id !== deletedId));
+      setAdminItems(prev => prev.filter(i => i.id !== deletedId));
+
+      setDeletingItem(null);
+
+      // Background sync to confirm with server (no loading spinner)
+
+      refreshMenu().catch(() => {});
+
+    } catch (e) {
 
       alert('Delete failed');
 
@@ -2766,27 +2695,13 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const endpoint = activeOutlet === 'bar'
+      const serverItem = activeOutlet === 'bar'
 
-        ? `${API_BASE}/api/bar/menu/items/${editingItem.id}`
+        ? await (await fetch(`${API_BASE}/api/bar/menu/items/${editingItem.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify(body) })).json()
 
-        : `${API_BASE}/api/menu/items/${editingItem.id}`;
+        : await edgeUpdateMenuItem(editingItem.id, body);
 
-      const res = await fetch(endpoint, {
-
-        method: 'PATCH',
-
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-        body: JSON.stringify(body),
-
-      });
-
-
-
-      if (res.ok) {
-
-        const serverItem = await res.json();
+      if (serverItem) {
 
         // Build optimistic POS-shaped item from backend response
 
@@ -2970,19 +2885,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const endpoint = activeOutlet === 'bar'
-
-        ? `${API_BASE}/api/bar/menu/items`
-
-        : `${API_BASE}/api/menu/items`;
-
-      const res = await fetch(endpoint, {
-
-        method: 'POST',
-
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-
-        body: JSON.stringify({
+      const payload = {
 
           name: addingItem.n,
 
@@ -3022,15 +2925,15 @@ export function MenuPage({ onAddDish }) {
 
           ...(imageUrl ? { imageUrl } : {}),
 
-        }),
+        };
 
-      });
+      const serverItem = activeOutlet === 'bar'
 
+        ? await (await fetch(`${API_BASE}/api/bar/menu/items`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify(payload) })).json()
 
+        : await edgeCreateMenuItem(payload);
 
-      if (res.ok) {
-
-        const serverItem = await res.json();
+      if (serverItem) {
 
         // Map backend item to POS shape for optimistic insert
 
@@ -18326,21 +18229,13 @@ export function StaffManagement({ role }) {
 
     try {
 
-      const path = `/api/auth/staff${editing ? `/${editing.id}` : ''}`;
-
-      const method = editing ? 'PATCH' : 'POST';
-
-      const body = editing
-
-        ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
-
-        : form.role === 'OWNER'
-
-        ? { name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation }
-
-        : { name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation };
-
-      await apiFetch(path, { method, body: JSON.stringify(body) });
+      if (editing) {
+        await edgeUpdateStaff(editing.id, editing ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } } : {});
+      } else if (form.role === 'OWNER') {
+        await apiFetch('/api/auth/staff', { method: 'POST', body: JSON.stringify({ name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation }) });
+      } else {
+        await edgeCreateStaff({ name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation });
+      }
 
       fetchStaff();
 
@@ -18366,7 +18261,7 @@ export function StaffManagement({ role }) {
 
     try {
 
-      await apiFetch(`/api/auth/staff/${id}`, { method: 'DELETE' });
+      await edgeDeleteStaff(id);
 
       fetchStaff();
 

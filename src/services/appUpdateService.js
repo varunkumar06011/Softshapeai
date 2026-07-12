@@ -2,8 +2,9 @@
 // App Update Service — Checks for new native APK releases on GitHub
 // ─────────────────────────────────────────────────────────────────────────────
 // Used by Capacitor Android apps to detect when a new APK is available and
-// prompt the user to download it. JS/HTML updates are handled automatically via
-// server.url; this service only handles native APK updates.
+// prompt the user to download it. JS/HTML updates are handled by otaService.js
+// (custom OTA mechanism — downloads web bundle, verifies SHA-256, applies on
+// next launch). This service only handles native APK updates.
 //
 // Flow:
 //   1. Read installed native app version via @capacitor/app

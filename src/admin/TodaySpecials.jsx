@@ -25,7 +25,8 @@ import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { authService } from '../services/authService';
 import { saveCaptainTarget, fetchAllCaptainTargets } from '../services/captainTargetService';
-import { createMenuItem, updateMenuItem, deleteMenuItem, bulkImportSpecials, mapFlatMenuItems } from '../services/menuService';
+import { createMenuItem, updateMenuItem, deleteMenuItem } from '../services/adminApi';
+import { bulkImportSpecials, mapFlatMenuItems } from '../services/menuService';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 

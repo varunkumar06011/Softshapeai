@@ -4,6 +4,9 @@
 )]
 
 use serde::{Deserialize, Serialize};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use tauri::{Manager, RunEvent};
 use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
@@ -14,6 +17,62 @@ struct PrinterInfo {
     name: String,
     #[serde(rename = "isDefault")]
     is_default: bool,
+}
+
+// ── Edge server sidecar management ───────────────────────────────────────────
+// The edge-server is a compiled Bun binary that runs as a subprocess on port 3100.
+// It provides local SQLite, offline order creation, KOT printing, and LAN API.
+// We spawn it on app startup and kill it on app shutdown.
+
+static EDGE_SERVER_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+
+fn spawn_edge_server(app: &tauri::AppHandle) {
+    // Resolve the edge-server binary path from bundled resources
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .expect("Failed to get resource dir");
+
+    let edge_server_exe = resource_path.join("edge-server.exe");
+
+    // In dev mode, the binary might not exist yet — log and skip
+    if !edge_server_exe.exists() {
+        eprintln!("[EdgeServer] Binary not found at {:?} — edge server will not start (dev mode?)", edge_server_exe);
+        return;
+    }
+
+    // Pass through environment variables for edge-server configuration
+    let port = std::env::var("EDGE_PORT").unwrap_or_else(|_| "3100".to_string());
+
+    match Command::new(&edge_server_exe)
+        .env("EDGE_PORT", &port)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => {
+            let pid = child.id();
+            eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
+            *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
+        }
+        Err(e) => {
+            eprintln!("[EdgeServer] Failed to start edge-server: {}", e);
+        }
+    }
+}
+
+fn kill_edge_server() {
+    if let Some(mut child) = EDGE_SERVER_CHILD.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+        eprintln!("[EdgeServer] Stopped edge-server");
+    }
+}
+
+/// Check if the edge server is running.
+#[tauri::command]
+fn is_edge_server_running() -> bool {
+    EDGE_SERVER_CHILD.lock().unwrap().is_some()
 }
 
 /// List all installed Windows printers.
@@ -89,15 +148,26 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             list_printers,
             print_raw,
             print_network,
             get_app_version,
-            check_for_updates
+            check_for_updates,
+            is_edge_server_running
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running SoftShape Cashier");
+        .build(tauri::generate_context!())
+        .expect("error while building SoftShape Cashier");
+
+    // Spawn the edge-server subprocess after the app is built
+    spawn_edge_server(&app.handle());
+
+    // Run the app event loop, ensuring edge-server is killed on exit
+    app.run(|_app_handle, event| {
+        if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
+            kill_edge_server();
+        }
+    });
 }

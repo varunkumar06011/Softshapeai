@@ -72,23 +72,65 @@ export const authService = {
   },
 
   async captainLogin(restaurantId, userId, pin, restaurantCode, role) {
-    const res = await fetch(`${getApiBase()}/api/auth/captain-login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurantId, userId, pin, restaurantCode, role }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Invalid credentials');
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/captain-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurantId, userId, pin, restaurantCode, role }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid credentials');
+      }
+      localStorage.setItem('ss_token', data.token);
+      localStorage.setItem('ss_user', JSON.stringify(data.user));
+      if (data.restaurant) {
+        localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
+      }
+      if (import.meta.env.DEV) console.log('[AuthService] captainLogin stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
+      purgeLegacyCaches();
+      return data;
+    } catch (err) {
+      // ── Offline fallback: try edge server local PIN verification ────────────
+      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
+        const edgeResult = await this._tryEdgePinLogin(userId, pin);
+        if (edgeResult) return edgeResult;
+      }
+      throw err;
     }
-    localStorage.setItem('ss_token', data.token);
-    localStorage.setItem('ss_user', JSON.stringify(data.user));
-    if (data.restaurant) {
-      localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
+  },
+
+  async _tryEdgePinLogin(userId, pin) {
+    const EDGE_URL = import.meta.env.VITE_EDGE_URL || 'http://localhost:3100';
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(`${EDGE_URL}/api/edge/auth/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, pin }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.success) return null;
+
+      // Store a local session marker — not a cloud JWT, but enough for LAN API calls
+      const localToken = `edge-local-${Date.now()}`;
+      localStorage.setItem('ss_token', localToken);
+      localStorage.setItem('ss_local_token', localToken);
+      localStorage.setItem('ss_user', JSON.stringify(data.user));
+      console.log('[AuthService] Offline PIN login via edge server — user:', data.user?.role);
+      return {
+        token: localToken,
+        user: data.user,
+        restaurant: null,
+        offline: true,
+      };
+    } catch {
+      return null;
     }
-    if (import.meta.env.DEV) console.log('[AuthService] captainLogin stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
-    purgeLegacyCaches();
-    return data;
   },
 
   async switchOutlet(outletId) {

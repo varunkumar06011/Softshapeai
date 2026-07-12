@@ -34,8 +34,7 @@ import {
   getNextOfflineKotNumber,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
-import { printLocal } from "../utils/printOffline";
-import { getRestaurantName } from "../utils/getRestaurantConfig";
+import { isEdgeAvailable, edgeFetch } from "./edgeHealth.js";
 
 // Generate a unique request ID for idempotency tracking
 function generateRequestId() {
@@ -65,47 +64,6 @@ async function parseResponse(res) {
   return res.json();
 }
 
-async function printOfflineKot({ tableId, tableNumber, items, captainName, kotNumber, requestId }) {
-  if (!items || items.length === 0) return;
-  try {
-    const restaurantName = getRestaurantName();
-    const foodItems = items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
-    const liquorItems = items.filter(i => (i.menuType || 'FOOD') === 'LIQUOR');
-
-    if (foodItems.length > 0) {
-      await printLocal({
-        jobType: 'KOT',
-        data: {
-          orderId: tableId,
-          tableNumber: tableNumber || tableId,
-          items: foodItems,
-          kotNumber,
-          restaurantName,
-          captainName,
-          requestId,
-        },
-      });
-    }
-
-    if (liquorItems.length > 0) {
-      await printLocal({
-        jobType: 'BAR_KOT',
-        data: {
-          orderId: tableId,
-          tableNumber: tableNumber || tableId,
-          items: liquorItems,
-          kotNumber,
-          restaurantName,
-          captainName,
-          requestId,
-        },
-      });
-    }
-  } catch (err) {
-    console.error('[Offline] Local KOT print failed:', err);
-  }
-}
-
 export function toOrderItems(items) {
   return (items || [])
     .map((item) => ({
@@ -120,20 +78,28 @@ export function toOrderItems(items) {
 }
 
 export async function reserveKotNumber(requestId = null) {
+  // ── Edge server first (local daily_counter) ─────────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      // Edge server generates KOT numbers locally via daily_counter — no network needed.
+      // The createOrder call to edge will handle KOT numbering, so we can return a placeholder.
+      return { kotNumber: 0, edge: true };
+    } catch {
+      // fall through
+    }
+  }
+
   // Fast path: if backend is known unreachable, skip API and use local counter instantly.
-  // This avoids a 10s timeout wait when internet is completely down.
   if (!isBackendReachable()) {
     const kotNumber = await getNextOfflineKotNumber();
     return { kotNumber, offline: true };
   }
   // Try API first — isBackendReachable() can be falsely negative on slow mobile networks.
-  // The catch block handles the offline fallback.
   try {
     const body = {};
     if (requestId) body.requestId = requestId;
     return await apiFetch('/api/orders/reserve-kot-number', { method: 'POST', timeout: 3000, body: JSON.stringify(body) });
   } catch (err) {
-    // If the API failed because we went offline mid-call, fall back to local number
     if (!isBackendReachable()) {
       const kotNumber = await getNextOfflineKotNumber();
       return { kotNumber, offline: true };
@@ -153,8 +119,38 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (preReservedKotNumber != null) { orderData.preReservedKotNumber = preReservedKotNumber; }
   if (kotEventIds) { orderData.kotEventIds = kotEventIds; }
 
+  // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
+  // Edge server writes to local SQLite, prints KOT, enqueues sync — all local, ~15-40ms.
+  if (await isEdgeAvailable()) {
+    try {
+      const edgeBody = {
+        tableId,
+        items: orderData.items,
+        captainName,
+        requestId: requestId || generateRequestId(),
+        platform,
+        orderByRole: authService.getUserRole?.() || undefined,
+      };
+      const result = await edgeFetch('/api/edge/order', {
+        method: 'POST',
+        body: JSON.stringify(edgeBody),
+      });
+      if (result.success !== false) {
+        return {
+          id: result.orderId,
+          kotNumber: result.kotNumber,
+          kotId: result.kotId,
+          ...result.order,
+          edge: true,
+        };
+      }
+    } catch (edgeErr) {
+      console.warn('[Edge] Edge server failed, falling through to cloud:', edgeErr.message);
+    }
+  }
+
+  // ── Path 2: Cloud backend — secondary path ─────────────────────────────────
   // Fast path: if backend is known unreachable, skip API and queue offline instantly.
-  // This avoids 45s × 3 retries = 135s of waiting when internet is completely down.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing to offline queue');
     const offlineRequestId = requestId || generateRequestId();
@@ -185,7 +181,6 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   }
 
   // Try API first — isBackendReachable() can be falsely negative on slow mobile networks.
-  // Only fall back to offline queue if the API call actually fails after retries.
   try {
     return await withRetry(
       async () => {
@@ -255,6 +250,9 @@ export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), sta
 }
 
 export async function fetchTableOrder(tableId) {
+  // Edge server doesn't have a per-table-order endpoint yet.
+  // fetchTables (plural) returns all tables with active orders — callers that need
+  // a single table's order should use fetchTables and filter, or use cloud directly.
   const res = await fetch(apiUrl(`/api/orders/table/${tableId}`), {
     cache: "no-store",
     headers: getAuthHeaders(),
@@ -263,7 +261,7 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null, tableId = null) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
@@ -274,8 +272,37 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (preReservedKotNumber != null) { body.preReservedKotNumber = preReservedKotNumber; }
   if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
-  // Fast path: if backend is known unreachable, skip API and queue offline instantly.
-  // This avoids 45s × 3 retries = 135s of waiting when internet is completely down.
+  // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
+  // Edge server needs the actual tableId to find/create the order.
+  // If tableId is not provided, skip edge path — can't route without it.
+  if (tableId && await isEdgeAvailable()) {
+    try {
+      const edgeBody = {
+        tableId,
+        items: body.items,
+        captainName,
+        requestId: requestId || generateRequestId(),
+        orderByRole: authService.getUserRole?.() || undefined,
+      };
+      const result = await edgeFetch('/api/edge/order', {
+        method: 'POST',
+        body: JSON.stringify(edgeBody),
+      });
+      if (result.success !== false) {
+        return {
+          id: result.orderId || orderId,
+          kotNumber: result.kotNumber,
+          kotId: result.kotId,
+          ...result.order,
+          edge: true,
+        };
+      }
+    } catch (edgeErr) {
+      console.warn('[Edge] Edge server failed for update, falling through to cloud:', edgeErr.message);
+    }
+  }
+
+  // ── Path 2: Cloud backend — secondary path ─────────────────────────────────
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing update to offline queue');
     const offlineRequestId = requestId || generateRequestId();
@@ -1022,8 +1049,6 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
         body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
       });
-      // Only queue a local print job if the local printer did not already print it.
-      // CashierDashboard calls printLocal before this, so localPrinted=true means it already printed.
       if (!localPrinted) {
         await addOfflinePrintJob({
           id: `offline-print-${Date.now()}`,

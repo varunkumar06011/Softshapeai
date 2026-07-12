@@ -1,0 +1,60 @@
+{
+  "id": "bar",
+  "name": "Bar & Restaurant",
+  "description": "Full bar menu — liquor, beer, cocktails, plus food starters and main course",
+  "categories": [
+    {
+      "name": "Whisky",
+      "sortOrder": 1,
+      "items": [
+        { "name": "Royal Stag", "basePrice": 180, "isVeg": true, "menuType": "LIQUOR", "unit": "ml", "variants": [
+          { "name": "60ml", "price": 180, "isDefault": true },
+          { "name": "90ml", "price": 270 },
+          { "name": "180ml", "price": 540 }
+        ]},
+        { "name": "Blenders Pride", "basePrice": 240, "isVeg": true, "menuType": "LIQUOR", "unit": "ml", "variants": [
+          { "name": "60ml", "price": 240, "isDefault": true },
+          { "name": "90ml", "price": 360 },
+          { "name": "180ml", "price": 720 }
+        ]},
+        { "name": "Johnnie Walker Black", "basePrice": 800, "isVeg": true, "menuType": "LIQUOR", "unit": "ml", "variants": [
+          { "name": "60ml", "price": 800, "isDefault": true },
+          { "name": "90ml", "price": 1200 }
+        ]}
+      ]
+    },
+    {
+      "name": "Beer",
+      "sortOrder": 2,
+      "items": [
+        { "name": "Kingfisher Premium", "basePrice": 160, "isVeg": true, "menuType": "LIQUOR", "unit": "ml", "variants": [
+          { "name": "330ml", "price": 160, "isDefault": true },
+          { "name": "650ml", "price": 280 }
+        ]},
+        { "name": "Budweiser", "basePrice": 200, "isVeg": true, "menuType": "LIQUOR", "unit": "ml", "variants": [
+          { "name": "330ml", "price": 200, "isDefault": true },
+          { "name": "650ml", "price": 360 }
+        ]}
+      ]
+    },
+    {
+      "name": "Starters",
+      "sortOrder": 3,
+      "items": [
+        { "name": "Chicken 65", "basePrice": 220, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Chicken Tikka", "basePrice": 260, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Paneer Tikka", "basePrice": 220, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Veg Manchurian", "basePrice": 180, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Main Course",
+      "sortOrder": 4,
+      "items": [
+        { "name": "Chicken Biryani", "basePrice": 280, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Veg Biryani", "basePrice": 220, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Butter Naan", "basePrice": 50, "isVeg": true, "menuType": "FOOD" }
+      ]
+    }
+  ]
+}

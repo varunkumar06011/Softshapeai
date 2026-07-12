@@ -88,42 +88,15 @@ Resolve four unknowns/risks found during the codebase audit that the rest of the
 **The gap:** `withOutletScope`/`withOrgScope` currently just return the unscoped `basePrisma` client — the caller still has to manually write the correct `where: { restaurantId: { in: [...] } } }` themselves, same as before. That closes the 12 known sites for good, but doesn't stop a *new* route written six months from now, by someone who's never heard of these helpers, from making the exact same mistake with the plain `prisma` client — which is the actual failure mode that's caused this bug to resurface multiple times already. Closing that needs either a lint/CI check flagging any use of the plain `prisma` client with a `restaurantId: { in: [...] }` filter, or having the wrapper actually inject the scope instead of just documenting it at the call site. Worth doing before calling 0.3 fully done — see the follow-up prompt below.
 
 ### 0.4 — Auth strategy decision (blocks Phase 5)
-**Current state:** `src/onboarding/StepOwner.jsx` already implements a working Firebase Phone OTP flow — reCAPTCHA on web, native Capacitor OTP via `FirebaseAuthentication` on Android (wired into all three Android `capacitor.config.ts` files), plus email uniqueness checking and password-strength UI. This is a real, functioning auth system, not a stub. The backend (`src/routes/auth.ts`) has two login endpoints: `/api/auth/login` (email+password for OWNER/ADMIN → 7-day JWT) and `/api/auth/captain-login` (userId+PIN for CAPTAIN/CASHIER/MANAGER → 7-day JWT, with Redis-based brute-force lockout after 5 attempts). The frontend (`src/services/authService.js`) wraps both, stores JWT in `localStorage`, and has a "trust this terminal" feature in `LoginScreen.jsx` that persists sessions across browser restarts.
+**Current state:** `src/onboarding/StepOwner.jsx` already implements a working Firebase Phone OTP flow — reCAPTCHA on web, native Capacitor OTP via `FirebaseAuthentication` on Android (wired into all three Android `capacitor.config.ts` files), plus email uniqueness checking and password-strength UI. This is a real, functioning auth system, not a stub.
 
-**DECISION (2026-07-12) — Path A: PIN as device-unlock, Firebase OTP stays for account creation.**
+**Task:** Decide between two paths before Phase 5 starts:
+- **Path A (lower risk):** Keep Firebase Phone OTP as the account-creation and cloud-identity mechanism. Add a local 4-digit PIN as a *device unlock* credential layered on top of an already-authenticated account — i.e., PIN unlocks the local session on this specific device, but the account itself is still Firebase-verified. This doesn't touch backend JWT issuance or the cloud auth model at all.
+- **Path B (matches the original proposal, higher risk):** Replace phone+password with PIN-first account creation, deferring phone verification until connectivity exists. This changes what "an account" means before the device has ever talked to the cloud, and requires new backend logic for reconciling a PIN-created local account with a cloud identity once verified.
 
-Rationale, confirmed by codebase investigation:
-- The existing captain/cashier PIN login (`/api/auth/captain-login`) already works and is battle-tested — bcrypt-hashed PIN, Redis lockout, role enforcement. Path A doesn't touch it.
-- Firebase Phone OTP (`src/lib/phoneAuth.js`) is cross-platform and functional. No reason to replace it.
-- The edge-server's `auth.ts` uses a "trust the LAN" model — no per-user auth for LAN API requests. Its SQLite schema has no `users` table. This is the gap: when the hub device is offline, there's no local PIN verification, so captain/cashier can't log in at all.
-- Path B would require new backend logic for reconciling PIN-created local accounts with cloud identities — high risk, low immediate value.
+**Recommendation:** Path A. It gets you the "10-minute, no-typing-heavy-forms" onboarding goal without touching the parts of `authService.js` and backend JWT issuance that currently work. Path B is a real option if there's a specific reason PIN-first matters (e.g., restaurant owners without a phone on hand at signup), but it should be a deliberate choice, not something Phase 5 backs into.
 
-**What Path A concretely requires (implementation plan for Phase 1/5):**
-
-1. **Add a `users` table to the edge-server SQLite schema** (Phase 1 work):
-   - Columns: `id`, `name`, `role`, `pin_hash`, `outlet_id`, `is_active`, `synced_at`
-   - Populated during the config download from cloud (`config.ts`'s `downloadFullConfig`)
-   - Updated via incremental sync (`socketSync.ts`'s change events) when PINs are changed server-side
-
-2. **Add a local PIN verification endpoint to the edge-server** (Phase 1 work):
-   - `POST /api/edge/pin-login` — verifies userId+PIN against the local `users` table
-   - Returns a local session token (not a cloud JWT) valid only for LAN API calls to this hub
-   - Includes the same brute-force lockout logic as the cloud endpoint (but local, in SQLite, not Redis)
-   - When the hub is back online, the cloud JWT from the last successful online login is still used for cloud sync
-
-3. **Frontend: add offline login fallback** (Phase 5 work):
-   - When `authService.captainLogin()` fails due to network error, try the edge-server's local `/api/edge/pin-login` instead
-   - On success, store the local session token separately (e.g., `ss_local_token`) and use it for LAN API calls
-   - When connectivity returns, silently re-authenticate with the cloud to get a fresh JWT
-
-4. **No changes to backend auth** — `/api/auth/captain-login`, `/api/auth/login`, `signToken()`, `verifyToken()`, and the `authenticate` middleware all stay exactly as they are.
-
-**Downstream impact:**
-- Phase 1's "Add what the existing schema is missing: a local `users`/staff-PIN table" item is now specified — the table shape and sync mechanism are defined above.
-- Phase 5's onboarding rebuild can proceed knowing the auth model is additive (local PIN layer) not replacement (PIN-first identity).
-- The "trust the LAN" model from `edge-server/auth.ts` is preserved — the local PIN endpoint is for device unlock, not for LAN API auth (LAN clients are still trusted).
-
-**Output:** Decision recorded as Path A. Implementation is split: `users` table + local PIN endpoint in Phase 1 (schema work), frontend fallback in Phase 5 (onboarding rebuild).
+**Output:** A recorded decision (A or B) before any onboarding rebuild work starts.
 
 ---
 
@@ -160,6 +133,14 @@ This is a real narrowing from a per-device-SQLite design, and it's the right one
 - A captain-android device on the same LAN can create an order through the hub with zero internet connectivity (LAN only), and gets a clear, correct fallback message when the hub itself is unreachable.
 - The transactions question above has a written answer, not an assumption.
 
+**AUDITED (2026-07-12):**
+- Transactions question: **resolved.** Settlement is a field update on `order_record` (`status`, `total_amount`, `bill_number`, `paid_at`, `billing_requested`, `billing_requested_at`) — no separate local transactions table, cloud Postgres keeps its own. Deliberate design, confirmed in code (`edge-server/db.ts:269-290`).
+- Local transactional round-trip: **passes** — real code cited (`db.ts:37-403`, `orderService.ts:218-263`).
+- Bun sidecar spawned from `main.rs`: **passes** — real subprocess lifecycle management with cleanup on exit, confirmed in code.
+- Captain-android ordering through the hub with zero internet: **passes by code path**, but only verified by reading the code — no automated test with two real devices on a LAN has run.
+- **New confirmed gap — high severity:** "exactly one hub per outlet" is **not enforced anywhere in code.** Neither the edge server's registration flow nor the cloud's `/api/edge/register` endpoint checks whether another device is already the active hub for that outlet. Two cashier-desktop installs at the same outlet would both register, both run local databases, and both generate bill numbers independently — silently. This was aspirational language in this plan, not implemented. Needs a real fix (see follow-up prompt below).
+- **Disputed, not confirmed:** the repo copy of this plan apparently now states "cashier-android is deprecated, hub is always cashier-desktop" — a decision this plan never made and you never confirmed here. That's a real business call (does any live restaurant depend on cashier-android as their only device?) that shouldn't get made silently during implementation. Needs your explicit confirmation either way before it's treated as settled.
+
 ---
 
 ## Phase 2 — Local-First API Layer + Offline Print Parity
@@ -187,6 +168,11 @@ Make every cashier/captain hot-path action read and write local SQLite first, wi
 - Creating an order and printing a KOT works correctly (right GST, right discount, right formatting) with the device's network adapter physically disabled.
 - A documented, findable answer to "what happens when backend GST logic changes" exists before this phase is called complete.
 
+**AUDITED (2026-07-12) — most urgent finding in this entire plan:**
+- Order creation offline: passes. GST breakdown parity: passes by code inspection (`edge-server/escpos.ts:301-322` mirrors the backend's NON_AC/AC/`pricesIncludeGst` logic).
+- **Discount and service charge rendering: missing entirely from the edge server's `buildBill()`.** Confirmed by direct search — zero matches for "discount" in `edge-server/escpos.ts`. The backend's `escpos.ts:1106-1113` renders a discount line; the edge server's `BillPrintInput` interface doesn't even have a discount field. Since Phase 1 made the edge server the *primary* order/print path, **this means any bill printed offline for an order with a discount applied is wrong right now** — not a future risk, a live one. This is the single item to fix before anything else in this list. See the follow-up prompt below.
+- The parity-maintenance plan called for in this phase's "Build this" section was never built — no shared constants file, no PR checklist, no generation process links the two `escpos.ts` copies. No test compares their output for the same input either. That's how the discount gap got in undetected, and how the next one will too, until this exists.
+
 ---
 
 ## Phase 3 — Cloud Sync Engine
@@ -210,6 +196,8 @@ Reconcile local SQLite and cloud Postgres bidirectionally, without requiring eit
 ### Definition of done
 - A cashier device that goes offline for a full shift, takes orders locally, and reconnects at end-of-day syncs everything to Postgres with zero data loss and zero duplicate bill numbers, verified by an actual test that does exactly this.
 - A simulated two-device conflict on the same order is caught and surfaced, not silently resolved incorrectly.
+
+**AUDITED (2026-07-12):** The push path is real, live production code (`sync.ts:391-411` → `edge.ts:40`, mounted and running). Conflict detection is also real and live (`edge.ts:196-216` creates an `OrderConflict` record; resolve endpoints exist). But **neither Definition of Done criterion is actually met by a test yet.** The existing "full shift offline" test only verifies local SQLite queue state (entries marked synced) — it never calls the real `/api/edge/sync` endpoint or checks that data actually landed correctly in Postgres, and there's no automated test for the two-device conflict scenario at all. The infrastructure passes; the verification this phase specifically asked for doesn't exist yet.
 
 ---
 
@@ -300,6 +288,8 @@ Make the system trustworthy enough to hand to a restaurant owner who has never h
 ### Definition of done
 - A full onboard → bill → settle → close day → verify-in-admin cycle passes as an automated end-to-end test, including at least one run where connectivity is deliberately cut partway through.
 
+**AUDITED (2026-07-12) — not met.** All the individual pieces are real: onboarding wizard, order/bill/settlement paths, `CloseDayDialog.jsx`, a cloud close-day endpoint with locking, an edge close-day endpoint, and a guard rejecting sync writes after a day is closed. But no automated end-to-end test exists that runs them together as one cycle, and no Playwright/Cypress or similar e2e framework is installed anywhere in the workspace. This was reported as "verified complete" earlier — it wasn't. The pieces being individually real doesn't substitute for the cycle actually being run and proven, which is what this criterion asks for.
+
 ---
 
 ## What actually gets deleted (corrected)
@@ -325,12 +315,26 @@ Track these here as they get resolved; each one gates a specific phase above.
 
 | # | Question | Gates | Status |
 |---|----------|-------|--------|
-| 1 | Is `cashier-android` live, legacy, or intentional backup? | Phase 1 | **Resolved — live, in scope** |
+| 1 | Is `cashier-android` live, legacy, or intentional backup? | Phase 1 | **Disputed — this plan says in scope; repo copy reportedly says deprecated. Needs your call, not the agent's.** |
 | 2 | Is the edge server actually deployed on any restaurant's billing PC today? | Phase 2, 4 | **Resolved — dead frontend code, but see #3** |
-| 3 | Does a live `softshape-print-agent` repo exist, and does its `edge-server/` module overlap with Phase 1–3? | Phase 1 | **Confirmed live — merge-vs-parallel decision pending follow-up investigation (below)** |
-| 4 | Is the AsyncLocalStorage tenant-scoping fix verifiably closed (not just re-patched)? | Phase 3 | Blast radius mapped (12 sites / 4 files) — fix not yet applied |
-| 5 | Path A (PIN as device-unlock) or Path B (PIN-first account creation) for auth? | Phase 5 | Open — recommend Path A |
-| 6 | Is the "Cashier iPad PWA" listed in `AppsSection.jsx` live, and does it need offline support too? | Phase 1 | Open — newly discovered |
+| 3 | Does a live `softshape-print-agent` repo exist, and does its `edge-server/` module overlap with Phase 1–3? | Phase 1 | **Resolved — merged as a bundled Bun sidecar, confirmed spawned from `main.rs`** |
+| 4 | Is the AsyncLocalStorage tenant-scoping fix verifiably closed (not just re-patched)? | Phase 3 | **12 known sites fixed + regression test. Structural lint/CI guard still open — confirmed by code (`prisma.ts:304-309` returns unscoped `basePrisma`, params unused).** |
+| 5 | Path A (PIN as device-unlock) or Path B (PIN-first account creation) for auth? | Phase 5 | **Resolved — Path A, implemented end-to-end and confirmed in code** |
+| 6 | Is the "Cashier iPad PWA" listed in `AppsSection.jsx` live, and does it need offline support too? | Phase 1 | **Resolved — browse-only offline, out of scope for real offline-first** |
+
+## Known gaps — prioritized (from the full Phase 1–7 audit, 2026-07-12)
+
+| Priority | Gap | Why it matters |
+|---|---|---|
+| **1 — fix now** | Edge server's `buildBill()` has no discount or service charge rendering | Live money-accuracy bug: any offline-printed bill with a discount is wrong, today, on the primary order/print path |
+| **2 — fix soon** | No enforcement of "one hub per outlet" | Two devices registering as hub for the same outlet silently creates divergent local databases and colliding bill numbers |
+| **3** | 0.3's structural lint/CI guard never built | Known bug class can resurface in any new route; helpers exist but don't enforce anything |
+| **4** | No Phase 7 end-to-end test (onboard → bill → settle → close day, with a connectivity cut) | The pieces are real but the cycle has never been proven to actually work together |
+| **5** | Phase 3 "full shift sync" test only checks local queue state, never hits real Postgres | Sync correctness against the actual cloud database is unverified |
+| **6** | No automated two-device conflict test | Conflict-detection code is live but unproven |
+| **7** | No ESC/POS parity-maintenance process between the two `escpos.ts` copies | This is *how* gap #1 happened, and how the next one will too |
+
+
 
 ## Rough sizing (not a committed timeline)
 

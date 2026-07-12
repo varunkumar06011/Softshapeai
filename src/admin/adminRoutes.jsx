@@ -113,37 +113,67 @@ export function preloadAdminSections() {
 // ── Route config — single source of truth for sidebar + routes ───────────────
 // Each entry drives both the sidebar nav button and the <Route> definition.
 // To add a section: add one entry here. Both sidebar and routes update automatically.
+//
+// `source: 'local'`  — operational writes (menu, tables, staff, settings).
+//                      These go to the edge server's local SQLite first, then
+//                      sync to cloud via sync_queue. Works offline.
+// `source: 'cloud'`  — analytical reads (reports, payroll, inventory, ledger).
+//                      These always hit Postgres directly. No local caching —
+//                      staleness here is a correctness problem, not a UX one.
 
 export const adminRoutes = [
-  { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner'], element: <Dashboard />,                    props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope }) },
-  { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner'], element: <TablesSection />,                props: (ctx) => ({ activeOutlet: ctx.activeOutlet, dashboardScope: ctx.dashboardScope }) },
-  { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner'], element: <MenuSection />,                  props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
-  { key: 'specials',          label: 'Today Specials',         icon: StarIcon,                roles: ['admin','owner'], element: <TodaySpecials /> },
-  { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner'], element: <Orders /> },
-  { key: 'transactions',      label: 'Transactions',           icon: Receipt,             roles: ['admin','owner'], element: <AdminTransactions />,            props: (ctx) => ({ onStatsRefresh: ctx.loadStats }) },
-  { key: 'reports',           label: 'Reports',                icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <Reports /> },
-  { key: 'balanceSheet',      label: 'Daily Balance Sheet',    icon: Scale,               roles: ['admin','owner'], element: <AdminDailyBalanceSheet />, group: 'finance' },
-  { key: 'staff',             label: 'Staff',                  icon: Users,               roles: ['admin','owner'], element: <StaffManagement />, group: 'hr' },
-  { key: 'captains',          label: 'Captain Analytics',      icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <CaptainPerformanceDashboard /> },
-  { key: 'payroll',           label: 'Payroll',                icon: DollarSign,          roles: ['admin','owner'], element: <Payroll />,                       props: (ctx) => ({ onPayslip: () => {} }), group: 'hr' },
-  { key: 'vouchers',          label: 'Expenditures',           icon: Wallet,              roles: ['admin','owner'], element: <AdminExpenditures />, group: 'finance' },
-  { key: 'opening-balance',   label: 'Opening Balances',       icon: Landmark,            roles: ['admin','owner'], element: <OpeningBalanceSetup />, group: 'finance' },
-  { key: 'purchases',         label: 'Purchases',              icon: Package,             roles: ['admin','owner'], element: <AdminPurchases />, group: 'finance' },
-  { key: 'assets-liabilities', label: 'Assets & Liabilities',    icon: Building2,           roles: ['admin','owner'], element: <AdminAssetsLiabilities />, group: 'finance' },
-  { key: 'cogs',              label: 'COGS Report',             icon: TrendingDown,        roles: ['admin','owner'], element: <AdminCogsReport />, group: 'finance' },
-  { key: 'audit-trail',        label: 'Audit Trail',             icon: ClipboardList,       roles: ['admin','owner'], element: <AdminAuditTrail />, group: 'finance' },
-  { key: 'reconciliation',     label: 'Reconciliation',          icon: Scale,               roles: ['admin','owner'], element: <AdminReconciliation />, group: 'finance' },
-  { key: 'attendance',        label: 'Attendance',             icon: Users,               roles: ['admin','owner'], element: <Attendance />, group: 'hr' },
-  { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner'], element: <InventorySection /> },
-  { key: 'marketing',         label: 'Marketing AI',           icon: Megaphone,           roles: ['admin','owner'], element: <Marketing />,                     props: (ctx) => ({ upload: ctx.mUpload, setUpload: ctx.setMUpload, uploadRef: ctx.mUploadRef, generated: ctx.mGenerated, setGenerated: ctx.setMGenerated, posted: ctx.mPosted, setPosted: ctx.setMPosted }) },
-  { key: 'surveillance',      label: 'Surveillance',           icon: Camera,              roles: ['admin','owner'], element: <SurveillanceDashboard />,         props: (ctx) => ({ onIncident: () => {} }) },
-  { key: 'pricing',           label: 'Pricing',                icon: Sparkles,            roles: ['admin','owner'], element: <Pricing /> },
-  { key: 'price-profiles',    label: 'Price Profiles',         icon: Tag,                 roles: ['admin','owner'], element: <PriceProfilesPage /> },
-  { key: 'settings',          label: 'Settings',               icon: Settings,            roles: ['admin','owner'], element: <SettingsPage />,                  props: (ctx) => ({ onNavigate: ctx.goToSection }) },
-  { key: 'printers',          label: 'Printers',               icon: Printer,             roles: ['admin','owner','manager'], element: <PrinterSettingsPage /> },
-  { key: 'qr-codes',          label: 'QR Codes',               icon: QrCode,              roles: ['admin','owner','manager'], element: <TableQRCodes /> },
-  { key: 'outlets-overview',  label: 'My Outlets',             icon: Store,               roles: ['admin','owner','manager'], element: <OutletsOverview /> },
+  // ── Local-first operational routes ──────────────────────────────────────────
+  { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner'], element: <Dashboard />,                    source: 'cloud', props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope }) },
+  { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner'], element: <TablesSection />,                source: 'local', props: (ctx) => ({ activeOutlet: ctx.activeOutlet, dashboardScope: ctx.dashboardScope }) },
+  { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner'], element: <MenuSection />,                  source: 'local', props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
+  { key: 'specials',          label: 'Today Specials',         icon: StarIcon,                roles: ['admin','owner'], element: <TodaySpecials />, source: 'local' },
+  { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner'], element: <Orders />,                       source: 'cloud' },
+  { key: 'transactions',      label: 'Transactions',           icon: Receipt,             roles: ['admin','owner'], element: <AdminTransactions />,            source: 'cloud', props: (ctx) => ({ onStatsRefresh: ctx.loadStats }) },
+  { key: 'reports',           label: 'Reports',                icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <Reports />,                      source: 'cloud' },
+  { key: 'balanceSheet',      label: 'Daily Balance Sheet',    icon: Scale,               roles: ['admin','owner'], element: <AdminDailyBalanceSheet />,       source: 'cloud', group: 'finance' },
+  { key: 'staff',             label: 'Staff',                  icon: Users,               roles: ['admin','owner'], element: <StaffManagement />,              source: 'local', group: 'hr' },
+  { key: 'captains',          label: 'Captain Analytics',      icon: ChartNoAxesCombined, roles: ['admin','owner'], element: <CaptainPerformanceDashboard />,  source: 'cloud' },
+  { key: 'payroll',           label: 'Payroll',                icon: DollarSign,          roles: ['admin','owner'], element: <Payroll />,                       source: 'cloud', props: (ctx) => ({ onPayslip: () => {} }), group: 'hr' },
+  { key: 'vouchers',          label: 'Expenditures',           icon: Wallet,              roles: ['admin','owner'], element: <AdminExpenditures />,            source: 'cloud', group: 'finance' },
+  { key: 'opening-balance',   label: 'Opening Balances',       icon: Landmark,            roles: ['admin','owner'], element: <OpeningBalanceSetup />,          source: 'cloud', group: 'finance' },
+  { key: 'purchases',         label: 'Purchases',              icon: Package,             roles: ['admin','owner'], element: <AdminPurchases />,               source: 'cloud', group: 'finance' },
+  { key: 'assets-liabilities', label: 'Assets & Liabilities',    icon: Building2,           roles: ['admin','owner'], element: <AdminAssetsLiabilities />,     source: 'cloud', group: 'finance' },
+  { key: 'cogs',              label: 'COGS Report',             icon: TrendingDown,        roles: ['admin','owner'], element: <AdminCogsReport />,             source: 'cloud', group: 'finance' },
+  { key: 'audit-trail',        label: 'Audit Trail',             icon: ClipboardList,       roles: ['admin','owner'], element: <AdminAuditTrail />,             source: 'cloud', group: 'finance' },
+  { key: 'reconciliation',     label: 'Reconciliation',          icon: Scale,               roles: ['admin','owner'], element: <AdminReconciliation />,         source: 'cloud', group: 'finance' },
+  { key: 'attendance',        label: 'Attendance',             icon: Users,               roles: ['admin','owner'], element: <Attendance />,                    source: 'cloud', group: 'hr' },
+  { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner'], element: <InventorySection />, source: 'cloud' },
+  { key: 'marketing',         label: 'Marketing AI',           icon: Megaphone,           roles: ['admin','owner'], element: <Marketing />,                     source: 'cloud', props: (ctx) => ({ upload: ctx.mUpload, setUpload: ctx.setMUpload, uploadRef: ctx.mUploadRef, generated: ctx.mGenerated, setGenerated: ctx.setMGenerated, posted: ctx.mPosted, setPosted: ctx.setMPosted }) },
+  { key: 'surveillance',      label: 'Surveillance',           icon: Camera,              roles: ['admin','owner'], element: <SurveillanceDashboard />,         source: 'cloud', props: (ctx) => ({ onIncident: () => {} }) },
+  { key: 'pricing',           label: 'Pricing',                icon: Sparkles,            roles: ['admin','owner'], element: <Pricing />,                       source: 'local' },
+  { key: 'price-profiles',    label: 'Price Profiles',         icon: Tag,                 roles: ['admin','owner'], element: <PriceProfilesPage />,             source: 'local' },
+  { key: 'settings',          label: 'Settings',               icon: Settings,            roles: ['admin','owner'], element: <SettingsPage />,                  source: 'local', props: (ctx) => ({ onNavigate: ctx.goToSection }) },
+  { key: 'printers',          label: 'Printers',               icon: Printer,             roles: ['admin','owner','manager'], element: <PrinterSettingsPage />, source: 'local' },
+  { key: 'qr-codes',          label: 'QR Codes',               icon: QrCode,              roles: ['admin','owner','manager'], element: <TableQRCodes />,       source: 'local' },
+  { key: 'outlets-overview',  label: 'My Outlets',             icon: Store,               roles: ['admin','owner','manager'], element: <OutletsOverview />, source: 'cloud' },
 ];
+
+// ── Route source helpers ─────────────────────────────────────────────────────
+// These let components and services check whether a route is local-first or
+// cloud-only, so the data layer knows where to read/write.
+
+export function isLocalFirstRoute(key) {
+  const route = adminRoutes.find(r => r.key === key);
+  return route?.source === 'local';
+}
+
+export function isCloudRequiredRoute(key) {
+  const route = adminRoutes.find(r => r.key === key);
+  return route?.source === 'cloud';
+}
+
+export function getLocalFirstRoutes() {
+  return adminRoutes.filter(r => r.source === 'local');
+}
+
+export function getCloudRequiredRoutes() {
+  return adminRoutes.filter(r => r.source === 'cloud');
+}
 
 // ── Manager tab visibility ──────────────────────────────────────────────────
 // Checks if a specific tab is enabled for the manager role.

@@ -16,6 +16,7 @@
 
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { isEdgeAvailable, edgeFetch } from "./edgeHealth.js";
 
 // Helper: parse fetch response, throw on non-OK status with error message
 async function parseResponse(res) {
@@ -67,6 +68,14 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
   if (!restaurantId) {
     throw new Error('No restaurant ID available');
   }
+  // ── Edge server first (local SQLite) ────────────────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch('/api/edge/tables');
+    } catch {
+      // fall through to cloud
+    }
+  }
   const res = await fetchWithRetry(apiUrl(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}`), {
     method: "GET",
     cache: "no-store",
@@ -81,6 +90,14 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
 }
 
 export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
+  // ── Edge server first (local SQLite) ────────────────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch('/api/edge/sections');
+    } catch {
+      // fall through to cloud
+    }
+  }
   const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`), {
     headers: getAuthHeaders(),
   });
@@ -88,6 +105,14 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
 }
 
 export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
+  // ── Edge server first (local SQLite) ────────────────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch('/api/edge/venues');
+    } catch {
+      // fall through to cloud
+    }
+  }
   const res = await fetchWithRetry(apiUrl(`/api/venues?restaurantId=${encodeURIComponent(restaurantId)}`), {
     method: "GET",
     cache: "no-store",

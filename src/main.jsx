@@ -20,7 +20,14 @@ import './index.css'
 import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
 import { registerSW } from './utils/registerSW'
+import { checkAndApplyOtaOnStartup, checkAndDownloadOta } from './services/otaService'
 import * as Sentry from '@sentry/react'
+
+// ── OTA: apply pending update before React renders ───────────────────────────
+// If an OTA bundle is pending, navigate to it before the app loads.
+// This is async but we don't await it — if it fails, the app loads from
+// bundled assets normally. The OTA check is non-blocking.
+checkAndApplyOtaOnStartup().catch(() => { /* fall back to bundled assets */ });
 
 Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,
@@ -57,3 +64,9 @@ createRoot(document.getElementById('root')).render(
 
 // Register service worker for offline support
 registerSW();
+
+// Background OTA check — non-blocking, downloads new bundle if available.
+// Applied on next app launch via checkAndApplyOtaOnStartup().
+setTimeout(() => {
+  checkAndDownloadOta().catch(() => { /* ignore — non-critical */ });
+}, 10_000);

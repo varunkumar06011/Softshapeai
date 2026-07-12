@@ -16,6 +16,16 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { isEdgeAvailable, getEdgeUrl } from "./edgeHealth.js";
+
+async function edgeFetchMenuItems() {
+  const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Edge menu fetch failed (${res.status})`);
+  const items = await res.json();
+  return mapFlatMenuItems(items);
+}
 
 // localStorage key prefix for menu cache
 export const MENU_STORAGE_KEY = "softshape_menu";
@@ -188,13 +198,27 @@ async function fetchPosViewMenu(restaurantId = getCurrentRestaurantId()) {
   return mapPosViewToMenuItems(categories);
 }
 
-/** Prefer lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
+/** Prefer edge server (local SQLite); then lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
 export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId()) {
   if (!restaurantId || restaurantId === 'null' || restaurantId === 'undefined') {
     console.warn("[MenuService] No valid restaurantId provided, skipping backend fetch.");
     return readStoredMenu();
   }
 
+  // ── Path 1: Edge server (local SQLite) — primary path ──────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const edgeItems = await edgeFetchMenuItems();
+      if (edgeItems.length > 0) {
+        console.log(`[MenuService] Loaded ${edgeItems.length} items from edge server`);
+        return edgeItems;
+      }
+    } catch (err) {
+      console.warn("[MenuService] Edge server menu fetch failed:", err.message);
+    }
+  }
+
+  // ── Path 2: Cloud backend — secondary path ─────────────────────────────────
   let lean = [];
   try {
     lean = await fetchLeanMenu(restaurantId);

@@ -23,13 +23,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import CloseDayDialog from '../shared/components/CloseDayDialog';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, Lock
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -474,6 +475,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [closeDayOpen, setCloseDayOpen] = useState(false);
   const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
   const [liquorQtyItem, setLiquorQtyItem] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH');
@@ -4941,6 +4943,7 @@ const CashierDashboard = ({ onLogout }) => {
     <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#F6F9FC] font-sans overflow-hidden text-[#2C3E50]">
       <OfflineStatusBar />
       <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
+      <CloseDayDialog open={closeDayOpen} onClose={() => setCloseDayOpen(false)} />
       {/* SIDEBAR / BOTTOM BAR */}
       <aside className="w-full sm:w-20 lg:w-64 h-16 sm:h-auto bg-[#F4F0FF] border-t sm:border-t-0 sm:border-r border-[#D4D8E8] flex sm:flex-col z-30 transition-all shrink-0">
         <div className="hidden sm:flex p-3 lg:p-4 border-b border-[#D4D8E8] items-center justify-center shrink-0 bg-[#F4F0FF]">
@@ -4983,6 +4986,10 @@ const CashierDashboard = ({ onLogout }) => {
         </nav>
 
         <div className="hidden sm:block p-3 border-t border-[#D4D8E8] mt-auto pb-6">
+          <button onClick={() => setCloseDayOpen(true)} className="flex items-center gap-3 w-full p-3 rounded-xl text-[#E53935] hover:bg-[#E53935]/10 transition-all hover:scale-[1.02] active:scale-98 mb-2">
+            <Lock size={22} />
+            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider">Close Day</span>
+          </button>
           <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-[#5C85BB]/80 hover:text-[#5C85BB] hover:bg-[#5C85BB]/10 transition-all hover:scale-[1.02] active:scale-98">
             <LogOut size={22} className="group-hover:text-[#5C85BB]" />
             <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-[#5C85BB]/80 group-hover:text-[#5C85BB]">Logout</span>

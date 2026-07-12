@@ -290,149 +290,6 @@ export function buildXReportEscpos(data: XReportData): object[] {
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
-// ─── Final Bill ──────────────────────────────────────────────────────────────
-
-export interface BillItem {
-  name: string;
-  quantity: number;
-  price: number;
-  amount?: number;
-  menuType?: string;
-  notes?: string | null;
-}
-
-export interface BillEscposData {
-  billNumber: string;
-  tableNumber: string | number;
-  sectionTag?: string | null;
-  date?: string;
-  time?: string;
-  kotNumbers?: string[];
-  captain?: string;
-  items: BillItem[];
-  subtotal: number;
-  discount?: { percent: number; amount: number } | null;
-  tax?: { cgst: number; sgst: number; total: number } | null;
-  roundOff?: number;
-  grandTotal: number;
-  itemCount?: number;
-  qtyCount?: number;
-  section?: string;
-  gstIn?: string;
-  restaurant?: {
-    name?: string;
-    receiptHeader?: string | null;
-    receiptSubHeader?: string | null;
-    address?: string | null;
-    phone?: string | null;
-  };
-}
-
-export function buildBillEscpos(data: BillEscposData): object[] {
-  const cmds: string[] = [];
-
-  cmds.push(INIT);
-
-  const venueName = (data.restaurant?.receiptHeader?.trim() || data.restaurant?.name?.trim() || 'RESTAURANT').toUpperCase();
-  cmds.push(CENTER, BOLD_ON, SIZE_HEIGHT, `${venueName}\n`, BOLD_OFF, SIZE_NORMAL);
-
-  cmds.push(CENTER);
-  if (data.restaurant?.receiptSubHeader) cmds.push(`${data.restaurant.receiptSubHeader}\n`);
-  if (data.restaurant?.address) cmds.push(`${data.restaurant.address}\n`);
-  if (data.restaurant?.phone) cmds.push(`Phone: ${data.restaurant.phone}\n`);
-  if (data.gstIn) cmds.push(`GST IN: ${data.gstIn}\n`);
-
-  cmds.push(separator("-"));
-
-  const rawTable = (data.tableNumber || 'N/A').toString();
-  const tableNumeric = (data.sectionTag && data.sectionTag.startsWith('venue-'))
-    ? rawTable
-    : rawTable.replace(/^[BT]/i, '');
-
-  cmds.push(SIZE_HEIGHT, BOLD_ON);
-  const billNo = data.billNumber || 'N/A';
-  const billTableGap = Math.max(1, LINE_NORMAL - `Bill No : ${billNo}`.length - `Table: ${tableNumeric}`.length);
-  cmds.push(`Bill No : ${billNo}${' '.repeat(billTableGap)}Table: ${tableNumeric}\n`);
-  cmds.push(BOLD_OFF, SIZE_NORMAL);
-
-  cmds.push(`Date: ${data.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' })}\n`);
-
-  if (data.kotNumbers && data.kotNumbers.length > 0) {
-    cmds.push(`KOT No : ${data.kotNumbers.join(', ')}\n`);
-  }
-
-  cmds.push(`Time: ${data.time || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}\n`);
-
-  if (data.captain && data.captain !== 'N/A') {
-    const captainGap = Math.max(1, LINE_NORMAL - `Captain: ${data.captain}`.length - `Waiter: Waiter`.length);
-    cmds.push(`Captain: ${data.captain}${' '.repeat(captainGap)}Waiter: Waiter\n`);
-  }
-
-  cmds.push(separator("-"));
-
-  cmds.push(LEFT, 'Item            Qty    Price    Amount\n', separator("-"));
-
-  if (!data.items || data.items.length === 0) {
-    cmds.push('NO ITEMS\n');
-  } else {
-    data.items.forEach(item => {
-      const itemName = (item.name || '').toUpperCase().substring(0, 24);
-      cmds.push(BOLD_ON, `${itemName}\n`, BOLD_OFF);
-      const qty = String(item.quantity).padStart(4);
-      const price = String(Math.round(item.price).toFixed(0)).padStart(9);
-      const amount = String(Math.round((item.amount || item.price * item.quantity)).toFixed(0)).padStart(10);
-      cmds.push(BOLD_ON, `              ${qty}  ${price}  ${amount}\n`, BOLD_OFF);
-      if (item.notes) cmds.push(`   * ${item.notes}\n`);
-    });
-  }
-
-  cmds.push(separator("-"));
-
-  cmds.push(BOLD_ON, `Sub Total :${String(Math.round(data.subtotal).toFixed(0)).padStart(LINE_NORMAL - 12)}\n`, BOLD_OFF);
-
-  if (data.tax && data.tax.total > 0) {
-    cmds.push(BOLD_ON);
-    cmds.push(`CGST :${String(Math.round(data.tax.cgst).toFixed(0)).padStart(LINE_NORMAL - 7)}\n`);
-    cmds.push(`SGST :${String(Math.round(data.tax.sgst).toFixed(0)).padStart(LINE_NORMAL - 7)}\n`);
-    cmds.push(BOLD_OFF);
-  }
-
-  if (data.discount && data.discount.percent > 0) {
-    cmds.push(BOLD_ON, `(-) Discount ${Math.round(data.discount.percent).toFixed(0)}% :${String(Math.round(data.discount.amount).toFixed(0)).padStart(LINE_NORMAL - 22)}\n`, BOLD_OFF);
-  }
-
-  cmds.push(separator("-"));
-
-  if (data.roundOff && data.roundOff !== 0) {
-    cmds.push(BOLD_ON);
-    const roValue = (data.roundOff > 0 ? '+' : '') + data.roundOff.toFixed(2);
-    cmds.push(`Round Off :${String(roValue).padStart(LINE_NORMAL - 11)}\n`);
-    cmds.push(BOLD_OFF);
-  }
-
-  cmds.push(SIZE_HEIGHT, BOLD_ON);
-  const gtValue = Math.round(data.grandTotal).toFixed(0);
-  const gtGap = Math.max(1, LINE_NORMAL - 'Grand Total'.length - gtValue.length);
-  cmds.push('Grand Total' + ' '.repeat(gtGap) + gtValue + '\n');
-  cmds.push(BOLD_OFF, SIZE_NORMAL);
-
-  cmds.push(BOLD_ON, `Items / Qty : ${data.itemCount || 0}/${data.qtyCount || 0}\n`, BOLD_OFF);
-
-  const secTag = (data.sectionTag || '').toLowerCase();
-  const secName = (data.section || '').toLowerCase();
-  const hallName = (secTag === 'venue-family-restaurant' || secName.includes('family restaurant') || secName.includes('main hall'))
-    ? 'DINE IN'
-    : (secTag === 'venue-restaurant-parcel' || secName.includes('parcel'))
-      ? 'PARCEL(FAMILY RESTAURANT)'
-      : (data.section ? data.section.toUpperCase() : 'DINE IN');
-
-  cmds.push(separator("-"), `Hall : ${hallName}\n`, '* *\n', '\n', BOLD_ON, hallName, BOLD_OFF, '\n');
-
-  cmds.push(CENTER, 'Thank You, Please Visit again\n', '\n\n\n', CUT);
-
-  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
-}
-
 // ─── Liquor / Bar KOT ─────────────────────────────────────────────────────────
 
 export function buildLiquorKOT(orderData: OrderData): object[] {
@@ -498,7 +355,7 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
 
   for (const item of liquorItems) {
     cmds.push(
-      SIZE_2X_TALL,
+      SIZE_HEIGHT,
       BOLD_ON,
       `${item.quantity}  ${item.name.toUpperCase()}\n`,
       BOLD_OFF,
@@ -765,6 +622,10 @@ export function buildFinalBill(data: BillData): object[] {
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }
 
+export function buildBillEscpos(data: BillData): object[] {
+  return buildFinalBill(data);
+}
+
 // ─── Cancel KOT ──────────────────────────────────────────────────────────────
 
 export interface CancelKotItem {
@@ -892,6 +753,166 @@ export function buildCancelKOT(input: CancelKotPrintInput): object[] {
     '\n\n\n',
     CUT,
   );
+
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
+}
+
+// ─── Helpers needed by buildReceipt ──────────────────────────────────────────
+
+function formatNow(): { date: string; time: string } {
+  const now = new Date();
+  const date = now.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+  const time = now.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+  return { date, time };
+}
+
+function formatItemLine(label: string, valueStr: string): string {
+  const available = LINE_NORMAL - valueStr.length;
+  return label.substring(0, available).padEnd(available) + valueStr + "\n";
+}
+
+// ─── Receipt (simple bill with food/liquor split, GST, total) ────────────────
+
+export function buildReceipt(
+  orderData: OrderData,
+  tax: { cgst: number; sgst: number; total: number },
+): object[] {
+  const { tableNumber, orderId, items, restaurantName, captainName, sectionTag } = orderData;
+
+  const resolvedRestaurantName = restaurantName || (
+    sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+      ? 'FAMILY RESTAURANT'
+      : 'RESTAURANT'
+  );
+
+  const { date, time } = formatNow();
+
+  const foodItems    = items.filter((i) => i.type === "food");
+  const liquorItems  = items.filter((i) => i.type === "liquor");
+
+  const foodSubtotal    = foodItems.reduce((s, i) => s + Number(i.price ?? 0) * i.quantity, 0);
+  const liquorSubtotal  = liquorItems.reduce((s, i) => s + Number(i.price ?? 0) * i.quantity, 0);
+
+  const cgst = tax.cgst;
+  const sgst = tax.sgst;
+  const total = Math.round((foodSubtotal + liquorSubtotal + tax.total) * 100) / 100;
+
+  const fmt = (n: number) => `Rs.${n.toFixed(2)}`;
+
+  const cmds: string[] = [
+    INIT,
+    CENTER,
+    BOLD_ON,
+    SIZE_2X,
+    `${resolvedRestaurantName}\n`,
+    BOLD_OFF,
+    SIZE_NORMAL,
+    LEFT,
+    separator("="),
+    `Table: ${tableNumber}\n`,
+    `Bill #: ${orderId.slice(-6).toUpperCase()}\n`,
+    `Date : ${date}\n`,
+    `Time : ${time}\n`,
+  ];
+
+  if (captainName) {
+    cmds.push(`Captain: ${captainName}\n`);
+  }
+
+  cmds.push(separator("="), "\n");
+
+  if (foodItems.length > 0) {
+    cmds.push(LEFT, SIZE_2X, BOLD_ON, "FOOD\n", BOLD_OFF, SIZE_NORMAL, "\n");
+    for (const item of foodItems) {
+      cmds.push(
+        SIZE_2X, BOLD_ON,
+        formatItemLine(`${item.quantity}x ${item.name}`, fmt(Number(item.price ?? 0) * item.quantity)),
+        BOLD_OFF, SIZE_NORMAL
+      );
+      if (item.notes) cmds.push(`   * ${item.notes}\n`);
+    }
+    cmds.push("\n");
+  }
+
+  if (liquorItems.length > 0) {
+    cmds.push(LEFT, SIZE_2X, BOLD_ON, "LIQUOR\n", BOLD_OFF, SIZE_NORMAL, "\n");
+    for (const item of liquorItems) {
+      cmds.push(
+        SIZE_2X, BOLD_ON,
+        formatItemLine(`${item.quantity}x ${item.name}`, fmt(Number(item.price ?? 0) * item.quantity)),
+        BOLD_OFF, SIZE_NORMAL
+      );
+      if (item.notes) cmds.push(`   * ${item.notes}\n`);
+    }
+    cmds.push("\n");
+  }
+
+  cmds.push(separator("="));
+  if (foodItems.length > 0) cmds.push(BOLD_ON, formatItemLine("Food Subtotal", fmt(foodSubtotal)), BOLD_OFF);
+  if (liquorItems.length > 0) cmds.push(BOLD_ON, formatItemLine("Liquor Subtotal", fmt(liquorSubtotal)), BOLD_OFF);
+  if (cgst > 0) cmds.push(BOLD_ON, formatItemLine("CGST", fmt(cgst)), BOLD_OFF);
+  if (sgst > 0) cmds.push(BOLD_ON, formatItemLine("SGST", fmt(sgst)), BOLD_OFF);
+
+  cmds.push(
+    separator("="),
+    BOLD_ON,
+    formatItemLine("TOTAL", fmt(total)),
+    BOLD_OFF,
+    separator("="),
+    CENTER,
+    "Thank you for dining with us!\n",
+    "Please visit again.\n",
+    LEFT,
+    "\n\n\n",
+    CUT,
+  );
+
+  return [{ type: "raw", format: "plain", data: cmds.join("") }];
+}
+
+// ─── Table Swap Slip ─────────────────────────────────────────────────────────
+
+export interface TableSwapPrintInput {
+  fromTableNumber: string | number;
+  toTableNumber: string | number;
+  swappedBy: string;
+  timestamp: string;
+}
+
+export function buildTableSwap(input: TableSwapPrintInput): object[] {
+  const { fromTableNumber, toTableNumber, swappedBy, timestamp } = input;
+
+  const cmds: string[] = [
+    INIT,
+    SIZE_2X,
+    CENTER,
+    BOLD_ON,
+    'TABLE MOVED\n',
+    BOLD_OFF,
+    separator(),
+    LEFT,
+    `From  : Table ${fromTableNumber}\n`,
+    `To    : Table ${toTableNumber}\n`,
+    `By    : ${swappedBy || 'Staff'}\n`,
+    `Time  : ${new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n`,
+    separator(),
+    CENTER,
+    BOLD_ON,
+    'Session transferred\n',
+    BOLD_OFF,
+    '\n\n',
+    CUT,
+  ];
 
   return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }

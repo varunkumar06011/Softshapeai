@@ -5,7 +5,7 @@
   "identifier": "ai.softshape.cashier",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:edge && npm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../../../dist"
   },
@@ -15,7 +15,7 @@
       {
         "label": "main",
         "title": "SoftShape Cashier",
-        "url": "https://www.softshape.in/cashier",
+        "url": "index.html",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -47,6 +47,9 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "../../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe"
     ],
     "windows": {
       "webviewInstallMode": {

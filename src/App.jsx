@@ -32,6 +32,8 @@ import CaptainApp from "./captain/CaptainApp";
 import UserMenuApp from "./user-menu/UserMenuApp";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
+import QuickOnboarding from "./onboarding/QuickOnboarding";
+import SyncStatusIndicator from "./shared/components/SyncStatusIndicator";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
@@ -280,7 +282,8 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname.split('/').slice(0, 3).join('/')}>
         <Route path="/" element={<AnimatedPage><PortalSelectionWrapper /></AnimatedPage>} />
-        <Route path="/onboarding" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
+        <Route path="/onboarding" element={<AnimatedPage><QuickOnboarding /></AnimatedPage>} />
+        <Route path="/onboarding/legacy" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
         <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
         <Route path="/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
         <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
@@ -326,7 +329,12 @@ function AdminDashboardWrapper() {
     return <Navigate to="/admin" replace />;
   }
   const role = user?.role || 'admin';
-  return <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />;
+  return (
+    <>
+      <SyncStatusIndicator />
+      <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />
+    </>
+  );
 }
 
 function TableQRCodesWrapper() {
@@ -352,7 +360,12 @@ function CashierDashboardWrapper() {
     logout();
     return <Navigate to="/cashier" replace />;
   }
-  return <CashierDashboard onLogout={() => { logout(); navigate('/cashier'); }} />;
+  return (
+    <>
+      <SyncStatusIndicator />
+      <CashierDashboard onLogout={() => { logout(); navigate('/cashier'); }} />
+    </>
+  );
 }
 
 function CaptainLoginWrapper() {
