@@ -59,12 +59,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
-<<<<<<< HEAD
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { useSyncStatus } from '../context/SyncStatusContext';
-=======
-import { buildFoodKOT, buildLiquorKOT, buildCancelKOT } from '../utils/escposFrontend';
->>>>>>> e6031be (start of heian era)
 
 
 
@@ -2656,13 +2652,7 @@ export default function CaptainApp({ onLogout }) {
         if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
         if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
 
-<<<<<<< HEAD
         // Fire local print (non-blocking — don't await before API call)
-=======
-        // Try local print with a 10s per-URL timeout.
-        // If local print fails (captain on mobile data, Print Agent unreachable),
-        // localPrinted stays false and the backend will emit via socket.
->>>>>>> e6031be (start of heian era)
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
