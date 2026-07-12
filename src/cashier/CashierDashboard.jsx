@@ -23,14 +23,13 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import CloseDayDialog from '../shared/components/CloseDayDialog';
 import {
   LayoutDashboard, Table2, ClipboardList, ShoppingCart, Settings, LogOut, Bell, Search,
   ChevronDown, Clock, CheckCircle2, AlertCircle, User, MoreVertical, Plus, Minus,
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, Lock
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -235,7 +234,7 @@ const HighlightedText = ({ text, highlight }) => {
     const char = text[i];
     if (qIdx < q.length && char.toLowerCase() === q[qIdx]) {
       parts.push(
-        <mark key={i} className="bg-yellow-100 text-[#5C85BB] font-black rounded-sm px-0.5">
+        <mark key={i} className="bg-yellow-100 text-[#1E3A8A] font-black rounded-sm px-0.5">
           {char}
         </mark>
       );
@@ -475,7 +474,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [isKotSuccess, setIsKotSuccess] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
-  const [closeDayOpen, setCloseDayOpen] = useState(false);
   const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
   const [liquorQtyItem, setLiquorQtyItem] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH');
@@ -484,7 +482,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [showConfirmPaymentModal, setShowConfirmPaymentModal] = useState(false);
   const [confirmPaymentTxn, setConfirmPaymentTxn] = useState(null);
-  const [confirmPaymentSubmitting, setConfirmPaymentSubmitting] = useState(false);
   const [confirmPaymentMethod, setConfirmPaymentMethod] = useState(null);
   const [confirmCashInput, setConfirmCashInput] = useState('');
   const [confirmCardInput, setConfirmCardInput] = useState('');
@@ -1226,8 +1223,7 @@ const CashierDashboard = ({ onLogout }) => {
   }, []);
 
   const handleConfirmPaymentSubmit = useCallback(async () => {
-    if (!confirmPaymentTxn || !confirmPaymentMethod || confirmPaymentSubmitting) return;
-    setConfirmPaymentSubmitting(true);
+    if (!confirmPaymentTxn || !confirmPaymentMethod) return;
     try {
       const cashAmt = Number(confirmCashInput) || 0;
       const cardAmt = Number(confirmCardInput) || 0;
@@ -1245,11 +1241,13 @@ const CashierDashboard = ({ onLogout }) => {
         addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
       } else {
         addNotification('Payment Confirmed', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} marked as completed.`, 'success');
+        // Optimistically update status so UI + final sale totals reflect the change immediately
         setPastTransactions(prev => prev.map(t =>
           t.id === confirmPaymentTxn.id
             ? { ...t, status: 'COMPLETED', rawStatus: 'COMPLETED' }
             : t
         ));
+        // Reset status filter so the confirmed txn is visible and included in final sale
         setTxnStatusFilter('all');
       }
       setShowConfirmPaymentModal(false);
@@ -1261,10 +1259,9 @@ const CashierDashboard = ({ onLogout }) => {
       loadTransactions(txnDateFilterRef.current, null, { silent: true, force: true });
     } catch (err) {
       console.error('[ConfirmPayment] error:', err);
-    } finally {
-      setConfirmPaymentSubmitting(false);
+      addNotification('Confirm Failed', err.message || 'Could not confirm payment.', 'error');
     }
-  }, [confirmPaymentTxn, confirmPaymentMethod, confirmPaymentSubmitting, confirmCashInput, confirmCardInput, confirmTipInput, loadTransactions]);
+  }, [confirmPaymentTxn, confirmPaymentMethod, confirmCashInput, confirmCardInput, confirmTipInput, loadTransactions]);
 
   const handleConfirmPaymentCancel = useCallback(() => {
     setShowConfirmPaymentModal(false);
@@ -2011,7 +2008,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
-      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders(), signal: AbortSignal.timeout(10000) });
+      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders() });
       if (response.ok) {
         const freshOrder = await response.json();
         return freshOrder || null;
@@ -2425,7 +2422,6 @@ const CashierDashboard = ({ onLogout }) => {
 
       const res = await fetch(`${API_BASE}/api/transactions?${params.toString()}`, {
         headers: { ...getAuthHeaders() },
-        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) throw new Error('Failed to fetch transactions');
       const allTxns = await res.json();
@@ -3020,41 +3016,20 @@ const CashierDashboard = ({ onLogout }) => {
             name: i.n || i.name,
             quantity: i.q || i.quantity || 1,
             notes: i.notes || null,
-            type: i.type || (i.menuType === 'BAR' ? 'liquor' : 'food'),
           }));
-          const kotOrderData = {
-            tableNumber: String(selectedTable.number || 'N/A'),
-            orderId: selectedTable?.activeOrder?.id || '',
-            items: kotItems,
-            kotId: String(lastKot.id || lastKot.kotNumber || 'N/A'),
-            sectionName: selectedTable?.section?.name || '',
-            sectionTag: selectedTable?.sectionTag || undefined,
-            captainName: lastKot.captainName || 'Cashier',
-            orderByRole: 'CASHIER',
-            restaurantName: restaurant?.name || restaurant?.receiptHeader || undefined,
-          };
-          const foodEscpos = buildFoodKOT(kotOrderData);
-          const liquorEscpos = buildLiquorKOT(kotOrderData);
-          const reprintEventId = `reprint-${lastKot.id || Date.now()}`;
-          const reprintPromises = [];
-          if (foodEscpos.length > 0) {
-            reprintPromises.push(
-              printLocal({ type: 'KOT', escposData: foodEscpos, eventId: `${reprintEventId}-food`, data: kotOrderData })
-                .catch(err => console.warn('[ReprintKOT] Local food print failed:', err.message))
-            );
-          }
-          if (liquorEscpos.length > 0) {
-            reprintPromises.push(
-              printLocal({ type: 'BAR_KOT', escposData: liquorEscpos, eventId: `${reprintEventId}-liquor`, data: kotOrderData })
-                .catch(err => console.warn('[ReprintKOT] Local liquor print failed:', err.message))
-            );
-          }
-          const reprintResults = await Promise.allSettled(reprintPromises);
-          const anyPrinted = reprintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
-          if (anyPrinted) {
+          const result = await printLocal({
+            jobType: 'KOT',
+            data: {
+              tableNumber: selectedTable.number,
+              items: kotItems,
+              kotNumber: lastKot.id || lastKot.kotNumber || 'N/A',
+              captainName: lastKot.captainName || 'Cashier',
+            },
+          });
+          if (result.printed) {
             addNotification('Offline KOT', 'KOT printed to local printer.', 'success');
-          } else {
-            addNotification('KOT Queued', 'No local printer available. Click "Retry prints" in the offline bar.', 'warning');
+          } else if (result.queued) {
+            addNotification('KOT Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
           }
         } catch (printErr) {
           console.warn('[handleReprintKOT] Local print failed:', printErr.message);
@@ -3194,43 +3169,8 @@ const CashierDashboard = ({ onLogout }) => {
         // Attempt local printing immediately
         try {
           const { printLocal } = await import('../utils/printOffline');
-          const now3 = new Date();
-          const dateStr3 = now3.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
-          const timeStr3 = now3.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
-          const walkinItems = cart.map(i => ({
-            name: i.n || i.name,
-            quantity: i.q,
-            price: Number(i.p),
-            amount: Number(i.p) * Number(i.q || 1),
-            menuType: i.menuType || 'FOOD',
-            notes: i.notes || null
-          }));
-          const walkinEscpos = buildFinalBill({
-            billNumber: `OFFLINE-${requestId.slice(0, 8).toUpperCase()}`,
-            date: dateStr3,
-            time: timeStr3,
-            tableNumber: String(tableLabel || 'N/A'),
-            captain: 'Walk-in',
-            items: walkinItems,
-            subtotal: subtotalAmt,
-            discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : { percent: 0, amount: 0 },
-            tax: { cgst: cgstAmt || 0, sgst: sgstAmt || 0, total: (cgstAmt || 0) + (sgstAmt || 0) },
-            grandTotal: grandTotalAmt,
-            section: '',
-            sectionTag: 'venue-restaurant-parcel',
-            itemCount: walkinItems.length,
-            qtyCount: walkinItems.reduce((sum, i) => sum + Number(i.quantity || 1), 0),
-            restaurant: {
-              name: restaurant?.name || undefined,
-              receiptHeader: restaurant?.receiptHeader || undefined,
-              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-              address: restaurant?.address || undefined,
-              phone: restaurant?.phone || undefined,
-            },
-          });
           const result = await printLocal({
-            type: 'FINAL_BILL',
-            escposData: walkinEscpos,
+            jobType: 'FINAL_BILL',
             data: {
               tableNumber: tableLabel,
               items: cart.map(i => ({
@@ -3263,7 +3203,6 @@ const CashierDashboard = ({ onLogout }) => {
       const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           restaurantId: activeRestaurantId,
           billData: {
@@ -3689,6 +3628,24 @@ const CashierDashboard = ({ onLogout }) => {
             addNotification(
               'Kitchen Inventory Warning',
               `Settlement succeeded but ${settleData.kitchenDeductionErrors.length} ingredient(s) could not be deducted. Check Kitchen Inventory → Deduction Check.`,
+              'warning'
+            );
+          }
+
+          // Warn if any bar inventory deductions failed (non-blocking)
+          if (Array.isArray(settleData?.barDeductionErrors) && settleData.barDeductionErrors.length > 0) {
+            addNotification(
+              'Bar Inventory Warning',
+              `Settlement succeeded but ${settleData.barDeductionErrors.length} bar item(s) could not be deducted. Check Bar Inventory → Deduction Check.`,
+              'warning'
+            );
+          }
+
+          // Warn if any food items have no recipe configured
+          if (Array.isArray(settleData?.missingRecipeItems) && settleData.missingRecipeItems.length > 0) {
+            addNotification(
+              'Missing Recipes',
+              `${settleData.missingRecipeItems.join(', ')} — no recipe set up, kitchen stock not deducted.`,
               'warning'
             );
           }
@@ -4940,13 +4897,12 @@ const CashierDashboard = ({ onLogout }) => {
   ];
 
   return (
-    <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#F6F9FC] font-sans overflow-hidden text-[#2C3E50]">
+    <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#F8FAFC] font-sans overflow-hidden text-[#1E293B]">
       <OfflineStatusBar />
       <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
-      <CloseDayDialog open={closeDayOpen} onClose={() => setCloseDayOpen(false)} />
       {/* SIDEBAR / BOTTOM BAR */}
-      <aside className="w-full sm:w-20 lg:w-64 h-16 sm:h-auto bg-[#F4F0FF] border-t sm:border-t-0 sm:border-r border-[#D4D8E8] flex sm:flex-col z-30 transition-all shrink-0">
-        <div className="hidden sm:flex p-3 lg:p-4 border-b border-[#D4D8E8] items-center justify-center shrink-0 bg-[#F4F0FF]">
+      <aside className="w-full sm:w-20 lg:w-64 h-16 sm:h-auto bg-[#1E3A8A] border-t sm:border-t-0 sm:border-r border-white/15 flex sm:flex-col z-30 transition-all shrink-0">
+        <div className="hidden sm:flex p-3 lg:p-4 border-b border-white/15 items-center justify-center shrink-0 bg-[#1E3A8A]">
           <div className="bg-white p-1.5 lg:p-3 rounded-2xl lg:rounded-[24px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-14 lg:w-32 flex items-center justify-center">
             <img
               src="/logo softshape.ai.png"
@@ -4971,11 +4927,11 @@ const CashierDashboard = ({ onLogout }) => {
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
               className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 text-center sm:text-left ${activeTab === item.id
-                ? 'bg-[#5C85BB] text-white font-black shadow-lg shadow-[#5C85BB]/20 scale-[1.01]'
-                : 'text-[#5C85BB]/80 hover:bg-[#5C85BB]/10 hover:text-[#5C85BB]'
+                ? 'bg-[#F59E0B] text-[#1E293B] font-black shadow-lg shadow-[#F59E0B]/20 scale-[1.01]'
+                : 'text-white/80 hover:bg-white/10 hover:text-white'
                 }`}
             >
-              <item.icon size={22} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
+              <item.icon size={22} className={activeTab === item.id ? 'text-[#1E293B]' : 'text-white/80 group-hover:scale-110 transition-transform'} />
               <span className="text-[10px] sm:hidden font-bold leading-none mt-1">{item.label}</span>
               <span className="hidden sm:block text-xs lg:text-sm font-black uppercase tracking-wider whitespace-nowrap">{item.label}</span>
               {activeTab === item.id && (
@@ -4985,14 +4941,10 @@ const CashierDashboard = ({ onLogout }) => {
           ))}
         </nav>
 
-        <div className="hidden sm:block p-3 border-t border-[#D4D8E8] mt-auto pb-6">
-          <button onClick={() => setCloseDayOpen(true)} className="flex items-center gap-3 w-full p-3 rounded-xl text-[#E53935] hover:bg-[#E53935]/10 transition-all hover:scale-[1.02] active:scale-98 mb-2">
-            <Lock size={22} />
-            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider">Close Day</span>
-          </button>
-          <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-[#5C85BB]/80 hover:text-[#5C85BB] hover:bg-[#5C85BB]/10 transition-all hover:scale-[1.02] active:scale-98">
-            <LogOut size={22} className="group-hover:text-[#5C85BB]" />
-            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-[#5C85BB]/80 group-hover:text-[#5C85BB]">Logout</span>
+        <div className="hidden sm:block p-3 border-t border-white/15 mt-auto pb-6">
+          <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-white/80 hover:text-white hover:bg-white/10 transition-all hover:scale-[1.02] active:scale-98">
+            <LogOut size={22} className="text-white/80 group-hover:text-white" />
+            <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-white/80 group-hover:text-white">Logout</span>
           </button>
         </div>
       </aside>
@@ -5000,10 +4952,10 @@ const CashierDashboard = ({ onLogout }) => {
       {/* MAIN VIEW */}
       <div className="flex-grow flex flex-col min-w-0 overflow-hidden">
         {/* COMPACT TOP BAR */}
-        <header className="h-18 bg-[#F4F0FF] border-b border-[#D4D8E8] px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
+        <header className="h-18 bg-[#1E3A8A] border-b border-white/15 px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
 
-            <div className="flex items-center gap-2.5 text-gray-500">
+            <div className="flex items-center gap-2.5 text-white/80">
               <Clock size={18} />
               <span className="text-xs md:text-sm font-black tabular-nums">{currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
             </div>
@@ -5012,11 +4964,11 @@ const CashierDashboard = ({ onLogout }) => {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-xs md:text-sm font-black leading-none text-gray-900">{user?.name || 'Cashier'}</p>
-                <p className="text-[10px] text-gray-400 font-black uppercase mt-1">{user?.role === 'OWNER' || user?.role === 'ADMIN' ? user.role : 'Cashier'}</p>
+                <p className="text-xs md:text-sm font-black leading-none text-white">{user?.name || 'Cashier'}</p>
+                <p className="text-[10px] text-white/70 font-black uppercase mt-1">{user?.role === 'OWNER' || user?.role === 'ADMIN' ? user.role : 'Cashier'}</p>
               </div>
-              <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-base shadow-inner border border-gray-200">🤵</div>
-              <button onClick={onLogout} className="sm:hidden ml-2 p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-[#5C85BB] hover:bg-[#5C85BB]/10"><LogOut size={20} /></button>
+              <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center text-base shadow-inner border border-white/20">🤵</div>
+              <button onClick={onLogout} className="sm:hidden ml-2 p-2 rounded-lg bg-white/10 text-white/90 hover:text-white hover:bg-white/20"><LogOut size={20} /></button>
             </div>
           </div>
         </header>
@@ -5098,7 +5050,7 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                           <div className="min-w-0">
                             <p className="text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-widest">{stat.label}</p>
-                            <p className={`text-xl sm:text-2xl font-black ${stat.color} leading-none mt-1`}>{stat.value}</p>
+                            <p className={`text-xl sm:text-2xl font-black font-mono ${stat.color} leading-none mt-1`}>{stat.value}</p>
                             <p className="text-[10px] font-bold text-gray-400 mt-1 truncate">{stat.change}</p>
                           </div>
                         </div>
@@ -5108,7 +5060,7 @@ const CashierDashboard = ({ onLogout }) => {
                     {settlementBreakdown.count > 0 && (
                       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                         <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-3 flex items-center gap-2">
-                          <Banknote size={16} className="text-[#5C85BB]" />
+                          <Banknote size={16} className="text-[#1E3A8A]" />
                           Settlement Breakdown
                           <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{settlementBreakdown.count} transactions</span>
                         </h3>
@@ -5136,9 +5088,9 @@ const CashierDashboard = ({ onLogout }) => {
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
                       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                         <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
-                          <Table2 size={18} className="text-[#5C85BB]" />
+                          <Table2 size={18} className="text-[#1E3A8A]" />
                           Live Floor Status
-                          <span className="bg-[#5C85BB] text-white text-[10px] font-black px-2.5 py-1 rounded-full">
+                          <span className="bg-[#F59E0B] text-[#1E293B] text-[10px] font-black px-2.5 py-1 rounded-full">
                             {dashboardFloorTables.filter(t => t.status && t.status !== 'Free').length} Running
                           </span>
                           {!socketConnected && (
@@ -5149,7 +5101,7 @@ const CashierDashboard = ({ onLogout }) => {
                           )}
                         </h3>
                         <div className="flex gap-4">
-                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#5C85BB]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#1E3A8A]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
                           <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
                           <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preparing</span></div>
                         </div>
@@ -5192,9 +5144,9 @@ const CashierDashboard = ({ onLogout }) => {
                                     Number(table.orders?.[0]?.totalAmount || 0)
                                   );
 
-                              let cardBg = 'bg-[#5C85BB]/10 border-[#5C85BB]';
-                              let textColor = 'text-[#5C85BB]';
-                              let badgeCls = 'bg-[#5C85BB]/10 text-[#5C85BB]';
+                              let cardBg = 'bg-[#1E3A8A]/10 border-[#1E3A8A]';
+                              let textColor = 'text-[#1E3A8A]';
+                              let badgeCls = 'bg-[#1E3A8A]/10 text-[#1E3A8A]';
                               let statusLabel = 'Occupied';
                               let pulseClass = '';
 
@@ -5268,7 +5220,7 @@ const CashierDashboard = ({ onLogout }) => {
                               key={outlet}
                               onClick={() => setActiveOutlet(outlet)}
                               className={`px-3 py-1.5 rounded-md text-xs font-black uppercase tracking-wider transition-all ${activeOutlet === outlet
-                                ? 'bg-[#5C85BB] text-white shadow-sm'
+                                ? 'bg-[#F59E0B] text-[#1E293B] shadow-sm'
                                 : 'text-gray-500 hover:text-gray-700'
                                 }`}
                             >
@@ -5286,7 +5238,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <button
                           onClick={() => setActiveVenueFilter('all')}
                           className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${activeVenueFilter === 'all'
-                            ? 'bg-[#5C85BB] text-white shadow-sm'
+                            ? 'bg-[#F59E0B] text-[#1E293B] shadow-sm'
                             : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
                             }`}
                         >
@@ -5299,7 +5251,7 @@ const CashierDashboard = ({ onLogout }) => {
                               key={sourceKey}
                               onClick={() => setActiveVenueFilter(sourceKey)}
                               className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${activeVenueFilter === sourceKey
-                                ? 'bg-[#5C85BB] text-white shadow-sm'
+                                ? 'bg-[#F59E0B] text-[#1E293B] shadow-sm'
                                 : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
                                 }`}
                             >
@@ -5328,7 +5280,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     key={sourceKey}
                                     onClick={() => handleTabSwitch(sourceKey)}
                                     className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-base sm:text-lg font-black border-2 transition-all shadow-sm ${tableSubCategory === sourceKey
-                                        ? 'bg-[#5C85BB] text-white border-[#5C85BB]'
+                                        ? 'bg-[#F59E0B] text-[#1E293B] border-[#F59E0B]'
                                         : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
                                       }`}
                                   >
@@ -5338,7 +5290,7 @@ const CashierDashboard = ({ onLogout }) => {
                               })
                             : (
                               <div className="flex items-center gap-3 py-4">
-                                <div className="inline-block w-6 h-6 border-3 border-gray-200 border-t-[#5C85BB] rounded-full animate-spin"></div>
+                                <div className="inline-block w-6 h-6 border-3 border-gray-200 border-t-[#1E3A8A] rounded-full animate-spin"></div>
                                 <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Loading sections...</p>
                               </div>
                             )}
@@ -5625,7 +5577,7 @@ const CashierDashboard = ({ onLogout }) => {
                         })()}
                         {/* Total Amount Summary */}
                         <div className="m-3 mb-2">
-                          <div className="bg-gradient-to-br from-[#5C85BB] to-[#4A6A9A] border border-blue-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
+                          <div className="bg-gradient-to-br from-[#1E3A8A] to-[#4A6A9A] border border-blue-200 rounded-xl p-4 flex flex-col gap-1 shadow-lg">
                             <span className="text-[10px] font-black uppercase tracking-widest text-blue-100">Total Revenue (Pre-tax)</span>
                             <span className="text-3xl font-black text-white">
                               ₹{completedTransactions.reduce((sum, t) => sum + netTotal(t), 0).toFixed(2)}
@@ -5685,7 +5637,7 @@ const CashierDashboard = ({ onLogout }) => {
                               key={f.key}
                               onClick={() => { setTxnDateFilter(f.key); setTxnSourceFilter('all'); setTxnMethodFilter('all'); setTxnStatusFilter('all'); setTxnSearch(''); setTxnCustomDate(''); }}
                               className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key && !txnCustomDate
-                                ? 'bg-[#5C85BB] text-white shadow-sm'
+                                ? 'bg-[#F59E0B] text-[#1E293B] shadow-sm'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                                 }`}
                             >
@@ -5706,7 +5658,7 @@ const CashierDashboard = ({ onLogout }) => {
                             }}
                             className={`px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold border-2 outline-none transition-colors cursor-pointer ${
                               txnCustomDate
-                                ? 'border-[#5C85BB] text-[#5C85BB] bg-[#5C85BB]/10'
+                                ? 'border-[#F59E0B] text-[#F59E0B] bg-[#F59E0B]/10'
                                 : 'border-gray-200 text-gray-600 bg-white hover:border-gray-400'
                             }`}
                           />
@@ -5766,7 +5718,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {txnsLoading && !txnInitialLoaded && filteredTransactions.length > 0 && (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
                               <div className="flex flex-col items-center gap-2">
-                                <div className="w-7 h-7 border-2 border-[#5C85BB] border-t-transparent rounded-full animate-spin" />
+                                <div className="w-7 h-7 border-2 border-[#1E3A8A] border-t-transparent rounded-full animate-spin" />
                                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
                               </div>
                             </div>
@@ -5789,7 +5741,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 <tr>
                                   <td colSpan={8} className="p-12 text-center">
                                     <div className="flex flex-col items-center justify-center gap-2 py-8">
-                                      <div className="w-7 h-7 border-2 border-[#5C85BB] border-t-transparent rounded-full animate-spin" />
+                                      <div className="w-7 h-7 border-2 border-[#1E3A8A] border-t-transparent rounded-full animate-spin" />
                                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
                                     </div>
                                   </td>
@@ -5809,7 +5761,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
                                     >
                                       <td className="p-4">
-                                        <span className="text-xs md:text-sm font-black text-[#5C85BB]">{txn.displayId || '—'}</span>
+                                        <span className="text-xs md:text-sm font-black text-[#1E3A8A]">{txn.displayId || '—'}</span>
                                       </td>
                                       <td className="p-4">
                                         <span className="text-xs md:text-sm font-black text-gray-900">
@@ -5888,7 +5840,7 @@ const CashierDashboard = ({ onLogout }) => {
                                                 ))}
                                                 <div className="flex justify-between items-center px-4 pt-2 border-t border-gray-200 mt-2">
                                                   <span className="text-xs font-black uppercase text-gray-500">Total</span>
-                                                  <span className="text-sm font-black text-[#5C85BB]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                                  <span className="text-sm font-black text-[#1E3A8A]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                                 </div>
                                               </div>
                                               <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 mt-2 space-y-2">
@@ -5916,7 +5868,7 @@ const CashierDashboard = ({ onLogout }) => {
                                                 )}
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                                                   <span className="text-xs font-black uppercase text-gray-500">Grand Total</span>
-                                                  <span className="text-sm font-black text-[#5C85BB]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
+                                                  <span className="text-sm font-black text-[#1E3A8A]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</span>
                                                 </div>
                                                 {Number(txn.tipAmount ?? 0) > 0 && (
                                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
@@ -5999,7 +5951,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={billFinderDate}
                                 onChange={(e) => { setBillFinderDate(e.target.value); setBillFinderSearched(false); }}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#5C85BB]"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#1E3A8A]"
                               />
                             </div>
                             <div>
@@ -6010,7 +5962,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={billFinderBillNo}
                                 onChange={(e) => { setBillFinderBillNo(e.target.value); setBillFinderSearched(false); }}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#5C85BB]"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#1E3A8A]"
                               />
                             </div>
                             <div>
@@ -6021,14 +5973,14 @@ const CashierDashboard = ({ onLogout }) => {
                                 value={billFinderTableNo}
                                 onChange={(e) => { setBillFinderTableNo(e.target.value); setBillFinderSearched(false); }}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleBillSearch(); }}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#5C85BB]"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#1E3A8A]"
                               />
                             </div>
                           </div>
                           <button
                             onClick={handleBillSearch}
                             disabled={billFinderLoading}
-                            className="w-full bg-[#5C85BB] text-white rounded-xl px-4 py-3 text-sm font-black uppercase hover:bg-[#4A6A9A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className="w-full bg-[#F59E0B] text-[#1E293B] rounded-xl px-4 py-3 text-sm font-black uppercase hover:bg-[#D97706] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                           >
                             {billFinderLoading ? (
                               <>
@@ -6096,7 +6048,7 @@ const CashierDashboard = ({ onLogout }) => {
                                           {txn.method || '—'}
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-right text-sm font-black text-[#5C85BB]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</td>
+                                      <td className="px-4 py-3 text-right text-sm font-black text-[#1E3A8A]">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(0)}</td>
                                       <td className="px-4 py-3 text-center">
                                         <div className="flex items-center justify-center gap-1.5">
                                           <button
@@ -6167,7 +6119,7 @@ const CashierDashboard = ({ onLogout }) => {
                           </div>
                           <div className="text-center border-l border-gray-100 hidden md:block">
                             <p className="text-[9px] font-black uppercase text-gray-400">Delayed</p>
-                            <p className="text-lg font-black text-[#5C85BB]">
+                            <p className="text-lg font-black text-[#1E3A8A]">
                               {liveKotQueue.filter(k => k.type === 'FOOD' && k.status !== 'Ready' && Date.now() - k.createdAt > 600000).length}
                             </p>
                           </div>
@@ -6211,7 +6163,7 @@ const CashierDashboard = ({ onLogout }) => {
                                       <div className="mb-3">
                                         <p className="text-[9px] font-bold text-gray-400 uppercase">Capt. {kot.table.captainName?.split(' ')[0] || 'Walk-in'}</p>
                                         <div className="flex items-center gap-2 mt-1">
-                                          <span className="text-[9px] font-black text-[#5C85BB] uppercase">{kot.items.length} Items</span>
+                                          <span className="text-[9px] font-black text-[#1E3A8A] uppercase">{kot.items.length} Items</span>
                                           <div className="w-1 h-1 rounded-full bg-gray-300" />
                                           <span className="text-[9px] font-black text-gray-500">{kot.itemsReady || 0}/{kot.items.length} Ready</span>
                                         </div>
@@ -6275,7 +6227,7 @@ const CashierDashboard = ({ onLogout }) => {
                             x: isSearchFocused ? 2 : 0
                           }}
                           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                          className="absolute left-5 top-1/2 -translate-y-1/2 text-[#5C85BB] pointer-events-none z-10"
+                          className="absolute left-5 top-1/2 -translate-y-1/2 text-[#1E3A8A] pointer-events-none z-10"
                         >
                           <Search size={24} />
                         </motion.div>
@@ -6285,8 +6237,8 @@ const CashierDashboard = ({ onLogout }) => {
                           type="text"
                           placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
                           className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${isSearchFocused
-                            ? 'border-[#5C85BB] ring-4 ring-[#5C85BB]/20 shadow-[#5C85BB]/10 scale-[1.002]'
-                            : 'border-gray-300 hover:border-[#5C85BB]/50 hover:shadow-md'
+                            ? 'border-[#1E3A8A] ring-4 ring-[#1E3A8A]/20 shadow-[#1E3A8A]/10 scale-[1.002]'
+                            : 'border-gray-300 hover:border-[#1E3A8A]/50 hover:shadow-md'
                             }`}
                           value={searchQuery}
                           onChange={(e) => {
@@ -6316,7 +6268,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 setSearchQuery('');
                                 searchInputRef.current?.focus();
                               }}
-                              className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-[#5C85BB]/10 text-gray-405 hover:text-[#5C85BB] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
+                              className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 hover:bg-[#1E3A8A]/10 text-gray-405 hover:text-[#1E3A8A] flex items-center justify-center transition-colors shadow-inner cursor-pointer"
                             >
                               <X size={16} />
                             </motion.button>
@@ -6348,8 +6300,8 @@ const CashierDashboard = ({ onLogout }) => {
                                   setSelectedCategory('All');
                                 }}
                                 className={`px-8 min-h-[56px] rounded-xl font-black text-lg uppercase tracking-widest transition-all duration-200 border-2 shrink-0 hover:scale-[1.03] active:scale-95 flex-1 ${selectedMenuType === tab.value
-                                  ? 'bg-[#5C85BB] border-[#5C85BB] text-white shadow-lg shadow-[#5C85BB]/35'
-                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F6F9FC] hover:border-[#5C85BB] hover:text-[#5C85BB]'
+                                  ? 'bg-[#F59E0B] border-[#F59E0B] text-[#1E293B] shadow-lg shadow-[#F59E0B]/35'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F8FAFC] hover:border-[#F59E0B] hover:text-[#F59E0B]'
                                   }`}
                               >
                                 {tab.label}
@@ -6386,8 +6338,8 @@ const CashierDashboard = ({ onLogout }) => {
                                         ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-transparent text-white shadow-lg shadow-amber-500/30 scale-[1.04] z-10'
                                         : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400'
                                       : selectedCategory === cat
-                                        ? 'bg-[#5C85BB] border-[#5C85BB] text-white shadow-lg shadow-red-500/35 scale-[1.04] z-10'
-                                        : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F6F9FC] hover:border-[#D4D8E8] hover:text-[#5C85BB]'
+                                        ? 'bg-[#F59E0B] border-[#F59E0B] text-[#1E293B] shadow-lg shadow-amber-500/35 scale-[1.04] z-10'
+                                        : 'bg-white border-gray-200 text-gray-700 hover:bg-[#F8FAFC] hover:border-gray-300 hover:text-[#1E3A8A]'
                                   }`}
                                 >
                                   {isSpecialPill && <Flame size={18} className={selectedCategory === cat ? 'text-white' : 'text-amber-500'} />}
@@ -6423,7 +6375,7 @@ const CashierDashboard = ({ onLogout }) => {
                                   className="shrink-0 flex flex-col items-start bg-gradient-to-br from-amber-50 to-white border border-amber-200 hover:border-amber-400 rounded-xl px-3 py-2 shadow-sm active:scale-95 transition-all text-left"
                                 >
                                   <span className="text-xs font-black text-gray-900 line-clamp-1 max-w-[140px]">{special.n}</span>
-                                  <span className="text-xs font-black text-[#5C85BB]">₹{special.p}</span>
+                                  <span className="text-xs font-black text-[#1E3A8A]">₹{special.p}</span>
                                 </button>
                               ))}
                             </div>
@@ -6447,7 +6399,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <div
                           className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm mt-4 w-full"
                         >
-                          <AlertCircle size={44} className="text-[#5C85BB] mb-4" />
+                          <AlertCircle size={44} className="text-[#1E3A8A] mb-4" />
                           <h3 className="text-lg font-black text-gray-900 mb-1">No matching items found</h3>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest max-w-xs text-center">
                             {searchQuery.trim()
@@ -6457,7 +6409,7 @@ const CashierDashboard = ({ onLogout }) => {
                           {searchQuery.trim() && (
                             <button
                               onClick={() => setSearchQuery('')}
-                              className="mt-6 px-6 py-2.5 bg-[#5C85BB] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-[#5C85BB]/10 cursor-pointer"
+                              className="mt-6 px-6 py-2.5 bg-[#F59E0B] text-[#1E293B] rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-[#F59E0B]/10 cursor-pointer"
                             >
                               Clear Search
                             </button>
@@ -6475,7 +6427,7 @@ const CashierDashboard = ({ onLogout }) => {
                               className={`rounded-2xl border-2 overflow-hidden transition-all duration-200 cursor-default flex flex-col group hover:scale-[1.02] active:scale-[0.99] shadow-md min-h-[132px] p-3 sm:p-4 gap-2 justify-between relative ${
                                 isSpecial
                                   ? 'bg-gradient-to-br from-amber-50 to-white border-amber-300 hover:border-amber-500 hover:shadow-amber-200/50'
-                                  : 'bg-white border-gray-200 hover:border-[#5C85BB] hover:shadow-xl'
+                                  : 'bg-white border-gray-200 hover:border-[#1E3A8A] hover:shadow-xl'
                               }`}
                             >
                               {isSpecial && (
@@ -6502,11 +6454,11 @@ const CashierDashboard = ({ onLogout }) => {
 
                               {/* Price + Add button */}
                               <div className="flex items-center justify-between mt-auto">
-                                <p className={`text-lg md:text-xl font-black ${isSpecial ? 'text-amber-600' : 'text-[#5C85BB]'}`}>₹{item.p}</p>
+                                <p className={`text-lg md:text-xl font-black ${isSpecial ? 'text-amber-600' : 'text-[#1E3A8A]'}`}>₹{item.p}</p>
                                 <div onClick={(e) => { e.stopPropagation(); handleAddItem(item); }} className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors duration-150 shadow-sm active:scale-90 shrink-0 cursor-pointer ${
                                   isSpecial
                                     ? 'bg-amber-100 border-amber-200 text-amber-600 group-hover:bg-amber-500 group-hover:text-white'
-                                    : 'bg-gray-100 border-gray-150 text-gray-500 group-hover:bg-[#5C85BB] group-hover:text-white'
+                                    : 'bg-gray-100 border-gray-150 text-gray-500 group-hover:bg-[#1E3A8A] group-hover:text-white'
                                 }`}>
                                   <Plus className="w-5 h-5" />
                                 </div>
@@ -6528,7 +6480,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className="flex flex-col w-full">
                         <div className="flex justify-between items-center mb-3">
                           <h2 className="font-black text-base md:text-lg uppercase tracking-widest text-gray-900 flex items-center gap-2.5">
-                            <ShoppingCart size={22} className="text-[#5C85BB]" />
+                            <ShoppingCart size={22} className="text-[#1E3A8A]" />
                             Cart Log
                           </h2>
                           <div className="flex items-center gap-1">
@@ -6564,7 +6516,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <select
                         value={selectedOrderPlatform}
                         onChange={(e) => setSelectedOrderPlatform(e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:border-[#5C85BB] focus:outline-none"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:border-[#1E3A8A] focus:outline-none"
                       >
                         <option value="DINE_IN">Dine In</option>
                         <option value="SWIGGY">Swiggy</option>
@@ -6659,7 +6611,7 @@ const CashierDashboard = ({ onLogout }) => {
                                     </div>
                                     <button
                                       onClick={() => { setEditQtyItemId(item.id); setEditQtyValue(String(item.q)); }}
-                                      className="text-xs md:text-sm font-black text-[#5C85BB] hover:underline px-2.5 py-1.5 hover:bg-[#5C85BB]/10 rounded-lg transition-colors"
+                                      className="text-xs md:text-sm font-black text-[#1E3A8A] hover:underline px-2.5 py-1.5 hover:bg-[#1E3A8A]/10 rounded-lg transition-colors"
                                     >Edit</button>
                                   </>
                                 )}
@@ -6760,7 +6712,7 @@ const CashierDashboard = ({ onLogout }) => {
                             disabled={isKotSending || cart.length === 0}
                             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-150 hover:scale-[1.01] active:scale-95 ${isKotSuccess ? 'bg-green-500 border-green-500 text-white shadow-lg shadow-green-100' :
                               isKotSending ? 'bg-amber-50 border-amber-200 text-amber-600' :
-                                'bg-white border-gray-200 text-gray-700 hover:border-[#5C85BB] hover:text-[#5C85BB] hover:shadow-sm'
+                                'bg-white border-gray-200 text-gray-700 hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:shadow-sm'
                               }`}
                           >
                             {isKotSuccess ? <Check size={18} /> : isKotSending ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
@@ -6800,7 +6752,7 @@ const CashierDashboard = ({ onLogout }) => {
           >
             <div className="p-3 sm:p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3 sm:gap-4">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#5C85BB] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#1E3A8A] text-white flex items-center justify-center font-black text-xl sm:text-2xl border-2 border-red-700 shadow-sm transform hover:rotate-1 transition-transform">
                   {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.number ?? selectedTable.id}`}
                 </div>
                 <div>
@@ -6835,7 +6787,7 @@ const CashierDashboard = ({ onLogout }) => {
             <div className="p-3 sm:p-4 bg-white flex flex-col flex-1 min-h-[100px] overflow-hidden">
               {/* ── Order Summary (read-only view) ─────────────────── */}
               <div className="flex flex-col min-h-0 flex-1 mb-3 overflow-hidden">
-                <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#5C85BB] border-b border-red-100 pb-1 shrink-0">
+                <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#1E3A8A] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
@@ -6902,11 +6854,11 @@ const CashierDashboard = ({ onLogout }) => {
                       <div className={`flex bg-gray-100 rounded-lg p-1 ml-2 ${isOrderSettled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
                         <button 
                           onClick={() => { setDiscountMode('percent'); setRawDiscountInput(''); }}
-                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#5C85BB]' : 'text-gray-400 hover:text-gray-600'}`}
+                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'percent' ? 'bg-white shadow-sm border border-gray-200/50 text-[#1E3A8A]' : 'text-gray-400 hover:text-gray-600'}`}
                         >%</button>
                         <button 
                           onClick={() => { setDiscountMode('fixed'); setRawDiscountInput(''); }}
-                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'fixed' ? 'bg-white shadow-sm border border-gray-200/50 text-[#5C85BB]' : 'text-gray-400 hover:text-gray-600'}`}
+                          className={`px-3 py-1 text-sm sm:text-base font-black rounded-md transition-all ${discountMode === 'fixed' ? 'bg-white shadow-sm border border-gray-200/50 text-[#1E3A8A]' : 'text-gray-400 hover:text-gray-600'}`}
                         >₹</button>
                       </div>
                     </div>
@@ -6917,7 +6869,7 @@ const CashierDashboard = ({ onLogout }) => {
                       value={rawDiscountInput}
                       onChange={(e) => setRawDiscountInput(e.target.value)}
                       disabled={isOrderSettled}
-                      className="w-full px-3 py-2 bg-[#F6F9FC] border focus:border-[#5C85BB] rounded-lg outline-none text-sm font-bold text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border focus:border-[#1E3A8A] rounded-lg outline-none text-sm font-bold text-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
                       placeholder="0"
                     />
                   </div>
@@ -6933,7 +6885,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <span className="font-black text-gray-800">₹{Number(activeTaxes || 0).toFixed(2)}</span>
                     </div>
                     {discountPercent > 0 && (
-                      <div className="flex justify-between text-xs font-black text-[#5C85BB] uppercase">
+                      <div className="flex justify-between text-xs font-black text-[#1E3A8A] uppercase">
                         <span>Discount {discountMode === 'percent' ? `(${discountPercent}%)` : ''}</span>
                         <span>-₹{activeDiscountAmount.toFixed(2)}</span>
                       </div>
@@ -6948,7 +6900,7 @@ const CashierDashboard = ({ onLogout }) => {
                       <span className="text-xs font-black text-gray-900 uppercase tracking-widest">
                         {discountPercent > 0 ? 'Final' : 'Total'}
                       </span>
-                      <span className="text-xl sm:text-2xl font-black text-[#5C85BB] tracking-tight leading-none">
+                      <span className="text-xl sm:text-2xl font-black font-mono text-[#1E3A8A] tracking-tight leading-none">
                         ₹{Number(activeGrandTotal).toFixed(0)}
                       </span>
                     </div>
@@ -6996,7 +6948,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       onClick={() => { if (isPrintingBill) return; setShowSettleConfirm(true); }}
                       disabled={isSettling}
-                      className="py-2.5 rounded-lg bg-[#5C85BB] border border-[#4A6A9A] text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#4A6A9A] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                      className="py-2.5 rounded-lg bg-[#F59E0B] border border-[#B45309] text-[#1E293B] text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#D97706] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
                       {(selectedTable?.billNumber || selectedTable?.activeOrder?.billNumber) && (
                         <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">
@@ -7169,7 +7121,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">New Total</p>
-                    <p className="text-2xl sm:text-3xl font-black text-[#5C85BB] tracking-tight">₹{Number(liveTotal).toFixed(2)}</p>
+                    <p className="text-2xl sm:text-3xl font-black font-mono text-[#1E3A8A] tracking-tight">₹{Number(liveTotal).toFixed(2)}</p>
                   </div>
                   <button
                     onClick={() => { setShowBillEditor(false); setBillRemovals([]); setBillEditQuantities({}); setBillAdditions([]); setBillEditSearch(''); }}
@@ -7519,7 +7471,7 @@ const CashierDashboard = ({ onLogout }) => {
                     value={tipInput}
                     onChange={(e) => setTipInput(e.target.value)}
                     placeholder="0"
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black text-gray-900 tabular-nums focus:outline-none focus:border-[#5C85BB] focus:ring-2 focus:ring-red-100 transition-colors"
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black font-mono text-gray-900 tabular-nums focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-red-100 transition-colors"
                   />
                 </div>
               </div>
@@ -7539,7 +7491,7 @@ const CashierDashboard = ({ onLogout }) => {
                 }}
                 disabled={!selectedSettleMethod || isPrintingBill}
                 className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill
-                  ? 'bg-[#5C85BB] text-white shadow-lg shadow-[#5C85BB]/20 hover:bg-[#4A6A9A] border border-[#4A6A9A]'
+                  ? 'bg-[#F59E0B] text-[#1E293B] shadow-lg shadow-[#F59E0B]/20 hover:bg-[#D97706] border border-[#B45309]'
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
@@ -7709,7 +7661,7 @@ const CashierDashboard = ({ onLogout }) => {
                 {Number(billPreviewTxn.roundOff ?? 0) !== 0 && (
                   <div className="flex justify-between text-sm"><span className="font-bold text-gray-500">Round Off</span><span className="font-bold text-gray-700">{Number(billPreviewTxn.roundOff) > 0 ? '+' : ''}₹{Number(billPreviewTxn.roundOff ?? 0).toFixed(2)}</span></div>
                 )}
-                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#5C85BB]">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
+                <div className="flex justify-between text-base font-black border-t border-gray-200 pt-2 mt-2"><span className="text-gray-900">Grand Total</span><span className="text-[#1E3A8A] font-mono">₹{Number(billPreviewTxn.grandTotal ?? billPreviewTxn.amount ?? 0).toFixed(0)}</span></div>
               </div>
             </div>
           </div>
@@ -7733,13 +7685,13 @@ const CashierDashboard = ({ onLogout }) => {
                 onChange={e => { setReprintPinInput(e.target.value); setReprintPinError(''); }}
                 onKeyDown={e => { if (e.key === 'Enter') verifyReprintPin(); }}
                 placeholder="Enter PIN..."
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:border-[#5C85BB] mb-2"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:border-[#1E3A8A] mb-2"
               />
               {reprintPinError && <p className="text-xs font-bold text-red-500 mb-2">{reprintPinError}</p>}
               <button
                 onClick={verifyReprintPin}
                 disabled={isVerifyingReprintPin}
-                className="w-full bg-[#5C85BB] text-white rounded-lg py-3 text-sm font-black uppercase hover:bg-[#4A6A9A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-[#F59E0B] text-[#1E293B] rounded-lg py-3 text-sm font-black uppercase hover:bg-[#D97706] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isVerifyingReprintPin ? 'Verifying...' : 'Verify & Reprint'}
               </button>
@@ -8005,7 +7957,7 @@ const CashierDashboard = ({ onLogout }) => {
                     value={confirmTipInput}
                     onChange={(e) => setConfirmTipInput(e.target.value)}
                     placeholder="0"
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black text-gray-900 tabular-nums focus:outline-none focus:border-[#5C85BB] focus:ring-2 focus:ring-red-100 transition-colors"
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black font-mono text-gray-900 tabular-nums focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-red-100 transition-colors"
                   />
                 </div>
               </div>
@@ -8019,13 +7971,13 @@ const CashierDashboard = ({ onLogout }) => {
                 </button>
                 <button
                   onClick={handleConfirmPaymentSubmit}
-                  disabled={!confirmPaymentMethod || confirmPaymentSubmitting}
-                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors flex items-center justify-center gap-2 ${confirmPaymentMethod && !confirmPaymentSubmitting
+                  disabled={!confirmPaymentMethod}
+                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors ${confirmPaymentMethod
                     ? 'bg-green-600 text-white hover:bg-green-700'
                     : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                   }`}
                 >
-                  {confirmPaymentSubmitting ? <><Loader2 size={16} className="animate-spin" /> Confirming...</> : 'Confirm'}
+                  Confirm
                 </button>
               </div>
             </div>
@@ -8270,8 +8222,8 @@ const CashierDashboard = ({ onLogout }) => {
       {/* NOTIFICATIONS OVERLAY */}
       <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
         {notifications.map(n => (
-          <div key={n.id} className="pointer-events-auto flex items-center gap-3 bg-white border-l-4 border-l-[#5C85BB] p-3 rounded-lg shadow-2xl animate-slide-in min-w-[240px]">
-            <div className="w-8 h-8 rounded-full bg-[#5C85BB]/10 flex items-center justify-center text-[#5C85BB]">
+          <div key={n.id} className="pointer-events-auto flex items-center gap-3 bg-white border-l-4 border-l-[#1E3A8A] p-3 rounded-lg shadow-2xl animate-slide-in min-w-[240px]">
+            <div className="w-8 h-8 rounded-full bg-[#1E3A8A]/10 flex items-center justify-center text-[#1E3A8A]">
               {n.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
             </div>
             <div>
@@ -8390,56 +8342,13 @@ const CashierDashboard = ({ onLogout }) => {
             const preCancelKotHistory = selectedTable?.kotHistory ? [...selectedTable.kotHistory] : [];
 
             try {
-              // Build cancel KOT items for local printing
-              const cancelKotItems = batchItems.map(b => {
-                const freshItem = freshItemMap[b.orderItemId];
-                return {
-                  name: freshItem?.n || freshItem?.name || 'Item',
-                  quantity: b.cancelQuantity,
-                  menuType: freshItem?.menuType || (freshItem?.type === 'liquor' ? 'BAR' : 'FOOD'),
-                };
-              });
-              const cancelEventId = `${batchRequestId}-cancel`;
-              let cancelLocalPrinted = false;
-              try {
-                const cancelEscpos = buildCancelKOT({
-                  tableNumber: String(selectedTable.number || selectedTable.id || 'N/A'),
-                  cancelledBy: 'Cashier',
-                  timestamp: new Date().toISOString(),
-                  items: cancelKotItems,
-                  sectionName: selectedTable?.section?.name || '',
-                  sectionTag: selectedTable?.sectionTag || undefined,
-                  restaurant: {
-                    name: restaurant?.name || undefined,
-                    receiptHeader: restaurant?.receiptHeader || undefined,
-                  },
-                });
-                const cancelResult = await printLocal({
-                  type: 'CANCEL_KOT',
-                  escposData: cancelEscpos,
-                  eventId: cancelEventId,
-                  data: {
-                    tableNumber: selectedTable.number,
-                    items: cancelKotItems,
-                    cancelledBy: 'Cashier',
-                  },
-                });
-                cancelLocalPrinted = cancelResult?.printed || false;
-                if (cancelLocalPrinted) {
-                  console.log('[CancelBatch] Local print succeeded — backend will skip socket emission');
-                }
-              } catch (printErr) {
-                console.warn('[CancelBatch] Local print failed:', printErr.message);
-              }
-
               // ONE API call → ONE CANCEL_KOT socket event → ONE printed slip
               const cancelResult = await cancelOrderItems(
                 liveOrder.id,
                 batchItems,
                 'Cashier',
                 selectedTable.number || selectedTable.id,
-                batchRequestId,
-                cancelLocalPrinted
+                batchRequestId
               );
               clearTimeout(cancelTimeout);
               if (cancelResult?.offline) {
@@ -8712,7 +8621,7 @@ const CashierDashboard = ({ onLogout }) => {
                   onClick={handleCancelSelected}
                   disabled={selectedCount === 0 || cancelBatchLoading}
                   className={`flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${selectedCount > 0
-                    ? 'bg-[#5C85BB] text-white hover:bg-[#4A6A9A] shadow-lg shadow-[#5C85BB]/30'
+                    ? 'bg-[#F59E0B] text-[#1E293B] hover:bg-[#D97706] shadow-lg shadow-[#F59E0B]/30'
                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     }`}
                 >
@@ -8744,7 +8653,7 @@ const CashierDashboard = ({ onLogout }) => {
                   if (e.key === 'Escape') handlePasswordCancel();
                 }}
                 placeholder="Enter password"
-                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#5C85BB] focus:outline-none text-lg font-black tracking-widest text-center"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1E3A8A] focus:outline-none text-lg font-black tracking-widest text-center"
                 autoFocus
               />
               {passwordError && (
@@ -8760,7 +8669,7 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
               <button
                 onClick={handlePasswordSubmit}
-                className="flex-1 py-3 rounded-xl text-sm font-black bg-[#5C85BB] text-white hover:bg-[#4A6A9A] transition-colors uppercase tracking-widest"
+                className="flex-1 py-3 rounded-xl text-sm font-black bg-[#F59E0B] text-[#1E293B] hover:bg-[#D97706] transition-colors uppercase tracking-widest"
               >
                 Submit
               </button>
