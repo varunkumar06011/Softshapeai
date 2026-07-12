@@ -258,6 +258,7 @@ export async function fetchTableOrder(tableId) {
   const res = await fetch(apiUrl(`/api/orders/table/${tableId}`), {
     cache: "no-store",
     headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(10000),
   });
   return parseResponse(res);
 }
@@ -401,6 +402,7 @@ export async function requestBilling(orderId) {
     });
     return { offline: true };
   }
+<<<<<<< HEAD
   // Try API first — isBackendReachable() can be falsely negative on slow networks.
   try {
     const controller = new AbortController();
@@ -430,6 +432,14 @@ export async function requestBilling(orderId) {
     }
     throw err;
   }
+=======
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
+    method: "POST",
+    headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(10000),
+  });
+  return parseResponse(res);
+>>>>>>> e6031be (start of heian era)
 }
 
 export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
@@ -507,6 +517,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     return { offline: true, transaction: { id: localId, ...body } };
   }
 
+<<<<<<< HEAD
   // Try API first — isBackendReachable() can be falsely negative on slow networks.
   // Only fall back to offline queue if the API call actually fails after retries.
   try {
@@ -538,6 +549,49 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         method: 'POST',
         body,
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+=======
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      });
+      return parseResponse(res);
+    },
+    { ...RETRY_CONFIG.SETTLE, shouldRetry: (err) => err.status !== 409 }
+  );
+}
+
+export async function quickSettleOrder(orderId, { paymentMethod, tipAmount, cashAmount, cardAmount, discountPercent, tableNumber, isExtraTable, grandTotal, subtotal, discountAmount, cgst, sgst, items, requestId, printRequestId } = {}) {
+  const body = { paymentMethod, tipAmount, cashAmount, cardAmount, discountPercent, tableNumber, isExtraTable, grandTotal, subtotal, discountAmount, cgst, sgst, items, requestId, printRequestId };
+  const settleRequestId = requestId || generateRequestId();
+  body.requestId = settleRequestId;
+
+  if (!isBackendReachable()) {
+    await addPendingAction({
+      requestId: settleRequestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'quick-settle',
+      url: `/api/orders/${orderId}/quick-settle`,
+      method: 'POST',
+      body,
+      synced: false,
+      createdAt: Date.now(),
+    });
+    return { offline: true };
+  }
+
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/quick-settle`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+>>>>>>> e6031be (start of heian era)
       });
       // Store local transaction record for offline history
       const localId = `offline-txn-${Date.now()}`;
@@ -669,7 +723,7 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
   );
 }
 
-export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null) {
+export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null, localPrinted = false) {
   const cancelRequestId = requestId || generateRequestId();
 
   // Fast path: if backend is known unreachable, queue instantly.
@@ -682,8 +736,12 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       actionType: 'cancel-item',
       url: `/api/orders/${orderId}/cancel-item`,
       method: 'PATCH',
+<<<<<<< HEAD
       body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
       dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+=======
+      body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted },
+>>>>>>> e6031be (start of heian era)
     });
     return { offline: true };
   }
@@ -716,8 +774,13 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
         actionType: 'cancel-item',
         url: `/api/orders/${orderId}/cancel-item`,
         method: 'PATCH',
+<<<<<<< HEAD
         body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+=======
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted }),
+>>>>>>> e6031be (start of heian era)
       });
       if (import.meta.env.DEV) {
         console.log('[Offline] Cancel item queued for sync:', orderId, orderItemId);
@@ -1027,6 +1090,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
     return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
   }
 
+<<<<<<< HEAD
   // Try API first — isBackendReachable() can be falsely negative on slow networks.
   // Only fall back to offline queue if the API call actually fails.
   try {
@@ -1077,11 +1141,19 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
     }
     throw apiErr;
   }
+=======
+  const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    signal: AbortSignal.timeout(15000),
+  });
+  return parseResponse(res);
+>>>>>>> e6031be (start of heian era)
 }
 
 export { generateRequestId };
 
-export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null) {
+export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null, localPrinted = false) {
   // items: Array<{ orderItemId: string, cancelQuantity: number }>
   const cancelRequestId = requestId || generateRequestId();
 
@@ -1095,8 +1167,12 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       actionType: 'cancel-items',
       url: `/api/orders/${orderId}/cancel-items`,
       method: 'PATCH',
+<<<<<<< HEAD
       body: { items, cancelledBy, tableNumber, requestId: cancelRequestId },
       dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+=======
+      body: { items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted },
+>>>>>>> e6031be (start of heian era)
     });
     return { offline: true };
   }
@@ -1129,8 +1205,13 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
         actionType: 'cancel-items',
         url: `/api/orders/${orderId}/cancel-items`,
         method: 'PATCH',
+<<<<<<< HEAD
         body: { items, cancelledBy, tableNumber, requestId: cancelRequestId },
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+=======
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted }),
+>>>>>>> e6031be (start of heian era)
       });
       if (import.meta.env.DEV) {
         console.log('[Offline] Cancel items queued for sync:', orderId);

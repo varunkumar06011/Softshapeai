@@ -35,8 +35,13 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync } from '../services/tableSyncService';
+<<<<<<< HEAD
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
+=======
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber } from '../services/orderApi';
+import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT } from '../utils/escposFrontend';
+>>>>>>> e6031be (start of heian era)
 import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced } from '../utils/offlineDB';
@@ -2009,7 +2014,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
-      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders(), signal: AbortSignal.timeout(10000) });
       if (response.ok) {
         const freshOrder = await response.json();
         return freshOrder || null;
@@ -2423,6 +2428,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       const res = await fetch(`${API_BASE}/api/transactions?${params.toString()}`, {
         headers: { ...getAuthHeaders() },
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) throw new Error('Failed to fetch transactions');
       const allTxns = await res.json();
@@ -2703,6 +2709,7 @@ const CashierDashboard = ({ onLogout }) => {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
+<<<<<<< HEAD
         const billEscpos = buildBillEscpos({
           billNumber: 'PENDING',
           tableNumber: selectedTable.number,
@@ -2723,6 +2730,36 @@ const CashierDashboard = ({ onLogout }) => {
           itemCount: billItems.length,
           qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
           section: selectedTable.section?.name || undefined,
+=======
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
+        const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+        const kotNumbers = (selectedTable.kotHistory || []).map(k => k.id).filter(Boolean);
+        const billEscposData = buildFinalBill({
+          billNumber: 'PENDING',
+          date: dateStr,
+          time: timeStr,
+          kotNumbers,
+          tableNumber: String(selectedTable.number || 'N/A'),
+          captain: selectedTable?.captainName || selectedTable?.activeOrder?.captainName || 'N/A',
+          items: billItems.map(i => ({
+            name: i.n || i.name || 'Item',
+            quantity: Number(i.q || i.quantity || 1),
+            price: Number(i.p || i.price || 0),
+            amount: Number(i.p || i.price || 0) * Number(i.q || i.quantity || 1),
+            menuType: i.menuType || (i.type === 'liquor' ? 'LIQUOR' : 'FOOD'),
+            notes: i.notes || null,
+          })),
+          subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+          discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : { percent: 0, amount: 0 },
+          tax: { cgst: billCalc.cgst || 0, sgst: billCalc.sgst || 0, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) },
+          grandTotal: billCalc.grandTotal,
+          roundOff: billCalc.roundOff ?? 0,
+          section: selectedTable?.section?.name || selectedTable?.sectionName || '',
+          sectionTag: selectedTable?.sectionTag || undefined,
+          itemCount: billItems.length,
+          qtyCount: billItems.reduce((sum, i) => sum + Number(i.q || i.quantity || 1), 0),
+>>>>>>> e6031be (start of heian era)
           restaurant: {
             name: restaurant?.name || undefined,
             receiptHeader: restaurant?.receiptHeader || undefined,
@@ -2733,7 +2770,11 @@ const CashierDashboard = ({ onLogout }) => {
         });
         const result = await printLocal({
           type: 'FINAL_BILL',
+<<<<<<< HEAD
           escposData: billEscpos,
+=======
+          escposData: billEscposData,
+>>>>>>> e6031be (start of heian era)
           eventId: billEventId,
           data: {
             tableNumber: selectedTable.number,
@@ -2851,6 +2892,7 @@ const CashierDashboard = ({ onLogout }) => {
               const { printLocal } = await import('../utils/printOffline');
               const billItems = getBillableItems(selectedTable);
               const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
+<<<<<<< HEAD
               const billEscpos = buildBillEscpos({
                 billNumber: response.billNumber,
                 tableNumber: selectedTable.number,
@@ -2871,6 +2913,36 @@ const CashierDashboard = ({ onLogout }) => {
                 itemCount: billItems.length,
                 qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
                 section: selectedTable.section?.name || undefined,
+=======
+              const now2 = new Date();
+              const dateStr2 = now2.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
+              const timeStr2 = now2.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+              const kotNumbers2 = (selectedTable.kotHistory || []).map(k => k.id).filter(Boolean);
+              const billEscposData2 = buildFinalBill({
+                billNumber: response.billNumber || 'N/A',
+                date: dateStr2,
+                time: timeStr2,
+                kotNumbers: kotNumbers2,
+                tableNumber: String(selectedTable.number || 'N/A'),
+                captain: selectedTable?.captainName || selectedTable?.activeOrder?.captainName || 'N/A',
+                items: billItems.map(i => ({
+                  name: i.n || i.name || 'Item',
+                  quantity: Number(i.q || i.quantity || 1),
+                  price: Number(i.p || i.price || 0),
+                  amount: Number(i.p || i.price || 0) * Number(i.q || i.quantity || 1),
+                  menuType: i.menuType || (i.type === 'liquor' ? 'LIQUOR' : 'FOOD'),
+                  notes: i.notes || null,
+                })),
+                subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
+                discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : { percent: 0, amount: 0 },
+                tax: { cgst: billCalc.cgst || 0, sgst: billCalc.sgst || 0, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) },
+                grandTotal: billCalc.grandTotal,
+                roundOff: billCalc.roundOff ?? 0,
+                section: selectedTable?.section?.name || selectedTable?.sectionName || '',
+                sectionTag: selectedTable?.sectionTag || undefined,
+                itemCount: billItems.length,
+                qtyCount: billItems.reduce((sum, i) => sum + Number(i.q || i.quantity || 1), 0),
+>>>>>>> e6031be (start of heian era)
                 restaurant: {
                   name: restaurant?.name || undefined,
                   receiptHeader: restaurant?.receiptHeader || undefined,
@@ -2881,7 +2953,11 @@ const CashierDashboard = ({ onLogout }) => {
               });
               const result = await printLocal({
                 type: 'FINAL_BILL',
+<<<<<<< HEAD
                 escposData: billEscpos,
+=======
+                escposData: billEscposData2,
+>>>>>>> e6031be (start of heian era)
                 eventId: billEventId,
                 data: {
                   tableNumber: selectedTable.number,
@@ -3017,20 +3093,41 @@ const CashierDashboard = ({ onLogout }) => {
             name: i.n || i.name,
             quantity: i.q || i.quantity || 1,
             notes: i.notes || null,
+            type: i.type || (i.menuType === 'BAR' ? 'liquor' : 'food'),
           }));
-          const result = await printLocal({
-            jobType: 'KOT',
-            data: {
-              tableNumber: selectedTable.number,
-              items: kotItems,
-              kotNumber: lastKot.id || lastKot.kotNumber || 'N/A',
-              captainName: lastKot.captainName || 'Cashier',
-            },
-          });
-          if (result.printed) {
+          const kotOrderData = {
+            tableNumber: String(selectedTable.number || 'N/A'),
+            orderId: selectedTable?.activeOrder?.id || '',
+            items: kotItems,
+            kotId: String(lastKot.id || lastKot.kotNumber || 'N/A'),
+            sectionName: selectedTable?.section?.name || '',
+            sectionTag: selectedTable?.sectionTag || undefined,
+            captainName: lastKot.captainName || 'Cashier',
+            orderByRole: 'CASHIER',
+            restaurantName: restaurant?.name || restaurant?.receiptHeader || undefined,
+          };
+          const foodEscpos = buildFoodKOT(kotOrderData);
+          const liquorEscpos = buildLiquorKOT(kotOrderData);
+          const reprintEventId = `reprint-${lastKot.id || Date.now()}`;
+          const reprintPromises = [];
+          if (foodEscpos.length > 0) {
+            reprintPromises.push(
+              printLocal({ type: 'KOT', escposData: foodEscpos, eventId: `${reprintEventId}-food`, data: kotOrderData })
+                .catch(err => console.warn('[ReprintKOT] Local food print failed:', err.message))
+            );
+          }
+          if (liquorEscpos.length > 0) {
+            reprintPromises.push(
+              printLocal({ type: 'BAR_KOT', escposData: liquorEscpos, eventId: `${reprintEventId}-liquor`, data: kotOrderData })
+                .catch(err => console.warn('[ReprintKOT] Local liquor print failed:', err.message))
+            );
+          }
+          const reprintResults = await Promise.allSettled(reprintPromises);
+          const anyPrinted = reprintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+          if (anyPrinted) {
             addNotification('Offline KOT', 'KOT printed to local printer.', 'success');
-          } else if (result.queued) {
-            addNotification('KOT Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
+          } else {
+            addNotification('KOT Queued', 'No local printer available. Click "Retry prints" in the offline bar.', 'warning');
           }
         } catch (printErr) {
           console.warn('[handleReprintKOT] Local print failed:', printErr.message);
@@ -3170,8 +3267,43 @@ const CashierDashboard = ({ onLogout }) => {
         // Attempt local printing immediately
         try {
           const { printLocal } = await import('../utils/printOffline');
+          const now3 = new Date();
+          const dateStr3 = now3.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
+          const timeStr3 = now3.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+          const walkinItems = cart.map(i => ({
+            name: i.n || i.name,
+            quantity: i.q,
+            price: Number(i.p),
+            amount: Number(i.p) * Number(i.q || 1),
+            menuType: i.menuType || 'FOOD',
+            notes: i.notes || null
+          }));
+          const walkinEscpos = buildFinalBill({
+            billNumber: `OFFLINE-${requestId.slice(0, 8).toUpperCase()}`,
+            date: dateStr3,
+            time: timeStr3,
+            tableNumber: String(tableLabel || 'N/A'),
+            captain: 'Walk-in',
+            items: walkinItems,
+            subtotal: subtotalAmt,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : { percent: 0, amount: 0 },
+            tax: { cgst: cgstAmt || 0, sgst: sgstAmt || 0, total: (cgstAmt || 0) + (sgstAmt || 0) },
+            grandTotal: grandTotalAmt,
+            section: '',
+            sectionTag: 'venue-restaurant-parcel',
+            itemCount: walkinItems.length,
+            qtyCount: walkinItems.reduce((sum, i) => sum + Number(i.quantity || 1), 0),
+            restaurant: {
+              name: restaurant?.name || undefined,
+              receiptHeader: restaurant?.receiptHeader || undefined,
+              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+              address: restaurant?.address || undefined,
+              phone: restaurant?.phone || undefined,
+            },
+          });
           const result = await printLocal({
-            jobType: 'FINAL_BILL',
+            type: 'FINAL_BILL',
+            escposData: walkinEscpos,
             data: {
               tableNumber: tableLabel,
               items: cart.map(i => ({
@@ -3204,6 +3336,7 @@ const CashierDashboard = ({ onLogout }) => {
       const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           restaurantId: activeRestaurantId,
           billData: {
@@ -8325,13 +8458,56 @@ const CashierDashboard = ({ onLogout }) => {
             const preCancelKotHistory = selectedTable?.kotHistory ? [...selectedTable.kotHistory] : [];
 
             try {
+              // Build cancel KOT items for local printing
+              const cancelKotItems = batchItems.map(b => {
+                const freshItem = freshItemMap[b.orderItemId];
+                return {
+                  name: freshItem?.n || freshItem?.name || 'Item',
+                  quantity: b.cancelQuantity,
+                  menuType: freshItem?.menuType || (freshItem?.type === 'liquor' ? 'BAR' : 'FOOD'),
+                };
+              });
+              const cancelEventId = `${batchRequestId}-cancel`;
+              let cancelLocalPrinted = false;
+              try {
+                const cancelEscpos = buildCancelKOT({
+                  tableNumber: String(selectedTable.number || selectedTable.id || 'N/A'),
+                  cancelledBy: 'Cashier',
+                  timestamp: new Date().toISOString(),
+                  items: cancelKotItems,
+                  sectionName: selectedTable?.section?.name || '',
+                  sectionTag: selectedTable?.sectionTag || undefined,
+                  restaurant: {
+                    name: restaurant?.name || undefined,
+                    receiptHeader: restaurant?.receiptHeader || undefined,
+                  },
+                });
+                const cancelResult = await printLocal({
+                  type: 'CANCEL_KOT',
+                  escposData: cancelEscpos,
+                  eventId: cancelEventId,
+                  data: {
+                    tableNumber: selectedTable.number,
+                    items: cancelKotItems,
+                    cancelledBy: 'Cashier',
+                  },
+                });
+                cancelLocalPrinted = cancelResult?.printed || false;
+                if (cancelLocalPrinted) {
+                  console.log('[CancelBatch] Local print succeeded — backend will skip socket emission');
+                }
+              } catch (printErr) {
+                console.warn('[CancelBatch] Local print failed:', printErr.message);
+              }
+
               // ONE API call → ONE CANCEL_KOT socket event → ONE printed slip
               const cancelResult = await cancelOrderItems(
                 liveOrder.id,
                 batchItems,
                 'Cashier',
                 selectedTable.number || selectedTable.id,
-                batchRequestId
+                batchRequestId,
+                cancelLocalPrinted
               );
               clearTimeout(cancelTimeout);
               if (cancelResult?.offline) {

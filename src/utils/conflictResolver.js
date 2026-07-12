@@ -185,6 +185,44 @@ export function resolveConflict(action, result, context = {}) {
       };
     }
 
+    // ── quick-settle (print-bill + settle combined) ─────────────────────────
+    case 'quick-settle': {
+      if (result.status === 'skipped') {
+        return {
+          resolution: 'skip',
+          message: `Order already settled. Transaction number: ${result.data?.transaction?.txnNumber || 'unknown'}.`,
+          alertLevel: 'info',
+        };
+      }
+      if (result.statusCode === 409) {
+        const errMsg = result.error || '';
+        if (errMsg.toLowerCase().includes('already paid')) {
+          return {
+            resolution: 'adopt_server',
+            message: `Order was settled by another device. Marking local table as free. Transaction: ${result.data?.transaction?.txnNumber || 'N/A'}.`,
+            alertLevel: 'warning',
+          };
+        }
+        if (errMsg.toLowerCase().includes('mismatch')) {
+          return {
+            resolution: 'manual',
+            message: `Bill total mismatch — please refresh and retry settlement.`,
+            alertLevel: 'error',
+          };
+        }
+        return {
+          resolution: 'manual',
+          message: `Quick-settle conflict: ${errMsg}`,
+          alertLevel: 'error',
+        };
+      }
+      return {
+        resolution: 'manual',
+        message: `quick-settle failed: ${result.error || 'Unknown error'}`,
+        alertLevel: 'error',
+      };
+    }
+
     // ── cancel-items ─────────────────────────────────────────────────────────
     case 'cancel-items': {
       if (result.status === 'skipped') {

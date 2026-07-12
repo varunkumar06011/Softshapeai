@@ -59,8 +59,12 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
+<<<<<<< HEAD
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { useSyncStatus } from '../context/SyncStatusContext';
+=======
+import { buildFoodKOT, buildLiquorKOT, buildCancelKOT } from '../utils/escposFrontend';
+>>>>>>> e6031be (start of heian era)
 
 
 
@@ -1039,6 +1043,7 @@ export default function CaptainApp({ onLogout }) {
       const todayISO = new Date().toISOString().slice(0, 10);
       const res = await fetch(`${API_BASE}/api/reports/captain-performance?startDate=${todayISO}&endDate=${todayISO}`, {
         headers: { ...getAuthHeaders() },
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -2651,7 +2656,13 @@ export default function CaptainApp({ onLogout }) {
         if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
         if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
 
+<<<<<<< HEAD
         // Fire local print (non-blocking — don't await before API call)
+=======
+        // Try local print with a 10s per-URL timeout.
+        // If local print fails (captain on mobile data, Print Agent unreachable),
+        // localPrinted stays false and the backend will emit via socket.
+>>>>>>> e6031be (start of heian era)
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
@@ -3068,6 +3079,43 @@ export default function CaptainApp({ onLogout }) {
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
+    let cancelLocalPrinted = false;
+    try {
+      const cancelEscpos = buildCancelKOT({
+        tableNumber: String(activeTable?.number ?? activeTable?.id ?? 'N/A'),
+        cancelledBy: currentCaptain?.name || currentCaptain?.id || 'Captain',
+        timestamp: new Date().toISOString(),
+        items: [{
+          name: kotItem.n || kotItem.name || 'Item',
+          quantity: Number(kotItem.q ?? 1),
+          menuType: kotItem.menuType || (kotItem.type === 'liquor' ? 'BAR' : 'FOOD'),
+        }],
+        sectionName: activeTable?.section?.name || '',
+        sectionTag: activeTable?.sectionTag || undefined,
+        restaurant: {
+          name: restaurant?.name || undefined,
+          receiptHeader: restaurant?.receiptHeader || undefined,
+        },
+      });
+      const cancelEventId = `${cancelRequestId}-cancel`;
+      const cancelResult = await printLocal({
+        type: 'CANCEL_KOT',
+        escposData: cancelEscpos,
+        eventId: cancelEventId,
+        data: {
+          tableNumber: activeTable?.number ?? activeTable?.id,
+          items: [{ name: kotItem.n || kotItem.name, quantity: Number(kotItem.q ?? 1) }],
+          cancelledBy: currentCaptain?.name || 'Captain',
+        },
+      });
+      cancelLocalPrinted = cancelResult?.printed || false;
+      if (cancelLocalPrinted) {
+        console.log('[CancelKOT] Local print succeeded — backend will skip socket emission');
+      }
+    } catch (printErr) {
+      console.warn('[CancelKOT] Local print failed:', printErr.message);
+    }
+
     try {
 
       const cancelResult = await cancelOrderItem(
@@ -3082,11 +3130,19 @@ export default function CaptainApp({ onLogout }) {
 
         Number(kotItem.q ?? 1),
 
-        cancelRequestId
+        cancelRequestId,
+
+        cancelLocalPrinted
 
       );
 
       addNotification(cancelResult?.offline ? `${kotItem.n} cancelled (sync pending)` : `${kotItem.n} cancelled`, cancelResult?.offline ? 'warning' : 'success');
+
+      // If local print already succeeded, skip waiting for socket print ack
+      if (cancelLocalPrinted) {
+        setCancelLoading(prev => { const n = { ...prev }; delete n[kotItem.orderItemId]; return n; });
+        return;
+      }
 
       // Wait for CANCEL_KOT print ack (best-effort, 12s timeout)
       const socket = getSocket();

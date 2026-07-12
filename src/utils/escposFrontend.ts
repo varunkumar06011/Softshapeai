@@ -96,7 +96,9 @@ export function buildFoodKOT(orderData: OrderData): object[] {
 
   const headerName = (orderData.restaurantName && orderData.restaurantName.trim())
     ? orderData.restaurantName.toUpperCase()
-    : 'RESTAURANT';
+    : (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+        ? 'FAMILY RESTAURANT'
+        : 'RESTAURANT');
 
   const cmds: string[] = [
     INIT,
@@ -455,9 +457,13 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
 
   const headerName = (orderData.restaurantName && orderData.restaurantName.trim())
     ? orderData.restaurantName.toUpperCase()
-    : 'RESTAURANT';
+    : (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+        ? 'FAMILY RESTAURANT'
+        : 'RESTAURANT');
 
-  const sectionLabel = sectionName || 'ORDER';
+  const sectionLabel = sectionName || (sectionTag === 'venue-family-restaurant' || sectionTag === 'venue-restaurant-parcel'
+    ? 'COUNTER ORDER'
+    : 'BAR ORDER');
 
   const cmds: string[] = [
     INIT,
@@ -518,4 +524,374 @@ export function buildLiquorKOT(orderData: OrderData): object[] {
   );
 
   return [{ type: "raw", format: "plain", data: cmds.join("") }];
+}
+
+// ─── Helpers for Final Bill and Cancel KOT ───────────────────────────────────
+
+function padRight(left: string | number, right: string | number, width = LINE_NORMAL): string {
+  const leftStr = String(left).slice(0, width - String(right).length - 1);
+  return leftStr.padEnd(width - String(right).length) + right;
+}
+
+// ─── Final Bill ──────────────────────────────────────────────────────────────
+
+export interface BillPrintRestaurant {
+  name?: string;
+  receiptHeader?: string | null;
+  receiptSubHeader?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  gstin?: string | null;
+}
+
+export interface BillData {
+  billNumber: string;
+  date: string;
+  time: string;
+  kotNumbers?: string[];
+  tableNumber: string;
+  captain: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    price: number;
+    amount: number;
+    menuType: "FOOD" | "LIQUOR";
+    notes?: string | null;
+  }>;
+  subtotal: number;
+  discount?: { percent: number; amount: number };
+  tax: { cgst: number; sgst: number; total: number };
+  grandTotal: number;
+  roundOff?: number;
+  section: string;
+  sectionTag?: string;
+  itemCount: number;
+  qtyCount: number;
+  gstIn?: string;
+  restaurant?: BillPrintRestaurant;
+  isCancelled?: boolean;
+  isReprint?: boolean;
+}
+
+export function buildFinalBill(data: BillData): object[] {
+  const cmds: string[] = [];
+
+  cmds.push(INIT);
+
+  const venueName = ((data as any).restaurant?.receiptHeader?.trim() || (data as any).restaurant?.name?.trim() || 'RESTAURANT').toUpperCase();
+
+  cmds.push(CENTER);
+  cmds.push(BOLD_ON);
+  cmds.push(SIZE_HEIGHT);
+  cmds.push(`${venueName}\n`);
+  cmds.push(BOLD_OFF);
+  cmds.push(SIZE_NORMAL);
+
+  const restaurantInfo = (data as any).restaurant;
+
+  cmds.push(CENTER);
+  if (restaurantInfo?.receiptSubHeader) {
+    cmds.push(`${restaurantInfo.receiptSubHeader}\n`);
+  }
+  if (restaurantInfo?.address) {
+    cmds.push(`${restaurantInfo.address}\n`);
+  }
+  if (restaurantInfo?.phone) {
+    cmds.push(`Phone: ${restaurantInfo.phone}\n`);
+  }
+  if (data.gstIn) {
+    cmds.push(`GST IN: ${data.gstIn}\n`);
+  }
+
+  cmds.push(separator("-"));
+
+  if (data.isCancelled) {
+    cmds.push(BOLD_ON);
+    cmds.push(SIZE_2X);
+    cmds.push('*** CANCELLED BILL ***\n');
+    cmds.push(SIZE_NORMAL);
+    cmds.push(BOLD_OFF);
+    cmds.push(separator("-"));
+  }
+
+  if (data.isReprint) {
+    cmds.push(BOLD_ON);
+    cmds.push(SIZE_2X);
+    cmds.push('*** REPRINT BILL ***\n');
+    cmds.push(SIZE_NORMAL);
+    cmds.push(BOLD_OFF);
+    cmds.push(separator("-"));
+  }
+
+  const rawTable = (data.tableNumber || 'N/A').toString();
+  const tableNumeric = (data.sectionTag && data.sectionTag.startsWith('venue-'))
+    ? rawTable
+    : rawTable.replace(/^[BT]/i, '');
+
+  cmds.push(SIZE_HEIGHT);
+  cmds.push(BOLD_ON);
+  const billNo = data.billNumber || 'N/A';
+  const billTableGap = Math.max(1, LINE_NORMAL - `Bill No : ${billNo}`.length - `Table: ${tableNumeric}`.length);
+  cmds.push(`Bill No : ${billNo}${' '.repeat(billTableGap)}Table: ${tableNumeric}\n`);
+  cmds.push(BOLD_OFF);
+  cmds.push(SIZE_NORMAL);
+
+  cmds.push(`Date: ${data.date || 'N/A'}\n`);
+
+  if (data.kotNumbers && data.kotNumbers.length > 0) {
+    cmds.push(`KOT No : ${data.kotNumbers.join(', ')}\n`);
+  }
+
+  cmds.push(`Time: ${data.time || 'N/A'}\n`);
+
+  if (data.captain && data.captain !== 'N/A') {
+    const captainGap = Math.max(1, LINE_NORMAL - `Captain: ${data.captain}`.length - `Waiter: Waiter`.length);
+    cmds.push(`Captain: ${data.captain}${' '.repeat(captainGap)}Waiter: Waiter\n`);
+  }
+
+  cmds.push(separator("-"));
+
+  cmds.push(LEFT);
+  cmds.push('Item            Qty    Price    Amount\n');
+  cmds.push(separator("-"));
+
+  if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+    cmds.push('NO ITEMS\n');
+  } else {
+    data.items.forEach(item => {
+      cmds.push(BOLD_ON);
+      const itemName = item.name.toUpperCase().substring(0, 24);
+      cmds.push(`${itemName}\n`);
+      cmds.push(BOLD_OFF);
+      const qty = String(item.quantity).padStart(4);
+      const price = String(Math.round(item.price).toFixed(0)).padStart(9);
+      const amount = String(Math.round(item.amount).toFixed(0)).padStart(10);
+      cmds.push(BOLD_ON);
+      cmds.push(`              ${qty}  ${price}  ${amount}\n`);
+      cmds.push(BOLD_OFF);
+      if (item.notes) {
+        cmds.push(`   * ${item.notes}\n`);
+      }
+    });
+  }
+
+  cmds.push(separator("-"));
+
+  cmds.push(BOLD_ON);
+  cmds.push(`Sub Total :${String(Math.round(data.subtotal).toFixed(0)).padStart(LINE_NORMAL - 12)}\n`);
+  cmds.push(BOLD_OFF);
+
+  if (data.tax && data.tax.total > 0) {
+    cmds.push(BOLD_ON);
+    cmds.push(`CGST :${String(Math.round(data.tax.cgst).toFixed(0)).padStart(LINE_NORMAL - 7)}\n`);
+    cmds.push(`SGST :${String(Math.round(data.tax.sgst).toFixed(0)).padStart(LINE_NORMAL - 7)}\n`);
+    cmds.push(BOLD_OFF);
+  }
+
+  if (data.discount && data.discount.percent > 0) {
+    cmds.push(BOLD_ON);
+    cmds.push(`(-) Discount ${Math.round(data.discount.percent).toFixed(0)}% :${String(Math.round(data.discount.amount).toFixed(0)).padStart(LINE_NORMAL - 22)}\n`);
+    cmds.push(BOLD_OFF);
+  }
+
+  cmds.push(separator("-"));
+
+  if (data.roundOff && data.roundOff !== 0) {
+    cmds.push(BOLD_ON);
+    const roLabel = 'Round Off';
+    const roValue = (data.roundOff > 0 ? '+' : '') + data.roundOff.toFixed(2);
+    cmds.push(`${roLabel} :${String(roValue).padStart(LINE_NORMAL - roLabel.length - 3)}\n`);
+    cmds.push(BOLD_OFF);
+  }
+
+  cmds.push(SIZE_HEIGHT);
+  cmds.push(BOLD_ON);
+  const gtLabel = 'Grand Total';
+  const gtValue = Math.round(data.grandTotal).toFixed(0);
+  const gtGap = Math.max(1, LINE_NORMAL - gtLabel.length - gtValue.length);
+  cmds.push(gtLabel + ' '.repeat(gtGap) + gtValue + '\n');
+  cmds.push(BOLD_OFF);
+  cmds.push(SIZE_NORMAL);
+
+  cmds.push(BOLD_ON);
+  cmds.push(`Items / Qty : ${data.itemCount || 0}/${data.qtyCount || 0}\n`);
+  cmds.push(BOLD_OFF);
+
+  const secTag = (data.sectionTag || '').toLowerCase();
+  const secName = (data.section || '').toLowerCase();
+  const hallName = (secTag === 'venue-family-restaurant' || secName.includes('family restaurant') || secName.includes('main hall'))
+    ? 'DINE IN'
+    : (secTag === 'venue-restaurant-parcel' || secName.includes('parcel'))
+        ? 'PARCEL(FAMILY RESTAURANT)'
+        : (data.section ? data.section.toUpperCase() : 'DINE IN');
+
+  cmds.push(separator("-"));
+  cmds.push(`Hall : ${hallName}\n`);
+  cmds.push('* *\n');
+  cmds.push('\n');
+  cmds.push(BOLD_ON);
+  cmds.push(hallName);
+  cmds.push(BOLD_OFF);
+  cmds.push('\n');
+
+  if (data.isCancelled) {
+    cmds.push(separator("-"));
+    cmds.push(CENTER);
+    cmds.push(BOLD_ON);
+    cmds.push(SIZE_2X);
+    cmds.push('** CANCELLED **\n');
+    cmds.push(SIZE_NORMAL);
+    cmds.push(BOLD_OFF);
+    cmds.push(separator("-"));
+  }
+
+  if (data.isReprint) {
+    cmds.push(separator("-"));
+    cmds.push(CENTER);
+    cmds.push(BOLD_ON);
+    cmds.push(SIZE_2X);
+    cmds.push('** REPRINT **\n');
+    cmds.push(SIZE_NORMAL);
+    cmds.push(BOLD_OFF);
+    cmds.push(separator("-"));
+  }
+
+  cmds.push(CENTER);
+  cmds.push('Thank You, Please Visit again\n');
+  cmds.push('\n\n\n');
+  cmds.push(CUT);
+
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
+}
+
+// ─── Cancel KOT ──────────────────────────────────────────────────────────────
+
+export interface CancelKotItem {
+  name: string;
+  quantity: number;
+  menuType?: string;
+}
+
+export interface CancelKotPrintInput {
+  tableNumber: string | number;
+  cancelledBy: string;
+  timestamp: string;
+  items: CancelKotItem[];
+  sectionName?: string;
+  sectionTag?: string | null;
+  restaurant?: BillPrintRestaurant;
+}
+
+export function buildCancelKOT(input: CancelKotPrintInput): object[] {
+  const { tableNumber, cancelledBy, timestamp, items, sectionName, sectionTag, restaurant } = input;
+
+  const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+  });
+
+  const receiptHeader = restaurant?.receiptHeader || restaurant?.name || 'RESTAURANT';
+  const secTag = (sectionTag || '').toLowerCase();
+  const isVenue = secTag.startsWith('venue-');
+
+  const headerName = (receiptHeader && receiptHeader.trim())
+    ? receiptHeader.toUpperCase()
+    : (secTag === 'venue-family-restaurant' || secTag === 'venue-restaurant-parcel'
+        ? 'FAMILY RESTAURANT'
+        : 'RESTAURANT');
+
+  const rawTable = (tableNumber || 'N/A').toString();
+  const tableDisplay = isVenue
+    ? rawTable
+    : (/^[BT]\d+$/i.test(rawTable) ? rawTable.slice(1) : rawTable);
+
+  const hallName = secTag === 'venue-family-restaurant'
+    ? 'DINE IN'
+    : (secTag === 'venue-restaurant-parcel'
+      ? 'OWNER(FAMILY RESTAURANT)'
+      : (sectionName ? sectionName.toUpperCase() : 'N/A'));
+
+  const allItems = (items || []).filter((i) => i);
+  const isSingle = allItems.length <= 1;
+  const firstItem = allItems[0];
+  const itemType = firstItem?.menuType === 'BAR' ? 'Bar Item' : 'Food Item';
+
+  const cmds: string[] = [
+    INIT,
+    CENTER,
+    BOLD_ON,
+    `${headerName}\n`,
+    BOLD_OFF,
+    `CANCEL ORDER\n`,
+    separator('-'),
+    BOLD_ON,
+    SIZE_2X,
+    `Table : ${tableDisplay}\n`,
+    SIZE_NORMAL,
+    BOLD_OFF,
+    `Time  : ${timeStr}\n`,
+    `By    : ${cancelledBy || 'Staff'}\n`,
+    separator('-'),
+  ];
+
+  if (isSingle) {
+    if (firstItem) {
+      const itemLine = `${firstItem.quantity}    ${firstItem.name.toUpperCase()}  CANCELLED`;
+      cmds.push(
+        LEFT,
+        FONT_A,
+        SIZE_HEIGHT,
+        BOLD_ON,
+        itemLine + '\n',
+        BOLD_OFF,
+        SIZE_NORMAL,
+        `Type  : ${itemType}\n`
+      );
+    }
+  } else {
+    cmds.push(
+      SIZE_HEIGHT,
+      BOLD_ON,
+      "Qty  Item\n",
+      BOLD_OFF,
+      SIZE_NORMAL,
+      separator('-'),
+    );
+    allItems.forEach((item) => {
+      const itemLine = `${item.quantity}    ${item.name.toUpperCase()}  CANCELLED`;
+      cmds.push(
+        LEFT,
+        FONT_A,
+        SIZE_HEIGHT,
+        BOLD_ON,
+        itemLine + '\n',
+        BOLD_OFF,
+        SIZE_NORMAL,
+      );
+    });
+  }
+
+  cmds.push(
+    separator('-'),
+    CENTER,
+    BOLD_ON,
+    SIZE_2X,
+    `Hall Name : ${hallName}\n`,
+    SIZE_NORMAL,
+    BOLD_OFF,
+    separator('-'),
+    CENTER,
+    "--- Cancel Order Ticket ---\n",
+    LEFT,
+    separator('-'),
+    SIZE_2X_TALL,
+    BOLD_ON,
+    '** CANCELLED **\n',
+    BOLD_OFF,
+    SIZE_NORMAL,
+    '\n\n\n',
+    CUT,
+  );
+
+  return [{ type: 'raw', format: 'plain', data: cmds.join('') }];
 }

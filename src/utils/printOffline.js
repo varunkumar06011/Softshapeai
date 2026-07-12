@@ -234,8 +234,8 @@ async function discoverPrintAgentUrls() {
 
 /**
  * Try all candidate Print Agent URLs in parallel and return the first that succeeds.
- * Each URL gets a 1.5s timeout — if the Print Agent is unreachable, all URLs fail
- * in parallel so the total wait is ~1.5s instead of 3s × N (sequential).
+ * Each URL gets a 10s timeout — if the Print Agent is unreachable, all URLs fail
+ * in parallel so the total wait is ~10s instead of 10s × N (sequential).
  * Returns the working URL or null if all fail.
  */
 async function tryPrintAgentUrls(body, jobType) {
@@ -244,7 +244,7 @@ async function tryPrintAgentUrls(body, jobType) {
 
   const tryUrl = async (url) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await fetch(`${url}/print`, {
         method: 'POST',
@@ -373,7 +373,7 @@ export async function printLocal(job) {
     }
     try {
       const { sendToPrinter } = await import('./qzTray');
-      const printData = [{ type: 'raw', format: 'plain', data: text }];
+      const printData = job.escposData || [{ type: 'raw', format: 'plain', data: text }];
       await sendToPrinter(printerName, printData);
       logOfflinePrint({ status: 'success', message: 'QZ Tray succeeded', detail: printerName });
       return { printed: true, queued: false };
@@ -434,10 +434,11 @@ export async function printLocal(job) {
 // ── Queue management ─────────────────────────────────────────────────────────
 
 async function queuePrintJob(job, text, reason) {
+  const jobType = job.type || job.jobType;
   const id = `offline-print-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await addOfflinePrintJob({
     id,
-    jobType: job.jobType,
+    jobType,
     orderId: job.data?.orderId || null,
     requestId: job.data?.requestId || null,
     text,
@@ -447,7 +448,7 @@ async function queuePrintJob(job, text, reason) {
     failReason: reason,
     createdAt: Date.now(),
   });
-  logOfflinePrint({ status: 'queued', message: `${job.jobType} queued`, detail: reason });
+  logOfflinePrint({ status: 'queued', message: `${jobType} queued`, detail: reason });
   return { printed: false, queued: true, error: reason };
 }
 

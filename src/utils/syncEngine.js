@@ -348,7 +348,7 @@ export async function syncPendingActions() {
         await removePendingAction(action.id);
         // Clear any previous conflict for this action
         clearConflict(action.id);
-        if (action.actionType === 'settle') {
+        if (action.actionType === 'settle' || action.actionType === 'quick-settle') {
           finalizeSettlementAudit(action.requestId, { status: result.status });
           if (action.body?.localTxnId) {
             markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
@@ -388,7 +388,7 @@ export async function syncPendingActions() {
             actionType: action.actionType,
             ...resolution,
           });
-          if (action.actionType === 'settle') {
+          if (action.actionType === 'settle' || action.actionType === 'quick-settle') {
             finalizeSettlementAudit(action.requestId, { status: 'skipped' });
             if (action.body?.localTxnId) {
               markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
@@ -403,7 +403,7 @@ export async function syncPendingActions() {
             actionType: action.actionType,
             ...resolution,
           });
-          if (action.actionType === 'settle') {
+          if (action.actionType === 'settle' || action.actionType === 'quick-settle') {
             finalizeSettlementAudit(action.requestId, { status: 'conflict', error: resolution.message });
             if (action.body?.localTxnId) {
               markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
@@ -429,7 +429,7 @@ export async function syncPendingActions() {
           lastError: result.error,
           attempts: newAttempts,
         });
-        if (action.actionType === 'settle') {
+        if (action.actionType === 'settle' || action.actionType === 'quick-settle') {
           finalizeSettlementAudit(action.requestId, { status: 'error', error: result.error });
         }
         // Fix E: Inventory rollback on permanent failure (5+ attempts)
