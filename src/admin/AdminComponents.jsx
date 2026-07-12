@@ -144,7 +144,11 @@ import {
 
   Activity,
 
-  AlertTriangle
+  AlertTriangle,
+
+  CheckCircle,
+
+  XCircle
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -5476,31 +5480,31 @@ export function Payroll() {
 
         <div>
 
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Staff Payroll & Attendance</h2>
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Staff Payroll & Attendance</h2>
 
-          <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <p className="text-sm text-gray-500 font-medium mt-1">Track salaries, advances, attendance and payouts</p>
 
-            <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="flex items-center gap-3 mt-4 flex-wrap">
+
+            <div className="flex bg-gray-100 rounded-xl p-1 ring-1 ring-gray-200/50">
               <button
                 onClick={() => {
                   setDateMode('month');
-                  // keep monthYear aligned with the selected range
                   if (startDate) setMonthYear(startDate.slice(0, 7));
                 }}
-                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${dateMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 Month
               </button>
               <button
                 onClick={() => {
                   setDateMode('range');
-                  // seed the range from the currently selected month
                   const [y, m] = monthYear.split('-').map(Number);
                   const lastDay = new Date(y, m, 0).getDate();
                   setStartDate(`${monthYear}-01`);
                   setEndDate(`${monthYear}-${String(lastDay).padStart(2, '0')}`);
                 }}
-                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${dateMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 Date Range
               </button>
@@ -5511,7 +5515,7 @@ export function Payroll() {
                 type="month"
                 value={monthYear}
                 onChange={(e) => setMonthYear(e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
               />
             ) : (
               <div className="flex items-center gap-2">
@@ -5528,9 +5532,9 @@ export function Payroll() {
                       setEndDate(max);
                     }
                   }}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
                 />
-                <span className="text-xs font-bold text-gray-500">to</span>
+                <span className="text-xs font-black text-gray-400 uppercase tracking-wider">to</span>
                 <input
                   type="date"
                   value={endDate}
@@ -5541,7 +5545,7 @@ export function Payroll() {
                     return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
                   })()}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
                 />
               </div>
             )}
@@ -5604,11 +5608,11 @@ export function Payroll() {
 
               disabled={records.length === 0}
 
-              className="text-xs font-bold bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-xs font-black uppercase tracking-wide bg-white text-gray-900 border border-gray-200 px-4 py-1.5 rounded-xl hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
 
             >
 
-              <Download size={14} className="inline mr-1" />
+              <Download size={14} />
 
               CSV
 
@@ -5628,28 +5632,28 @@ export function Payroll() {
 
           <div className="text-left sm:text-right">
 
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
               Totals for {new Date(`${monthYear}-01`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </p>
 
-            <div className="flex gap-6">
-              <div>
+            <div className="flex gap-4 sm:gap-6">
+              <div className="bg-gray-50 rounded-2xl px-4 py-3 min-w-[110px]">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Base</p>
-                <p className="text-xl font-black text-gray-900 tracking-tighter">₹{totalBaseSalary.toLocaleString()}</p>
+                <p className="text-xl font-black text-gray-900 tracking-tight">₹{totalBaseSalary.toLocaleString()}</p>
               </div>
-              <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Advance</p>
-                <p className="text-xl font-black text-amber-600 tracking-tighter">₹{totalAdvance.toLocaleString()}</p>
+              <div className="bg-amber-50 rounded-2xl px-4 py-3 min-w-[110px]">
+                <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">Total Advance</p>
+                <p className="text-xl font-black text-amber-600 tracking-tight">₹{totalAdvance.toLocaleString()}</p>
               </div>
-              <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
-                <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹{totalPayable.toLocaleString()}</p>
+              <div className="bg-[#FFF5F5] rounded-2xl px-4 py-3 min-w-[130px]">
+                <p className="text-[10px] font-black text-[#E57373] uppercase tracking-widest mb-1">Total Payable</p>
+                <p className="text-3xl font-black text-[#B71C1C] tracking-tight">₹{totalPayable.toLocaleString()}</p>
               </div>
             </div>
 
             {totalOutstanding > 0 && (
 
-              <p className="text-xs text-amber-600 font-bold mt-1">Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
+              <p className="text-xs text-amber-600 font-bold mt-2">Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
 
             )}
 
@@ -5668,11 +5672,11 @@ export function Payroll() {
 
               }}
 
-              className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
+              className="w-full sm:w-auto bg-[#B71C1C] text-white px-8 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider hover:bg-[#8E1414] transition-all shadow-lg shadow-red-100 active:scale-95 flex items-center justify-center gap-2"
 
             >
 
-              Add Staff
+              <Plus size={16} /> Add Staff
 
             </button>
 
@@ -5685,10 +5689,9 @@ export function Payroll() {
                 setImportError('');
                 setEditedProposed([]);
               }}
-              className="w-full sm:w-auto bg-gray-900 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-gray-800 transition-all shadow-xl shadow-gray-100 active:scale-95"
+              className="w-full sm:w-auto bg-gray-900 text-white px-8 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider hover:bg-gray-800 transition-all shadow-lg shadow-gray-100 active:scale-95 flex items-center justify-center gap-2"
             >
-              <Upload size={14} className="inline mr-2" />
-              Import Staff
+              <Upload size={16} /> Import Staff
             </button>
           </div>
 
@@ -5698,18 +5701,20 @@ export function Payroll() {
 
 
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <div className="flex items-center gap-3">
-          <Search size={18} className="text-gray-400" />
+          <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
+            <Search size={18} />
+          </div>
           <input
             type="text"
             placeholder="Search staff by name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm font-bold text-gray-900 placeholder-gray-400"
+            className="flex-1 bg-transparent outline-none text-sm font-semibold text-gray-900 placeholder-gray-400"
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-gray-500 hover:text-gray-700">
+            <button onClick={() => setSearchTerm('')} className="text-xs font-black text-gray-500 hover:text-[#B71C1C] transition-colors">
               Clear
             </button>
           )}
@@ -5718,49 +5723,49 @@ export function Payroll() {
 
       <div className="flex items-center gap-3 mb-2 flex-wrap">
         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Status:</span>
-        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
-        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700">Pending</span>
-        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">Partial</span>
-        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700">Paid</span>
+        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-100 text-gray-500 ring-1 ring-gray-200">Not Generated</span>
+        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 ring-1 ring-amber-100">Pending</span>
+        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 ring-1 ring-blue-100">Partial</span>
+        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-green-50 text-green-700 ring-1 ring-green-100">Paid</span>
       </div>
 
-      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
 
         <div className="overflow-x-auto">
 
           <table className="w-full text-left text-sm whitespace-nowrap">
 
-            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+            <thead className="bg-gray-50/80 border-b border-gray-100">
 
               <tr>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Staff</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Staff</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Designation</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Designation</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Base Salary</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Base Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Present Days</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Present Days</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">OT Days</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">OT Days</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">4 Days</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">4 Days</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Days</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Days</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Actual Salary</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Actual Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Advance</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Advance</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Final Salary</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Final Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Salary Paid</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Salary Paid</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Balance Salary</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Balance Salary</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Status</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Actions</th>
 
               </tr>
 
@@ -5781,13 +5786,13 @@ export function Payroll() {
 
                 return (
 
-                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={emp.id} className="border-b border-gray-50 last:border-b-0 hover:bg-[#FFF5F5]/40 transition-colors">
 
-                    <td className="px-4 py-4">
+                    <td className="px-5 py-4">
 
                       <div className="flex items-center gap-3">
 
-                        <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center text-xs font-black text-[#B71C1C]">
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#FFCDD2] to-[#EF9A9A] flex items-center justify-center text-sm font-black text-[#B71C1C] shadow-sm">
 
                           {emp.name.split(' ').map(n => n[0]).join('')}
 
@@ -5795,16 +5800,16 @@ export function Payroll() {
 
                         <div>
 
-                          <p className="font-black text-gray-900">{emp.name}</p>
+                          <p className="font-bold text-gray-900 text-sm">{emp.name}</p>
 
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">{emp.role || 'Staff'}</p>
 
                           {emp.createdVia === 'CASHIER' && (
-                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Created by cashier — set base salary</p>
+                            <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> Set base salary</p>
                           )}
 
                           {rec?.needsReview && (
-                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Advance recorded, present days not set</p>
+                            <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> Advance recorded, present days not set</p>
                           )}
 
                         </div>
@@ -5813,14 +5818,14 @@ export function Payroll() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-left">
+                    <td className="px-5 py-4 text-left">
                       <p className="text-sm font-bold text-gray-700">{emp.designation || '-'}</p>
                       {emp.workerCategory && (
                         <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">{emp.workerCategory.replace('_', ' ')}</p>
                       )}
                     </td>
 
-                    <td className="px-4 py-4 text-right">
+                    <td className="px-5 py-4 text-right">
                       <input
                         type="number"
                         min="0"
@@ -5829,11 +5834,11 @@ export function Payroll() {
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
                         }}
-                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
+                        className="w-24 text-right border border-gray-200 rounded-lg py-1.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
                       />
                     </td>
 
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <div className="flex items-center gap-1">
                           <input
@@ -5846,14 +5851,14 @@ export function Payroll() {
                             onChange={(e) => {
                               setEditValues({ ...editValues, [emp.id]: { ...vals, presentDays: parseFloat(e.target.value) || 0 } });
                             }}
-                            className={`w-14 text-center border border-gray-200 rounded-lg py-1 text-sm ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
+                            className={`w-14 text-center border border-gray-200 rounded-lg py-1.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
                           />
                           <button
                             onClick={() => {
                               const next = !isAutoCount;
                               setAutoCountMap({ ...autoCountMap, [emp.id]: next });
                             }}
-                            className={`text-[10px] font-bold px-2 py-1 rounded-md ${isAutoCount ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
+                            className={`text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-lg transition-colors ${isAutoCount ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                           >
                             {isAutoCount ? 'Auto' : 'Manual'}
                           </button>
@@ -5861,7 +5866,7 @@ export function Payroll() {
                       </div>
                     </td>
 
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
 
                       <input
 
@@ -5875,25 +5880,25 @@ export function Payroll() {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } });
                         }}
 
-                        className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
+                        className="w-14 text-center border border-gray-200 rounded-lg py-1.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
 
                       />
 
                     </td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-700">
+                    <td className="px-5 py-4 text-center font-bold text-gray-700">
                       {rec?.leaveDays ?? 0}
                     </td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">
                       {rec?.totalDays ?? 0}
                     </td>
 
-                    <td className="px-4 py-4 text-right font-bold text-gray-700">
+                    <td className="px-5 py-4 text-right font-bold text-gray-700">
                       ₹{Number(rec?.actualSalary || 0).toLocaleString()}
                     </td>
 
-                    <td className="px-4 py-4 text-right">
+                    <td className="px-5 py-4 text-right">
                       <div className="flex flex-col items-end gap-1">
                         <span className="font-bold text-amber-600">₹{Number(rec?.totalAdvance || 0).toLocaleString()}</span>
                         {rec && (
@@ -5907,31 +5912,31 @@ export function Payroll() {
                       </div>
                     </td>
 
-                    <td className="px-4 py-4 text-right font-black text-gray-900">
+                    <td className="px-5 py-4 text-right font-black text-gray-900">
                       ₹{Number(rec?.finalSalary || 0).toLocaleString()}
                     </td>
 
-                    <td className="px-4 py-4 text-right font-bold text-gray-600">
+                    <td className="px-5 py-4 text-right font-bold text-gray-600">
 
                       ₹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
 
                     </td>
 
-                    <td className="px-4 py-4 text-right font-bold text-[#B71C1C]">
+                    <td className="px-5 py-4 text-right font-bold text-[#B71C1C]">
                       ₹{Number(rec?.balanceSalary || 0).toLocaleString()}
                     </td>
 
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
 
                       {rec ? (
 
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ring-1 ${
 
-                          rec.status === 'PAID' ? 'bg-green-100 text-green-700' :
+                          rec.status === 'PAID' ? 'bg-green-50 text-green-700 ring-green-100' :
 
-                          rec.status === 'PARTIAL' ? 'bg-blue-100 text-blue-700' :
+                          rec.status === 'PARTIAL' ? 'bg-blue-50 text-blue-700 ring-blue-100' :
 
-                          'bg-amber-100 text-amber-700 animate-pulse'
+                          'bg-amber-50 text-amber-700 ring-amber-100'
 
                         }`}>
 
@@ -5941,22 +5946,23 @@ export function Payroll() {
 
                       ) : (
 
-                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-50 text-gray-500 ring-1 ring-gray-100">Not Generated</span>
 
                       )}
 
                     </td>
 
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
 
                       <div className="flex items-center justify-center gap-2">
 
                         {savingRecordId === emp.id ? (
-                          <span className="text-[10px] font-bold text-blue-600 animate-pulse">Saving...</span>
+                          <span className="text-xs font-bold text-blue-600 animate-pulse">Saving...</span>
                         ) : (
                           <button
                             onClick={() => handleSaveRecord(emp.id)}
-                            className="px-3 py-1.5 bg-[#E53935] text-white rounded-lg text-xs font-bold hover:bg-[#c62828]"
+                            className="px-3 py-1.5 bg-[#E53935] text-white rounded-xl text-xs font-black hover:bg-[#c62828] transition-colors shadow-sm"
+                            title="Save"
                           >
                             Save
                           </button>
@@ -5968,7 +5974,8 @@ export function Payroll() {
 
                             onClick={() => { setPayModal(rec); setPayAmount(''); }}
 
-                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
+                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-xl text-xs font-black hover:bg-[#8E1414] transition-colors shadow-sm"
+                            title="Pay"
 
                           >
 
@@ -5981,7 +5988,8 @@ export function Payroll() {
                         <button
                           onClick={() => openAdvanceModal(rec)}
                           disabled={!rec}
-                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 disabled:opacity-50"
+                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-black hover:bg-blue-100 disabled:opacity-40 transition-colors ring-1 ring-blue-100"
+                          title="Advance"
                         >
                           Advance
                         </button>
@@ -5989,7 +5997,8 @@ export function Payroll() {
                         <button
                           onClick={() => handleDeleteEmployee(emp.id)}
                           disabled={deletingId === emp.id}
-                          className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+                          className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-xl text-xs font-black hover:bg-red-50 hover:text-red-700 disabled:opacity-40 transition-colors"
+                          title="Delete"
                         >
                           {deletingId === emp.id ? '...' : 'Delete'}
                         </button>
@@ -7708,7 +7717,7 @@ export function KitchenInventory() {
 
               <tr>
 
-                <th className="px-4 py-4 text-center">
+                <th className="px-5 py-4 text-center">
 
                   <input
 
@@ -7726,35 +7735,35 @@ export function KitchenInventory() {
 
                 </th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Ingredient</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Ingredient</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Category</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Scale</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Scale</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Price</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Stock</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Stock</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Amount</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase Amount</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock Amount</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption Amount</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock Amount</th>
 
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Actions</th>
 
               </tr>
 
@@ -7802,7 +7811,7 @@ export function KitchenInventory() {
 
                   <tr key={item.id} className={`transition-colors ${isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'} ${selectedIds.has(item.id) ? 'bg-red-50/50' : ''}`}>
 
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
 
                       <input
 
@@ -7818,7 +7827,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-5 py-4">
 
                       <div className="flex items-center gap-3">
 
@@ -7920,7 +7929,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-gray-500 text-sm">
+                    <td className="px-5 py-4 text-gray-500 text-sm">
 
                       {editingCell?.itemId === item.id && editingCell?.field === 'category' ? (
 
@@ -7990,7 +7999,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-gray-500 text-sm">
+                    <td className="px-5 py-4 text-gray-500 text-sm">
 
                       {editingCell?.itemId === item.id && editingCell?.field === 'unit' ? (
 
@@ -8068,29 +8077,29 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'opening', fmtVal(opening, item.unit))}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'opening', fmtVal(opening, item.unit))}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(openingAmt)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(openingAmt)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'purchase', fmtVal(purchase, item.unit))}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'purchase', fmtVal(purchase, item.unit))}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(purchaseAmt)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(purchaseAmt)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtVal(totalStock, item.unit)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtVal(totalStock, item.unit)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(totalStockAmt)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(totalStockAmt)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'consumed', fmtVal(consumed, item.unit))}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'consumed', fmtVal(consumed, item.unit))}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(consumptionAmt)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(consumptionAmt)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtVal(balanceStock, item.unit)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtVal(balanceStock, item.unit)}</td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(balanceStockAmt)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(balanceStockAmt)}</td>
 
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
 
                       <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-red-600 hover:text-red-500">
 
@@ -8140,22 +8149,22 @@ export function KitchenInventory() {
 
                 return (
                   <tr>
-                    <td className="px-4 py-4 text-center"></td>
-                    <td className="px-4 py-4 text-sm text-gray-900">Total</td>
-                    <td className="px-4 py-4 text-center"></td>
-                    <td className="px-4 py-4 text-center"></td>
-                    <td className="px-4 py-4 text-center"></td>
-                    <td className="px-4 py-4 text-center text-gray-900">{totals.opening.toFixed(2)}</td>
-                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.openingAmt)}</td>
-                    <td className="px-4 py-4 text-center text-gray-900">{totals.purchase.toFixed(2)}</td>
-                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.purchaseAmt)}</td>
-                    <td className="px-4 py-4 text-center text-gray-900">{totals.totalStock.toFixed(2)}</td>
-                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.totalStockAmt)}</td>
-                    <td className="px-4 py-4 text-center text-gray-900">{totals.consumed.toFixed(2)}</td>
-                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.consumptionAmt)}</td>
-                    <td className="px-4 py-4 text-center text-gray-900">{totals.balanceStock.toFixed(2)}</td>
-                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.balanceStockAmt)}</td>
-                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-5 py-4 text-center"></td>
+                    <td className="px-5 py-4 text-sm text-gray-900">Total</td>
+                    <td className="px-5 py-4 text-center"></td>
+                    <td className="px-5 py-4 text-center"></td>
+                    <td className="px-5 py-4 text-center"></td>
+                    <td className="px-5 py-4 text-center text-gray-900">{totals.opening.toFixed(2)}</td>
+                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.openingAmt)}</td>
+                    <td className="px-5 py-4 text-center text-gray-900">{totals.purchase.toFixed(2)}</td>
+                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.purchaseAmt)}</td>
+                    <td className="px-5 py-4 text-center text-gray-900">{totals.totalStock.toFixed(2)}</td>
+                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.totalStockAmt)}</td>
+                    <td className="px-5 py-4 text-center text-gray-900">{totals.consumed.toFixed(2)}</td>
+                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.consumptionAmt)}</td>
+                    <td className="px-5 py-4 text-center text-gray-900">{totals.balanceStock.toFixed(2)}</td>
+                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.balanceStockAmt)}</td>
+                    <td className="px-5 py-4 text-center"></td>
                   </tr>
                 );
               })()}
@@ -10621,23 +10630,23 @@ function SalesReport({ inventory }) {
 
                 <tr className="bg-[#E53935] text-white font-black">
 
-                  <td className="px-4 py-4 text-sm uppercase tracking-[0.1em]" colSpan="1">
+                  <td className="px-5 py-4 text-sm uppercase tracking-[0.1em]" colSpan="1">
 
                     GRAND TOTAL
 
                   </td>
 
-                  <td className="px-4 py-4 text-sm text-center">{grandTotals.quantity}</td>
+                  <td className="px-5 py-4 text-sm text-center">{grandTotals.quantity}</td>
 
-                  <td className="px-4 py-4 text-sm text-center" colSpan="4"></td>
+                  <td className="px-5 py-4 text-sm text-center" colSpan="4"></td>
 
-                  <td className="px-4 py-4 text-sm text-right">
+                  <td className="px-5 py-4 text-sm text-right">
 
                     ₹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                   </td>
 
-                  <td className="px-4 py-4 text-sm text-right">
+                  <td className="px-5 py-4 text-sm text-right">
 
                     ₹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
@@ -10929,13 +10938,13 @@ function LowStockReport({ inventory }) {
 
                 <tr className="bg-gray-100 font-black">
 
-                  <td colSpan="7" className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
+                  <td colSpan="7" className="px-5 py-4 text-sm uppercase tracking-wide text-gray-800">
 
                     Total Restock Investment Required
 
                   </td>
 
-                  <td className="px-4 py-4 text-sm text-right text-green-800">
+                  <td className="px-5 py-4 text-sm text-right text-green-800">
 
                     ₹{totalRestockValue.toLocaleString('en-IN')}
 
@@ -12443,13 +12452,13 @@ function WasteReport({ inventory }) {
 
                   <tr className="bg-red-50 font-black">
 
-                    <td colSpan="4" className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
+                    <td colSpan="4" className="px-5 py-4 text-sm uppercase tracking-wide text-gray-800">
 
                       Total Waste Cost
 
                     </td>
 
-                    <td className="px-4 py-4 text-sm text-right text-red-700">
+                    <td className="px-5 py-4 text-sm text-right text-red-700">
 
                       ₹{totalWasteCost.toLocaleString('en-IN')}
 
@@ -12531,19 +12540,19 @@ function WasteReport({ inventory }) {
 
                   <tr className="bg-red-50 font-black">
 
-                    <td colSpan={groupBy === 'item' ? '3' : '2'} className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
+                    <td colSpan={groupBy === 'item' ? '3' : '2'} className="px-5 py-4 text-sm uppercase tracking-wide text-gray-800">
 
                       Total Waste Cost
 
                     </td>
 
-                    <td className="px-4 py-4 text-sm text-right text-red-700">
+                    <td className="px-5 py-4 text-sm text-right text-red-700">
 
                       ₹{totalWasteCost.toLocaleString('en-IN')}
 
                     </td>
 
-                    <td className="px-4 py-4 text-sm text-center text-gray-700">
+                    <td className="px-5 py-4 text-sm text-center text-gray-700">
 
                       {wasteData.length}
 
@@ -13738,7 +13747,7 @@ export function Inventory() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
               <tr>
-                <th className="px-4 py-4 text-center">
+                <th className="px-5 py-4 text-center">
                   <input 
                     type="checkbox" 
                     className="h-4 w-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935] cursor-pointer"
@@ -13752,21 +13761,21 @@ export function Inventory() {
                     }}
                   />
                 </th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 w-[1%] whitespace-nowrap">Ingredient</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Scale</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Stock</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Amount</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase Amount</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock Amount</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption Amount</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock Amount</th>
-                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center w-full">Actions</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 w-[1%] whitespace-nowrap">Ingredient</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Category</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Scale</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Price</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Stock</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock Amount</th>
+                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center w-full">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -13807,7 +13816,7 @@ export function Inventory() {
 
                 return (
                   <tr key={item.id} className={`transition-colors ${isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'} ${selectedIds.has(item.id) ? 'bg-red-50/50' : ''}`}>
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-center">
                       <input 
                         type="checkbox" 
                         className="h-4 w-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935] cursor-pointer" 
@@ -13815,7 +13824,7 @@ export function Inventory() {
                         onChange={() => toggleSelection(item.id)}
                       />
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="relative group shrink-0">
                           {item.menuItem?.imageUrl ? (
@@ -13854,7 +13863,7 @@ export function Inventory() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-gray-500 text-sm">
+                    <td className="px-5 py-4 text-gray-500 text-sm">
                       {editingBarCell?.itemId === item.id && editingBarCell?.field === 'category' ? (
                         <div className="flex items-center gap-1">
                           <input
@@ -13883,7 +13892,7 @@ export function Inventory() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-4 text-gray-500 text-sm">
+                    <td className="px-5 py-4 text-gray-500 text-sm">
                       {editingBarCell?.itemId === item.id && editingBarCell?.field === 'bottleSize' ? (
                         <div className="flex items-center gap-1">
                           <input
@@ -13910,18 +13919,18 @@ export function Inventory() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `₹${price.toFixed(2)}`, 'number')}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', fmtVal(opening, 'ml'))}</td>
-                    <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(openingAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', fmtVal(purchase, 'ml'))}</td>
-                    <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(purchaseAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-blue-600">{fmtVal(totalStock, 'ml')}</td>
-                    <td className="px-4 py-4 text-xs text-center text-blue-600">{fmtAmt(totalStockAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', fmtVal(consumed, 'ml'))}</td>
-                    <td className="px-4 py-4 text-xs text-center text-red-600">{fmtAmt(consumptionAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{fmtVal(balanceStock, 'ml')}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{fmtAmt(balanceStockAmt)}</td>
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-5 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `₹${price.toFixed(2)}`, 'number')}</td>
+                    <td className="px-5 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', fmtVal(opening, 'ml'))}</td>
+                    <td className="px-5 py-4 text-xs text-center text-gray-600">{fmtAmt(openingAmt)}</td>
+                    <td className="px-5 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', fmtVal(purchase, 'ml'))}</td>
+                    <td className="px-5 py-4 text-xs text-center text-gray-600">{fmtAmt(purchaseAmt)}</td>
+                    <td className="px-5 py-4 text-xs text-center font-bold text-blue-600">{fmtVal(totalStock, 'ml')}</td>
+                    <td className="px-5 py-4 text-xs text-center text-blue-600">{fmtAmt(totalStockAmt)}</td>
+                    <td className="px-5 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', fmtVal(consumed, 'ml'))}</td>
+                    <td className="px-5 py-4 text-xs text-center text-red-600">{fmtAmt(consumptionAmt)}</td>
+                    <td className="px-5 py-4 text-xs text-center font-bold text-green-600">{fmtVal(balanceStock, 'ml')}</td>
+                    <td className="px-5 py-4 text-xs text-center font-bold text-green-600">{fmtAmt(balanceStockAmt)}</td>
+                    <td className="px-5 py-4 text-center">
                           <button
                             onClick={() => handleDeleteItem(item.id)}
                             disabled={deletingItemId === item.id}
@@ -18141,11 +18150,13 @@ export function StaffManagement({ role }) {
 
   const [error, setError] = useState('');
 
+  const [showInactive, setShowInactive] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
 
   const [editing, setEditing] = useState(null);
 
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', isActive: true, permissions: {} });
 
   const [saving, setSaving] = useState(false);
 
@@ -18167,7 +18178,7 @@ export function StaffManagement({ role }) {
 
     try {
 
-      const data = await apiFetch('/api/auth/staff');
+      const data = await apiFetch(`/api/auth/staff?showInactive=${showInactive}`);
 
       setStaff(data || []);
 
@@ -18181,7 +18192,7 @@ export function StaffManagement({ role }) {
 
     }
 
-  }, []);
+  }, [showInactive]);
 
 
 
@@ -18195,7 +18206,7 @@ export function StaffManagement({ role }) {
 
   const resetForm = () => {
 
-    setForm({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
+    setForm({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', isActive: true, permissions: {} });
 
     setEditing(null);
 
@@ -18208,13 +18219,21 @@ export function StaffManagement({ role }) {
   const handleEdit = (member) => {
     if (isManagerReadOnly) return handleAccessDenied();
     setEditing(member);
-    setForm({ name: member.name, role: member.role, designation: member.designation || member.role, pin: '', permissions: member.permissions || {} });
+    setForm({
+      name: member.name,
+      role: member.role,
+      designation: member.designation || member.role,
+      pin: '',
+      baseSalary: member.employee?.baseSalary != null ? String(member.employee.baseSalary) : '',
+      isActive: member.isActive !== false,
+      permissions: member.permissions || {}
+    });
     setModalOpen(true);
   };
 
-  const handleDeactivateWithCheck = (id) => {
+  const handleDeactivateWithCheck = (id, currentlyActive) => {
     if (isManagerReadOnly) return handleAccessDenied();
-    handleDeactivate(id);
+    handleToggleActive(id, currentlyActive);
   };
 
 
@@ -18229,6 +18248,7 @@ export function StaffManagement({ role }) {
 
     try {
 
+<<<<<<< HEAD
       if (editing) {
         await edgeUpdateStaff(editing.id, editing ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } } : {});
       } else if (form.role === 'OWNER') {
@@ -18236,6 +18256,31 @@ export function StaffManagement({ role }) {
       } else {
         await edgeCreateStaff({ name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation });
       }
+=======
+      const path = `/api/auth/staff${editing ? `/${editing.id}` : ''}`;
+
+      const method = editing ? 'PATCH' : 'POST';
+
+      const body = editing
+
+        ? {
+            name: form.name,
+            role: form.role,
+            baseSalary: form.baseSalary !== '' ? Number(form.baseSalary) : undefined,
+            isActive: form.isActive,
+            designation: form.designation,
+            ...(form.pin ? { pin: form.pin } : {}),
+            permissions: { onlineOrders: !!form.permissions?.onlineOrders }
+          }
+
+        : form.role === 'OWNER'
+
+        ? { name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation }
+
+        : { name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation };
+
+      await apiFetch(path, { method, body: JSON.stringify(body) });
+>>>>>>> 7e69b9b (naa sulli)
 
       fetchStaff();
 
@@ -18255,22 +18300,25 @@ export function StaffManagement({ role }) {
 
 
 
-  const handleDeactivate = async (id) => {
-
-    if (!confirm('Deactivate this staff member?')) return;
-
+  const handleToggleActive = async (id, currentlyActive) => {
+    const action = currentlyActive === false ? 'activate' : 'deactivate';
+    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} this staff member?`)) return;
     try {
+<<<<<<< HEAD
 
       await edgeDeleteStaff(id);
 
+=======
+      await apiFetch(`/api/auth/staff/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: currentlyActive === false })
+      });
+>>>>>>> 7e69b9b (naa sulli)
       fetchStaff();
-
     } catch (err) {
-
-      setError(err.message || 'Failed to deactivate');
-
+      console.error('[Staff] Toggle active failed:', err);
+      setError(err.message || `Failed to ${action}`);
     }
-
   };
 
   const downloadStaffImportTemplate = () => {
@@ -18371,11 +18419,11 @@ export function StaffManagement({ role }) {
 
   return (
 
-    <div className="space-y-4 font-sans">
+    <div className="space-y-5 font-sans">
 
       {error && (
 
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-[12px] font-bold">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-semibold">
 
           {error}
 
@@ -18385,30 +18433,45 @@ export function StaffManagement({ role }) {
 
 
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 
-        <h3 className="font-semibold">Staff Management</h3>
+        <div>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">Staff Management</h2>
+          <p className="text-sm text-gray-500 font-medium mt-1">Manage team members, roles, and access</p>
+        </div>
 
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search by name or role..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-1.5 border border-gray-200 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 w-48"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name or role..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] w-56 transition-all"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-600 cursor-pointer select-none bg-white px-3 py-2 rounded-xl border border-gray-200">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              className="rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+            />
+            Show inactive
+          </label>
           {!isManagerReadOnly && (
           <button
             onClick={() => setImportModalOpen(true)}
-            className="px-3 py-1.5 bg-gray-900 text-white text-[12px] font-bold rounded-xl hover:bg-gray-800 transition flex items-center gap-1"
+            className="px-4 py-2 bg-white text-gray-900 border border-gray-200 text-sm font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition flex items-center gap-2 shadow-sm"
           >
-            <Upload size={14} />
+            <Upload size={16} />
             Import Staff
           </button>
           )}
           <button
             onClick={() => isManagerReadOnly ? handleAccessDenied() : setModalOpen(true)}
-            className={`px-3 py-1.5 text-white text-[12px] font-bold rounded-xl transition ${isManagerReadOnly ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#E53935] hover:bg-red-700'}`}
+            className={`px-4 py-2 text-white text-sm font-bold rounded-xl transition shadow-sm ${isManagerReadOnly ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#E53935] hover:bg-red-700'}`}
           >
             + Add Staff
           </button>
@@ -18418,21 +18481,21 @@ export function StaffManagement({ role }) {
 
 
 
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
 
-        <table className="w-full text-[12px]">
+        <table className="w-full text-sm">
 
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50/80 border-b border-gray-100">
 
             <tr>
 
-              <th className="px-4 py-2 text-left font-bold text-gray-500">Name</th>
+              <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-[0.15em] text-gray-400">Name</th>
 
-              <th className="px-4 py-2 text-left font-bold text-gray-500">Role</th>
+              <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-[0.15em] text-gray-400">Role</th>
 
-              <th className="px-4 py-2 text-left font-bold text-gray-500">PIN</th>
+              <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-[0.15em] text-gray-400">PIN</th>
 
-              <th className="px-4 py-2 text-right font-bold text-gray-500">Actions</th>
+              <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-[0.15em] text-gray-400">Actions</th>
 
             </tr>
 
@@ -18441,18 +18504,31 @@ export function StaffManagement({ role }) {
           <tbody>
 
             {staff.filter(member => {
+              if (!showInactive && member.isActive === false) return false;
               if (!searchQuery.trim()) return true;
               const q = searchQuery.toLowerCase();
               return (member.name || '').toLowerCase().includes(q) || (member.designation || '').toLowerCase().includes(q) || (member.role || '').toLowerCase().includes(q);
             }).map((member) => (
 
-              <tr key={member.id} className="border-t border-gray-100 hover:bg-gray-50">
+              <tr key={member.id} className="border-b border-gray-50 last:border-b-0 hover:bg-[#FFF5F5]/50 transition-colors">
 
-                <td className="px-4 py-3 font-bold text-gray-900">{member.name}</td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FFCDD2] to-[#EF9A9A] flex items-center justify-center text-[#B71C1C] font-black text-sm shadow-sm">
+                      {(member.name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-900 text-sm">{member.name}</p>
+                      {member.isActive === false && (
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-gray-100 text-gray-500 uppercase tracking-wider">Inactive</span>
+                      )}
+                    </div>
+                  </div>
+                </td>
 
-                <td className="px-4 py-3 text-gray-600">
+                <td className="px-6 py-4">
 
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : member.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide ${member.role === 'CAPTAIN' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' : member.role === 'OWNER' ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-100' : member.role === 'MANAGER' ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100' : 'bg-green-50 text-green-700 ring-1 ring-green-100'}`}>
 
                     {member.designation || member.role}
 
@@ -18460,25 +18536,29 @@ export function StaffManagement({ role }) {
 
                 </td>
 
-                <td className="px-4 py-3 text-gray-600">
+                <td className="px-6 py-4">
 
                   {member.role === 'OWNER' ? (
-                    <span className="text-[10px] font-bold text-gray-400">—</span>
+                    <span className="text-xs font-bold text-gray-400">—</span>
                   ) : member.hasPin ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700">Set</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-green-50 text-green-700 ring-1 ring-green-100">
+                      <CheckCircle size={12} /> Set
+                    </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700">Not Set</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-red-50 text-red-700 ring-1 ring-red-100">
+                      <XCircle size={12} /> Not Set
+                    </span>
                   )}
 
                 </td>
 
-                <td className="px-4 py-3 text-right">
+                <td className="px-6 py-4 text-right">
 
                   <button
 
                     onClick={() => handleEdit(member)}
 
-                    className="text-[10px] font-bold text-gray-500 hover:text-[#E53935] mr-3"
+                    className="text-xs font-bold text-gray-500 hover:text-[#E53935] transition-colors mr-4"
 
                   >
 
@@ -18488,13 +18568,13 @@ export function StaffManagement({ role }) {
 
                   <button
 
-                    onClick={() => handleDeactivateWithCheck(member.id)}
+                    onClick={() => handleDeactivateWithCheck(member.id, member.isActive)}
 
-                    className="text-[10px] font-bold text-red-500 hover:text-red-700"
+                    className={`text-xs font-bold transition-colors ${member.isActive === false ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}
 
                   >
 
-                    Deactivate
+                    {member.isActive === false ? 'Activate' : 'Deactivate'}
 
                   </button>
 
@@ -18553,22 +18633,59 @@ export function StaffManagement({ role }) {
             </div>
 
             {editing && (
-              <div>
-                <label className="text-[10px] font-bold text-gray-500 uppercase">Designation</label>
-                <select
-                  value={form.designation}
-                  onChange={(e) => setForm({ ...form, designation: e.target.value })}
-                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-                >
-                  <option value="">Select designation</option>
-                  {form.designation && !DESIGNATIONS.includes(form.designation) && (
-                    <option value={form.designation}>{form.designation}</option>
-                  )}
-                  {DESIGNATIONS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Designation</label>
+                  <select
+                    value={form.designation}
+                    onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                  >
+                    <option value="">Select designation</option>
+                    {form.designation && !DESIGNATIONS.includes(form.designation) && (
+                      <option value={form.designation}>{form.designation}</option>
+                    )}
+                    {DESIGNATIONS.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Role</label>
+                  <select
+                    value={form.role}
+                    onChange={(e) => setForm({ ...form, role: e.target.value })}
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                  >
+                    <option value="CAPTAIN">Captain</option>
+                    <option value="CASHIER">Cashier</option>
+                    <option value="MANAGER">Manager</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Base Salary</label>
+                  <input
+                    type="number"
+                    value={form.baseSalary}
+                    onChange={(e) => setForm({ ...form, baseSalary: e.target.value })}
+                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                    placeholder="e.g. 15000"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Active</label>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, isActive: !form.isActive })}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${form.isActive ? 'bg-[#E53935]' : 'bg-gray-300'}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.isActive ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              </>
             )}
 
             {!editing && (

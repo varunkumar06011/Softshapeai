@@ -13,8 +13,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Users, TrendingUp, Calendar } from "lucide-react";
+import { Users, TrendingUp, Calendar, Award } from "lucide-react";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { apiFetch } from "../services/apiConfig";
 
@@ -46,6 +47,7 @@ function getRangeDates(range, customStart, customEnd) {
 }
 
 export default function CaptainPerformanceDashboard() {
+  const navigate = useNavigate();
   const [range, setRange] = useState("Today");
   const [customStart, setCustomStart] = useState(() => toISODate(new Date()));
   const [customEnd, setCustomEnd] = useState(() => toISODate(new Date()));
@@ -101,6 +103,13 @@ export default function CaptainPerformanceDashboard() {
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+          <button
+            onClick={() => navigate('/admin/captains/group-report')}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-[#E53935] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-700 transition-colors"
+          >
+            <Award size={14} />
+            Group Report
+          </button>
           <div className="flex bg-[#F4F4F5] p-1 rounded-xl overflow-x-auto scrollbar-hide">
             {["Today", "Weekly", "Monthly", "All Time", "Custom"].map(r => (
               <button
@@ -141,7 +150,11 @@ export default function CaptainPerformanceDashboard() {
         <>
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {captains.slice(0, 4).map(c => (
-              <div key={c.id} className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all">
+              <div
+                key={c.id}
+                onClick={() => navigate(`/admin/captain/${c.id}/report`)}
+                className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm relative overflow-hidden group hover:border-[#B71C1C] transition-all cursor-pointer"
+              >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center text-sm font-black text-[#B71C1C] border-2 border-white shadow-sm">
                     {c.initials}
@@ -154,7 +167,7 @@ export default function CaptainPerformanceDashboard() {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-bold text-gray-400 uppercase">Sales</span>
-                    <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString()}</span>
+                    <span className="text-sm font-black text-gray-900">₹{c.sales.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-bold text-gray-400 uppercase">Orders</span>
@@ -197,7 +210,11 @@ export default function CaptainPerformanceDashboard() {
               <h3 className="font-black text-gray-900 mb-6">Captain Leaderboard</h3>
               <div className="space-y-4">
                 {captains.map((c, index) => (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer">
+                  <div
+                    key={c.id}
+                    onClick={() => navigate(`/admin/captain/${c.id}/report`)}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-red-50 transition-colors group cursor-pointer"
+                  >
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-black text-gray-300 group-hover:text-[#B71C1C] w-4">#{index + 1}</span>
                       <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-[10px] font-black border border-gray-100">
@@ -206,7 +223,7 @@ export default function CaptainPerformanceDashboard() {
                       <p className="text-xs font-black text-gray-900">{c.name}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-black text-[#B71C1C]">₹{c.sales.toLocaleString()}</p>
+                      <p className="text-xs font-black text-[#B71C1C]">₹{c.sales.toLocaleString('en-IN')}</p>
                       <p className="text-[9px] font-bold text-gray-400">{c.orders} orders</p>
                     </div>
                   </div>

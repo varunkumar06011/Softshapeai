@@ -30,7 +30,7 @@ import { getPublicSocket } from '../hooks/useSocket';
 import { apiUrl } from '../services/apiConfig';
 
 
-export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, discountPercentage = 0 }) {
+export default function CustomerMenu({ slug, tableId, sig, representativeId, isMenuOnly = false, discountPercentage = 0 }) {
   const { shouldReduce } = useMotionConfig();
   const { menuItems: legacyMenuItems, categories: legacyCategories, loading: legacyLoading } = useMenuSync();
   const [unifiedMenu, setUnifiedMenu] = useState(null);
@@ -46,7 +46,7 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
   useEffect(() => {
     setUnifiedLoading(true);
     setMenuError(false);
-    fetchPublicMenu(slug, 'restaurant', tableId, sig)
+    fetchPublicMenu(slug, 'restaurant', representativeId ? undefined : tableId, representativeId ? undefined : sig)
       .then(data => {
         if (!data.success || data.error) {
           setMenuError(true);
@@ -254,10 +254,15 @@ export default function CustomerMenu({ slug, tableId, sig, isMenuOnly = false, d
     const callId = generateCallId();
 
     try {
-      const res = await fetch(apiUrl('/api/public/call-waiter'), {
+      const isRepresentative = !!representativeId;
+      const endpoint = isRepresentative ? '/api/public/representative-call' : '/api/public/call-waiter';
+      const body = isRepresentative
+        ? { slug, entityId: representativeId, sig, callId, source: 'representative' }
+        : { slug, tableId, sig, callId, source: 'restaurant' };
+      const res = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, tableId, sig, callId, source: 'restaurant' }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
 

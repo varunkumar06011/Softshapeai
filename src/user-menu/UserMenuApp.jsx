@@ -2,7 +2,8 @@
 // UserMenuApp — Customer-facing QR menu app controller
 // ─────────────────────────────────────────────────────────────────────────────
 // Root component for the customer-facing QR menu experience:
-//   - Selection: choose Food Menu or Bar Menu
+//   - Auto-detects available outlet types (food vs bar) from the restaurant
+//   - Skips the selection screen when only one type is available
 //   - Engagement: SliceChallenge discount game (optional, skippable)
 //   - Menu: CustomerMenu (food) or BarMenu (liquor)
 //   - Passes discount from game to menu component
@@ -11,7 +12,7 @@
 // The HMAC signature (sig) is verified by the backend before serving menu data.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import CustomerMenu from './CustomerMenu';
 import SliceChallenge from './SliceChallenge';
@@ -19,6 +20,16 @@ import BarMenu from './BarMenu';
 import { motion } from 'framer-motion';
 import { UtensilsCrossed, GlassWater, Sparkles, ArrowRight, AlertTriangle } from 'lucide-react';
 import { springs } from '../shared/animations';
+import { apiFetch } from '../services/apiConfig';
+
+const FOOD_TYPES = ['DINE_IN', 'FAMILY', 'RESTAURANT', 'CAFE', 'CLOUD_KITCHEN'];
+const BAR_TYPES = ['BAR', 'LOUNGE', 'BAR_LOUNGE', 'BAR_WITH_DINING'];
+
+function classifyOutletType(type = '') {
+  const t = String(type).toUpperCase().replace(/[-_\s]/g, '');
+  if (BAR_TYPES.includes(t)) return 'bar';
+  return 'food';
+}
 
 export default function UserMenuApp() {
   const { slug, tableId, sig } = useParams();
@@ -26,9 +37,48 @@ export default function UserMenuApp() {
   // 'selection', 'engagement', 'menu', 'bar-menu'
   const [view, setView] = useState('selection');
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [outlets, setOutlets] = useState([]);
+  const [loadingOutlets, setLoadingOutlets] = useState(true);
+  const [outletError, setOutletError] = useState(null);
 
   // Menu-only mode: no tableId or no sig → show menu without waiter call
   const isMenuOnly = !tableId || !sig;
+
+  useEffect(() => {
+    if (!slug) {
+      setLoadingOutlets(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingOutlets(true);
+        const data = await apiFetch(`/api/public/restaurant/${encodeURIComponent(slug)}/outlets`);
+        if (!cancelled) {
+          setOutlets(Array.isArray(data?.outlets) ? data.outlets : []);
+        }
+      } catch (err) {
+        if (!cancelled) setOutletError(err.message || 'Failed to load outlets');
+      } finally {
+        if (!cancelled) setLoadingOutlets(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  // Auto-direct once outlets are known
+  useEffect(() => {
+    if (loadingOutlets || view !== 'selection') return;
+    const hasFood = outlets.some(o => classifyOutletType(o.type) === 'food');
+    const hasBar = outlets.some(o => classifyOutletType(o.type) === 'bar');
+
+    if (hasFood && !hasBar) {
+      setView('engagement');
+    } else if (hasBar && !hasFood) {
+      setView('bar-menu');
+    }
+    // If both exist (or none resolved), keep the selection screen.
+  }, [loadingOutlets, outlets, view]);
 
   // ── Fallback UX for malformed URLs ──
   const isValidSlug = slug && slug.trim().length > 0;
@@ -50,6 +100,26 @@ export default function UserMenuApp() {
           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#B71C1C]/30">
             Powered by softshape.ai
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingOutlets) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#FFF5F5] p-6 font-['Inter',sans-serif]">
+        <div className="w-10 h-10 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
+        <p className="mt-4 text-xs font-bold text-gray-500">Loading menu...</p>
+      </div>
+    );
+  }
+
+  if (outletError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#FFF5F5] p-6 font-['Inter',sans-serif]">
+        <div className="bg-white rounded-[32px] p-8 max-w-md w-full text-center">
+          <h1 className="text-xl font-black text-gray-900 mb-2">Could not load menu</h1>
+          <p className="text-sm text-gray-500 mb-4">{outletError}</p>
         </div>
       </div>
     );
@@ -163,4 +233,3 @@ export default function UserMenuApp() {
 
   return <CustomerMenu slug={slug} tableId={tableId} sig={sig} isMenuOnly={isMenuOnly} discountPercentage={discountAmount} />;
 }
-

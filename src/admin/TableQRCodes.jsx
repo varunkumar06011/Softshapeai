@@ -15,7 +15,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiFetch, API_BASE } from '../services/apiConfig';
-import { QrCode, Printer, ArrowLeft, Download } from 'lucide-react';
+import { QrCode, Printer, ArrowLeft, Download, Plus, Trash2 } from 'lucide-react';
 
 export default function TableQRCodes() {
   const navigate = useNavigate();
@@ -25,6 +25,10 @@ export default function TableQRCodes() {
   const [error, setError] = useState(null);
 
   const [qrSignatures, setQrSignatures] = useState({});
+  const [reps, setReps] = useState([]);
+  const [repForm, setRepForm] = useState({ name: '', slug: '', outletType: 'FOOD' });
+  const [repQrUrls, setRepQrUrls] = useState({});
+  const [savingRep, setSavingRep] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -51,6 +55,24 @@ export default function TableQRCodes() {
           if (r) sigMap[r.tableId] = r;
         });
         setQrSignatures(sigMap);
+
+        // Load representative QR codes
+        try {
+          const repsData = await apiFetch('/api/representative-qr');
+          setReps(repsData || []);
+          const repUrlMap = {};
+          for (const r of repsData || []) {
+            try {
+              const qrData = await apiFetch(`/api/representative-qr/${r.id}/qr-url`);
+              repUrlMap[r.id] = qrData.url;
+            } catch (e) {
+              console.warn(`[TableQRCodes] Failed to fetch QR for representative ${r.id}:`, e);
+            }
+          }
+          setRepQrUrls(repUrlMap);
+        } catch (e) {
+          console.warn('[TableQRCodes] Failed to load representative QR codes:', e);
+        }
       } catch (err) {
         setError(err.message || 'Failed to load tables');
       } finally {
@@ -71,12 +93,41 @@ export default function TableQRCodes() {
     return `${base}/user-menu/${encodeURIComponent(restaurant.slug)}/${encodeURIComponent(tableId)}`;
   };
 
+  const handleSaveRep = async (e) => {
+    e.preventDefault();
+    if (!repForm.name.trim() || !repForm.slug.trim()) return;
+    setSavingRep(true);
+    try {
+      const saved = await apiFetch('/api/representative-qr', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: repForm.name.trim(),
+          slug: repForm.slug.trim(),
+          outletType: repForm.outletType,
+        }),
+      });
+      setReps((prev) => [saved, ...prev]);
+      const qrData = await apiFetch(`/api/representative-qr/${saved.id}/qr-url`);
+      setRepQrUrls((prev) => ({ ...prev, [saved.id]: qrData.url }));
+      setRepForm({ name: '', slug: '', outletType: 'FOOD' });
+    } catch (err) {
+      setError(err.message || 'Failed to save representative QR');
+    } finally {
+      setSavingRep(false);
+    }
+  };
+
+  const getRepQrUrl = (rep) => {
+    if (repQrUrls[rep.id]) return repQrUrls[rep.id];
+    return '';
+  };
+
   const handlePrint = () => {
     window.print();
   };
 
-  const handleDownload = (tableId, tableNumber) => {
-    const svg = document.getElementById(`qr-${tableId}`);
+  const handleDownload = (id, label, isRep = false) => {
+    const svg = document.getElementById(isRep ? `qr-rep-${id}` : `qr-${id}`);
     if (!svg) return;
 
     const svgData = new XMLSerializer().serializeToString(svg);
@@ -96,10 +147,10 @@ export default function TableQRCodes() {
       ctx.fillStyle = '#1a1a1a';
       ctx.font = 'bold 24px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`Table ${tableNumber}`, size / 2, size + 40);
+      ctx.fillText(`${isRep ? '' : 'Table '}${label}`, size / 2, size + 40);
 
       const link = document.createElement('a');
-      link.download = `qr-table-${tableNumber}.png`;
+      link.download = isRep ? `qr-rep-${label}.png` : `qr-table-${label}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     };
@@ -181,7 +232,7 @@ export default function TableQRCodes() {
                   </p>
                 </div>
                 <button
-                  onClick={() => handleDownload(table.id, table.number)}
+                  onClick={() => handleDownload(table.id, table.number, false)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-[#FF4D4F] text-[10px] font-black uppercase tracking-wider hover:bg-[#FF4D4F] hover:text-white transition-colors"
                 >
                   <Download size={12} />
@@ -192,7 +243,92 @@ export default function TableQRCodes() {
           })}
         </div>
 
-        {tables.length === 0 && (
+        {/* Representative QR Codes */}
+        <div className="mt-12">
+          <h2 className="text-xl font-black text-gray-900 tracking-tight mb-4">Representative QR Codes</h2>
+          <p className="text-sm text-gray-400 font-semibold mb-4">
+            Non-table QR codes for areas like a bar counter or entrance. These never appear as tables in POS.
+          </p>
+
+          <form onSubmit={handleSaveRep} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-[0_10px_30px_rgba(0,0,0,0.03)] mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <input
+                type="text"
+                placeholder="Name (e.g. Bar Counter)"
+                value={repForm.name}
+                onChange={(e) => setRepForm({ ...repForm, name: e.target.value })}
+                className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:border-[#E53935]"
+              />
+              <input
+                type="text"
+                placeholder="URL slug (e.g. bar-counter)"
+                value={repForm.slug}
+                onChange={(e) => setRepForm({ ...repForm, slug: e.target.value })}
+                className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:border-[#E53935]"
+              />
+              <select
+                value={repForm.outletType}
+                onChange={(e) => setRepForm({ ...repForm, outletType: e.target.value })}
+                className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:border-[#E53935]"
+              >
+                <option value="FOOD">Food Menu</option>
+                <option value="BAR">Bar Menu</option>
+              </select>
+            </div>
+            <div className="mt-4">
+              <button
+                type="submit"
+                disabled={savingRep}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#E53935] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-700 disabled:opacity-50"
+              >
+                <Plus size={14} />
+                {savingRep ? 'Saving...' : 'Create Representative QR'}
+              </button>
+            </div>
+          </form>
+
+          {reps.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {reps.map((rep) => {
+                const qrUrl = getRepQrUrl(rep);
+                return (
+                  <div
+                    key={rep.id}
+                    className="bg-white rounded-2xl p-5 border border-gray-100 shadow-[0_10px_30px_rgba(0,0,0,0.03)] flex flex-col items-center gap-3 print:break-inside-avoid"
+                  >
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      {qrUrl ? (
+                        <QRCodeSVG
+                          id={`qr-rep-${rep.id}`}
+                          value={qrUrl}
+                          size={140}
+                          level="M"
+                          includeMargin={false}
+                        />
+                      ) : (
+                        <div className="w-[140px] h-[140px] flex items-center justify-center text-[10px] text-gray-400 font-bold">Loading QR...</div>
+                      )}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-black text-gray-900">{rep.name}</p>
+                      <p className="text-[10px] text-gray-400 font-semibold mt-1 break-all max-w-[140px]">{qrUrl || 'Generating signed URL...'}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDownload(rep.id, rep.name, true)}
+                      disabled={!qrUrl}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-[#FF4D4F] text-[10px] font-black uppercase tracking-wider hover:bg-[#FF4D4F] hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Download size={12} />
+                      PNG
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {tables.length === 0 && reps.length === 0 && (
           <div className="bg-white rounded-2xl p-12 border border-gray-100 text-center">
             <QrCode size={48} className="text-gray-200 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-gray-900 mb-2">No Tables Found</h3>

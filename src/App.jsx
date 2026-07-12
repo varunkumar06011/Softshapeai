@@ -30,6 +30,7 @@ import AdminDashboard from "./admin/AdminDashboard";
 import CashierDashboard from "./cashier/CashierDashboard";
 import CaptainApp from "./captain/CaptainApp";
 import UserMenuApp from "./user-menu/UserMenuApp";
+import RepresentativeMenuLanding from "./user-menu/RepresentativeMenuLanding";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
 import QuickOnboarding from "./onboarding/QuickOnboarding";
@@ -38,6 +39,8 @@ import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
+const CaptainReportCard = lazy(() => import("./admin/CaptainReportCard"));
+const CaptainsGroupReport = lazy(() => import("./admin/CaptainsGroupReport"));
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { SyncStatusProvider } from "./context/SyncStatusContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
@@ -289,6 +292,8 @@ function AnimatedRoutes() {
         <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
         <Route path="/admin/dashboard/*" element={<ErrorBoundary><AnimatedPage><AdminDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/admin/qr-codes" element={<AnimatedPage><TableQRCodesWrapper /></AnimatedPage>} />
+        <Route path="/admin/captain/:captainId/report" element={<ErrorBoundary><AnimatedPage><CaptainReportCardWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/admin/captains/group-report" element={<ErrorBoundary><AnimatedPage><CaptainsGroupReportWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/cashier" element={<AnimatedPage><CashierLoginWrapper /></AnimatedPage>} />
         <Route path="/cashier/dashboard" element={<ErrorBoundary><AnimatedPage><CashierDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/captain" element={<AnimatedPage><CaptainLoginWrapper /></AnimatedPage>} />
@@ -300,6 +305,7 @@ function AnimatedRoutes() {
         <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
         <Route path="/user-menu/:slug" element={<UserMenuApp />} />
         <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
+        <Route path="/user-menu/rep/:slug/:entityId/:sig" element={<RepresentativeMenuLanding />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
@@ -341,6 +347,18 @@ function TableQRCodesWrapper() {
   const { user, token } = useAuth();
   if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
   return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><TableQRCodes /></Suspense>;
+}
+
+function CaptainReportCardWrapper() {
+  const { user, token } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
+  return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><CaptainReportCard /></Suspense>;
+}
+
+function CaptainsGroupReportWrapper() {
+  const { user, token } = useAuth();
+  if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
+  return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><CaptainsGroupReport /></Suspense>;
 }
 
 function CashierLoginWrapper() {

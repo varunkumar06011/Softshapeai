@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
@@ -89,6 +90,7 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
     const key = category === 'Beverages' ? (it.name || '').toLowerCase().trim() : it.name;
     if (!itemMap.has(key)) {
       itemMap.set(key, {
+        id: it.id,
         name: it.name,
         category: it.category || category,
         menuType: it.menuType === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
@@ -121,6 +123,7 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
 
   const finalItems = items
     .map((it) => ({
+      id: it.id,
       name: it.name,
       category: it.category,
       menuType: it.menuType,
@@ -327,6 +330,86 @@ function DownloadButtons({ onPDF, onExcel }) {
         <FileSpreadsheet size={14} /> Excel
       </button>
     </>
+  );
+}
+
+
+function CaptainPerformanceReport({ dateFilter }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await apiFetch(`/api/reports/captain-performance?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+        if (!cancelled) setData(res);
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Failed to load captain performance');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dateFilter]);
+
+  if (loading) return <div className="text-center py-8 text-gray-400">Loading captain performance...</div>;
+  if (error) return <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>;
+  if (!data?.captains?.length) return <div className="text-center py-8 text-gray-400">No captain performance data for the selected range.</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {data.captains.map((captain) => (
+          <button
+            key={captain.id}
+            onClick={() => navigate(`/admin/captain/${captain.id}/report`)}
+            className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-[0_10px_30px_rgba(0,0,0,0.03)] hover:border-[#E53935] hover:shadow-lg transition-all group"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-black text-gray-900">{captain.name}</h3>
+              <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 group-hover:text-[#E53935]">View Report Card</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Sales</p>
+                <p className="text-lg font-black text-gray-900"><Money value={captain.sales} /></p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Orders</p>
+                <p className="text-lg font-black text-gray-900">{captain.orders}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Items</p>
+                <p className="text-lg font-black text-gray-900">{captain.items}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Top Item</p>
+                <p className="text-sm font-black text-gray-900 truncate">{captain.highestSellingItem?.name || '—'}</p>
+              </div>
+            </div>
+            {captain.trends?.length > 0 && (
+              <div className="mt-4 h-16">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={captain.trends}>
+                    <defs>
+                      <linearGradient id={`trend-${captain.id}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#E53935" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#E53935" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="sales" stroke="#E53935" strokeWidth={2} fill={`url(#trend-${captain.id})`} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -616,6 +699,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const [sortKey, setSortKey] = useState('totalRevenue');
   const [sortDir, setSortDir] = useState('desc');
   const [showAll, setShowAll] = useState(false);
+  const [modalItem, setModalItem] = useState(null);
 
   const fetchData = async () => {
     setLoading(true); setError(null);
@@ -714,6 +798,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                   Revenue <ArrowUpDown size={10} className="inline ml-1" />
                 </th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Rev %</th>
+                <th className="px-3 py-3 text-center text-[10px] font-black uppercase tracking-widest text-gray-400">Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -740,11 +825,118 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                     </div>
                     <span className="text-[10px] text-gray-500 font-bold">{it.revenuePercent}%</span>
                   </td>
+                  <td className="px-3 py-3 text-center">
+                    {it.reportCategory === 'Food' ? (
+                      <button
+                        onClick={() => setModalItem(it)}
+                        className="px-2 py-1 rounded-lg bg-green-50 text-green-600 text-[10px] font-black uppercase hover:bg-green-100"
+                      >
+                        View Cost
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-gray-400 font-bold">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      </div>
+      {modalItem && (
+        <IngredientCostModal
+          item={modalItem}
+          startDate={dateFilter.startDate}
+          endDate={dateFilter.endDate}
+          onClose={() => setModalItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function IngredientCostModal({ item, startDate, endDate, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!item?.id) {
+      setError('Menu item ID is missing');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await apiFetch(`/api/reports/itemwise-sales/ingredients?menuItemId=${encodeURIComponent(item.id)}&startDate=${startDate}&endDate=${endDate}`);
+        if (!cancelled) setData(res);
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Failed to load ingredient cost');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item, item.id, startDate, endDate]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-3xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-black text-gray-900">{item.name}</h3>
+            <p className="text-xs font-bold text-gray-500">Ingredient Cost & Profitability</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 text-gray-600 font-black">×</button>
+        </div>
+
+        {loading && <div className="text-center py-8 text-gray-500">Loading...</div>}
+        {error && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm">{error}</div>}
+        {data && (
+          <div className="space-y-5">
+            {!data.hasRecipe && (
+              <div className="bg-amber-50 text-amber-700 p-3 rounded-xl text-sm font-bold">{data.fallbackMessage || 'No recipe found.'}</div>
+            )}
+            {data.hasRecipe && data.costConfidence !== 'full' && (
+              <div className="bg-amber-50 text-amber-700 p-3 rounded-xl text-sm font-bold">
+                {data.costConfidence === 'none' ? 'No historical ingredient costs found in this period.' : 'Some ingredient costs are missing; profit is estimated.'}
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-gray-50 p-3 rounded-xl"><p className="text-[10px] font-black text-gray-400 uppercase">Qty Sold</p><p className="text-lg font-black">{data.totalQuantity}</p></div>
+              <div className="bg-gray-50 p-3 rounded-xl"><p className="text-[10px] font-black text-gray-400 uppercase">Revenue</p><p className="text-lg font-black"><Money value={data.totalRevenue} /></p></div>
+              <div className="bg-gray-50 p-3 rounded-xl"><p className="text-[10px] font-black text-gray-400 uppercase">Ing. Cost</p><p className="text-lg font-black"><Money value={data.totalIngredientCost} /></p></div>
+              <div className="bg-[#FFF5F5] p-3 rounded-xl"><p className="text-[10px] font-black text-gray-400 uppercase">Profit / Margin</p><p className="text-lg font-black text-[#E53935]"><Money value={data.profit} /> ({data.marginPercent}%)</p></div>
+            </div>
+
+            {data.ingredients?.length > 0 && (
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-gray-500 mb-2">Recipe Breakdown</h4>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-[10px] font-black uppercase text-gray-400">Ingredient</th>
+                      <th className="px-3 py-2 text-right text-[10px] font-black uppercase text-gray-400">Qty / Item</th>
+                      <th className="px-3 py-2 text-right text-[10px] font-black uppercase text-gray-400">Avg Unit Cost</th>
+                      <th className="px-3 py-2 text-right text-[10px] font-black uppercase text-gray-400">Total Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.ingredients.map((ing) => (
+                      <tr key={ing.id} className="border-b border-gray-50">
+                        <td className="px-3 py-2 font-bold text-gray-900">{ing.name}</td>
+                        <td className="px-3 py-2 text-right text-gray-600">{ing.recipeQty} {ing.unit}</td>
+                        <td className="px-3 py-2 text-right text-gray-600"><Money value={ing.avgUnitCost} /></td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-900"><Money value={ing.totalCost} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1532,15 +1724,6 @@ export default function AdminReports() {
                   {cat.reports.map((r) => {
                     const Icon = r.icon;
                     const isActive = activeReport === r.id;
-                    if (!r.urgent) {
-                      return (
-                        <div key={r.id} className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 cursor-not-allowed rounded-md select-none">
-                          <Icon size={14} />
-                          <span>{r.label}</span>
-                          <span className="ml-auto text-[9px] font-black uppercase tracking-widest text-gray-300">Soon</span>
-                        </div>
-                      );
-                    }
                     return (
                       <button
                         key={r.id}
@@ -1576,6 +1759,13 @@ export default function AdminReports() {
             {activeReport === 'discount-report' && <DiscountReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'gst-report' && <GSTReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'delivery-platforms' && <DeliveryPlatformsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'captain-performance' && <CaptainPerformanceReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'venue-revenue' && <VenueRevenueReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'monthly-pl' && <MonthlyPLReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'cancelled-items' && <CancelledItemsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'table-utilization' && <TableUtilizationReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'hourly-report' && <HourlyAnalysisReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'kot-count' && <KOTCountReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
           </div>
         </main>
       </div>
@@ -1629,3 +1819,344 @@ function DeliveryPlatformsReport({ dateFilter, outletId }) {
     </div>
   );
 }
+
+function VenueRevenueReport({ dateFilter, outletId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/venue-revenue?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+      setData(res);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (!data || !data.venues?.length) return <EmptyCard />;
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Venue-wise Revenue" subtitle="Performance by outlet / venue" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Revenue</p><p className="text-2xl font-black text-[#B71C1C]"><Money value={data.summary.totalRevenue} /></p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Orders</p><p className="text-2xl font-black text-gray-900">{data.summary.totalOrders}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Avg Order Value</p><p className="text-2xl font-black text-gray-900"><Money value={data.summary.averageOrderValue} /></p></div>
+      </div>
+      <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Venue Breakdown</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+              <tr>
+                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Venue</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Avg Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.venues.map((v) => (
+                <tr key={v.id} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                  <td className="px-3 py-3 font-bold text-gray-900">{v.name}</td>
+                  <td className="px-3 py-3 text-right text-gray-700">{v.orders}</td>
+                  <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={v.revenue} /></td>
+                  <td className="px-3 py-3 text-right text-gray-700"><Money value={v.averageOrderValue} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthlyPLReport({ dateFilter, outletId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/monthly-pl?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+      setData(res);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (!data) return <EmptyCard />;
+  const s = data.summary;
+
+  const lineItems = [
+    { label: 'Total Sales / Revenue', value: s.totalSales, color: 'text-[#B71C1C]' },
+    { label: 'COGS (Cost of Goods Sold)', value: s.totalCogs, color: 'text-gray-900' },
+    { label: 'Expenditures', value: s.totalExpenditures, color: 'text-gray-900' },
+    { label: 'Discounts Given', value: s.totalDiscounts, color: 'text-gray-900' },
+    { label: 'Purchases', value: s.totalPurchases, color: 'text-gray-900' },
+    { label: 'Advances', value: s.totalAdvances, color: 'text-gray-900' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Monthly P&L" subtitle="Revenue vs Cost of Goods Sold" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Sales</p><p className="text-2xl font-black text-[#B71C1C]"><Money value={s.totalSales} /></p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Outflows</p><p className="text-2xl font-black text-gray-900"><Money value={s.totalOutflows} /></p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Gross Profit (Left)</p><p className="text-2xl font-black text-green-700"><Money value={s.grossProfit} /></p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Margin</p><p className="text-2xl font-black text-gray-900">{s.marginPercent}%</p></div>
+      </div>
+      <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">P&L Breakdown</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+              <tr>
+                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Item</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineItems.map((it) => (
+                <tr key={it.label} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                  <td className="px-3 py-3 font-bold text-gray-900">{it.label}</td>
+                  <td className={`px-3 py-3 text-right font-black ${it.color}`}><Money value={it.value} /></td>
+                </tr>
+              ))}
+              <tr className="bg-[#FFF5F5] font-black">
+                <td className="px-3 py-3 text-[#B71C1C]">Total Outflows</td>
+                <td className="px-3 py-3 text-right text-[#B71C1C]"><Money value={s.totalOutflows} /></td>
+              </tr>
+              <tr className="bg-green-50 font-black">
+                <td className="px-3 py-3 text-green-700">Gross Profit (Left)</td>
+                <td className="px-3 py-3 text-right text-green-700"><Money value={s.grossProfit} /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CancelledItemsReport({ dateFilter, outletId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/cancelled-items?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+      setData(res);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (!data || (data.cancelledOrders?.length === 0 && data.items?.length === 0)) return <EmptyCard />;
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Cancelled / Edited Items" subtitle="Voided, cancelled, and edited orders" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cancelled Orders</p><p className="text-2xl font-black text-gray-900">{data.summary.cancelledOrderCount}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cancelled Items</p><p className="text-2xl font-black text-gray-900">{data.summary.cancelledItemCount}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Edited Items</p><p className="text-2xl font-black text-gray-900">{data.summary.editedItemCount}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Removed Items</p><p className="text-2xl font-black text-gray-900">{data.summary.removedItemCount}</p></div>
+      </div>
+      {data.items?.length > 0 && (
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Item Changes</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+                <tr>
+                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Item</th>
+                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Type</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Qty</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Price</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Table</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((it) => (
+                  <tr key={it.id} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                    <td className="px-3 py-3 font-bold text-gray-900">{it.name}</td>
+                    <td className="px-3 py-3 text-gray-700 capitalize">{it.type}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{it.type === 'cancelled' ? it.cancelledQuantity : it.type === 'edited' ? it.editedQuantity : it.quantity}</td>
+                    <td className="px-3 py-3 text-right text-gray-700"><Money value={it.price} /></td>
+                    <td className="px-3 py-3 text-right text-gray-700">{it.tableNumber ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TableUtilizationReport({ dateFilter, outletId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/table-utilization?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+      setData(res);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (!data || !data.tables?.length) return <EmptyCard />;
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Table Utilization" subtitle="Revenue and turns per table" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Active Tables</p><p className="text-2xl font-black text-[#B71C1C]">{data.summary.activeTables} / {data.summary.totalTables}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Revenue</p><p className="text-2xl font-black text-gray-900"><Money value={data.summary.totalRevenue} /></p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Orders</p><p className="text-2xl font-black text-gray-900">{data.summary.totalOrders}</p></div>
+      </div>
+      <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Table Breakdown</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+              <tr>
+                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Table</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Capacity</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue/Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.tables.map((t) => (
+                <tr key={t.id} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                  <td className="px-3 py-3 font-bold text-gray-900">Table {t.number}</td>
+                  <td className="px-3 py-3 text-right text-gray-700">{t.capacity}</td>
+                  <td className="px-3 py-3 text-right text-gray-700">{t.orders}</td>
+                  <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={t.revenue} /></td>
+                  <td className="px-3 py-3 text-right text-gray-700"><Money value={t.revenuePerOrder} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HourlyAnalysisReport({ dateFilter, outletId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/hourly-analysis?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+      setData(res);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (!data || !data.hours?.length) return <EmptyCard />;
+
+  const activeHours = data.hours.filter((h) => h.orders > 0);
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Hourly Analysis" subtitle="Sales distribution by hour of day" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Peak Hour</p><p className="text-2xl font-black text-[#B71C1C]">{data.summary.peakHour}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Revenue</p><p className="text-2xl font-black text-gray-900"><Money value={data.summary.totalRevenue} /></p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Orders</p><p className="text-2xl font-black text-gray-900">{data.summary.totalOrders}</p></div>
+      </div>
+      <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+        <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Revenue by Hour</h3>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <BarChart data={activeHours} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} formatter={(v) => ['₹' + Number(v).toLocaleString('en-IN'), 'Revenue']} />
+              <Bar dataKey="revenue" fill="#B71C1C" radius={[4,4,0,0]} barSize={16} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KOTCountReport({ dateFilter, outletId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/kot-count?startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`);
+      setData(res);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (!data || data.summary.totalKots === 0) return <EmptyCard />;
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="KOT Count Report" subtitle="Kitchen order ticket volume" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total KOTs</p><p className="text-2xl font-black text-[#B71C1C]">{data.summary.totalKots}</p></div>
+        <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Avg Per Day</p><p className="text-2xl font-black text-gray-900">{data.summary.averagePerDay}</p></div>
+      </div>
+      {data.byStatus?.length > 0 && (
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Items by Status</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+                <tr>
+                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Status</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.byStatus.map((s) => (
+                  <tr key={s.status} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                    <td className="px-3 py-3 font-bold text-gray-900 capitalize">{s.status.toLowerCase()}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{s.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

@@ -137,7 +137,7 @@ const flattenSections = (payload) => {
 
 
 
-export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
+export default function BarMenu({ slug, tableId, sig, representativeId, isMenuOnly = false }) {
 
   const { shouldReduce } = useMotionConfig();
 
@@ -362,7 +362,7 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
 
         try {
 
-          unifiedData = await fetchPublicMenu(slug, 'bar', tableId, sig);
+          unifiedData = await fetchPublicMenu(slug, 'bar', representativeId ? undefined : tableId, representativeId ? undefined : sig);
 
           if (unifiedData && unifiedData.tableNumber) {
             setTableNumber(unifiedData.tableNumber);
@@ -815,10 +815,15 @@ export default function BarMenu({ slug, tableId, sig, isMenuOnly = false }) {
     const callId = generateCallId();
 
     try {
-      const res = await fetch(apiUrl('/api/public/call-waiter'), {
+      const isRepresentative = !!representativeId;
+      const endpoint = isRepresentative ? '/api/public/representative-call' : '/api/public/call-waiter';
+      const body = isRepresentative
+        ? { slug, entityId: representativeId, sig, callId, source: 'representative' }
+        : { slug, tableId, sig, callId, source: 'bar' };
+      const res = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, tableId, sig, callId, source: 'bar' }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
 
