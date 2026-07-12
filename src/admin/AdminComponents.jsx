@@ -18248,15 +18248,6 @@ export function StaffManagement({ role }) {
 
     try {
 
-<<<<<<< HEAD
-      if (editing) {
-        await edgeUpdateStaff(editing.id, editing ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } } : {});
-      } else if (form.role === 'OWNER') {
-        await apiFetch('/api/auth/staff', { method: 'POST', body: JSON.stringify({ name: form.name, role: form.role, email: form.email, password: form.password, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation }) });
-      } else {
-        await edgeCreateStaff({ name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation });
-      }
-=======
       const path = `/api/auth/staff${editing ? `/${editing.id}` : ''}`;
 
       const method = editing ? 'PATCH' : 'POST';
@@ -18280,7 +18271,6 @@ export function StaffManagement({ role }) {
         : { name: form.name, role: form.role, pin: form.pin, baseSalary: form.baseSalary ? Number(form.baseSalary) : 0, designation: form.designation };
 
       await apiFetch(path, { method, body: JSON.stringify(body) });
->>>>>>> 7e69b9b (naa sulli)
 
       fetchStaff();
 
@@ -18304,16 +18294,10 @@ export function StaffManagement({ role }) {
     const action = currentlyActive === false ? 'activate' : 'deactivate';
     if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} this staff member?`)) return;
     try {
-<<<<<<< HEAD
-
-      await edgeDeleteStaff(id);
-
-=======
       await apiFetch(`/api/auth/staff/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ isActive: currentlyActive === false })
       });
->>>>>>> 7e69b9b (naa sulli)
       fetchStaff();
     } catch (err) {
       console.error('[Staff] Toggle active failed:', err);
