@@ -402,7 +402,6 @@ export async function requestBilling(orderId) {
     });
     return { offline: true };
   }
-<<<<<<< HEAD
   // Try API first — isBackendReachable() can be falsely negative on slow networks.
   try {
     const controller = new AbortController();
@@ -432,14 +431,6 @@ export async function requestBilling(orderId) {
     }
     throw err;
   }
-=======
-  const res = await fetch(apiUrl(`/api/orders/${orderId}/request-billing`), {
-    method: "POST",
-    headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(10000),
-  });
-  return parseResponse(res);
->>>>>>> e6031be (start of heian era)
 }
 
 export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
@@ -526,7 +517,6 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10_000);
         try {
-          const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
             method: "POST",
             headers: { "Content-Type": "application/json", ...getAuthHeaders() },
             body: JSON.stringify(body),
@@ -558,49 +548,6 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15000),
       });
-      return parseResponse(res);
-    },
-    { ...RETRY_CONFIG.SETTLE, shouldRetry: (err) => err.status !== 409 }
-  );
-}
-
-export async function quickSettleOrder(orderId, { paymentMethod, tipAmount, cashAmount, cardAmount, discountPercent, tableNumber, isExtraTable, grandTotal, subtotal, discountAmount, cgst, sgst, items, requestId, printRequestId } = {}) {
-  const body = { paymentMethod, tipAmount, cashAmount, cardAmount, discountPercent, tableNumber, isExtraTable, grandTotal, subtotal, discountAmount, cgst, sgst, items, requestId, printRequestId };
-  const settleRequestId = requestId || generateRequestId();
-  body.requestId = settleRequestId;
-
-  if (!isBackendReachable()) {
-    await addPendingAction({
-      requestId: settleRequestId,
-      entityId: orderId,
-      entityType: 'order',
-      actionType: 'quick-settle',
-      url: `/api/orders/${orderId}/quick-settle`,
-      method: 'POST',
-      body,
-      synced: false,
-      createdAt: Date.now(),
-    });
-    return { offline: true };
-  }
-
-  return withRetry(
-    async () => {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/quick-settle`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
->>>>>>> e6031be (start of heian era)
-      });
-      // Store local transaction record for offline history
-      const localId = `offline-txn-${Date.now()}`;
-      body.localTxnId = localId;
-      await addOfflineTransaction({
-        localId,
-        orderId,
-        requestId: settleRequestId,
-        ...extraSettleData,
         synced: false,
         createdAt: Date.now(),
       });

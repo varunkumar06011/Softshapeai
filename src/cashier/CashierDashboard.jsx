@@ -35,13 +35,8 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync } from '../services/tableSyncService';
-<<<<<<< HEAD
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
-=======
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber } from '../services/orderApi';
-import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT } from '../utils/escposFrontend';
->>>>>>> e6031be (start of heian era)
 import { printLocal } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced } from '../utils/offlineDB';
@@ -2709,7 +2704,6 @@ const CashierDashboard = ({ onLogout }) => {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
-<<<<<<< HEAD
         const billEscpos = buildBillEscpos({
           billNumber: 'PENDING',
           tableNumber: selectedTable.number,
@@ -2730,36 +2724,6 @@ const CashierDashboard = ({ onLogout }) => {
           itemCount: billItems.length,
           qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
           section: selectedTable.section?.name || undefined,
-=======
-        const now = new Date();
-        const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
-        const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
-        const kotNumbers = (selectedTable.kotHistory || []).map(k => k.id).filter(Boolean);
-        const billEscposData = buildFinalBill({
-          billNumber: 'PENDING',
-          date: dateStr,
-          time: timeStr,
-          kotNumbers,
-          tableNumber: String(selectedTable.number || 'N/A'),
-          captain: selectedTable?.captainName || selectedTable?.activeOrder?.captainName || 'N/A',
-          items: billItems.map(i => ({
-            name: i.n || i.name || 'Item',
-            quantity: Number(i.q || i.quantity || 1),
-            price: Number(i.p || i.price || 0),
-            amount: Number(i.p || i.price || 0) * Number(i.q || i.quantity || 1),
-            menuType: i.menuType || (i.type === 'liquor' ? 'LIQUOR' : 'FOOD'),
-            notes: i.notes || null,
-          })),
-          subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-          discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : { percent: 0, amount: 0 },
-          tax: { cgst: billCalc.cgst || 0, sgst: billCalc.sgst || 0, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) },
-          grandTotal: billCalc.grandTotal,
-          roundOff: billCalc.roundOff ?? 0,
-          section: selectedTable?.section?.name || selectedTable?.sectionName || '',
-          sectionTag: selectedTable?.sectionTag || undefined,
-          itemCount: billItems.length,
-          qtyCount: billItems.reduce((sum, i) => sum + Number(i.q || i.quantity || 1), 0),
->>>>>>> e6031be (start of heian era)
           restaurant: {
             name: restaurant?.name || undefined,
             receiptHeader: restaurant?.receiptHeader || undefined,
@@ -2770,11 +2734,7 @@ const CashierDashboard = ({ onLogout }) => {
         });
         const result = await printLocal({
           type: 'FINAL_BILL',
-<<<<<<< HEAD
           escposData: billEscpos,
-=======
-          escposData: billEscposData,
->>>>>>> e6031be (start of heian era)
           eventId: billEventId,
           data: {
             tableNumber: selectedTable.number,
@@ -2892,7 +2852,6 @@ const CashierDashboard = ({ onLogout }) => {
               const { printLocal } = await import('../utils/printOffline');
               const billItems = getBillableItems(selectedTable);
               const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
-<<<<<<< HEAD
               const billEscpos = buildBillEscpos({
                 billNumber: response.billNumber,
                 tableNumber: selectedTable.number,
@@ -2913,36 +2872,6 @@ const CashierDashboard = ({ onLogout }) => {
                 itemCount: billItems.length,
                 qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
                 section: selectedTable.section?.name || undefined,
-=======
-              const now2 = new Date();
-              const dateStr2 = now2.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
-              const timeStr2 = now2.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
-              const kotNumbers2 = (selectedTable.kotHistory || []).map(k => k.id).filter(Boolean);
-              const billEscposData2 = buildFinalBill({
-                billNumber: response.billNumber || 'N/A',
-                date: dateStr2,
-                time: timeStr2,
-                kotNumbers: kotNumbers2,
-                tableNumber: String(selectedTable.number || 'N/A'),
-                captain: selectedTable?.captainName || selectedTable?.activeOrder?.captainName || 'N/A',
-                items: billItems.map(i => ({
-                  name: i.n || i.name || 'Item',
-                  quantity: Number(i.q || i.quantity || 1),
-                  price: Number(i.p || i.price || 0),
-                  amount: Number(i.p || i.price || 0) * Number(i.q || i.quantity || 1),
-                  menuType: i.menuType || (i.type === 'liquor' ? 'LIQUOR' : 'FOOD'),
-                  notes: i.notes || null,
-                })),
-                subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-                discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : { percent: 0, amount: 0 },
-                tax: { cgst: billCalc.cgst || 0, sgst: billCalc.sgst || 0, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) },
-                grandTotal: billCalc.grandTotal,
-                roundOff: billCalc.roundOff ?? 0,
-                section: selectedTable?.section?.name || selectedTable?.sectionName || '',
-                sectionTag: selectedTable?.sectionTag || undefined,
-                itemCount: billItems.length,
-                qtyCount: billItems.reduce((sum, i) => sum + Number(i.q || i.quantity || 1), 0),
->>>>>>> e6031be (start of heian era)
                 restaurant: {
                   name: restaurant?.name || undefined,
                   receiptHeader: restaurant?.receiptHeader || undefined,
@@ -2953,11 +2882,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
               const result = await printLocal({
                 type: 'FINAL_BILL',
-<<<<<<< HEAD
                 escposData: billEscpos,
-=======
-                escposData: billEscposData2,
->>>>>>> e6031be (start of heian era)
                 eventId: billEventId,
                 data: {
                   tableNumber: selectedTable.number,
