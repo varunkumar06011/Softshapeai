@@ -100,6 +100,36 @@ export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
   return parseResponse(res);
 }
 
+export async function fetchVenuesForOutlet(outletId, signal) {
+  const qs = outletId ? `?outletId=${encodeURIComponent(outletId)}` : '';
+  const res = await fetchWithRetry(apiUrl(`/api/venues${qs}`), {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+  return parseResponse(res);
+}
+
+export async function fetchTablesForOutlet(outletId, signal) {
+  if (!outletId) throw new Error('No outlet scope provided');
+  const res = await fetchWithRetry(apiUrl(`/api/tables/flat?outletId=${encodeURIComponent(outletId)}`), {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+  return parseResponse(res);
+}
+
 export async function updateTableStatus(tableId, status) {
   const res = await fetch(apiUrl(`/api/tables/${tableId}/status`), {
     method: "PATCH",

@@ -648,10 +648,11 @@ export async function saveTransaction({
   }
 }
 
-export async function fetchTransactions(restaurantId, limit = 2000, date = null, month = null) {
+export async function fetchTransactions(restaurantId, limit = 2000, date = null, month = null, outletId = null) {
   const qs = new URLSearchParams({ restaurantId });
   if (limit != null && limit > 0) qs.set('limit', String(limit));
   if (date)  qs.set('date',  date);   // 'YYYY-MM-DD'
+  if (outletId) qs.set('outletId', outletId);
   if (month) qs.set('month', month);  // 'YYYY-MM'
   // Cache-bust so every request bypasses stale backend cache
   qs.set('_cb', String(Date.now()));
@@ -899,54 +900,27 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
   }
 }
 
-export async function deleteTransaction(transactionId, restaurantId) {
-  // Fast path: if backend is known unreachable, queue instantly.
-  if (!isBackendReachable()) {
-    console.warn('[Offline] Backend unreachable — fast-pathing delete-transaction');
-    const requestId = generateRequestId();
-    await addPendingAction({
-      requestId,
-      entityId: transactionId,
-      entityType: 'transaction',
-      actionType: 'delete-transaction',
-      url: `/api/transactions/${transactionId}?restaurantId=${restaurantId}`,
-      method: 'DELETE',
-      body: { restaurantId, requestId },
-    });
-    return { offline: true };
+export async function deleteTransaction(transactionId, restaurantId, password) {
+  // Password-gated deletes must never be silently queued offline; require a live server.
+  if (!password) {
+    throw new Error('Password is required to delete a transaction');
   }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
-    try {
-      const res = await fetch(apiUrl(`/api/transactions/${transactionId}?restaurantId=${restaurantId}`), {
-        method: 'DELETE',
-        headers: { ...authService.getAuthHeader() },
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to delete transaction');
-      }
-      return res.json();
-    } finally { clearTimeout(timeoutId); }
-  } catch (err) {
-    if (!isBackendReachable()) {
-      console.warn('[Offline] Delete transaction API failed, queuing for sync:', err.message);
-      const requestId = generateRequestId();
-      await addPendingAction({
-        requestId,
-        entityId: transactionId,
-        entityType: 'transaction',
-        actionType: 'delete-transaction',
-        url: `/api/transactions/${transactionId}?restaurantId=${restaurantId}`,
-        method: 'DELETE',
-        body: { restaurantId, requestId },
-      });
-      return { offline: true };
+    const res = await fetch(apiUrl(`/api/transactions/${transactionId}?restaurantId=${restaurantId}`), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authService.getAuthHeader() },
+      body: JSON.stringify({ password }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to delete transaction');
     }
-    throw err;
-  }
+    return res.json();
+  } finally { clearTimeout(timeoutId); }
 }
 
 export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount, tipAmount } = {}) {

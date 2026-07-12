@@ -57,7 +57,7 @@ export default function TodaySpecials() {
   const [selectedCaptain, setSelectedCaptain] = useState(null);
   const [pushStatus, setPushStatus] = useState(null);
   const [bulkRows, setBulkRows] = useState([
-    { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' },
+    { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '', targetOutletIds: [], outletPrinterNames: {} },
   ]);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,6 +86,7 @@ export default function TodaySpecials() {
     gstEnabled: true,
     printerTarget: '',
     printerName: '',
+    outletPrinterNames: {},
     venuePrices: {},
     unit: '',
     menuType: 'FOOD',
@@ -300,8 +301,9 @@ export default function TodaySpecials() {
         return new Date(now + 24 * 60 * 60 * 1000).toISOString();
       })(),
       gstEnabled: formData.gstEnabled !== false,
-      ...(formData.printerTarget ? { printerTarget: formData.printerTarget } : {}),
-      ...(formData.printerName ? { printerName: formData.printerName } : {}),
+      printerTarget: formData.printerTarget || null,
+      printerName: formData.printerName || null,
+      outletPrinterNames: formData.outletPrinterNames || {},
       ...(Object.keys(formData.venuePrices || {}).length > 0
         ? { venuePrices: Object.fromEntries(Object.entries(formData.venuePrices).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)])) }
         : {}),
@@ -325,7 +327,7 @@ export default function TodaySpecials() {
       await refreshMenu();
       await fetchSpecials();
       setFormData({
-        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all'
+        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', outletPrinterNames: {}, venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all'
       });
       setIsModalOpen(false);
       simulatePush();
@@ -355,11 +357,15 @@ export default function TodaySpecials() {
         isAvailable: true,
         gstEnabled: r.gstEnabled !== false,
         ...(r.unit ? { unit: r.unit } : {}),
+        ...(Array.isArray(r.targetOutletIds) && r.targetOutletIds.length > 0
+          ? { targetOutletIds: r.targetOutletIds }
+          : {}),
+        outletPrinterNames: r.outletPrinterNames || {},
       }));
-      await bulkImportSpecials(payload, true);
+      await bulkImportSpecials(payload, false);
       await refreshMenu();
       await fetchSpecials();
-      setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' }]);
+      setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '', targetOutletIds: [], outletPrinterNames: {} }]);
       setIsBulkModalOpen(false);
       simulatePush();
     } catch (err) {
@@ -755,7 +761,7 @@ export default function TodaySpecials() {
                           <Pause size={12} /> Deactivate
                         </button>
                         <button
-                          onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD', outletSelection: special.outletId || 'all' }); setIsModalOpen(true); }}
+                          onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', outletPrinterNames: special.outletId ? { [special.outletId]: special.printerName || special.printerTarget || '' } : {}, venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD', outletSelection: special.outletId || 'all' }); setIsModalOpen(true); }}
                           className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         >
                           <Edit2 size={14} />
@@ -990,39 +996,69 @@ export default function TodaySpecials() {
               </div>
 
               {allPrinterOptions.length > 0 && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5 flex items-center gap-1">
-                      <Printer size={12} /> Print To
-                    </label>
-                    <select
-                      value={formData.printerTarget || ''}
-                      onChange={e => setFormData({ ...formData, printerTarget: e.target.value || '' })}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-                    >
-                      <option value="">Default (auto-resolve)</option>
-                      {allPrinterOptions.map(opt => (
-                        <option key={opt.name} value={opt.name}>
-                          {opt.name}{opt.type ? ` (${opt.type})` : ''}
-                        </option>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5 flex items-center gap-1">
+                    <Printer size={12} /> KOT Destination
+                  </label>
+                  {outlets.length > 1 ? (
+                    <div className="space-y-2">
+                      {outlets.filter(o => formData.outletSelection === 'all' || formData.outletSelection === o.id).map(o => (
+                        <div key={o.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                          <span className="text-xs font-bold text-gray-700 w-28 truncate shrink-0">{o.name}</span>
+                          <select
+                            value={formData.outletPrinterNames?.[o.id] || ''}
+                            onChange={e => {
+                              const value = e.target.value || '';
+                              setFormData({
+                                ...formData,
+                                outletPrinterNames: { ...(formData.outletPrinterNames || {}), [o.id]: value },
+                                ...(formData.outletSelection === o.id ? { printerName: value, printerTarget: value } : {}),
+                              });
+                            }}
+                            className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+                          >
+                            <option value="">Default (auto-resolve)</option>
+                            {allPrinterOptions.map(opt => (
+                              <option key={opt.name} value={opt.name}>
+                                {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Physical Printer Override</label>
-                    <select
-                      value={formData.printerName || ''}
-                      onChange={e => setFormData({ ...formData, printerName: e.target.value || '' })}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-                    >
-                      <option value="">Auto-resolve from Print To</option>
-                      {allPrinterOptions.map(opt => (
-                        <option key={opt.name} value={opt.name}>
-                          {opt.name}{opt.type ? ` (${opt.type})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <select
+                          value={formData.printerTarget || ''}
+                          onChange={e => setFormData({ ...formData, printerTarget: e.target.value || '' })}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="">Default (auto-resolve)</option>
+                          {allPrinterOptions.map(opt => (
+                            <option key={opt.name} value={opt.name}>
+                              {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <select
+                          value={formData.printerName || ''}
+                          onChange={e => setFormData({ ...formData, printerName: e.target.value || '' })}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="">Physical Printer Override</option>
+                          {allPrinterOptions.map(opt => (
+                            <option key={opt.name} value={opt.name}>
+                              {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1283,12 +1319,76 @@ export default function TodaySpecials() {
                           <span className="text-xs font-bold text-gray-700">GST</span>
                         </label>
                       </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Target Outlets</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+                          {outlets.map(o => {
+                            const checked = (row.targetOutletIds || []).includes(o.id);
+                            return (
+                              <label key={o.id} className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={e => {
+                                    const next = [...bulkRows];
+                                    const ids = new Set(next[idx].targetOutletIds || []);
+                                    if (e.target.checked) ids.add(o.id); else ids.delete(o.id);
+                                    next[idx] = { ...next[idx], targetOutletIds: Array.from(ids) };
+                                    setBulkRows(next);
+                                  }}
+                                  className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+                                />
+                                <span className="text-xs font-bold text-gray-700 truncate">{o.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">Leave empty to import only to current outlet.</p>
+                      </div>
+
+                      {(row.targetOutletIds || []).length > 0 && (
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5 flex items-center gap-1">
+                            <Printer size={12} /> KOT Destination per Outlet
+                          </label>
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            {(row.targetOutletIds || []).map(outletId => {
+                              const o = outlets.find(x => x.id === outletId);
+                              if (!o) return null;
+                              return (
+                                <div key={outletId} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                                  <span className="text-xs font-bold text-gray-700 w-28 truncate shrink-0">{o.name}</span>
+                                  <select
+                                    value={row.outletPrinterNames?.[outletId] || ''}
+                                    onChange={e => {
+                                      const next = [...bulkRows];
+                                      next[idx] = {
+                                        ...next[idx],
+                                        outletPrinterNames: { ...(next[idx].outletPrinterNames || {}), [outletId]: e.target.value || '' },
+                                      };
+                                      setBulkRows(next);
+                                    }}
+                                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+                                  >
+                                    <option value="">Default (auto-resolve)</option>
+                                    {allPrinterOptions.map(opt => (
+                                      <option key={opt.name} value={opt.name}>
+                                        {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
               <button
-                onClick={() => setBulkRows([...bulkRows, { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '' }])}
+                onClick={() => setBulkRows([...bulkRows, { n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '', targetOutletIds: [], outletPrinterNames: {} }])}
                 className="w-full px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
               >
                 <Plus size={14} /> Add Another Item

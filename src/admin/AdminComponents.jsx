@@ -142,14 +142,16 @@ import {
 
   Loader,
 
-  Activity
+  Activity,
+
+  AlertTriangle
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 
 import { 
 
-  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, CartesianGrid
+  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, CartesianGrid, Legend
 
 } from 'recharts';
 
@@ -179,7 +181,7 @@ import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '..
 
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
 
-import { fetchVenues } from '../services/tableApi';
+import { fetchVenues, fetchVenuesForOutlet, fetchTablesForOutlet } from '../services/tableApi';
 
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
@@ -451,6 +453,12 @@ const card = cardBase + " bg-white";
 
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
+const PIE_COLORS = [
+  '#E53935', '#1565C0', '#2E7D32', '#F9A825', '#6A1B9A',
+  '#00838F', '#D81B60', '#5E35B1', '#43A047', '#FB8C00',
+  '#3949AB', '#C62828', '#00796B', '#8E24AA', '#F4511E',
+];
+
 // ── Shared helpers (module-level so all components can use them) ──────────
 
 const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
@@ -549,7 +557,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-    const loadSalesData = async () => {
+    const loadCategorySales = async () => {
 
       try {
 
@@ -557,20 +565,13 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
         const istNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
 
-        const sevenDaysAgo = new Date(istNow);
-
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-
-
-
-        const startISO = sevenDaysAgo.toISOString().slice(0, 10);
-
-        const endISO = istNow.toISOString().slice(0, 10);
+        const dateISO = istNow.toISOString().slice(0, 10);
 
 
 
         const outletId = dashboardScope === 'all' ? 'all' : restaurant?.id;
-        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${startISO}&endDate=${endISO}&outletId=${outletId}`, {
+
+        const res = await fetch(`${API_BASE}/api/reports/categorywise-sales?startDate=${dateISO}&endDate=${dateISO}&outletId=${outletId}`, {
 
           headers: { ...getAuthHeaders() },
 
@@ -578,51 +579,21 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-        if (!res.ok) throw new Error('Failed to fetch sales data');
+        if (!res.ok) throw new Error('Failed to fetch category sales data');
 
         const data = await res.json();
 
+        const categories = (data.categories || [])
 
+          .filter(c => c.totalRevenue > 0)
 
-        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-        const dailyData = days.map(d => ({ day: d, revenue: 0 }));
-
-
-
-        (data.byDay || []).forEach(day => {
-
-          const dayDate = new Date(day.date);
-
-          const dayIdx = dayDate.getDay();
-
-          dailyData[dayIdx].revenue += Number(day.revenue || 0);
-
-        });
-
-
-
-        const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-        const chartData = order.map(dayName => {
-
-          const dayIdx = days.indexOf(dayName);
-
-          return {
-
-            d: dayName,
-
-            v: Math.round(dailyData[dayIdx].revenue)
-
-          };
-
-        });
+          .map(c => ({ name: c.name, value: Math.round(c.totalRevenue) }));
 
 
 
         if (!cancelled) {
 
-          setSales(chartData);
+          setSales(categories);
 
           setSalesLoading(false);
 
@@ -630,7 +601,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       } catch (err) {
 
-        console.warn('[Dashboard] Failed to load sales data:', err.message);
+        console.warn('[Dashboard] Failed to load category sales data:', err.message);
 
         if (!cancelled) {
 
@@ -644,9 +615,9 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-    loadSalesData();
+    loadCategorySales();
 
-    const interval = setInterval(loadSalesData, 600000); // Refresh every 10 minutes
+    const interval = setInterval(loadCategorySales, 600000); // Refresh every 10 minutes
 
 
 
@@ -750,41 +721,67 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
           <ChartNoAxesCombined size={18} className="text-[#E53935]" />
 
-          Sales Attribution - Last 7 days
+          Sales by Category - Today
 
         </h3>
 
         <div className="flex-grow h-[250px] w-full min-h-[250px]" style={{ minWidth: 0 }}>
 
-          <ResponsiveContainer width="99%" height="100%">
+          {salesLoading ? (
 
-            <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <div className="h-full flex items-center justify-center text-gray-400 text-sm">Loading...</div>
 
-              <defs>
+          ) : sales.length === 0 ? (
 
-                <linearGradient id="dashBarGrad" x1="0" y1="0" x2="0" y2="1">
+            <div className="h-full flex items-center justify-center text-gray-400 text-sm">No sales today</div>
 
-                  <stop offset="0%" stopColor="#E53935" stopOpacity={1} />
+          ) : (
 
-                  <stop offset="100%" stopColor="#E53935" stopOpacity={0.4} />
+            <ResponsiveContainer width="99%" height="100%">
 
-                </linearGradient>
+              <PieChart>
 
-              </defs>
+                <Pie
 
-              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
+                  data={sales}
 
-              <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                  dataKey="value"
 
-              <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                  nameKey="name"
 
-              <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} />
+                  cx="50%"
 
-              <Bar dataKey="v" fill="url(#dashBarGrad)" radius={[6, 6, 0, 0]} barSize={32} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
+                  cy="50%"
 
-            </BarChart>
+                  outerRadius={90}
 
-          </ResponsiveContainer>
+                  innerRadius={50}
+
+                  paddingAngle={2}
+
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+
+                  labelLine={false}
+
+                >
+
+                  {sales.map((entry, index) => (
+
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+
+                  ))}
+
+                </Pie>
+
+                <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
+
+                <Legend verticalAlign="bottom" height={36} iconType="circle" />
+
+              </PieChart>
+
+            </ResponsiveContainer>
+
+          )}
 
         </div>
 
@@ -794,61 +791,11 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       </div>
 
-      
+
 
       <div className={card + " p-0 overflow-hidden flex flex-col h-[320px] lg:h-auto animate-chart-in-delay-1"}>
 
-        <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
-
-          <h3 className="font-bold text-sm md:text-base flex items-center gap-2">
-
-            <ClipboardList size={18} className="text-[#E53935]" />
-
-            Live Activity
-
-          </h3>
-
-          <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-
-        </div>
-
-        <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
-
-          {activityLog.length === 0 ? (
-
-            <p className="text-sm text-gray-400 text-center py-6">No live activity yet</p>
-
-          ) : (
-
-            activityLog.map((log) => (
-
-              <div key={log.id} className="flex gap-3 animate-slide-in">
-
-                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
-
-                  log.type === "success" ? "bg-green-500" : 
-
-                  log.type === "info" ? "bg-blue-500" : 
-
-                  log.type === "tip" ? "bg-amber-500" : "bg-red-500"
-
-                }`} />
-
-                <div className="flex-grow min-w-0">
-
-                  <p className="text-xs font-medium text-[#1A1A1A] leading-relaxed">{log.text}</p>
-
-                  <p className="text-[10px] text-[#6B6B6B] mt-1">{log.time}</p>
-
-                </div>
-
-              </div>
-
-            ))
-
-          )}
-
-        </div>
+        <LowStockWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
 
       </div>
 
@@ -866,7 +813,72 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 }
 
+function LowStockWidget({ dashboardScope, restaurantId }) {
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setLoading(true);
+        const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
+        const res = await fetch(`${API_BASE}/api/kitchen-inventory/low-stock?outletId=${outletId || ''}`, {
+          headers: { ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch low stock');
+        const data = await res.json();
+        if (!cancelled) setAlerts(data || []);
+      } catch (err) {
+        console.warn('[LowStockWidget] Failed to load:', err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    const interval = setInterval(load, 60000); // refresh every minute
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [dashboardScope, restaurantId]);
+
+  return (
+    <>
+      <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
+        <h3 className="font-bold text-sm md:text-base flex items-center gap-2">
+          <AlertTriangle size={18} className="text-[#E53935]" />
+          Low Stock Alerts
+        </h3>
+        <span className="text-[10px] font-bold text-[#6B6B6B]">{alerts.length} items</span>
+      </div>
+      <div className="flex-grow overflow-y-auto p-4 space-y-3 custom-scrollbar">
+        {loading ? (
+          <div className="space-y-2 animate-pulse">
+            {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
+          </div>
+        ) : alerts.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No low stock alerts</p>
+        ) : (
+          alerts.map((alert) => (
+            <div key={`${alert.outletId}-${alert.id}`} className="flex items-start gap-3 animate-slide-in">
+              <div className="mt-1 h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
+              <div className="flex-grow min-w-0">
+                <p className="text-xs font-bold text-[#1A1A1A] truncate">{alert.name}</p>
+                <p className="text-[10px] text-[#6B6B6B] mt-0.5">
+                  {dashboardScope === 'all' && <span className="font-semibold">{alert.outletName || alert.outletId}</span>}
+                  {dashboardScope === 'all' && ' · '}
+                  Stock <span className="font-bold text-red-600">{alert.currentStock}</span> / {alert.reorderLevel} {alert.unit}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
 
 function TopItemsWidget({ dashboardScope, restaurantId }) {
   const [topItems, setTopItems] = useState([]);
@@ -1311,7 +1323,7 @@ export function Pos() {
 
 
 
-export function Tables({ onOpen }) {
+export function Tables({ onOpen, dashboardScope }) {
 
   const [activePopupTableId, setActivePopupTableId] = useState(null);
   const [popupCaptainId, setPopupCaptainId] = useState('');
@@ -1319,7 +1331,9 @@ export function Tables({ onOpen }) {
 
   const [editMode, setEditMode] = useState(false);
 
-  const { tables } = useTableSync();
+  const { tables: syncedTables } = useTableSync();
+
+  const [tables, setTables] = useState([]);
 
   useEffect(() => {
     const t = tables.find(t => (t.backendId || t.id) === activePopupTableId);
@@ -1345,39 +1359,60 @@ export function Tables({ onOpen }) {
       .catch(() => {});
   }, []);
 
-
-
   useEffect(() => {
+    let cancelled = false;
+    const abortController = new AbortController();
 
-    fetchVenues()
+    if (dashboardScope === 'all') {
+      const accessible = authService.getAccessibleOutlets();
+      const venueTargets = accessible.length > 1 ? accessible.map(o => o.id).filter(Boolean) : ['all'];
+      Promise.all([
+        fetchTablesForOutlet('all', abortController.signal),
+        ...venueTargets.map(id => fetchVenuesForOutlet(id, abortController.signal)),
+      ])
+        .then(([tablesData, ...venuesData]) => {
+          if (cancelled) return;
+          const flatTables = Array.isArray(tablesData) ? tablesData : [];
+          const v = venuesData.flatMap((venues, idx) => {
+            const outletName = accessible[idx]?.name || '';
+            return (venues || []).map(venue => ({ ...venue, outletName }));
+          }).filter(Boolean);
+          setTables(flatTables);
+          setVenues(v);
+          const allSections = v.flatMap(venue => [
+            ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' })),
+            ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' }))),
+          ]);
+          if (allSections.length > 0 && !selectedSectionId) {
+            setSelectedSectionId(allSections[0].id);
+          }
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoadingVenues(false); });
+    } else {
+      setTables(syncedTables);
+      fetchVenuesForOutlet(undefined, abortController.signal)
+        .then(data => {
+          if (cancelled) return;
+          const v = Array.isArray(data) ? data : [];
+          setVenues(v);
+          const allSections = v.flatMap(venue => [
+            ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
+            ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
+          ]);
+          if (allSections.length > 0 && !selectedSectionId) {
+            setSelectedSectionId(allSections[0].id);
+          }
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoadingVenues(false); });
+    }
 
-      .then(data => {
-
-        const v = Array.isArray(data) ? data : [];
-
-        setVenues(v);
-
-        const allSections = v.flatMap(venue => [
-
-          ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
-
-          ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
-
-        ]);
-
-        if (allSections.length > 0) {
-
-          setSelectedSectionId(allSections[0].id);
-
-        }
-
-      })
-
-      .catch(() => {})
-
-      .finally(() => setLoadingVenues(false));
-
-  }, []);
+    return () => {
+      cancelled = true;
+      abortController.abort();
+    };
+  }, [dashboardScope, syncedTables]);
 
 
 
@@ -1385,9 +1420,9 @@ export function Tables({ onOpen }) {
 
     return venues.flatMap(venue => [
 
-      ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
+      ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' })),
 
-      ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
+      ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' }))),
 
     ]);
 
@@ -1445,7 +1480,7 @@ export function Tables({ onOpen }) {
 
       <h3 className="font-semibold">
 
-        {selectedSection ? `Floor Plan — ${selectedSection.venueName} — ${selectedSection.name}` : 'Floor Plan'}
+        {selectedSection ? `Floor Plan — ${selectedSection.outletName ? `${selectedSection.outletName} — ` : ''}${selectedSection.venueName} — ${selectedSection.name}` : 'Floor Plan'}
 
       </h3>
 
@@ -1465,7 +1500,7 @@ export function Tables({ onOpen }) {
 
           {allSections.map(s => (
 
-            <option key={s.id} value={s.id}>{s.venueName} — {s.name}</option>
+            <option key={s.id} value={s.id}>{s.outletName ? `${s.outletName} — ${s.venueName} — ${s.name}` : `${s.venueName} — ${s.name}`}</option>
 
           ))}
 
@@ -1569,7 +1604,7 @@ export function Tables({ onOpen }) {
 
              <div className="flex justify-between items-start w-full">
 
-               <p className="text-xl font-black leading-none">T{t.id}</p>
+               <p className="text-xl font-black leading-none">T{t.number != null ? t.number : (t.name || t.id)}</p>
 
                {!isFree && !isReserved && (
 

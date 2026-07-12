@@ -46,9 +46,9 @@ const CaptainPerformanceDashboard = lazy(() => import('../captain/CaptainPerform
 // ── Wrapper components for activeOutlet forking ──────────────────────────────
 // Keeps bar/restaurant branching inside the section, not in the router config.
 
-function TablesSection({ activeOutlet, onOpen }) {
-  if (activeOutlet === 'bar') return <BarTables />;
-  return <Tables onOpen={onOpen} />;
+function TablesSection({ activeOutlet, onOpen, dashboardScope }) {
+  if (activeOutlet === 'bar') return <BarTables dashboardScope={dashboardScope} />;
+  return <Tables onOpen={onOpen} dashboardScope={dashboardScope} />;
 }
 
 function MenuSection({ activeOutlet, onAddDish }) {
@@ -116,7 +116,7 @@ export function preloadAdminSections() {
 
 export const adminRoutes = [
   { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner'], element: <Dashboard />,                    props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope }) },
-  { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner'], element: <TablesSection />,                props: (ctx) => ({ activeOutlet: ctx.activeOutlet }) },
+  { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner'], element: <TablesSection />,                props: (ctx) => ({ activeOutlet: ctx.activeOutlet, dashboardScope: ctx.dashboardScope }) },
   { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner'], element: <MenuSection />,                  props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
   { key: 'specials',          label: 'Today Specials',         icon: StarIcon,                roles: ['admin','owner'], element: <TodaySpecials /> },
   { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner'], element: <Orders /> },

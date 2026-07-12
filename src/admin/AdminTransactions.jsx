@@ -13,12 +13,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { History, Trash2, Check, X, RefreshCw, RotateCcw } from 'lucide-react';
+import { History, Check, X, RefreshCw, RotateCcw, Eye } from 'lucide-react';
 import { fetchTransactions, deleteTransaction, confirmPayment } from '../services/orderApi';
+import { apiFetch, API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { authService } from '../services/authService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { API_BASE } from '../services/apiConfig';
 
 function formatBillNumber(txnDate, txnNumber) {
   return formatTxnDisplayId(txnDate, txnNumber);
@@ -63,6 +64,14 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const [txnStatusFilter, setTxnStatusFilter] = useState('all');
   const [confirmingId, setConfirmingId] = useState(null);
   const [fetchedSections, setFetchedSections] = useState([]);
+  const [outlets, setOutlets] = useState([]);
+  const [txnOutletFilter, setTxnOutletFilter] = useState('current');
+  const [passwordModalTxn, setPasswordModalTxn] = useState(null);
+  const [deleteStage, setDeleteStage] = useState('verify'); // 'verify' | 'confirm'
+  const [revealedTxnId, setRevealedTxnId] = useState(null);
+  const [staffMap, setStaffMap] = useState({});
+  const [deletePassword, setDeletePassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
@@ -75,6 +84,27 @@ export default function AdminTransactions({ onStatsRefresh }) {
         setFetchedSections(sections);
       })
       .catch(() => setFetchedSections([]));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/auth/staff`, { headers: { ...getAuthHeaders() } })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const map = {};
+        (Array.isArray(data) ? data : []).forEach(s => { if (s.id && s.name) map[s.id] = s.name; });
+        setStaffMap(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiFetch('/api/restaurant/outlets-overview')
+      .then(data => {
+        if (data?.outlets && Array.isArray(data.outlets)) {
+          setOutlets(data.outlets.map(o => ({ id: o.id, name: o.name })));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const sourceFilterPills = useMemo(() => {
@@ -112,8 +142,9 @@ export default function AdminTransactions({ onStatsRefresh }) {
         limitParam = 500;
       }
 
+      const outletId = txnOutletFilter === 'all' ? 'all' : null;
       const allResults = await Promise.all([
-        fetchTransactions(getCurrentRestaurantId(), limitParam, dateParam, monthParam).catch(() => []),
+        fetchTransactions(getCurrentRestaurantId(), limitParam, dateParam, monthParam, outletId).catch(() => []),
       ]);
 
       const allTxns = allResults.flatMap((txns, idx) => {
@@ -143,7 +174,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
         items: txn.itemCount || 0,
         itemsList: txn.items || [],
         captainId: txn.captainId || 'CASHIER',
-        captainName: txn.captainName || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
+        captainName: txn.captainName || staffMap[txn.captainId] || (txn.captainId && txn.captainId !== 'CASHIER' ? txn.captainId : 'Head Cashier'),
         method: txn.method || 'OTHER',
         status: txn.status || 'COMPLETED',
         rawStatus: txn.status || 'COMPLETED',
@@ -164,24 +195,57 @@ export default function AdminTransactions({ onStatsRefresh }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [txnOutletFilter]);
 
   React.useEffect(() => {
-    loadTransactions('today', '');
-  }, [loadTransactions]);
+    loadTransactions(txnDateFilter, txnCustomDate);
+  }, [loadTransactions, txnDateFilter, txnCustomDate]);
 
   const handleDelete = async (txn) => {
+    setPasswordError('');
+    setDeletePassword('');
+    setPasswordModalTxn(txn);
+    setDeleteStage('verify');
+    setConfirmDeleteId(null);
+  };
+
+  const handleConfirmDelete = (txn) => {
+    setPasswordError('');
+    setDeletePassword('');
+    setPasswordModalTxn(txn);
+    setDeleteStage('confirm');
+  };
+
+  const submitDeletePassword = async () => {
+    if (!passwordModalTxn || !deletePassword) return;
+    const trimmedPassword = deletePassword.trim();
     setDeleting(true);
+    setPasswordError('');
     try {
-      const result = await deleteTransaction(txn.id, txn.restaurantId);
-      if (result?.offline) {
-        alert('Transaction delete queued — will sync when online.');
+      const verifyRes = await fetch(`${API_BASE}/api/auth/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeader() },
+        body: JSON.stringify({ password: trimmedPassword }),
+      });
+      const verifyData = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok || !verifyData.valid) {
+        setPasswordError(verifyData.error || 'Incorrect password');
+        return;
       }
-      setTransactions(prev => prev.filter(t => t.id !== txn.id));
-      setConfirmDeleteId(null);
+      if (deleteStage === 'verify') {
+        setPasswordModalTxn(null);
+        setDeletePassword('');
+        setRevealedTxnId(passwordModalTxn.id);
+        return;
+      }
+      await deleteTransaction(passwordModalTxn.id, passwordModalTxn.restaurantId, trimmedPassword);
+      setTransactions(prev => prev.filter(t => t.id !== passwordModalTxn.id));
+      setPasswordModalTxn(null);
+      setDeletePassword('');
+      setRevealedTxnId(null);
       if (onStatsRefresh) onStatsRefresh();
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      setPasswordError(err.message || 'Delete failed');
     } finally {
       setDeleting(false);
     }
@@ -317,6 +381,22 @@ export default function AdminTransactions({ onStatsRefresh }) {
                 {f.label}
               </button>
             ))}
+            <div className="flex items-center gap-1 ml-4">
+              <button
+                onClick={() => setTxnOutletFilter('current')}
+                className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${txnOutletFilter === 'current' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                Current Outlet
+              </button>
+              {outlets.length > 1 && (
+                <button
+                  onClick={() => setTxnOutletFilter('all')}
+                  className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${txnOutletFilter === 'all' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  All Outlets
+                </button>
+              )}
+            </div>
             <button
               onClick={() => { loadTransactions(txnDateFilter, txnCustomDate); }}
               className="ml-auto px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm flex items-center gap-1"
@@ -356,6 +436,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
               value={txnSearch}
               onChange={e => setTxnSearch(e.target.value)}
               placeholder="Search bill, captain, table, amount..."
+              autoComplete="off"
               className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 w-52 shadow-inner transition-colors"
             />
           </div>
@@ -444,31 +525,24 @@ export default function AdminTransactions({ onStatsRefresh }) {
                                 <RotateCcw size={13} />
                               </button>
                             )}
-                            {confirmDeleteId === txn.id ? (
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => handleDelete(txn)}
-                                  disabled={deleting}
-                                  className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
-                                >
-                                  <Check size={13} />
-                                </button>
-                                <button
-                                  onClick={() => setConfirmDeleteId(null)}
-                                  className="p-1.5 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
-                                >
-                                  <X size={13} />
-                                </button>
-                              </div>
+                            {revealedTxnId === txn.id ? (
+                              <button
+                                onClick={() => handleConfirmDelete(txn)}
+                                disabled={deleting}
+                                title="Delete transaction"
+                                className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-red-700 transition-colors disabled:opacity-50"
+                              >
+                                Delete
+                              </button>
                             ) : (
-                              txn.status !== 'COMPLETED' && (
-                                <button
-                                  onClick={() => setConfirmDeleteId(txn.id)}
-                                  className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              )
+                              <button
+                                onClick={() => handleDelete(txn)}
+                                disabled={deleting}
+                                title="Reveal delete option"
+                                className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                              >
+                                <Eye size={15} />
+                              </button>
                             )}
                           </div>
                         </td>
@@ -510,6 +584,49 @@ export default function AdminTransactions({ onStatsRefresh }) {
           </div>
         </div>
       </div>
+
+      {passwordModalTxn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-sm font-black uppercase tracking-tight text-gray-900">
+              {deleteStage === 'verify' ? 'Verify to Reveal Delete' : 'Confirm Transaction Delete'}
+            </h3>
+            <p className="text-xs text-gray-500">
+              {deleteStage === 'verify'
+                ? <>Enter your login password to reveal the delete option for <span className="font-bold text-gray-900">{passwordModalTxn.displayId || passwordModalTxn.id}</span>.</>
+                : <>Enter your login password again to permanently delete <span className="font-bold text-gray-900">{passwordModalTxn.displayId || passwordModalTxn.id}</span>. This action cannot be undone.</>}
+            </p>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={e => { setDeletePassword(e.target.value); setPasswordError(''); }}
+              placeholder={deleteStage === 'verify' ? 'Your password' : 'Confirm your password'}
+              autoComplete="current-password"
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold outline-none focus:border-[#E53935]"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') submitDeletePassword(); }}
+            />
+            {passwordError && (
+              <p className="text-xs font-bold text-red-600">{passwordError}</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setPasswordModalTxn(null); setDeletePassword(''); setPasswordError(''); }}
+                className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitDeletePassword}
+                disabled={!deletePassword || deleting}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

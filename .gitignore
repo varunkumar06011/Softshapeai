@@ -32,3 +32,5 @@ softshape-release.keystore
 *.key
 *.key.pub
 .tauri/
+.vercel
+.env*
