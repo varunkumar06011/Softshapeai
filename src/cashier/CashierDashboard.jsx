@@ -50,6 +50,7 @@ import LiveTimer from '../shared/components/LiveTimer';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig';
 import { getTenantScopedKey, getTablesCacheKey, getBarTablesCacheKey } from '../utils/cacheKeys';
+import { safeGetJSON } from '../utils/safeParseJSON';
 import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../context/SyncStatusContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
@@ -329,12 +330,12 @@ const CashierDashboard = ({ onLogout }) => {
           // Merge into auth context via localStorage since we can't directly setAuth here
           const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
           if (authKey) {
-            try {
-              const parsed = JSON.parse(localStorage.getItem(authKey));
-              parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
-              localStorage.setItem(authKey, JSON.stringify(parsed));
-            } catch {}
-          }
+              const parsed = safeGetJSON(authKey, null);
+              if (parsed) {
+                parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
+                localStorage.setItem(authKey, JSON.stringify(parsed));
+              }
+            }
         }
       })
       .catch(() => {});
@@ -606,7 +607,7 @@ const CashierDashboard = ({ onLogout }) => {
   const menuLoading = activeOutlet === 'bar' || activeOutlet === 'both' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [extraTables, setExtraTables] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(getTenantScopedKey('cashier_extra_tables')) || '[]'); } catch { return []; }
+    return safeGetJSON(getTenantScopedKey('cashier_extra_tables'), []);
   });
 
   // Derived — based on enabledModules
@@ -2069,7 +2070,7 @@ const CashierDashboard = ({ onLogout }) => {
           billPrintCooldownRef.current.delete(selectedTable.backendId);
           // Persist removal
           try {
-            const stored = JSON.parse(localStorage.getItem(getTenantScopedKey('cashier_bill_printed_tables')) || '[]');
+            const stored = safeGetJSON(getTenantScopedKey('cashier_bill_printed_tables'), []);
             localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify(stored.filter(id => id !== selectedTable.backendId)));
           } catch {}
           setSelectedTable(null); setSelectedOrder(null); setCart([]);
@@ -2831,7 +2832,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (!selectedTable.isExtra && tableIdForCache) {
             try {
               const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
-              const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+              const cached = safeGetJSON(cacheKey, []);
               const updatedCache = cached.map(t =>
                 t.backendId === tableIdForCache ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
               );
@@ -2943,7 +2944,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (!selectedTable.isExtra && tableIdForCache) {
         try {
           const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
-          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+          const cached = safeGetJSON(cacheKey, []);
           const updatedCache = cached.map(t =>
             t.backendId === tableIdForCache ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
           );
@@ -3512,7 +3513,7 @@ const CashierDashboard = ({ onLogout }) => {
         setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
         const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
         try {
-          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+          const cached = safeGetJSON(cacheKey, []);
           const updated = cached.map(t =>
             t.backendId === selectedTable.backendId
               ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null, billNumber: null }
@@ -3928,7 +3929,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Step 6: Evict terminated table from localStorage cache so hard refresh never shows it again
       const cacheKey = (activeOutlet === 'bar' || activeOutlet === 'both') ? getBarTablesCacheKey() : getTablesCacheKey();
       try {
-        const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        const cached = safeGetJSON(cacheKey, []);
         const filtered = cached.filter(t => t.backendId !== tableSnap.backendId);
         localStorage.setItem(cacheKey, JSON.stringify(filtered));
       } catch { /* ignore */ }

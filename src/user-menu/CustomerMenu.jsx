@@ -26,7 +26,7 @@ import { fetchPublicMenu } from '../services/unifiedMenuService';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { generateCallId } from '../services/customerSessionService';
 import { initPublicSocket, useWaiterCalls, API_BASE } from '../services/waiterCallService';
-import { getPublicSocket } from '../hooks/useSocket';
+import { getPublicSocket, getPublicSocketInstance } from '../hooks/useSocket';
 import { apiUrl } from '../services/apiConfig';
 
 
@@ -176,7 +176,7 @@ export default function CustomerMenu({ slug, tableId, sig, representativeId, isM
         console.warn('[CustomerMenu] Failed to get public socket:', e.message);
       }
     } else {
-      socket = window.__softshape_public_socket;
+      socket = getPublicSocketInstance();
     }
 
     if (socket) {

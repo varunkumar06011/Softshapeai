@@ -51,18 +51,12 @@ export const AuthProvider = ({ children }) => {
     return saved;
   });
   const [user, setUser] = useState(() => {
-    const savedToken = localStorage.getItem('ss_token');
-    if (!isTokenValid(savedToken)) {
-      return null;
-    }
+    if (!token) return null;
     const saved = localStorage.getItem('ss_user');
     return saved ? JSON.parse(saved) : null;
   });
   const [restaurant, setRestaurantState] = useState(() => {
-    const savedToken = localStorage.getItem('ss_token');
-    if (!isTokenValid(savedToken)) {
-      return null;
-    }
+    if (!token) return null;
     const saved = localStorage.getItem('ss_restaurant');
     return saved ? JSON.parse(saved) : null;
   });

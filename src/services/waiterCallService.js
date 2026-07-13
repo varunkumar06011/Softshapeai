@@ -17,10 +17,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react';
-import { getSocket, getPublicSocket } from "../hooks/useSocket";
+import { getSocket, getPublicSocket, onSocketDisconnect } from "../hooks/useSocket";
 import { API_BASE } from "./apiConfig";
 import { getTenantScopedKey } from "../utils/cacheKeys";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { safeGetJSON } from "../utils/safeParseJSON";
 
 export { API_BASE };
 
@@ -40,12 +41,10 @@ export function resetWaiterCallListeners() {
   isPublicListenerAttached = false;
 }
 
-// Listen for socket disconnect event from useSocket.js (breaks circular dependency)
-if (typeof window !== 'undefined') {
-  window.addEventListener('softshape:socket-disconnected', () => {
-    resetWaiterCallListeners();
-  });
-}
+// Listen for socket disconnect event via callback (replaces window DOM event)
+onSocketDisconnect(() => {
+  resetWaiterCallListeners();
+});
 
 /**
  * Ensures the socket is connected to the restaurant room and
@@ -281,7 +280,7 @@ export function useWaiterCalls() {
 
     // ── Load persisted calls from localStorage (survive refresh) ──
     try {
-      const db = JSON.parse(localStorage.getItem(getTenantScopedKey('softshape_waiter_calls')) || '{}');
+      const db = safeGetJSON(getTenantScopedKey('softshape_waiter_calls'), {});
       const now = Date.now();
       const STALE_MS = 5 * 60 * 1000; // 5 min
       const pending = Object.values(db).filter(c =>
@@ -316,7 +315,7 @@ export function useWaiterCalls() {
     console.log("[WaiterCallSync] Clearing call:", callId);
     setActiveCalls(prev => prev.filter(c => c.callId !== callId));
     try {
-      const db = JSON.parse(localStorage.getItem(getTenantScopedKey('softshape_waiter_calls')) || '{}');
+      const db = safeGetJSON(getTenantScopedKey('softshape_waiter_calls'), {});
       const tableKey = Object.keys(db).find(key => db[key].callId === callId);
       if (tableKey) {
         delete db[tableKey];

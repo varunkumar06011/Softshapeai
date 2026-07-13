@@ -55,6 +55,7 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
 import { getTenantScopedKey } from '../utils/cacheKeys';
+import { safeGetJSON } from '../utils/safeParseJSON';
 import { useAuth } from '../context/AuthContext.jsx';
 
 import { getItemCategory } from '../utils/itemHelpers';
@@ -446,11 +447,11 @@ export default function CaptainApp({ onLogout }) {
           if (data?.restaurant?.enabledModules) {
             const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
             if (authKey) {
-              try {
-                const parsed = JSON.parse(localStorage.getItem(authKey));
+              const parsed = safeGetJSON(authKey, null);
+              if (parsed) {
                 parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
                 localStorage.setItem(authKey, JSON.stringify(parsed));
-              } catch {}
+              }
             }
           }
         })
@@ -564,10 +565,8 @@ export default function CaptainApp({ onLogout }) {
   const [captainSlug, setCaptainSlug] = useState(
 
     () => {
-      try {
-        const r = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
-        return r?.slug || '';
-      } catch { return ''; }
+      const r = safeGetJSON('ss_restaurant', {});
+      return r?.slug || '';
     }
 
   );

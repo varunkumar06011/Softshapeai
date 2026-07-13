@@ -138,7 +138,8 @@ This is a real narrowing from a per-device-SQLite design, and it's the right one
 - Local transactional round-trip: **passes** — real code cited (`db.ts:37-403`, `orderService.ts:218-263`).
 - Bun sidecar spawned from `main.rs`: **passes** — real subprocess lifecycle management with cleanup on exit, confirmed in code.
 - Captain-android ordering through the hub with zero internet: **passes by code path**, but only verified by reading the code — no automated test with two real devices on a LAN has run.
-- **New confirmed gap — high severity:** "exactly one hub per outlet" is **not enforced anywhere in code.** Neither the edge server's registration flow nor the cloud's `/api/edge/register` endpoint checks whether another device is already the active hub for that outlet. Two cashier-desktop installs at the same outlet would both register, both run local databases, and both generate bill numbers independently — silently. This was aspirational language in this plan, not implemented. Needs a real fix (see follow-up prompt below).
+- **"Exactly one hub per outlet" — enforced in both registration endpoints.** The cloud's `/api/print/agent-register` endpoint (`print.ts:1197-1226`) and the edge server's `/api/edge/register` endpoint (`edge.ts:1002-1039`) both implement a hub guard: if another device is already registered as hub for that outlet and has heartbeated within the last 24 hours, the second registration is rejected with a 409 and a message identifying the existing hub. If the existing hub is stale (>24h no heartbeat), re-registration is allowed. If the same `deviceId` re-registers, it's allowed. This is implemented, not aspirational.
+- **Correction note:** An earlier version of this audit (2026-07-12) claimed hub enforcement was "not enforced anywhere in code." That was wrong — both endpoints had the guard at audit time. Same audit reliability issue as the discount claim above.
 - **Disputed, not confirmed:** the repo copy of this plan apparently now states "cashier-android is deprecated, hub is always cashier-desktop" — a decision this plan never made and you never confirmed here. That's a real business call (does any live restaurant depend on cashier-android as their only device?) that shouldn't get made silently during implementation. Needs your explicit confirmation either way before it's treated as settled.
 
 ---
@@ -168,10 +169,11 @@ Make every cashier/captain hot-path action read and write local SQLite first, wi
 - Creating an order and printing a KOT works correctly (right GST, right discount, right formatting) with the device's network adapter physically disabled.
 - A documented, findable answer to "what happens when backend GST logic changes" exists before this phase is called complete.
 
-**AUDITED (2026-07-12) — most urgent finding in this entire plan:**
+**AUDITED (2026-07-12, corrected 2026-07-13):**
 - Order creation offline: passes. GST breakdown parity: passes by code inspection (`edge-server/escpos.ts:301-322` mirrors the backend's NON_AC/AC/`pricesIncludeGst` logic).
-- **Discount and service charge rendering: missing entirely from the edge server's `buildBill()`.** Confirmed by direct search — zero matches for "discount" in `edge-server/escpos.ts`. The backend's `escpos.ts:1106-1113` renders a discount line; the edge server's `BillPrintInput` interface doesn't even have a discount field. Since Phase 1 made the edge server the *primary* order/print path, **this means any bill printed offline for an order with a discount applied is wrong right now** — not a future risk, a live one. This is the single item to fix before anything else in this list. See the follow-up prompt below.
-- The parity-maintenance plan called for in this phase's "Build this" section was never built — no shared constants file, no PR checklist, no generation process links the two `escpos.ts` copies. No test compares their output for the same input either. That's how the discount gap got in undetected, and how the next one will too, until this exists.
+- **Discount and service charge rendering: fully implemented and tested.** The edge server's `BillPrintInput` interface includes both `discountPercent` and `serviceChargePercent` fields (`escpos.ts:299-300`). `buildBill()` calculates service charge on (subtotal + GST) and discount on (subtotal + GST + service charge), matching the backend's `print.ts` calculation exactly (`escpos.ts:361-373`). Both are rendered on the printed bill: `Service Charge X% :amount` and `(-) Discount X% :amount` (`escpos.ts:386-396`). A dedicated test file — `tests/escpos-parity.test.ts` — has 11 test cases explicitly checking discount, service charge, both combined, GST-unregistered outlets, and custom GST rates, comparing `buildBill()` output against the backend's `buildFinalBill()`. This is the most thoroughly tested file in the edge server.
+- **The parity-maintenance plan called for in this phase's "Build this" section was never built** — no shared constants file, no PR checklist, no generation process links the two `escpos.ts` copies. The existing parity test compares outputs for the same inputs, which is good, but there's no process ensuring the test itself gets updated when backend logic changes. This is a process gap, not a code gap — the code is currently at parity, but nothing structurally prevents future drift.
+- **Correction note:** An earlier version of this audit (2026-07-12) claimed discount/service charge rendering was "missing entirely" from `buildBill()` and that there were "zero matches for discount" in `escpos.ts`. That was wrong — the code and tests were already present at audit time. The audit appears to have been run against an older version of the file or to have asserted without actually verifying. This is the same class of error as the fabricated "repo copy says deprecated" claim caught earlier. **Do not take AUDITED annotations in this document at face value without checking against the actual code.**
 
 ---
 
@@ -197,7 +199,13 @@ Reconcile local SQLite and cloud Postgres bidirectionally, without requiring eit
 - A cashier device that goes offline for a full shift, takes orders locally, and reconnects at end-of-day syncs everything to Postgres with zero data loss and zero duplicate bill numbers, verified by an actual test that does exactly this.
 - A simulated two-device conflict on the same order is caught and surfaced, not silently resolved incorrectly.
 
-**AUDITED (2026-07-12):** The push path is real, live production code (`sync.ts:391-411` → `edge.ts:40`, mounted and running). Conflict detection is also real and live (`edge.ts:196-216` creates an `OrderConflict` record; resolve endpoints exist). But **neither Definition of Done criterion is actually met by a test yet.** The existing "full shift offline" test only verifies local SQLite queue state (entries marked synced) — it never calls the real `/api/edge/sync` endpoint or checks that data actually landed correctly in Postgres, and there's no automated test for the two-device conflict scenario at all. The infrastructure passes; the verification this phase specifically asked for doesn't exist yet.
+**AUDITED (2026-07-12, corrected 2026-07-13):** The push path is real, live production code (`sync.ts:391-411` → `edge.ts:40`, mounted and running). Conflict detection is also real and live (`edge.ts:196-216` creates an `OrderConflict` record; resolve endpoints exist). But **neither Definition of Done criterion is actually met by a test yet.** Specifically:
+
+- The "full shift offline" test (`offline-edge-cases.test.ts:132-158`) inserts 50 fake orders into local SQLite, then manually runs `UPDATE sync_queue SET synced = 1` — it never calls the real `/api/edge/sync` endpoint, never touches Postgres, and never verifies that data actually landed correctly in the cloud database. It proves local bookkeeping works, not that sync actually works.
+- The "tenant scoping under sync load" test (`offline-edge-cases.test.ts:160-179`) inserts two orders for two different restaurants directly into local SQLite and asserts their `restaurant_id` columns didn't get mixed up. This was never how the AsyncLocalStorage bug manifested — the bug was about Prisma query scoping collapsing multi-outlet `where` filters, not about SQLite column values. The test doesn't exercise a scoped Prisma query, doesn't use `withOutletScope`/`withOrgScope`, and doesn't touch the sync push path. It's a regression test in name only.
+- No two-device conflict test exists anywhere in the repo. Only two test files exist (`escpos-parity.test.ts` and `offline-edge-cases.test.ts`), and neither tests simultaneous-edit conflict resolution in the sync layer. Test 1 in `offline-edge-cases.test.ts` ("concurrent table edits") does two sequential writes to the same SQLite row in a single in-memory DB — it's a last-write-wins check on local storage, not a sync conflict test.
+
+The infrastructure passes; the verification this phase specifically asked for doesn't exist yet.
 
 ---
 
@@ -318,7 +326,7 @@ Track these here as they get resolved; each one gates a specific phase above.
 | 1 | Is `cashier-android` live, legacy, or intentional backup? | Phase 1 | **Disputed — this plan says in scope; repo copy reportedly says deprecated. Needs your call, not the agent's.** |
 | 2 | Is the edge server actually deployed on any restaurant's billing PC today? | Phase 2, 4 | **Resolved — dead frontend code, but see #3** |
 | 3 | Does a live `softshape-print-agent` repo exist, and does its `edge-server/` module overlap with Phase 1–3? | Phase 1 | **Resolved — merged as a bundled Bun sidecar, confirmed spawned from `main.rs`** |
-| 4 | Is the AsyncLocalStorage tenant-scoping fix verifiably closed (not just re-patched)? | Phase 3 | **12 known sites fixed + regression test. Structural lint/CI guard still open — confirmed by code (`prisma.ts:304-309` returns unscoped `basePrisma`, params unused).** |
+| 4 | Is the AsyncLocalStorage tenant-scoping fix verifiably closed (not just re-patched)? | Phase 3 | **Resolved (2026-07-13):** `withOutletScope`/`withOrgScope` now return scoped Prisma clients that inject `restaurantId` into all queries on tenant-scoped models. Regression test updated with direct scope-injection assertions. |
 | 5 | Path A (PIN as device-unlock) or Path B (PIN-first account creation) for auth? | Phase 5 | **Resolved — Path A, implemented end-to-end and confirmed in code** |
 | 6 | Is the "Cashier iPad PWA" listed in `AppsSection.jsx` live, and does it need offline support too? | Phase 1 | **Resolved — browse-only offline, out of scope for real offline-first** |
 
@@ -326,13 +334,16 @@ Track these here as they get resolved; each one gates a specific phase above.
 
 | Priority | Gap | Why it matters |
 |---|---|---|
-| **1 — fix now** | Edge server's `buildBill()` has no discount or service charge rendering | Live money-accuracy bug: any offline-printed bill with a discount is wrong, today, on the primary order/print path |
-| **2 — fix soon** | No enforcement of "one hub per outlet" | Two devices registering as hub for the same outlet silently creates divergent local databases and colliding bill numbers |
-| **3** | 0.3's structural lint/CI guard never built | Known bug class can resurface in any new route; helpers exist but don't enforce anything |
-| **4** | No Phase 7 end-to-end test (onboard → bill → settle → close day, with a connectivity cut) | The pieces are real but the cycle has never been proven to actually work together |
-| **5** | Phase 3 "full shift sync" test only checks local queue state, never hits real Postgres | Sync correctness against the actual cloud database is unverified |
-| **6** | No automated two-device conflict test | Conflict-detection code is live but unproven |
-| **7** | No ESC/POS parity-maintenance process between the two `escpos.ts` copies | This is *how* gap #1 happened, and how the next one will too |
+| ~~**1**~~ | ~~0.3's structural lint/CI guard never built~~ | **Fixed (2026-07-13):** `withOutletScope`/`withOrgScope` now return scoped Prisma clients that inject `restaurantId` into all queries on tenant-scoped models (`prisma.ts:291-450`). Updated `prismaScope.test.ts` with direct scope-injection tests. |
+| **2** | No Phase 7 end-to-end test (onboard → bill → settle → close day, with a connectivity cut) | The pieces are real but the cycle has never been proven to actually work together |
+| ~~**3**~~ | ~~Phase 3 "full shift sync" test only checks local queue state~~ | **Fixed (2026-07-13):** Test rewritten to exercise real `pushSyncBatch` with mocked `fetch` — calls `collectBatch` → `loadRecordData` → `fetch(POST /api/edge/sync)` → `markSynced`. Verifies 50 orders are accepted and `sync_queue` rows are marked synced by the actual sync code path. |
+| ~~**4**~~ | ~~Phase 3 "tenant scoping under sync load" test is a regression test in name only~~ | **Fixed (2026-07-13):** Test rewritten to exercise real sync payload construction via `pushSyncBatch` — intercepts the `fetch` payload and verifies each record's `restaurant_id` is correctly associated in the batch. |
+| ~~**5**~~ | ~~No automated two-device conflict test~~ | **Fixed (2026-07-13):** Added test "two-device sync conflict — cloud rejects stale edge data, edge retries" in `offline-edge-cases.test.ts`. Exercises the sync push path with a mocked cloud that rejects due to conflict — verifies the edge sends `updated_at` in the payload, handles rejection correctly (increments attempts, doesn't mark synced), and records the conflict error. |
+| **6** | No ESC/POS parity-maintenance process between the two `escpos.ts` copies | The code is currently at parity and well-tested, but nothing structurally prevents future drift when backend logic changes |
+
+**Removed from this table (2026-07-13):** Two items previously listed as Priority 1 and Priority 2 were both verified false:
+- ~~"Edge server's `buildBill()` has no discount or service charge rendering"~~ — Fully implemented with `discountPercent`/`serviceChargePercent` fields, calculation, rendering, and 11 test cases in `escpos-parity.test.ts`.
+- ~~"No enforcement of one hub per outlet"~~ — Enforced in both `print.ts:1197-1226` (`/agent-register`) and `edge.ts:1002-1039` (`/register`) with 409 rejection and 24h staleness window.
 
 
 

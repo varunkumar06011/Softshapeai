@@ -40,6 +40,7 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { fetchPublicMenu } from '../services/unifiedMenuService';
 
 import { useBarMenuSync } from '../services/barMenuSyncService';
+import { getPublicSocketInstance } from '../hooks/useSocket';
 
 
 import {
@@ -318,7 +319,7 @@ export default function BarMenu({ slug, tableId, sig, representativeId, isMenuOn
 
     // Get socket from waiterCallService
 
-    const socket = window.__softshape_public_socket;
+    const socket = getPublicSocketInstance();
 
     if (socket) {
 
