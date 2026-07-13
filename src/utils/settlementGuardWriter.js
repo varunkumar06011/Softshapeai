@@ -118,7 +118,7 @@ export async function loadSettlementGuards() {
 
     if (orderIds.size === 0 && tableIds.size === 0) {
       // IndexedDB is empty; try the snapshot in case the flush was interrupted.
-      const snapshot = JSON.parse(localStorage.getItem(getSnapshotKey()) || '{}');
+      const snapshot = safeParseJSON(localStorage.getItem(getSnapshotKey()), {});
       if (Array.isArray(snapshot.orderIds) && Array.isArray(snapshot.tableIds)) {
         return {
           orderIds: new Set(snapshot.orderIds),

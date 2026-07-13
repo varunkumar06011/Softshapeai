@@ -73,11 +73,11 @@ export async function checkStorageQuota() {
  * Returns true if the device is on battery power and below a low threshold.
  * On desktop/unknown, returns false so sync keeps running normally.
  */
-export function shouldDeferSyncOnBattery() {
+export async function shouldDeferSyncOnBattery() {
   try {
-    const battery = navigator.getBattery ? navigator.getBattery() : null;
-    if (!battery) return false;
-    return battery.then ? battery.then(b => !b.charging && b.level < 0.15) : false;
+    if (!navigator.getBattery) return false;
+    const battery = await navigator.getBattery();
+    return !battery.charging && battery.level < 0.15;
   } catch {
     return false;
   }
@@ -112,7 +112,7 @@ export function subscribeStuckActions(callback) {
 
 function notifyStuckActionListeners() {
   stuckActionListeners.forEach(cb => {
-    try { cb(stuckCount); } catch (e) { /* ignore */ }
+    try { cb(stuckCount); } catch (e) { console.debug('[SyncEngine] stuckAction listener error:', e); }
   });
 }
 
@@ -131,7 +131,7 @@ export function clearAuthExpired() {
 function notifyStatusListeners() {
   const status = getSyncStatus();
   statusListeners.forEach(cb => {
-    try { cb(status); } catch (e) { /* listener error — ignore */ }
+    try { cb(status); } catch (e) { console.debug('[SyncEngine] status listener error:', e); }
   });
 }
 

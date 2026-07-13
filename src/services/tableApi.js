@@ -25,8 +25,8 @@ async function parseResponse(res) {
     try {
       const body = await res.json();
       if (body?.error) message = body.error;
-    } catch {
-      /* ignore */
+    } catch (e) {
+      console.debug('[tableApi] parseResponse json error:', e);
     }
     throw new Error(message);
   }
@@ -72,8 +72,8 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
   if (await isEdgeAvailable()) {
     try {
       return await edgeFetch('/api/edge/tables');
-    } catch {
-      // fall through to cloud
+    } catch (e) {
+      console.debug('[tableApi] edge fetch tables failed, falling through to cloud:', e);
     }
   }
   const res = await fetchWithRetry(apiUrl(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}`), {
@@ -94,8 +94,8 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
   if (await isEdgeAvailable()) {
     try {
       return await edgeFetch('/api/edge/sections');
-    } catch {
-      // fall through to cloud
+    } catch (e) {
+      console.debug('[tableApi] edge fetch sections failed, falling through to cloud:', e);
     }
   }
   const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`), {
@@ -109,8 +109,8 @@ export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
   if (await isEdgeAvailable()) {
     try {
       return await edgeFetch('/api/edge/venues');
-    } catch {
-      // fall through to cloud
+    } catch (e) {
+      console.debug('[tableApi] edge fetch venues failed, falling through to cloud:', e);
     }
   }
   const res = await fetchWithRetry(apiUrl(`/api/venues?restaurantId=${encodeURIComponent(restaurantId)}`), {

@@ -39,6 +39,7 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import OperationsDashboard from './OperationsDashboard';
+import { safeGetJSON } from '../utils/safeParseJSON';
 
 const BEVERAGE_KEYWORDS = [
   'water', 'sprite', 'thums up', 'thumsup', 'tin thums', 'soda', 'cola', 'coke', 'pepsi',
@@ -1616,11 +1617,11 @@ export default function AdminReports() {
             // localStorage merge fallback
             const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
             if (authKey) {
-              try {
-                const parsed = JSON.parse(localStorage.getItem(authKey));
+              const parsed = safeGetJSON(authKey, null);
+              if (parsed) {
                 parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
                 localStorage.setItem(authKey, JSON.stringify(parsed));
-              } catch {}
+              }
             }
           }
         })

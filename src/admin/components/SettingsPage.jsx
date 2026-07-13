@@ -41,6 +41,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { adminRoutes } from '../adminRoutes';
+import { safeGetJSON } from '../../utils/safeParseJSON';
 import PhoneOtpVerifier from '../../shared/components/PhoneOtpVerifier';
 import EmailOtpVerifier from '../../shared/components/EmailOtpVerifier';
 
@@ -370,7 +371,7 @@ function SettingsPage({ onNavigate }) {
       });
       // Update auth context + localStorage with new token/user
       if (res.token) {
-        const existingRestaurant = JSON.parse(localStorage.getItem('ss_restaurant') || 'null');
+        const existingRestaurant = safeGetJSON('ss_restaurant', null);
         setAuth({ token: res.token, user: res.user, restaurant: existingRestaurant });
       }
       setAccountData({ name: res.user.name, email: res.user.email });

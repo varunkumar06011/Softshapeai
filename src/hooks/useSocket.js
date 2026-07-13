@@ -20,6 +20,7 @@
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
+import { safeGetJSON } from "../utils/safeParseJSON";
 
 // Singleton socket instance — shared across the entire app
 let socketInstance = null;
@@ -27,6 +28,20 @@ let socketInstance = null;
 let eventQueue = [];
 // Ensures events are processed in order (FIFO)
 let isProcessingQueue = false;
+
+// ── Socket disconnect listener system (replaces window.dispatchEvent) ──
+const socketDisconnectListeners = new Set();
+
+export function onSocketDisconnect(callback) {
+  socketDisconnectListeners.add(callback);
+  return () => socketDisconnectListeners.delete(callback);
+}
+
+function notifySocketDisconnect() {
+  socketDisconnectListeners.forEach(cb => {
+    try { cb(); } catch (e) { console.debug('[Socket] disconnect listener error:', e); }
+  });
+}
 
 export function reconnectSocket(token) {
   if (!socketInstance) return;
@@ -38,13 +53,13 @@ export function disconnectSocket() {
   if (!socketInstance) return;
   try {
     socketInstance.disconnect();
-  } catch {
-    /* ignore */
+  } catch (e) {
+    console.debug('[Socket] disconnectSocket error:', e);
   }
   socketInstance = null;
   eventQueue = [];
   isProcessingQueue = false;
-  window.dispatchEvent(new CustomEvent('softshape:socket-disconnected'));
+  notifySocketDisconnect();
 }
 
 export function getSocket() {
@@ -128,6 +143,7 @@ export function safeEmit(event, data) {
 export function useSocket(restaurantId) {
   const socket = getSocket();
   const prevRestaurantIdRef = useRef(null);
+  const prevTokenRef = useRef(localStorage.getItem('ss_token'));
 
   useEffect(() => {
     if (!restaurantId) return;
@@ -140,12 +156,12 @@ export function useSocket(restaurantId) {
       socket.emit("join", restaurantId);
       // Also join the shared kitchen room for low-stock alerts
       try {
-        const rest = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+        const rest = safeGetJSON('ss_restaurant', {});
         const kitchenId = rest.sharedKitchenOutletId || restaurantId;
         if (kitchenId !== restaurantId) {
           socket.emit("join:kitchen", kitchenId);
         }
-      } catch { /* ignore parse error */ }
+      } catch (e) { console.debug('[Socket] ss_restaurant parse error:', e); }
       prevRestaurantIdRef.current = restaurantId;
     };
 
@@ -160,6 +176,23 @@ export function useSocket(restaurantId) {
       }
     };
   }, [restaurantId, socket]);
+
+  // Reconnect socket when auth token changes (e.g. re-login as different user)
+  useEffect(() => {
+    const checkToken = () => {
+      const currentToken = localStorage.getItem('ss_token');
+      if (currentToken !== prevTokenRef.current) {
+        prevTokenRef.current = currentToken;
+        if (currentToken) {
+          reconnectSocket(currentToken);
+        }
+      }
+    };
+    // Check on mount and when window regains focus (e.g. switching back from another tab/portal)
+    checkToken();
+    window.addEventListener('focus', checkToken);
+    return () => window.removeEventListener('focus', checkToken);
+  }, []);
 
   return socket;
 }
@@ -214,7 +247,7 @@ export function getPublicSocket(slug, tableId, sig) {
     });
 
     // Store globally for menu-item-updated listeners
-    window.__softshape_public_socket = publicSocketInstance;
+    // (accessed via getPublicSocketInstance() — no longer on window)
   } else {
     // Update stored params in case they changed (e.g. different table)
     publicSocketInstance.__publicParams = { slug, tableId, sig };
@@ -227,10 +260,15 @@ export function disconnectPublicSocket() {
   if (publicSocketInstance) {
     try {
       publicSocketInstance.disconnect();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      console.debug('[PublicSocket] disconnect error:', e);
     }
     publicSocketInstance = null;
-    window.__softshape_public_socket = null;
   }
+}
+
+// Returns the current public socket instance without creating one.
+// Use this instead of window.__softshape_public_socket.
+export function getPublicSocketInstance() {
+  return publicSocketInstance;
 }

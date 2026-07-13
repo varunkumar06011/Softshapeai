@@ -51,15 +51,17 @@ function toBool(value) {
 // 60-second timeout for menu fetch requests (large menus may take time)
 const FETCH_TIMEOUT_MS = 60000;
 
-const fetchOpts = {
-  method: "GET",
-  cache: "no-store",
-  headers: {
-    "Cache-Control": "no-cache",
-    Pragma: "no-cache",
-    ...getAuthHeaders(),
-  },
-};
+function buildFetchOpts() {
+  return {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...getAuthHeaders(),
+    },
+  };
+}
 
 /** Wrap fetch with a timeout so DNS failures fail fast */
 async function fetchWithTimeout(url, options, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -185,7 +187,7 @@ async function parseMenuResponse(res, label) {
 async function fetchLeanMenu(restaurantId = getCurrentRestaurantId()) {
   const url = apiUrl(`/api/menu/items?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
-  const res = await fetchWithRetry(url, fetchOpts, { retries: 3, timeoutMs: 60000 });
+  const res = await fetchWithRetry(url, buildFetchOpts(), { retries: 3, timeoutMs: 60000 });
   const items = await parseMenuResponse(res, "Menu items");
   return mapFlatMenuItems(items);
 }
@@ -193,7 +195,7 @@ async function fetchLeanMenu(restaurantId = getCurrentRestaurantId()) {
 async function fetchPosViewMenu(restaurantId = getCurrentRestaurantId()) {
   const url = apiUrl(`/api/menu/pos-view?restaurantId=${encodeURIComponent(restaurantId)}`);
   console.log("[MenuService] GET", url);
-  const res = await fetchWithRetry(url, fetchOpts, { retries: 3, timeoutMs: 60000 });
+  const res = await fetchWithRetry(url, buildFetchOpts(), { retries: 3, timeoutMs: 60000 });
   const categories = await parseMenuResponse(res, "Menu pos-view");
   return mapPosViewToMenuItems(categories);
 }

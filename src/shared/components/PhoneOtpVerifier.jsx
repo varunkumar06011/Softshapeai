@@ -78,7 +78,7 @@ const PhoneOtpVerifier = ({ phone, sessionId, onVerified, onError, onCancel }) =
     await clearRecaptchaUtil(recaptchaVerifierRef.current);
     recaptchaVerifierRef.current = null;
     const container = document.getElementById(recaptchaContainerId);
-    if (container) container.innerHTML = '';
+    if (container) container.replaceChildren();
   }, [recaptchaContainerId, isNative]);
 
   useEffect(() => {

@@ -10,18 +10,16 @@
 // Used by billing.js for GST calculations and UI components for display.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { safeGetJSON } from './safeParseJSON';
+
 /**
  * Returns the restaurant config stored at login.
  * Safe to call anywhere — returns sensible defaults if not logged in.
  */
 export function getRestaurantConfig() {
-  try {
-    const raw = localStorage.getItem('ss_restaurant');
-    if (!raw) return getDefaultConfig();
-    return { ...getDefaultConfig(), ...JSON.parse(raw) };
-  } catch {
-    return getDefaultConfig();
-  }
+  const config = safeGetJSON('ss_restaurant', null);
+  if (!config) return getDefaultConfig();
+  return { ...getDefaultConfig(), ...config };
 }
 
 function getDefaultConfig() {
@@ -45,8 +43,6 @@ function getDefaultConfig() {
 }
 
 export function getRestaurantName() {
-  try {
-    const restaurant = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
-    return restaurant?.name ?? null;
-  } catch { return null; }
+  const restaurant = safeGetJSON('ss_restaurant', {});
+  return restaurant?.name ?? null;
 }
