@@ -142,20 +142,14 @@ import {
 
   Loader,
 
-  Activity,
-
-  AlertTriangle,
-
-  CheckCircle,
-
-  XCircle
+  Activity
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 
 import { 
 
-  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, CartesianGrid, Legend
+  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, CartesianGrid
 
 } from 'recharts';
 
@@ -184,9 +178,8 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
-import { createMenuItem as edgeCreateMenuItem, updateMenuItem as edgeUpdateMenuItem, deleteMenuItem as edgeDeleteMenuItem, createCategory as edgeCreateCategory, updateCategory as edgeUpdateCategory, deleteCategory as edgeDeleteCategory, createStaff as edgeCreateStaff, updateStaff as edgeUpdateStaff, deleteStaff as edgeDeleteStaff } from '../services/adminApi';
 
-import { fetchVenues, fetchVenuesForOutlet, fetchTablesForOutlet } from '../services/tableApi';
+import { fetchVenues } from '../services/tableApi';
 
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
@@ -205,6 +198,9 @@ import { useVenueSections } from '../hooks/useVenueSections';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions, fetchBarTopSelling, fetchBarDeductionCheck } from '../services/barInventoryApi';
 
 import FloorPlanEditor from './FloorPlanEditor';
+
+import InventoryRangeSummary from './InventoryRangeSummary';
+import DateRangePicker from './components/DateRangePicker';
 
 import MenuUpload from '../onboarding/MenuUpload';
 
@@ -228,6 +224,15 @@ function getLiquorMlPerUnit(itemName, bottleSize) {
 
   return bottleSize || FULL_BOTTLE_ML;
 
+}
+
+// Helper: format a milliliter quantity as "N bottles + M ml"
+function formatBottlesMl(totalMl, bottleSize) {
+  const safeBottleSize = bottleSize > 0 ? bottleSize : 750;
+  const bottles = Math.floor(totalMl / safeBottleSize);
+  const remainingMl = Math.round(totalMl % safeBottleSize);
+  if (remainingMl === 0) return `${bottles} bottles`;
+  return `${bottles} bottles + ${remainingMl} ml`;
 }
 
 
@@ -458,12 +463,6 @@ const card = cardBase + " bg-white";
 
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
-const PIE_COLORS = [
-  '#E53935', '#1565C0', '#2E7D32', '#F9A825', '#6A1B9A',
-  '#00838F', '#D81B60', '#5E35B1', '#43A047', '#FB8C00',
-  '#3949AB', '#C62828', '#00796B', '#8E24AA', '#F4511E',
-];
-
 // ── Shared helpers (module-level so all components can use them) ──────────
 
 const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
@@ -562,7 +561,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-    const loadCategorySales = async () => {
+    const loadSalesData = async () => {
 
       try {
 
@@ -570,13 +569,20 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
         const istNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
 
-        const dateISO = istNow.toISOString().slice(0, 10);
+        const sevenDaysAgo = new Date(istNow);
+
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
+
+
+        const startISO = sevenDaysAgo.toISOString().slice(0, 10);
+
+        const endISO = istNow.toISOString().slice(0, 10);
 
 
 
         const outletId = dashboardScope === 'all' ? 'all' : restaurant?.id;
-
-        const res = await fetch(`${API_BASE}/api/reports/categorywise-sales?startDate=${dateISO}&endDate=${dateISO}&outletId=${outletId}`, {
+        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${startISO}&endDate=${endISO}&outletId=${outletId}`, {
 
           headers: { ...getAuthHeaders() },
 
@@ -584,21 +590,51 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-        if (!res.ok) throw new Error('Failed to fetch category sales data');
+        if (!res.ok) throw new Error('Failed to fetch sales data');
 
         const data = await res.json();
 
-        const categories = (data.categories || [])
 
-          .filter(c => c.totalRevenue > 0)
 
-          .map(c => ({ name: c.name, value: Math.round(c.totalRevenue) }));
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+        const dailyData = days.map(d => ({ day: d, revenue: 0 }));
+
+
+
+        (data.byDay || []).forEach(day => {
+
+          const dayDate = new Date(day.date);
+
+          const dayIdx = dayDate.getDay();
+
+          dailyData[dayIdx].revenue += Number(day.revenue || 0);
+
+        });
+
+
+
+        const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+        const chartData = order.map(dayName => {
+
+          const dayIdx = days.indexOf(dayName);
+
+          return {
+
+            d: dayName,
+
+            v: Math.round(dailyData[dayIdx].revenue)
+
+          };
+
+        });
 
 
 
         if (!cancelled) {
 
-          setSales(categories);
+          setSales(chartData);
 
           setSalesLoading(false);
 
@@ -606,7 +642,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       } catch (err) {
 
-        console.warn('[Dashboard] Failed to load category sales data:', err.message);
+        console.warn('[Dashboard] Failed to load sales data:', err.message);
 
         if (!cancelled) {
 
@@ -620,9 +656,9 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-    loadCategorySales();
+    loadSalesData();
 
-    const interval = setInterval(loadCategorySales, 600000); // Refresh every 10 minutes
+    const interval = setInterval(loadSalesData, 600000); // Refresh every 10 minutes
 
 
 
@@ -726,67 +762,41 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
           <ChartNoAxesCombined size={18} className="text-[#E53935]" />
 
-          Sales by Category - Today
+          Sales Attribution - Last 7 days
 
         </h3>
 
         <div className="flex-grow h-[250px] w-full min-h-[250px]" style={{ minWidth: 0 }}>
 
-          {salesLoading ? (
+          <ResponsiveContainer width="99%" height="100%">
 
-            <div className="h-full flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+            <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
 
-          ) : sales.length === 0 ? (
+              <defs>
 
-            <div className="h-full flex items-center justify-center text-gray-400 text-sm">No sales today</div>
+                <linearGradient id="dashBarGrad" x1="0" y1="0" x2="0" y2="1">
 
-          ) : (
+                  <stop offset="0%" stopColor="#E53935" stopOpacity={1} />
 
-            <ResponsiveContainer width="99%" height="100%">
+                  <stop offset="100%" stopColor="#E53935" stopOpacity={0.4} />
 
-              <PieChart>
+                </linearGradient>
 
-                <Pie
+              </defs>
 
-                  data={sales}
+              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
 
-                  dataKey="value"
+              <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
 
-                  nameKey="name"
+              <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
 
-                  cx="50%"
+              <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} />
 
-                  cy="50%"
+              <Bar dataKey="v" fill="url(#dashBarGrad)" radius={[6, 6, 0, 0]} barSize={32} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
 
-                  outerRadius={90}
+            </BarChart>
 
-                  innerRadius={50}
-
-                  paddingAngle={2}
-
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-
-                  labelLine={false}
-
-                >
-
-                  {sales.map((entry, index) => (
-
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-
-                  ))}
-
-                </Pie>
-
-                <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
-
-                <Legend verticalAlign="bottom" height={36} iconType="circle" />
-
-              </PieChart>
-
-            </ResponsiveContainer>
-
-          )}
+          </ResponsiveContainer>
 
         </div>
 
@@ -796,11 +806,61 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       </div>
 
-
+      
 
       <div className={card + " p-0 overflow-hidden flex flex-col h-[320px] lg:h-auto animate-chart-in-delay-1"}>
 
-        <LowStockWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+        <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
+
+          <h3 className="font-bold text-sm md:text-base flex items-center gap-2">
+
+            <ClipboardList size={18} className="text-[#E53935]" />
+
+            Live Activity
+
+          </h3>
+
+          <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
+
+        </div>
+
+        <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
+
+          {activityLog.length === 0 ? (
+
+            <p className="text-sm text-gray-400 text-center py-6">No live activity yet</p>
+
+          ) : (
+
+            activityLog.map((log) => (
+
+              <div key={log.id} className="flex gap-3 animate-slide-in">
+
+                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
+
+                  log.type === "success" ? "bg-green-500" : 
+
+                  log.type === "info" ? "bg-blue-500" : 
+
+                  log.type === "tip" ? "bg-amber-500" : "bg-red-500"
+
+                }`} />
+
+                <div className="flex-grow min-w-0">
+
+                  <p className="text-xs font-medium text-[#1A1A1A] leading-relaxed">{log.text}</p>
+
+                  <p className="text-[10px] text-[#6B6B6B] mt-1">{log.time}</p>
+
+                </div>
+
+              </div>
+
+            ))
+
+          )}
+
+        </div>
 
       </div>
 
@@ -818,72 +878,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 }
 
-function LowStockWidget({ dashboardScope, restaurantId }) {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-        const res = await fetch(`${API_BASE}/api/kitchen-inventory/low-stock?outletId=${outletId || ''}`, {
-          headers: { ...getAuthHeaders() },
-        });
-        if (!res.ok) throw new Error('Failed to fetch low stock');
-        const data = await res.json();
-        if (!cancelled) setAlerts(data || []);
-      } catch (err) {
-        console.warn('[LowStockWidget] Failed to load:', err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    const interval = setInterval(load, 60000); // refresh every minute
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [dashboardScope, restaurantId]);
-
-  return (
-    <>
-      <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
-        <h3 className="font-bold text-sm md:text-base flex items-center gap-2">
-          <AlertTriangle size={18} className="text-[#E53935]" />
-          Low Stock Alerts
-        </h3>
-        <span className="text-[10px] font-bold text-[#6B6B6B]">{alerts.length} items</span>
-      </div>
-      <div className="flex-grow overflow-y-auto p-4 space-y-3 custom-scrollbar">
-        {loading ? (
-          <div className="space-y-2 animate-pulse">
-            {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
-          </div>
-        ) : alerts.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-6">No low stock alerts</p>
-        ) : (
-          alerts.map((alert) => (
-            <div key={`${alert.outletId}-${alert.id}`} className="flex items-start gap-3 animate-slide-in">
-              <div className="mt-1 h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
-              <div className="flex-grow min-w-0">
-                <p className="text-xs font-bold text-[#1A1A1A] truncate">{alert.name}</p>
-                <p className="text-[10px] text-[#6B6B6B] mt-0.5">
-                  {dashboardScope === 'all' && <span className="font-semibold">{alert.outletName || alert.outletId}</span>}
-                  {dashboardScope === 'all' && ' · '}
-                  Stock <span className="font-bold text-red-600">{alert.currentStock}</span> / {alert.reorderLevel} {alert.unit}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </>
-  );
-}
 
 function TopItemsWidget({ dashboardScope, restaurantId }) {
   const [topItems, setTopItems] = useState([]);
@@ -1328,7 +1323,7 @@ export function Pos() {
 
 
 
-export function Tables({ onOpen, dashboardScope }) {
+export function Tables({ onOpen }) {
 
   const [activePopupTableId, setActivePopupTableId] = useState(null);
   const [popupCaptainId, setPopupCaptainId] = useState('');
@@ -1336,9 +1331,7 @@ export function Tables({ onOpen, dashboardScope }) {
 
   const [editMode, setEditMode] = useState(false);
 
-  const { tables: syncedTables } = useTableSync();
-
-  const [tables, setTables] = useState([]);
+  const { tables } = useTableSync();
 
   useEffect(() => {
     const t = tables.find(t => (t.backendId || t.id) === activePopupTableId);
@@ -1364,60 +1357,39 @@ export function Tables({ onOpen, dashboardScope }) {
       .catch(() => {});
   }, []);
 
+
+
   useEffect(() => {
-    let cancelled = false;
-    const abortController = new AbortController();
 
-    if (dashboardScope === 'all') {
-      const accessible = authService.getAccessibleOutlets();
-      const venueTargets = accessible.length > 1 ? accessible.map(o => o.id).filter(Boolean) : ['all'];
-      Promise.all([
-        fetchTablesForOutlet('all', abortController.signal),
-        ...venueTargets.map(id => fetchVenuesForOutlet(id, abortController.signal)),
-      ])
-        .then(([tablesData, ...venuesData]) => {
-          if (cancelled) return;
-          const flatTables = Array.isArray(tablesData) ? tablesData : [];
-          const v = venuesData.flatMap((venues, idx) => {
-            const outletName = accessible[idx]?.name || '';
-            return (venues || []).map(venue => ({ ...venue, outletName }));
-          }).filter(Boolean);
-          setTables(flatTables);
-          setVenues(v);
-          const allSections = v.flatMap(venue => [
-            ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' })),
-            ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' }))),
-          ]);
-          if (allSections.length > 0 && !selectedSectionId) {
-            setSelectedSectionId(allSections[0].id);
-          }
-        })
-        .catch(() => {})
-        .finally(() => { if (!cancelled) setLoadingVenues(false); });
-    } else {
-      setTables(syncedTables);
-      fetchVenuesForOutlet(undefined, abortController.signal)
-        .then(data => {
-          if (cancelled) return;
-          const v = Array.isArray(data) ? data : [];
-          setVenues(v);
-          const allSections = v.flatMap(venue => [
-            ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
-            ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
-          ]);
-          if (allSections.length > 0 && !selectedSectionId) {
-            setSelectedSectionId(allSections[0].id);
-          }
-        })
-        .catch(() => {})
-        .finally(() => { if (!cancelled) setLoadingVenues(false); });
-    }
+    fetchVenues()
 
-    return () => {
-      cancelled = true;
-      abortController.abort();
-    };
-  }, [dashboardScope, syncedTables]);
+      .then(data => {
+
+        const v = Array.isArray(data) ? data : [];
+
+        setVenues(v);
+
+        const allSections = v.flatMap(venue => [
+
+          ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
+
+          ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
+
+        ]);
+
+        if (allSections.length > 0) {
+
+          setSelectedSectionId(allSections[0].id);
+
+        }
+
+      })
+
+      .catch(() => {})
+
+      .finally(() => setLoadingVenues(false));
+
+  }, []);
 
 
 
@@ -1425,9 +1397,9 @@ export function Tables({ onOpen, dashboardScope }) {
 
     return venues.flatMap(venue => [
 
-      ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' })),
+      ...(venue.sections || []).map(s => ({ ...s, venueName: venue.name })),
 
-      ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name, outletName: venue.outletName || '' }))),
+      ...(venue.floors || []).flatMap(f => (f.sections || []).map(s => ({ ...s, venueName: venue.name }))),
 
     ]);
 
@@ -1485,7 +1457,7 @@ export function Tables({ onOpen, dashboardScope }) {
 
       <h3 className="font-semibold">
 
-        {selectedSection ? `Floor Plan — ${selectedSection.outletName ? `${selectedSection.outletName} — ` : ''}${selectedSection.venueName} — ${selectedSection.name}` : 'Floor Plan'}
+        {selectedSection ? `Floor Plan — ${selectedSection.venueName} — ${selectedSection.name}` : 'Floor Plan'}
 
       </h3>
 
@@ -1505,7 +1477,7 @@ export function Tables({ onOpen, dashboardScope }) {
 
           {allSections.map(s => (
 
-            <option key={s.id} value={s.id}>{s.outletName ? `${s.outletName} — ${s.venueName} — ${s.name}` : `${s.venueName} — ${s.name}`}</option>
+            <option key={s.id} value={s.id}>{s.venueName} — {s.name}</option>
 
           ))}
 
@@ -1609,7 +1581,7 @@ export function Tables({ onOpen, dashboardScope }) {
 
              <div className="flex justify-between items-start w-full">
 
-               <p className="text-xl font-black leading-none">T{t.number != null ? t.number : (t.name || t.id)}</p>
+               <p className="text-xl font-black leading-none">T{t.id}</p>
 
                {!isFree && !isReserved && (
 
@@ -2390,7 +2362,23 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      await edgeUpdateCategory(id, { name: name.trim() });
+      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+
+        method: 'PATCH',
+
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+        body: JSON.stringify({ name: name.trim() }),
+
+      });
+
+      if (!res.ok) {
+
+        const err = await res.json();
+
+        throw new Error(err.error || 'Failed to rename category');
+
+      }
 
       await fetchCategories();
 
@@ -2416,7 +2404,17 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      await edgeUpdateCategory(id, { sortOrder: newSortOrder });
+      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+
+        method: 'PATCH',
+
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+        body: JSON.stringify({ sortOrder: newSortOrder }),
+
+      });
+
+      if (!res.ok) throw new Error('Failed to reorder category');
 
       await fetchCategories();
 
@@ -2442,7 +2440,25 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      await edgeDeleteCategory(id);
+      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+
+        method: 'DELETE',
+
+        headers: getAuthHeaders(),
+
+      });
+
+      if (res.status === 400) {
+
+        const err = await res.json();
+
+        alert(err.error);
+
+        return;
+
+      }
+
+      if (!res.ok) throw new Error('Failed to delete category');
 
       await fetchCategories();
 
@@ -2468,7 +2484,23 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      await edgeCreateCategory({ name: newCatName.trim() });
+      const res = await fetch(`${API_BASE}/api/menu/categories`, {
+
+        method: 'POST',
+
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+        body: JSON.stringify({ name: newCatName.trim() }),
+
+      });
+
+      if (!res.ok) {
+
+        const err = await res.json();
+
+        throw new Error(err.error || 'Failed to create category');
+
+      }
 
       setNewCatName('');
 
@@ -2600,28 +2632,40 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      if (activeOutlet === 'bar') {
+      const endpoint = activeOutlet === 'bar'
 
-        await fetch(`${API_BASE}/api/bar/menu/items/${deletingItem.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } });
+        ? `${API_BASE}/api/bar/menu/items/${deletingItem.id}`
+
+        : `${API_BASE}/api/menu/items/${deletingItem.id}`;
+
+      const res = await fetch(endpoint, {
+
+        method: 'DELETE',
+
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+      });
+
+      if (res.ok) {
+
+        // Optimistic update: remove item from local state immediately
+        const deletedId = deletingItem.id;
+        setGlobalMenu(prev => prev.filter(i => i.id !== deletedId));
+        setAdminItems(prev => prev.filter(i => i.id !== deletedId));
+
+        setDeletingItem(null);
+
+        // Background sync to confirm with server (no loading spinner)
+
+        refreshMenu().catch(() => {});
 
       } else {
 
-        await edgeDeleteMenuItem(deletingItem.id);
+        alert('Delete failed');
 
       }
 
-      // Optimistic update: remove item from local state immediately
-      const deletedId = deletingItem.id;
-      setGlobalMenu(prev => prev.filter(i => i.id !== deletedId));
-      setAdminItems(prev => prev.filter(i => i.id !== deletedId));
-
-      setDeletingItem(null);
-
-      // Background sync to confirm with server (no loading spinner)
-
-      refreshMenu().catch(() => {});
-
-    } catch (e) {
+    } catch {
 
       alert('Delete failed');
 
@@ -2699,13 +2743,27 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const serverItem = activeOutlet === 'bar'
+      const endpoint = activeOutlet === 'bar'
 
-        ? await (await fetch(`${API_BASE}/api/bar/menu/items/${editingItem.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify(body) })).json()
+        ? `${API_BASE}/api/bar/menu/items/${editingItem.id}`
 
-        : await edgeUpdateMenuItem(editingItem.id, body);
+        : `${API_BASE}/api/menu/items/${editingItem.id}`;
 
-      if (serverItem) {
+      const res = await fetch(endpoint, {
+
+        method: 'PATCH',
+
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+        body: JSON.stringify(body),
+
+      });
+
+
+
+      if (res.ok) {
+
+        const serverItem = await res.json();
 
         // Build optimistic POS-shaped item from backend response
 
@@ -2889,7 +2947,19 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const payload = {
+      const endpoint = activeOutlet === 'bar'
+
+        ? `${API_BASE}/api/bar/menu/items`
+
+        : `${API_BASE}/api/menu/items`;
+
+      const res = await fetch(endpoint, {
+
+        method: 'POST',
+
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+        body: JSON.stringify({
 
           name: addingItem.n,
 
@@ -2929,15 +2999,15 @@ export function MenuPage({ onAddDish }) {
 
           ...(imageUrl ? { imageUrl } : {}),
 
-        };
+        }),
 
-      const serverItem = activeOutlet === 'bar'
+      });
 
-        ? await (await fetch(`${API_BASE}/api/bar/menu/items`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify(payload) })).json()
 
-        : await edgeCreateMenuItem(payload);
 
-      if (serverItem) {
+      if (res.ok) {
+
+        const serverItem = await res.json();
 
         // Map backend item to POS shape for optimistic insert
 
@@ -5480,31 +5550,31 @@ export function Payroll() {
 
         <div>
 
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Staff Payroll & Attendance</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Staff Payroll & Attendance</h2>
 
-          <p className="text-sm text-gray-500 font-medium mt-1">Track salaries, advances, attendance and payouts</p>
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
 
-          <div className="flex items-center gap-3 mt-4 flex-wrap">
-
-            <div className="flex bg-gray-100 rounded-xl p-1 ring-1 ring-gray-200/50">
+            <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => {
                   setDateMode('month');
+                  // keep monthYear aligned with the selected range
                   if (startDate) setMonthYear(startDate.slice(0, 7));
                 }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${dateMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
               >
                 Month
               </button>
               <button
                 onClick={() => {
                   setDateMode('range');
+                  // seed the range from the currently selected month
                   const [y, m] = monthYear.split('-').map(Number);
                   const lastDay = new Date(y, m, 0).getDate();
                   setStartDate(`${monthYear}-01`);
                   setEndDate(`${monthYear}-${String(lastDay).padStart(2, '0')}`);
                 }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${dateMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`px-3 py-1 rounded-md text-xs font-bold ${dateMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
               >
                 Date Range
               </button>
@@ -5515,7 +5585,7 @@ export function Payroll() {
                 type="month"
                 value={monthYear}
                 onChange={(e) => setMonthYear(e.target.value)}
-                className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
               />
             ) : (
               <div className="flex items-center gap-2">
@@ -5532,9 +5602,9 @@ export function Payroll() {
                       setEndDate(max);
                     }
                   }}
-                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
                 />
-                <span className="text-xs font-black text-gray-400 uppercase tracking-wider">to</span>
+                <span className="text-xs font-bold text-gray-500">to</span>
                 <input
                   type="date"
                   value={endDate}
@@ -5545,7 +5615,7 @@ export function Payroll() {
                     return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
                   })()}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
                 />
               </div>
             )}
@@ -5608,11 +5678,11 @@ export function Payroll() {
 
               disabled={records.length === 0}
 
-              className="text-xs font-black uppercase tracking-wide bg-white text-gray-900 border border-gray-200 px-4 py-1.5 rounded-xl hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+              className="text-xs font-bold bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
 
             >
 
-              <Download size={14} />
+              <Download size={14} className="inline mr-1" />
 
               CSV
 
@@ -5632,28 +5702,28 @@ export function Payroll() {
 
           <div className="text-left sm:text-right">
 
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
               Totals for {new Date(`${monthYear}-01`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </p>
 
-            <div className="flex gap-4 sm:gap-6">
-              <div className="bg-gray-50 rounded-2xl px-4 py-3 min-w-[110px]">
+            <div className="flex gap-6">
+              <div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Base</p>
-                <p className="text-xl font-black text-gray-900 tracking-tight">₹{totalBaseSalary.toLocaleString()}</p>
+                <p className="text-xl font-black text-gray-900 tracking-tighter">₹{totalBaseSalary.toLocaleString()}</p>
               </div>
-              <div className="bg-amber-50 rounded-2xl px-4 py-3 min-w-[110px]">
-                <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">Total Advance</p>
-                <p className="text-xl font-black text-amber-600 tracking-tight">₹{totalAdvance.toLocaleString()}</p>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Advance</p>
+                <p className="text-xl font-black text-amber-600 tracking-tighter">₹{totalAdvance.toLocaleString()}</p>
               </div>
-              <div className="bg-[#FFF5F5] rounded-2xl px-4 py-3 min-w-[130px]">
-                <p className="text-[10px] font-black text-[#E57373] uppercase tracking-widest mb-1">Total Payable</p>
-                <p className="text-3xl font-black text-[#B71C1C] tracking-tight">₹{totalPayable.toLocaleString()}</p>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
+                <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹{totalPayable.toLocaleString()}</p>
               </div>
             </div>
 
             {totalOutstanding > 0 && (
 
-              <p className="text-xs text-amber-600 font-bold mt-2">Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
+              <p className="text-xs text-amber-600 font-bold mt-1">Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
 
             )}
 
@@ -5672,11 +5742,11 @@ export function Payroll() {
 
               }}
 
-              className="w-full sm:w-auto bg-[#B71C1C] text-white px-8 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider hover:bg-[#8E1414] transition-all shadow-lg shadow-red-100 active:scale-95 flex items-center justify-center gap-2"
+              className="w-full sm:w-auto bg-[#B71C1C] text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#8E1414] transition-all shadow-xl shadow-red-100 active:scale-95"
 
             >
 
-              <Plus size={16} /> Add Staff
+              Add Staff
 
             </button>
 
@@ -5689,9 +5759,10 @@ export function Payroll() {
                 setImportError('');
                 setEditedProposed([]);
               }}
-              className="w-full sm:w-auto bg-gray-900 text-white px-8 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider hover:bg-gray-800 transition-all shadow-lg shadow-gray-100 active:scale-95 flex items-center justify-center gap-2"
+              className="w-full sm:w-auto bg-gray-900 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-gray-800 transition-all shadow-xl shadow-gray-100 active:scale-95"
             >
-              <Upload size={16} /> Import Staff
+              <Upload size={14} className="inline mr-2" />
+              Import Staff
             </button>
           </div>
 
@@ -5701,20 +5772,18 @@ export function Payroll() {
 
 
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
-            <Search size={18} />
-          </div>
+          <Search size={18} className="text-gray-400" />
           <input
             type="text"
             placeholder="Search staff by name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm font-semibold text-gray-900 placeholder-gray-400"
+            className="flex-1 bg-transparent outline-none text-sm font-bold text-gray-900 placeholder-gray-400"
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="text-xs font-black text-gray-500 hover:text-[#B71C1C] transition-colors">
+            <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-gray-500 hover:text-gray-700">
               Clear
             </button>
           )}
@@ -5723,49 +5792,49 @@ export function Payroll() {
 
       <div className="flex items-center gap-3 mb-2 flex-wrap">
         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Status:</span>
-        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-100 text-gray-500 ring-1 ring-gray-200">Not Generated</span>
-        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 ring-1 ring-amber-100">Pending</span>
-        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 ring-1 ring-blue-100">Partial</span>
-        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-green-50 text-green-700 ring-1 ring-green-100">Paid</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700">Pending</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">Partial</span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700">Paid</span>
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
 
         <div className="overflow-x-auto">
 
           <table className="w-full text-left text-sm whitespace-nowrap">
 
-            <thead className="bg-gray-50/80 border-b border-gray-100">
+            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
 
               <tr>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Staff</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Staff</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Designation</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Designation</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Base Salary</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Base Salary</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Present Days</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Present Days</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">OT Days</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">OT Days</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">4 Days</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">4 Days</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Days</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Days</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Actual Salary</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Actual Salary</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Advance</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Advance</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Final Salary</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Final Salary</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Salary Paid</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Salary Paid</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-right">Balance Salary</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Balance Salary</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Status</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Status</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Actions</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
 
               </tr>
 
@@ -5786,13 +5855,13 @@ export function Payroll() {
 
                 return (
 
-                  <tr key={emp.id} className="border-b border-gray-50 last:border-b-0 hover:bg-[#FFF5F5]/40 transition-colors">
+                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
 
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-4">
 
                       <div className="flex items-center gap-3">
 
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#FFCDD2] to-[#EF9A9A] flex items-center justify-center text-sm font-black text-[#B71C1C] shadow-sm">
+                        <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center text-xs font-black text-[#B71C1C]">
 
                           {emp.name.split(' ').map(n => n[0]).join('')}
 
@@ -5800,16 +5869,16 @@ export function Payroll() {
 
                         <div>
 
-                          <p className="font-bold text-gray-900 text-sm">{emp.name}</p>
+                          <p className="font-black text-gray-900">{emp.name}</p>
 
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">{emp.role || 'Staff'}</p>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
 
                           {emp.createdVia === 'CASHIER' && (
-                            <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> Set base salary</p>
+                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Created by cashier — set base salary</p>
                           )}
 
                           {rec?.needsReview && (
-                            <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> Advance recorded, present days not set</p>
+                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Advance recorded, present days not set</p>
                           )}
 
                         </div>
@@ -5818,14 +5887,14 @@ export function Payroll() {
 
                     </td>
 
-                    <td className="px-5 py-4 text-left">
+                    <td className="px-4 py-4 text-left">
                       <p className="text-sm font-bold text-gray-700">{emp.designation || '-'}</p>
                       {emp.workerCategory && (
                         <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">{emp.workerCategory.replace('_', ' ')}</p>
                       )}
                     </td>
 
-                    <td className="px-5 py-4 text-right">
+                    <td className="px-4 py-4 text-right">
                       <input
                         type="number"
                         min="0"
@@ -5834,11 +5903,11 @@ export function Payroll() {
                         onChange={(e) => {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, baseSalary: parseFloat(e.target.value) || 0 } });
                         }}
-                        className="w-24 text-right border border-gray-200 rounded-lg py-1.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
+                        className="w-24 text-right border border-gray-200 rounded-lg py-1 text-sm"
                       />
                     </td>
 
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <div className="flex items-center gap-1">
                           <input
@@ -5851,14 +5920,14 @@ export function Payroll() {
                             onChange={(e) => {
                               setEditValues({ ...editValues, [emp.id]: { ...vals, presentDays: parseFloat(e.target.value) || 0 } });
                             }}
-                            className={`w-14 text-center border border-gray-200 rounded-lg py-1.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
+                            className={`w-14 text-center border border-gray-200 rounded-lg py-1 text-sm ${isAutoCount ? 'bg-gray-100 text-gray-500' : ''}`}
                           />
                           <button
                             onClick={() => {
                               const next = !isAutoCount;
                               setAutoCountMap({ ...autoCountMap, [emp.id]: next });
                             }}
-                            className={`text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-lg transition-colors ${isAutoCount ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                            className={`text-[10px] font-bold px-2 py-1 rounded-md ${isAutoCount ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
                           >
                             {isAutoCount ? 'Auto' : 'Manual'}
                           </button>
@@ -5866,7 +5935,7 @@ export function Payroll() {
                       </div>
                     </td>
 
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
 
                       <input
 
@@ -5880,25 +5949,25 @@ export function Payroll() {
                           setEditValues({ ...editValues, [emp.id]: { ...vals, otDays: parseInt(e.target.value) || 0 } });
                         }}
 
-                        className="w-14 text-center border border-gray-200 rounded-lg py-1.5 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935]"
+                        className="w-14 text-center border border-gray-200 rounded-lg py-1 text-sm"
 
                       />
 
                     </td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-700">
+                    <td className="px-4 py-4 text-center font-bold text-gray-700">
                       {rec?.leaveDays ?? 0}
                     </td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">
                       {rec?.totalDays ?? 0}
                     </td>
 
-                    <td className="px-5 py-4 text-right font-bold text-gray-700">
+                    <td className="px-4 py-4 text-right font-bold text-gray-700">
                       ₹{Number(rec?.actualSalary || 0).toLocaleString()}
                     </td>
 
-                    <td className="px-5 py-4 text-right">
+                    <td className="px-4 py-4 text-right">
                       <div className="flex flex-col items-end gap-1">
                         <span className="font-bold text-amber-600">₹{Number(rec?.totalAdvance || 0).toLocaleString()}</span>
                         {rec && (
@@ -5912,31 +5981,31 @@ export function Payroll() {
                       </div>
                     </td>
 
-                    <td className="px-5 py-4 text-right font-black text-gray-900">
+                    <td className="px-4 py-4 text-right font-black text-gray-900">
                       ₹{Number(rec?.finalSalary || 0).toLocaleString()}
                     </td>
 
-                    <td className="px-5 py-4 text-right font-bold text-gray-600">
+                    <td className="px-4 py-4 text-right font-bold text-gray-600">
 
                       ₹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
 
                     </td>
 
-                    <td className="px-5 py-4 text-right font-bold text-[#B71C1C]">
+                    <td className="px-4 py-4 text-right font-bold text-[#B71C1C]">
                       ₹{Number(rec?.balanceSalary || 0).toLocaleString()}
                     </td>
 
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
 
                       {rec ? (
 
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ring-1 ${
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
 
-                          rec.status === 'PAID' ? 'bg-green-50 text-green-700 ring-green-100' :
+                          rec.status === 'PAID' ? 'bg-green-100 text-green-700' :
 
-                          rec.status === 'PARTIAL' ? 'bg-blue-50 text-blue-700 ring-blue-100' :
+                          rec.status === 'PARTIAL' ? 'bg-blue-100 text-blue-700' :
 
-                          'bg-amber-50 text-amber-700 ring-amber-100'
+                          'bg-amber-100 text-amber-700 animate-pulse'
 
                         }`}>
 
@@ -5946,23 +6015,22 @@ export function Payroll() {
 
                       ) : (
 
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-50 text-gray-500 ring-1 ring-gray-100">Not Generated</span>
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-100 text-gray-500">Not Generated</span>
 
                       )}
 
                     </td>
 
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
 
                       <div className="flex items-center justify-center gap-2">
 
                         {savingRecordId === emp.id ? (
-                          <span className="text-xs font-bold text-blue-600 animate-pulse">Saving...</span>
+                          <span className="text-[10px] font-bold text-blue-600 animate-pulse">Saving...</span>
                         ) : (
                           <button
                             onClick={() => handleSaveRecord(emp.id)}
-                            className="px-3 py-1.5 bg-[#E53935] text-white rounded-xl text-xs font-black hover:bg-[#c62828] transition-colors shadow-sm"
-                            title="Save"
+                            className="px-3 py-1.5 bg-[#E53935] text-white rounded-lg text-xs font-bold hover:bg-[#c62828]"
                           >
                             Save
                           </button>
@@ -5974,8 +6042,7 @@ export function Payroll() {
 
                             onClick={() => { setPayModal(rec); setPayAmount(''); }}
 
-                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-xl text-xs font-black hover:bg-[#8E1414] transition-colors shadow-sm"
-                            title="Pay"
+                            className="px-3 py-1.5 bg-[#B71C1C] text-white rounded-lg text-xs font-bold hover:bg-[#8E1414]"
 
                           >
 
@@ -5988,8 +6055,7 @@ export function Payroll() {
                         <button
                           onClick={() => openAdvanceModal(rec)}
                           disabled={!rec}
-                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-black hover:bg-blue-100 disabled:opacity-40 transition-colors ring-1 ring-blue-100"
-                          title="Advance"
+                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 disabled:opacity-50"
                         >
                           Advance
                         </button>
@@ -5997,8 +6063,7 @@ export function Payroll() {
                         <button
                           onClick={() => handleDeleteEmployee(emp.id)}
                           disabled={deletingId === emp.id}
-                          className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-xl text-xs font-black hover:bg-red-50 hover:text-red-700 disabled:opacity-40 transition-colors"
-                          title="Delete"
+                          className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
                         >
                           {deletingId === emp.id ? '...' : 'Delete'}
                         </button>
@@ -6507,7 +6572,7 @@ export function KitchenInventory() {
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const [newItem, setNewItem] = useState({ name: '', unit: 'kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
+  const [newItem, setNewItem] = useState({ name: '', unit: 'Kg', category: '', currentStock: '', prize: '', image: null, imagePreview: null });
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -6515,7 +6580,9 @@ export function KitchenInventory() {
 
   const [addStockAmount, setAddStockAmount] = useState('');
 
-  const [selectedDate, setSelectedDate] = useState(getISTDateString);
+  const [fromDate, setFromDate] = useState(getISTDateString);
+  const [toDate, setToDate] = useState(getISTDateString);
+  const isRangeMode = fromDate !== toDate;
 
   const [manualConsumption, setManualConsumption] = useState({});
 
@@ -6572,6 +6639,8 @@ export function KitchenInventory() {
 
   const loadItems = useCallback(async () => {
 
+    if (isRangeMode) return;
+
     setLoading(true);
 
     try {
@@ -6594,7 +6663,7 @@ export function KitchenInventory() {
 
       } else {
 
-        const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(selectedDate)}`, {
+        const res = await fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${restaurantId}&date=${encodeURIComponent(fromDate)}`, {
 
           headers: { ...getAuthHeaders() },
 
@@ -6614,13 +6683,13 @@ export function KitchenInventory() {
 
     }
 
-  }, [restaurantId, selectedDate, outletFilter]);
+  }, [restaurantId, fromDate, outletFilter, isRangeMode]);
 
 
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
-  useEffect(() => { setManualConsumption({}); }, [selectedDate]);
+  useEffect(() => { setManualConsumption({}); }, [fromDate]);
 
 
 
@@ -6650,7 +6719,7 @@ export function KitchenInventory() {
 
           restaurantId,
 
-          name: toTitleCase(newItem.name),
+          name: newItem.name.trim(),
 
           unit: newItem.unit,
 
@@ -6735,7 +6804,7 @@ export function KitchenInventory() {
 
           addStock: parseFloat(addStockAmount),
 
-          date: selectedDate,
+          date: fromDate,
 
         }),
 
@@ -6783,7 +6852,7 @@ export function KitchenInventory() {
 
           consumedStock: delta,
 
-          date: selectedDate,
+          date: fromDate,
 
         }),
 
@@ -6896,7 +6965,7 @@ export function KitchenInventory() {
       if (cols.length < 4) { skipped++; continue; }
 
       const [, rawIngredient, rawCategory, price, stock, rawScale, rawReorder] = cols.map(c => c.trim());
-      const ingredient = toTitleCase(rawIngredient);
+      const ingredient = rawIngredient;
 
       if (!ingredient) { skipped++; continue; }
 
@@ -7006,7 +7075,7 @@ export function KitchenInventory() {
 
     try {
 
-      await fetch(`${API_BASE}/api/inventory/kitchen/items/${id}`, {
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen/items/${id}`, {
 
         method: 'PATCH',
 
@@ -7016,7 +7085,17 @@ export function KitchenInventory() {
 
       });
 
-      loadItems();
+      if (!res.ok) {
+
+        const body = await res.json().catch(() => ({}));
+
+        throw new Error(body.error || res.statusText);
+
+      }
+
+      // Update only the changed item locally instead of reloading the whole list.
+
+      setItems(prev => prev.map(item => item.id === id ? { ...item, ...fields } : item));
 
     } catch (err) {
 
@@ -7042,7 +7121,7 @@ export function KitchenInventory() {
 
         if (field === 'price') payload.price = parseFloat(editingCell.value) || 0;
 
-        else if (field === 'name') payload.name = toTitleCase(editingCell.value.trim()) || item.name;
+        else if (field === 'name') payload.name = editingCell.value.trim() || item.name;
 
         else if (field === 'unit') payload.unit = editingCell.value.trim() || item.unit;
 
@@ -7056,7 +7135,7 @@ export function KitchenInventory() {
 
       } else {
 
-        const payload = { restaurantId, itemId: item.id, date: selectedDate, replace: true };
+        const payload = { restaurantId, itemId: item.id, date: fromDate, replace: true };
 
         if (field === 'opening') payload.openingStock = parseFloat(editingCell.value) || 0;
 
@@ -7102,7 +7181,7 @@ export function KitchenInventory() {
 
       const res = await fetch(
 
-        `${API_BASE}/api/inventory/kitchen/top-selling?restaurantId=${restaurantId}&startDate=${encodeURIComponent(selectedDate)}&endDate=${encodeURIComponent(selectedDate)}`,
+        `${API_BASE}/api/inventory/kitchen/top-selling?restaurantId=${restaurantId}&startDate=${encodeURIComponent(fromDate)}&endDate=${encodeURIComponent(fromDate)}`,
 
         { headers: { ...getAuthHeaders() } }
 
@@ -7160,13 +7239,11 @@ export function KitchenInventory() {
 
 
 
-  const getCatName = (cat) => (cat && typeof cat === 'object' ? cat.name ?? '' : cat ?? '');
-
-  const allCategories = [...new Set(items.map(i => getCatName(i.category)).filter(Boolean))].sort();
+  const allCategories = [...new Set(items.map(i => i.category || '').filter(Boolean))].sort();
 
   const filteredItems = items.filter(i =>
     i.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    (categoryFilter === 'All' || getCatName(i.category) === categoryFilter)
+    (categoryFilter === 'All' || (i.category || '') === categoryFilter)
   );
 
   const allSelected = filteredItems.length > 0 && filteredItems.every(i => selectedIds.has(i.id));
@@ -7354,23 +7431,16 @@ export function KitchenInventory() {
 
           )}
 
-          <div className="flex items-center gap-2">
+          <DateRangePicker
+            fromDate={fromDate}
+            toDate={toDate}
+            onChange={(newFrom, newTo) => {
+              setFromDate(newFrom);
+              setToDate(newTo);
+            }}
+          />
 
-            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</label>
-
-            <input
-
-              type="date"
-
-              value={selectedDate}
-
-              onChange={(e) => setSelectedDate(e.target.value)}
-
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
-
-            />
-
-          </div>
+          {!isRangeMode && (<>
 
           <button
 
@@ -7483,7 +7553,7 @@ export function KitchenInventory() {
           <button
 
             onClick={() => {
-              setNewItem({ name: '', unit: 'kg', currentStock: '', prize: '', image: null, imagePreview: null });
+              setNewItem({ name: '', unit: 'Kg', currentStock: '', prize: '', image: null, imagePreview: null });
               setAddError(null);
               setShowAddModal(true);
             }}
@@ -7522,11 +7592,25 @@ export function KitchenInventory() {
 
           </button>
 
+          </>)}
+
         </div>
 
       </div>
 
 
+
+      {isRangeMode && (
+        <InventoryRangeSummary
+          restaurantId={restaurantId}
+          startDate={fromDate}
+          endDate={toDate}
+          kind="kitchen"
+        />
+      )}
+
+      {!isRangeMode && (
+        <>
 
       {/* Deduction Diagnostic Panel */}
       {showDeductionPanel && (
@@ -7603,8 +7687,16 @@ export function KitchenInventory() {
                           {fi.ingredients?.length > 0 && (
                             <div className="flex flex-wrap gap-2">
                               {fi.ingredients.map((ing) => (
-                                <span key={ing.ingredientId} className="text-[10px] bg-white border border-green-200 rounded-lg px-2 py-0.5 text-gray-700">
-                                  {ing.name}: -{ing.totalDeductQty.toFixed(3)} {ing.unit} (stock: {ing.currentStock})
+                                <span key={ing.ingredientId} className={`text-[10px] border rounded-lg px-2 py-0.5 ${ing.deductionStatus === 'FAILED' ? 'bg-red-50 border-red-300 text-red-700' : ing.deductionStatus === 'SUCCESS' ? 'bg-white border-green-200 text-gray-700' : 'bg-white border-gray-200 text-gray-500'}`}>
+                                  {ing.name}: -{ing.totalDeductQty.toFixed(3)} {ing.unit}
+                                  {ing.deductionStatus && (
+                                    <span className="ml-1 font-bold">
+                                      {ing.deductionStatus === 'SUCCESS' ? '✓' : ing.deductionStatus === 'FAILED' ? '✗' : '—'}
+                                    </span>
+                                  )}
+                                  {ing.deductionError && (
+                                    <span className="ml-1 text-red-500">({ing.deductionError})</span>
+                                  )}
                                 </span>
                               ))}
                             </div>
@@ -7612,6 +7704,47 @@ export function KitchenInventory() {
                         </div>
                       ))}
                     </div>
+
+                    {deductionCheckResult.deductionSummary?.failedCount > 0 && (
+                      <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black text-amber-800">{deductionCheckResult.deductionSummary.failedCount} ingredient(s) failed deduction</p>
+                          <p className="text-[10px] text-amber-600">
+                            {deductionCheckResult.deductionSummary.failedIngredients?.map(f => `${f.name}: ${f.error}`).join(', ')}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`${API_BASE}/api/inventory/kitchen/retry-deduction/${encodeURIComponent(deductionCheckOrderId.trim())}`, {
+                                method: 'POST',
+                                headers: { ...getAuthHeaders() },
+                              });
+                              const data = await res.json();
+                              if (res.ok) {
+                                alert(data.message || 'Retry completed');
+                                setDeductionCheckResult(null);
+                                setDeductionCheckLoading(true);
+                                const checkRes = await fetch(`${API_BASE}/api/inventory/kitchen/deduction-check?orderId=${encodeURIComponent(deductionCheckOrderId.trim())}`, {
+                                  headers: { ...getAuthHeaders() },
+                                });
+                                const checkData = await checkRes.json();
+                                setDeductionCheckResult(checkRes.ok ? checkData : { error: checkData.error });
+                              } else {
+                                alert(data.error || 'Retry failed');
+                              }
+                            } catch (err) {
+                              alert(err.message || 'Retry failed');
+                            } finally {
+                              setDeductionCheckLoading(false);
+                            }
+                          }}
+                          className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-700 whitespace-nowrap"
+                        >
+                          Retry Deduction
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -7700,7 +7833,7 @@ export function KitchenInventory() {
                   : 'bg-[#F4F4F5] text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {cat === 'All' ? `All (${items.length})` : `${cat} (${items.filter(i => getCatName(i.category) === cat).length})`}
+              {cat === 'All' ? `All (${items.length})` : `${cat} (${items.filter(i => (i.category || '') === cat).length})`}
             </button>
           ))}
         </div>
@@ -7709,15 +7842,15 @@ export function KitchenInventory() {
       {/* Laptop Table */}
       <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
 
           <table className="w-full text-left text-sm whitespace-nowrap">
 
-            <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+            <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#FFCDD2] z-10">
 
               <tr>
 
-                <th className="px-5 py-4 text-center">
+                <th className="px-4 py-4 text-center">
 
                   <input
 
@@ -7735,35 +7868,35 @@ export function KitchenInventory() {
 
                 </th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Ingredient</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Ingredient</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Category</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Scale</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Scale</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Price</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Stock</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Amount</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase Amount</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock Amount</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption Amount</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock Amount</th>
 
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Actions</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
 
               </tr>
 
@@ -7805,13 +7938,13 @@ export function KitchenInventory() {
 
                 const fmtAmt = (val) => val == null ? '—' : `₹ ${Number(val).toFixed(2)}`;
 
-                const fmtVal = (val, suffix = '') => val == null ? '—' : `${val} ${suffix}`.trim();
+                const fmtVal = (val) => val == null ? '—' : String(val);
 
                 return (
 
                   <tr key={item.id} className={`transition-colors ${isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'} ${selectedIds.has(item.id) ? 'bg-red-50/50' : ''}`}>
 
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
 
                       <input
 
@@ -7827,7 +7960,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-4">
 
                       <div className="flex items-center gap-3">
 
@@ -7901,7 +8034,7 @@ export function KitchenInventory() {
 
                             <div className="flex items-center gap-1 group/name">
 
-                              <p className="font-black text-gray-900 text-sm">{toTitleCase(item.name)}</p>
+                              <p className="font-black text-gray-900 text-sm">{item.name}</p>
 
                               <button
 
@@ -7929,7 +8062,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-5 py-4 text-gray-500 text-sm">
+                    <td className="px-4 py-4 text-gray-500 text-sm">
 
                       {editingCell?.itemId === item.id && editingCell?.field === 'category' ? (
 
@@ -7975,13 +8108,13 @@ export function KitchenInventory() {
 
                           <span className={`${item.category ? 'bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold -ml-2' : 'text-gray-300 text-xs italic'}`}>
 
-                            {getCatName(item.category) || 'Uncategorized'}
+                            {item.category || 'Uncategorized'}
 
                           </span>
 
                           <button
 
-                            onClick={() => setEditingCell({ itemId: item.id, field: 'category', value: getCatName(item.category) })}
+                            onClick={() => setEditingCell({ itemId: item.id, field: 'category', value: item.category || '' })}
 
                             className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/cat:opacity-100 transition-opacity"
 
@@ -7999,7 +8132,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-5 py-4 text-gray-500 text-sm">
+                    <td className="px-4 py-4 text-gray-500 text-sm">
 
                       {editingCell?.itemId === item.id && editingCell?.field === 'unit' ? (
 
@@ -8020,28 +8153,23 @@ export function KitchenInventory() {
                           >
 
                             <option value="Kg">Kg</option>
-
-                            <option value="G">G</option>
-
-                            <option value="L">L</option>
-
+                            <option value="Gram">Gram</option>
+                            <option value="Liter">Liter</option>
                             <option value="Ml">Ml</option>
-
                             <option value="Pcs">Pcs</option>
-
                             <option value="Pack">Pack</option>
-
                             <option value="Kgs">Kgs</option>
-
                             <option value="Nos">Nos</option>
-
                             <option value="Bottle">Bottle</option>
-
                             <option value="Packets">Packets</option>
-
                             <option value="Box">Box</option>
-
                             <option value="Dozen">Dozen</option>
+                            <option value="Tin">Tin</option>
+                            <option value="Rolls">Rolls</option>
+                            <option value="Units">Units</option>
+                            <option value="Cans">Cans</option>
+                            <option value="Bags">Bags</option>
+                            <option value="Half Kg">Half Kg</option>
 
                           </select>
 
@@ -8077,29 +8205,29 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'opening', fmtVal(opening, item.unit))}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'opening', fmtVal(opening, item.unit))}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(openingAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(openingAmt)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'purchase', fmtVal(purchase, item.unit))}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'purchase', fmtVal(purchase, item.unit))}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(purchaseAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(purchaseAmt)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtVal(totalStock, item.unit)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtVal(totalStock, item.unit)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(totalStockAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(totalStockAmt)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'consumed', fmtVal(consumed, item.unit))}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'consumed', fmtVal(consumed, item.unit))}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(consumptionAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(consumptionAmt)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtVal(balanceStock, item.unit)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtVal(balanceStock, item.unit)}</td>
 
-                    <td className="px-5 py-4 text-center font-bold text-gray-900">{fmtAmt(balanceStockAmt)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{fmtAmt(balanceStockAmt)}</td>
 
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
 
                       <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-red-600 hover:text-red-500">
 
@@ -8149,22 +8277,22 @@ export function KitchenInventory() {
 
                 return (
                   <tr>
-                    <td className="px-5 py-4 text-center"></td>
-                    <td className="px-5 py-4 text-sm text-gray-900">Total</td>
-                    <td className="px-5 py-4 text-center"></td>
-                    <td className="px-5 py-4 text-center"></td>
-                    <td className="px-5 py-4 text-center"></td>
-                    <td className="px-5 py-4 text-center text-gray-900">{totals.opening.toFixed(2)}</td>
-                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.openingAmt)}</td>
-                    <td className="px-5 py-4 text-center text-gray-900">{totals.purchase.toFixed(2)}</td>
-                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.purchaseAmt)}</td>
-                    <td className="px-5 py-4 text-center text-gray-900">{totals.totalStock.toFixed(2)}</td>
-                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.totalStockAmt)}</td>
-                    <td className="px-5 py-4 text-center text-gray-900">{totals.consumed.toFixed(2)}</td>
-                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.consumptionAmt)}</td>
-                    <td className="px-5 py-4 text-center text-gray-900">{totals.balanceStock.toFixed(2)}</td>
-                    <td className="px-5 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.balanceStockAmt)}</td>
-                    <td className="px-5 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-sm text-gray-900">Total</td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.openingAmt)}</td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.purchaseAmt)}</td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.totalStockAmt)}</td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.consumptionAmt)}</td>
+                    <td className="px-4 py-4 text-center"></td>
+                    <td className="px-4 py-4 text-center text-[#B71C1C]">{fmtAmt(totals.balanceStockAmt)}</td>
+                    <td className="px-4 py-4 text-center"></td>
                   </tr>
                 );
               })()}
@@ -8190,7 +8318,7 @@ export function KitchenInventory() {
           const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
           const totalStock = hasEntry ? opening + purchase : null;
           const fmtAmt = (val) => val == null ? '—' : `₹${Number(val).toFixed(2)}`;
-          const fmtVal = (val, suffix = '') => val == null ? '—' : `${val} ${suffix}`.trim();
+          const fmtVal = (val) => val == null ? '—' : String(val);
 
           return (
             <div key={item.id} className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 ${isCarryOver ? 'bg-blue-50/40' : ''}`}>
@@ -8211,7 +8339,7 @@ export function KitchenInventory() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="font-black text-gray-900 truncate">{toTitleCase(item.name)}</p>
+                    <p className="font-black text-gray-900 truncate">{item.name}</p>
                     <div className="flex items-center gap-1.5">
                       {item.category && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[9px] font-bold" title="Category">{item.category}</span>}
                       <span className="text-[10px] font-bold text-gray-400 uppercase" title="Scale">{item.unit}</span>
@@ -8290,28 +8418,23 @@ export function KitchenInventory() {
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm">
 
                 <option value="Kg">Kg</option>
-
-              <option value="G">G</option>
-
-              <option value="L">L</option>
-
-              <option value="Ml">Ml</option>
-
-              <option value="Pcs">Pcs</option>
-
-              <option value="Pack">Pack</option>
-
-              <option value="Kgs">Kgs</option>
-
-              <option value="Nos">Nos</option>
-
-              <option value="Bottle">Bottle</option>
-
-              <option value="Packets">Packets</option>
-
-              <option value="Box">Box</option>
-
-              <option value="Dozen">Dozen</option>
+                <option value="Gram">Gram</option>
+                <option value="Liter">Liter</option>
+                <option value="Ml">Ml</option>
+                <option value="Pcs">Pcs</option>
+                <option value="Pack">Pack</option>
+                <option value="Kgs">Kgs</option>
+                <option value="Nos">Nos</option>
+                <option value="Bottle">Bottle</option>
+                <option value="Packets">Packets</option>
+                <option value="Box">Box</option>
+                <option value="Dozen">Dozen</option>
+                <option value="Tin">Tin</option>
+                <option value="Rolls">Rolls</option>
+                <option value="Units">Units</option>
+                <option value="Cans">Cans</option>
+                <option value="Bags">Bags</option>
+                <option value="Half Kg">Half Kg</option>
 
             </select>
             </div>
@@ -8431,7 +8554,7 @@ export function KitchenInventory() {
 
             <div className="flex items-center justify-between">
 
-              <h3 className="text-lg font-black text-gray-900">Top 3 Selling Items — {selectedDate}</h3>
+              <h3 className="text-lg font-black text-gray-900">Top 3 Selling Items — {fromDate}</h3>
 
               <button onClick={() => setTopSelling(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
 
@@ -8476,6 +8599,8 @@ export function KitchenInventory() {
         </div>
 
       )}
+
+          </>)}
 
 
 
@@ -10630,23 +10755,23 @@ function SalesReport({ inventory }) {
 
                 <tr className="bg-[#E53935] text-white font-black">
 
-                  <td className="px-5 py-4 text-sm uppercase tracking-[0.1em]" colSpan="1">
+                  <td className="px-4 py-4 text-sm uppercase tracking-[0.1em]" colSpan="1">
 
                     GRAND TOTAL
 
                   </td>
 
-                  <td className="px-5 py-4 text-sm text-center">{grandTotals.quantity}</td>
+                  <td className="px-4 py-4 text-sm text-center">{grandTotals.quantity}</td>
 
-                  <td className="px-5 py-4 text-sm text-center" colSpan="4"></td>
+                  <td className="px-4 py-4 text-sm text-center" colSpan="4"></td>
 
-                  <td className="px-5 py-4 text-sm text-right">
+                  <td className="px-4 py-4 text-sm text-right">
 
                     ₹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                   </td>
 
-                  <td className="px-5 py-4 text-sm text-right">
+                  <td className="px-4 py-4 text-sm text-right">
 
                     ₹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
@@ -10828,13 +10953,13 @@ function LowStockReport({ inventory }) {
 
                   const reorderBottles = bottleSize > 0 ? Math.ceil(reorder / bottleSize) : 0;
 
-                  const currentBottlesDisplay = Math.floor(current / FULL_BOTTLE_ML);
+                  const currentBottlesDisplay = Math.floor(current / bottleSize);
 
-                  const currentMlRemainder = current % FULL_BOTTLE_ML;
+                  const currentMlRemainder = current % bottleSize;
 
-                  const reorderBottlesDisplay = Math.floor(reorder / FULL_BOTTLE_ML);
+                  const reorderBottlesDisplay = Math.floor(reorder / bottleSize);
 
-                  const reorderMlRemainder = reorder % FULL_BOTTLE_ML;
+                  const reorderMlRemainder = reorder % bottleSize;
 
 
 
@@ -10938,13 +11063,13 @@ function LowStockReport({ inventory }) {
 
                 <tr className="bg-gray-100 font-black">
 
-                  <td colSpan="7" className="px-5 py-4 text-sm uppercase tracking-wide text-gray-800">
+                  <td colSpan="7" className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
 
                     Total Restock Investment Required
 
                   </td>
 
-                  <td className="px-5 py-4 text-sm text-right text-green-800">
+                  <td className="px-4 py-4 text-sm text-right text-green-800">
 
                     ₹{totalRestockValue.toLocaleString('en-IN')}
 
@@ -12452,13 +12577,13 @@ function WasteReport({ inventory }) {
 
                   <tr className="bg-red-50 font-black">
 
-                    <td colSpan="4" className="px-5 py-4 text-sm uppercase tracking-wide text-gray-800">
+                    <td colSpan="4" className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
 
                       Total Waste Cost
 
                     </td>
 
-                    <td className="px-5 py-4 text-sm text-right text-red-700">
+                    <td className="px-4 py-4 text-sm text-right text-red-700">
 
                       ₹{totalWasteCost.toLocaleString('en-IN')}
 
@@ -12540,19 +12665,19 @@ function WasteReport({ inventory }) {
 
                   <tr className="bg-red-50 font-black">
 
-                    <td colSpan={groupBy === 'item' ? '3' : '2'} className="px-5 py-4 text-sm uppercase tracking-wide text-gray-800">
+                    <td colSpan={groupBy === 'item' ? '3' : '2'} className="px-4 py-4 text-sm uppercase tracking-wide text-gray-800">
 
                       Total Waste Cost
 
                     </td>
 
-                    <td className="px-5 py-4 text-sm text-right text-red-700">
+                    <td className="px-4 py-4 text-sm text-right text-red-700">
 
                       ₹{totalWasteCost.toLocaleString('en-IN')}
 
                     </td>
 
-                    <td className="px-5 py-4 text-sm text-center text-gray-700">
+                    <td className="px-4 py-4 text-sm text-center text-gray-700">
 
                       {wasteData.length}
 
@@ -12620,7 +12745,9 @@ export function Inventory() {
   const [popup, setPopup] = useState(null);
   const [outletFilter, setOutletFilter] = useState('self');
   const [accessibleOutlets, setAccessibleOutlets] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(getISTDateString);
+  const [fromDate, setFromDate] = useState(getISTDateString);
+  const [toDate, setToDate] = useState(getISTDateString);
+  const isRangeMode = fromDate !== toDate;
 
 
 
@@ -12666,9 +12793,9 @@ export function Inventory() {
     const originalVal = field === 'name' ? (item.name || item.menuItem?.name) :
                         field === 'category' ? (item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category)) :
                         field === 'bottleSize' ? item.bottleSize :
-                        field === 'price' ? item.menuItem?.price :
-                        field === 'opening' ? item.todayEntry?.openingStock :
-                        field === 'purchase' ? item.todayEntry?.addedStock :
+                        field === 'price' ? (item.menuItem?.basePrice || item.menuItem?.price) :
+                        field === 'opening' ? ((item.todayEntry?.openingStock ?? 0) / (item.bottleSize || 750)).toFixed(2) :
+                        field === 'purchase' ? ((item.todayEntry?.addedStock ?? 0) / (item.bottleSize || 750)).toFixed(2) :
                         field === 'consumed' ? item.todayEntry?.consumedStock : '';
                         
     if (String(originalVal) === String(editingBarCell.value)) {
@@ -12683,8 +12810,8 @@ export function Inventory() {
       if (field === 'category') payload.category = editingBarCell.value;
       if (field === 'bottleSize') payload.bottleSize = Number(editingBarCell.value);
       if (field === 'price') payload.price = Number(editingBarCell.value);
-      if (field === 'opening') payload.openingStock = Number(editingBarCell.value);
-      if (field === 'purchase') payload.purchased = Number(editingBarCell.value);
+      if (field === 'opening') payload.openingStockBottles = Number(editingBarCell.value);
+      if (field === 'purchase') payload.purchaseBottles = Number(editingBarCell.value);
       if (field === 'consumed') payload.consumed = Number(editingBarCell.value);
 
       const res = await fetch(apiUrl(`/api/bar/inventory/items/${item.id}`), {
@@ -12708,7 +12835,6 @@ export function Inventory() {
         }
         return inv;
       }));
-      showNotification(`${field} updated successfully`, 'success');
       loadInventory(); // reload to get fresh todayEntry
     } catch (err) {
       console.error('Failed to update inline:', err);
@@ -12778,6 +12904,7 @@ export function Inventory() {
 
 
   const loadInventory = useCallback(async () => {
+    if (isRangeMode) return;
     try {
       if (outletFilter === 'combined') {
         const res = await fetch(apiUrl(`/api/bar/inventory/combined?restaurantId=${getCurrentRestaurantId()}`), {
@@ -12788,7 +12915,7 @@ export function Inventory() {
         const data = await res.json();
         setInventory(Array.isArray(data) ? data : []);
       } else {
-        const data = await fetchBarInventory(selectedDate);
+        const data = await fetchBarInventory(fromDate);
         setInventory(Array.isArray(data) ? data.filter(item => item && item.id) : []);
       }
     } catch (err) {
@@ -12798,7 +12925,7 @@ export function Inventory() {
     } finally {
       setLoading(false);
     }
-  }, [outletFilter, selectedDate]);
+  }, [outletFilter, fromDate, isRangeMode]);
 
 
 
@@ -13285,6 +13412,10 @@ export function Inventory() {
   const displayItems = [...inventory]
     .filter(inv => inv && inv.id) // Filter out invalid items
     .sort((a, b) => {
+      const catA = (a.category || (typeof a.menuItem?.category === 'object' ? a.menuItem?.category?.name : a.menuItem?.category) || '').toLowerCase();
+      const catB = (b.category || (typeof b.menuItem?.category === 'object' ? b.menuItem?.category?.name : b.menuItem?.category) || '').toLowerCase();
+      const catCmp = catA.localeCompare(catB);
+      if (catCmp !== 0) return catCmp;
       const nameA = (a.name || a.menuItem?.name || '').toLowerCase();
       const nameB = (b.name || b.menuItem?.name || '').toLowerCase();
       return nameA.localeCompare(nameB);
@@ -13305,6 +13436,10 @@ export function Inventory() {
     return matchesSearch && matchesFilter;
 
   }).sort((a, b) => {
+    const catA = (a.category || (typeof a.menuItem?.category === 'object' ? a.menuItem?.category?.name : a.menuItem?.category) || '').toLowerCase();
+    const catB = (b.category || (typeof b.menuItem?.category === 'object' ? b.menuItem?.category?.name : b.menuItem?.category) || '').toLowerCase();
+    const catCmp = catA.localeCompare(catB);
+    if (catCmp !== 0) return catCmp;
     const nameA = (a.name || a.menuItem?.name || '').toLowerCase();
     const nameB = (b.name || b.menuItem?.name || '').toLowerCase();
     return nameA.localeCompare(nameB);
@@ -13458,12 +13593,12 @@ export function Inventory() {
             itemId: item.id, 
             field, 
             value: String(
-              field === 'name' ? (item.name || item.menuItem?.name || '') : 
+              field === 'name' ? toTitleCase(item.name || item.menuItem?.name || '') : 
               field === 'category' ? (item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '') : 
               field === 'bottleSize' ? (item.bottleSize || '') : 
-              field === 'price' ? (item.menuItem?.price || 0) : 
-              field === 'opening' ? (item.todayEntry?.openingStock ?? 0) : 
-              field === 'purchase' ? (item.todayEntry?.addedStock ?? 0) : 
+              field === 'price' ? (item.menuItem?.basePrice || item.menuItem?.price || 0) : 
+              field === 'opening' ? ((item.todayEntry?.openingStock ?? 0) / (item.bottleSize || 750)).toFixed(2) : 
+              field === 'purchase' ? ((item.todayEntry?.addedStock ?? 0) / (item.bottleSize || 750)).toFixed(2) : 
               field === 'consumed' ? (item.todayEntry?.consumedStock ?? 0) : ''
             ) 
           })}
@@ -13503,15 +13638,17 @@ export function Inventory() {
               )}
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
-            />
-          </div>
+          <DateRangePicker
+            fromDate={fromDate}
+            toDate={toDate}
+            onChange={(newFrom, newTo) => {
+              setFromDate(newFrom);
+              setToDate(newTo);
+            }}
+          />
+
+          {!isRangeMode && (<>
+
           <button
             onClick={() => {
               if (displayItems.length === 0) return;
@@ -13589,7 +13726,7 @@ export function Inventory() {
             onClick={async () => {
               setTopSellingLoading(true);
               try {
-                const res = await fetchBarTopSelling({ startDate: selectedDate, endDate: selectedDate });
+                const res = await fetchBarTopSelling({ startDate: fromDate, endDate: fromDate });
                 setTopSelling(res);
               } catch (err) {
                 showNotification('Failed to fetch top selling items', 'error');
@@ -13610,8 +13747,22 @@ export function Inventory() {
             <Activity size={14} /> Deduction Check
           </button>
 
+          </>)}
+
         </div>
       </div>
+
+      {isRangeMode && (
+        <InventoryRangeSummary
+          restaurantId={getCurrentRestaurantId()}
+          startDate={fromDate}
+          endDate={toDate}
+          kind="bar"
+        />
+      )}
+
+      {!isRangeMode && (
+        <>
 
       {showDeductionPanel && (
         <div className="bg-white border-2 border-red-100 rounded-3xl p-6 shadow-sm">
@@ -13747,7 +13898,7 @@ export function Inventory() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
               <tr>
-                <th className="px-5 py-4 text-center">
+                <th className="px-4 py-4 text-center">
                   <input 
                     type="checkbox" 
                     className="h-4 w-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935] cursor-pointer"
@@ -13761,21 +13912,21 @@ export function Inventory() {
                     }}
                   />
                 </th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 w-[1%] whitespace-nowrap">Ingredient</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Category</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">Scale</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Price</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Stock</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Opening Amount</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Purchase Amount</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Total Stock Amount</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Consumption Amount</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center">Balance Stock Amount</th>
-                <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400 text-center w-full">Actions</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 w-[1%] whitespace-nowrap">Ingredient</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Scale</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Price</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Opening Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Purchase Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Total Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Consumption Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Balance Stock Amount</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center w-full">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -13799,7 +13950,7 @@ export function Inventory() {
                 const consumed = hasEntry ? Number(item.todayEntry.consumedStock ?? 0) : null;
                 const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
 
-                const price = Number(item.menuItem?.price || 0);
+                const price = Number(item.menuItem?.basePrice || item.menuItem?.price || 0);
                 const costPerBottle = item.costPerBottle ? Number(item.costPerBottle) : (price * (bottleSize / 30));
                 const pricePerMl = bottleSize > 0 ? (costPerBottle / bottleSize) : 0;
 
@@ -13812,11 +13963,11 @@ export function Inventory() {
                 const balanceStockAmt = balanceStock != null ? balanceStock * pricePerMl : null;
 
                 const fmtAmt = (val) => val == null ? '—' : `₹ ${Number(val).toFixed(2)}`;
-                const fmtVal = (val, suffix = '') => val == null ? '—' : `${Number(val).toFixed(0)} ${suffix}`.trim();
+                const fmtVal = (val) => val == null ? '—' : Number(val).toFixed(0);
 
                 return (
                   <tr key={item.id} className={`transition-colors ${isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'} ${selectedIds.has(item.id) ? 'bg-red-50/50' : ''}`}>
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-center">
                       <input 
                         type="checkbox" 
                         className="h-4 w-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935] cursor-pointer" 
@@ -13824,7 +13975,7 @@ export function Inventory() {
                         onChange={() => toggleSelection(item.id)}
                       />
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
                         <div className="relative group shrink-0">
                           {item.menuItem?.imageUrl ? (
@@ -13852,7 +14003,7 @@ export function Inventory() {
                             <div className="flex items-center gap-1 group/name">
                               <p className="font-black text-gray-900 text-sm">{toTitleCase(item.name || item.menuItem?.name || 'Unknown Item')}</p>
                               <button
-                                onClick={() => !item.isVirtual && setEditingBarCell({ itemId: item.id, field: 'name', value: item.name || item.menuItem?.name || '' })}
+                                onClick={() => !item.isVirtual && setEditingBarCell({ itemId: item.id, field: 'name', value: toTitleCase(item.name || item.menuItem?.name || '') })}
                                 className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/name:opacity-100 transition-opacity"
                               >
                                 <Pencil size={11} />
@@ -13863,7 +14014,7 @@ export function Inventory() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-gray-500 text-sm">
+                    <td className="px-4 py-4 text-gray-500 text-sm">
                       {editingBarCell?.itemId === item.id && editingBarCell?.field === 'category' ? (
                         <div className="flex items-center gap-1">
                           <input
@@ -13892,7 +14043,7 @@ export function Inventory() {
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-gray-500 text-sm">
+                    <td className="px-4 py-4 text-gray-500 text-sm">
                       {editingBarCell?.itemId === item.id && editingBarCell?.field === 'bottleSize' ? (
                         <div className="flex items-center gap-1">
                           <input
@@ -13919,18 +14070,18 @@ export function Inventory() {
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `₹${price.toFixed(2)}`, 'number')}</td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', fmtVal(opening, 'ml'))}</td>
-                    <td className="px-5 py-4 text-xs text-center text-gray-600">{fmtAmt(openingAmt)}</td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', fmtVal(purchase, 'ml'))}</td>
-                    <td className="px-5 py-4 text-xs text-center text-gray-600">{fmtAmt(purchaseAmt)}</td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-blue-600">{fmtVal(totalStock, 'ml')}</td>
-                    <td className="px-5 py-4 text-xs text-center text-blue-600">{fmtAmt(totalStockAmt)}</td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', fmtVal(consumed, 'ml'))}</td>
-                    <td className="px-5 py-4 text-xs text-center text-red-600">{fmtAmt(consumptionAmt)}</td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-green-600">{fmtVal(balanceStock, 'ml')}</td>
-                    <td className="px-5 py-4 text-xs text-center font-bold text-green-600">{fmtAmt(balanceStockAmt)}</td>
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `₹${price.toFixed(2)}`, 'number')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', opening != null ? formatBottlesMl(opening, bottleSize) : '—')}</td>
+                    <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(openingAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', purchase != null ? formatBottlesMl(purchase, bottleSize) : '—')}</td>
+                    <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(purchaseAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-blue-600">{totalStock != null ? formatBottlesMl(totalStock, bottleSize) : '—'}</td>
+                    <td className="px-4 py-4 text-xs text-center text-blue-600">{fmtAmt(totalStockAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', consumed != null ? formatBottlesMl(consumed, bottleSize) : '—')}</td>
+                    <td className="px-4 py-4 text-xs text-center text-red-600">{fmtAmt(consumptionAmt)}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{balanceStock != null ? formatBottlesMl(balanceStock, bottleSize) : '—'}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{fmtAmt(balanceStockAmt)}</td>
+                    <td className="px-4 py-4 text-center">
                           <button
                             onClick={() => handleDeleteItem(item.id)}
                             disabled={deletingItemId === item.id}
@@ -14008,7 +14159,7 @@ export function Inventory() {
 
                       <span className="text-gray-400">Stock Level</span>
 
-                      <span className="text-gray-900">{bottles} bottles <span className="text-gray-400 font-bold ml-1">({currentStock.toFixed(0)} ml)</span></span>
+                      <span className="text-gray-900">{formatBottlesMl(currentStock, bottleSize)}</span>
 
                     </div>
 
@@ -14093,6 +14244,8 @@ export function Inventory() {
         </div>
 
       )}
+
+          </>)}
 
 
 
@@ -18150,13 +18303,11 @@ export function StaffManagement({ role }) {
 
   const [error, setError] = useState('');
 
-  const [showInactive, setShowInactive] = useState(false);
-
   const [modalOpen, setModalOpen] = useState(false);
 
   const [editing, setEditing] = useState(null);
 
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', isActive: true, permissions: {} });
+  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
   const [saving, setSaving] = useState(false);
 
@@ -18178,7 +18329,7 @@ export function StaffManagement({ role }) {
 
     try {
 
-      const data = await apiFetch(`/api/auth/staff?showInactive=${showInactive}`);
+      const data = await apiFetch('/api/auth/staff');
 
       setStaff(data || []);
 
@@ -18192,7 +18343,7 @@ export function StaffManagement({ role }) {
 
     }
 
-  }, [showInactive]);
+  }, []);
 
 
 
@@ -18206,7 +18357,7 @@ export function StaffManagement({ role }) {
 
   const resetForm = () => {
 
-    setForm({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', isActive: true, permissions: {} });
+    setForm({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
     setEditing(null);
 
@@ -18219,21 +18370,13 @@ export function StaffManagement({ role }) {
   const handleEdit = (member) => {
     if (isManagerReadOnly) return handleAccessDenied();
     setEditing(member);
-    setForm({
-      name: member.name,
-      role: member.role,
-      designation: member.designation || member.role,
-      pin: '',
-      baseSalary: member.employee?.baseSalary != null ? String(member.employee.baseSalary) : '',
-      isActive: member.isActive !== false,
-      permissions: member.permissions || {}
-    });
+    setForm({ name: member.name, role: member.role, designation: member.designation || member.role, pin: '', permissions: member.permissions || {} });
     setModalOpen(true);
   };
 
-  const handleDeactivateWithCheck = (id, currentlyActive) => {
+  const handleDeactivateWithCheck = (id) => {
     if (isManagerReadOnly) return handleAccessDenied();
-    handleToggleActive(id, currentlyActive);
+    handleDeactivate(id);
   };
 
 
@@ -18254,15 +18397,7 @@ export function StaffManagement({ role }) {
 
       const body = editing
 
-        ? {
-            name: form.name,
-            role: form.role,
-            baseSalary: form.baseSalary !== '' ? Number(form.baseSalary) : undefined,
-            isActive: form.isActive,
-            designation: form.designation,
-            ...(form.pin ? { pin: form.pin } : {}),
-            permissions: { onlineOrders: !!form.permissions?.onlineOrders }
-          }
+        ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
 
         : form.role === 'OWNER'
 
@@ -18290,19 +18425,22 @@ export function StaffManagement({ role }) {
 
 
 
-  const handleToggleActive = async (id, currentlyActive) => {
-    const action = currentlyActive === false ? 'activate' : 'deactivate';
-    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} this staff member?`)) return;
+  const handleDeactivate = async (id) => {
+
+    if (!confirm('Deactivate this staff member?')) return;
+
     try {
-      await apiFetch(`/api/auth/staff/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ isActive: currentlyActive === false })
-      });
+
+      await apiFetch(`/api/auth/staff/${id}`, { method: 'DELETE' });
+
       fetchStaff();
+
     } catch (err) {
-      console.error('[Staff] Toggle active failed:', err);
-      setError(err.message || `Failed to ${action}`);
+
+      setError(err.message || 'Failed to deactivate');
+
     }
+
   };
 
   const downloadStaffImportTemplate = () => {
@@ -18403,11 +18541,11 @@ export function StaffManagement({ role }) {
 
   return (
 
-    <div className="space-y-5 font-sans">
+    <div className="space-y-4 font-sans">
 
       {error && (
 
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-semibold">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-[12px] font-bold">
 
           {error}
 
@@ -18417,45 +18555,30 @@ export function StaffManagement({ role }) {
 
 
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between">
 
-        <div>
-          <h2 className="text-2xl font-black text-gray-900 tracking-tight">Staff Management</h2>
-          <p className="text-sm text-gray-500 font-medium mt-1">Manage team members, roles, and access</p>
-        </div>
+        <h3 className="font-semibold">Staff Management</h3>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name or role..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] w-56 transition-all"
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm font-semibold text-gray-600 cursor-pointer select-none bg-white px-3 py-2 rounded-xl border border-gray-200">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
-            />
-            Show inactive
-          </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search by name or role..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-1.5 border border-gray-200 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 w-48"
+          />
           {!isManagerReadOnly && (
           <button
             onClick={() => setImportModalOpen(true)}
-            className="px-4 py-2 bg-white text-gray-900 border border-gray-200 text-sm font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition flex items-center gap-2 shadow-sm"
+            className="px-3 py-1.5 bg-gray-900 text-white text-[12px] font-bold rounded-xl hover:bg-gray-800 transition flex items-center gap-1"
           >
-            <Upload size={16} />
+            <Upload size={14} />
             Import Staff
           </button>
           )}
           <button
             onClick={() => isManagerReadOnly ? handleAccessDenied() : setModalOpen(true)}
-            className={`px-4 py-2 text-white text-sm font-bold rounded-xl transition shadow-sm ${isManagerReadOnly ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#E53935] hover:bg-red-700'}`}
+            className={`px-3 py-1.5 text-white text-[12px] font-bold rounded-xl transition ${isManagerReadOnly ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#E53935] hover:bg-red-700'}`}
           >
             + Add Staff
           </button>
@@ -18465,21 +18588,21 @@ export function StaffManagement({ role }) {
 
 
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
 
-        <table className="w-full text-sm">
+        <table className="w-full text-[12px]">
 
-          <thead className="bg-gray-50/80 border-b border-gray-100">
+          <thead className="bg-gray-50">
 
             <tr>
 
-              <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-[0.15em] text-gray-400">Name</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Name</th>
 
-              <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-[0.15em] text-gray-400">Role</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">Role</th>
 
-              <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-[0.15em] text-gray-400">PIN</th>
+              <th className="px-4 py-2 text-left font-bold text-gray-500">PIN</th>
 
-              <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-[0.15em] text-gray-400">Actions</th>
+              <th className="px-4 py-2 text-right font-bold text-gray-500">Actions</th>
 
             </tr>
 
@@ -18488,31 +18611,18 @@ export function StaffManagement({ role }) {
           <tbody>
 
             {staff.filter(member => {
-              if (!showInactive && member.isActive === false) return false;
               if (!searchQuery.trim()) return true;
               const q = searchQuery.toLowerCase();
               return (member.name || '').toLowerCase().includes(q) || (member.designation || '').toLowerCase().includes(q) || (member.role || '').toLowerCase().includes(q);
             }).map((member) => (
 
-              <tr key={member.id} className="border-b border-gray-50 last:border-b-0 hover:bg-[#FFF5F5]/50 transition-colors">
+              <tr key={member.id} className="border-t border-gray-100 hover:bg-gray-50">
 
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FFCDD2] to-[#EF9A9A] flex items-center justify-center text-[#B71C1C] font-black text-sm shadow-sm">
-                      {(member.name || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900 text-sm">{member.name}</p>
-                      {member.isActive === false && (
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-gray-100 text-gray-500 uppercase tracking-wider">Inactive</span>
-                      )}
-                    </div>
-                  </div>
-                </td>
+                <td className="px-4 py-3 font-bold text-gray-900">{member.name}</td>
 
-                <td className="px-6 py-4">
+                <td className="px-4 py-3 text-gray-600">
 
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide ${member.role === 'CAPTAIN' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' : member.role === 'OWNER' ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-100' : member.role === 'MANAGER' ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100' : 'bg-green-50 text-green-700 ring-1 ring-green-100'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : member.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
 
                     {member.designation || member.role}
 
@@ -18520,29 +18630,25 @@ export function StaffManagement({ role }) {
 
                 </td>
 
-                <td className="px-6 py-4">
+                <td className="px-4 py-3 text-gray-600">
 
                   {member.role === 'OWNER' ? (
-                    <span className="text-xs font-bold text-gray-400">—</span>
+                    <span className="text-[10px] font-bold text-gray-400">—</span>
                   ) : member.hasPin ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-green-50 text-green-700 ring-1 ring-green-100">
-                      <CheckCircle size={12} /> Set
-                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700">Set</span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-red-50 text-red-700 ring-1 ring-red-100">
-                      <XCircle size={12} /> Not Set
-                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700">Not Set</span>
                   )}
 
                 </td>
 
-                <td className="px-6 py-4 text-right">
+                <td className="px-4 py-3 text-right">
 
                   <button
 
                     onClick={() => handleEdit(member)}
 
-                    className="text-xs font-bold text-gray-500 hover:text-[#E53935] transition-colors mr-4"
+                    className="text-[10px] font-bold text-gray-500 hover:text-[#E53935] mr-3"
 
                   >
 
@@ -18552,13 +18658,13 @@ export function StaffManagement({ role }) {
 
                   <button
 
-                    onClick={() => handleDeactivateWithCheck(member.id, member.isActive)}
+                    onClick={() => handleDeactivateWithCheck(member.id)}
 
-                    className={`text-xs font-bold transition-colors ${member.isActive === false ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}
+                    className="text-[10px] font-bold text-red-500 hover:text-red-700"
 
                   >
 
-                    {member.isActive === false ? 'Activate' : 'Deactivate'}
+                    Deactivate
 
                   </button>
 
@@ -18617,59 +18723,22 @@ export function StaffManagement({ role }) {
             </div>
 
             {editing && (
-              <>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase">Designation</label>
-                  <select
-                    value={form.designation}
-                    onChange={(e) => setForm({ ...form, designation: e.target.value })}
-                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-                  >
-                    <option value="">Select designation</option>
-                    {form.designation && !DESIGNATIONS.includes(form.designation) && (
-                      <option value={form.designation}>{form.designation}</option>
-                    )}
-                    {DESIGNATIONS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase">Role</label>
-                  <select
-                    value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value })}
-                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-                  >
-                    <option value="CAPTAIN">Captain</option>
-                    <option value="CASHIER">Cashier</option>
-                    <option value="MANAGER">Manager</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase">Base Salary</label>
-                  <input
-                    type="number"
-                    value={form.baseSalary}
-                    onChange={(e) => setForm({ ...form, baseSalary: e.target.value })}
-                    className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
-                    placeholder="e.g. 15000"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-gray-500 uppercase">Active</label>
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, isActive: !form.isActive })}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${form.isActive ? 'bg-[#E53935]' : 'bg-gray-300'}`}
-                  >
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.isActive ? 'translate-x-5' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-              </>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Designation</label>
+                <select
+                  value={form.designation}
+                  onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                  className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                >
+                  <option value="">Select designation</option>
+                  {form.designation && !DESIGNATIONS.includes(form.designation) && (
+                    <option value={form.designation}>{form.designation}</option>
+                  )}
+                  {DESIGNATIONS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
             )}
 
             {!editing && (
