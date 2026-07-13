@@ -29,14 +29,21 @@ const PortalSelection = ({ onSelect }) => {
         Manager Login →
       </button>
       
-      <div className="mb-6 text-center z-10 animate-fade-in">
+      <h1 className="sr-only">Softshape.ai — Free AI-Powered POS Billing Software for Restaurants, Cafes & Bars</h1>
+      <div className="mb-8 text-center z-10 animate-fade-in">
         <div className="flex flex-col items-center justify-center gap-4">
           <img 
             src="/logo softshape.ai.png" 
-            alt="softshape.ai" 
+            alt="Softshape.ai — Restaurant POS Billing Software Logo" 
             className="h-64 md:h-80 w-auto object-contain" 
           />
         </div>
+        <p className="mt-5 text-center text-lg sm:text-xl md:text-2xl font-bold text-[#B71C1C] max-w-2xl mx-auto leading-snug">
+          Free POS Billing Software for Restaurants, Cafes & Bars
+        </p>
+        <p className="mt-3 text-center text-sm md:text-base text-gray-600 max-w-2xl mx-auto leading-relaxed">
+          Trusted by restaurants, cafes, and bars across India for all-in-one billing, KOT, inventory, and QR code ordering.
+        </p>
       </div>
 
       <div className="grid w-full max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 z-10 px-4">
@@ -48,7 +55,10 @@ const PortalSelection = ({ onSelect }) => {
           <div className="mb-6 rounded-2xl bg-[#FFEBEE] p-4 text-[#E53935] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#E53935] group-hover:text-white shadow-inner">
             <UserCog size={32} strokeWidth={2.5} />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Admin Portal</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">
+            Admin Portal
+            <span className="sr-only"> — Restaurant POS Billing & Management</span>
+          </h2>
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">Management suite for revenue, surveillance, and global analytics.</p>
         </button>
 
@@ -60,7 +70,10 @@ const PortalSelection = ({ onSelect }) => {
           <div className="mb-6 rounded-2xl bg-[#FFF5F5] p-4 text-[#B71C1C] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#B71C1C] group-hover:text-white shadow-inner">
             <ShoppingCart size={32} strokeWidth={2.5} />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Cashier Panel</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">
+            Cashier Panel
+            <span className="sr-only"> — POS Billing & Payments</span>
+          </h2>
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">Operational interface for billing, payments, and order fulfillment.</p>
         </button>
 
@@ -72,7 +85,10 @@ const PortalSelection = ({ onSelect }) => {
           <div className="mb-6 rounded-2xl bg-[#FFF5F5] p-4 text-[#B71C1C] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#B71C1C] group-hover:text-white shadow-inner">
             <Smartphone size={32} strokeWidth={2.5} />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">Captain App</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">
+            Captain App
+            <span className="sr-only"> — Restaurant Order Taking App</span>
+          </h2>
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">Field-ready interface for table orders and service tracking.</p>
         </button>
         
@@ -84,13 +100,35 @@ const PortalSelection = ({ onSelect }) => {
           <div className="mb-6 rounded-2xl bg-[#FFF5F5] p-4 text-[#B71C1C] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#B71C1C] group-hover:text-white shadow-inner">
             <QrCode size={32} strokeWidth={2.5} />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">User Menu View</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tighter">
+            User Menu View
+            <span className="sr-only"> — QR Code Menu Ordering</span>
+          </h2>
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-gray-500">Interactive QR-based dining experience</p>
         </button>
       </div>
 
-      <footer className="mt-16 flex flex-col items-center gap-4 z-10">
+      <footer className="mt-16 flex flex-col items-center gap-4 z-10 text-center">
         <p className="text-[11px] font-black uppercase tracking-[0.5em] text-[#B71C1C] drop-shadow-sm">Powered by Vtech</p>
+
+        <h3 className="text-lg md:text-xl font-black text-[#B71C1C] tracking-tight">Contact Us</h3>
+
+        <div className="flex items-center justify-start md:justify-center gap-3 text-base md:text-lg font-semibold text-gray-800 overflow-x-auto whitespace-nowrap max-w-full px-2 scrollbar-hide">
+          <a href="tel:+919391798370" className="hover:text-[#E53935] transition">9391798370</a>
+          <span className="text-gray-300">|</span>
+          <a href="tel:+919381872579" className="hover:text-[#E53935] transition">9381872579</a>
+          <span className="text-gray-300">|</span>
+          <a href="mailto:softshapeai@gmail.com" className="hover:text-[#E53935] transition">softshapeai@gmail.com</a>
+        </div>
+
+        <p className="sr-only text-xs text-gray-500">
+          Contact: 9391798370, 9381872579, softshapeai@gmail.com
+        </p>
+
+        <p className="text-sm md:text-base text-gray-700 max-w-md">
+          Built by 3 founders — <span className="font-bold text-[#E53935]">T. Vinod Chowdary</span>, <span className="font-bold text-[#E53935]">N. Varun Kumar</span>, <span className="font-bold text-[#E53935]">V. Akhil</span> — in 60 days.
+        </p>
+
         <a
           href="/onboarding"
           className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors flex items-center gap-2"

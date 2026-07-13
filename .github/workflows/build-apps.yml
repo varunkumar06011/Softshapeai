@@ -170,7 +170,7 @@ jobs:
       - name: Generate Tauri icons
         working-directory: apps/admin-desktop
         shell: bash
-        run: npx tauri icon "../../public/logo softshape.ai.png"
+        run: npx tauri icon "../../public/logo-square.png"
 
       - name: Build Admin Desktop
         run: npm run build:admin-desktop
