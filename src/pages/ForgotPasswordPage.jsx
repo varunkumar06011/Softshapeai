@@ -13,11 +13,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Mail } from 'lucide-react';
-
-// Resolves the backend base URL from Vite env vars
-function getApiBase() {
-  return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
-}
+import { API_BASE } from '../services/apiConfig';
 
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
@@ -35,7 +31,7 @@ const ForgotPasswordPage = () => {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/auth/forgot-password`, {
+      const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -36,12 +36,13 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
   const sgstRate = totalGstRate / 2;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
-    return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
+    return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, serviceCharge: undefined, serviceChargeAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
   }
 
   let foodSubtotal = 0;
   let liquorSubtotal = 0;
   let gstExemptFood = 0;
+  let gstExemptLiquor = 0;
 
   items.forEach((item) => {
     if (item.removedFromBill) return;
@@ -57,6 +58,9 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
 
     if (type === 'liquor') {
       liquorSubtotal += price * qty;
+      if (item.gstEnabled === false) {
+        gstExemptLiquor += price * qty;
+      }
     } else {
       foodSubtotal += price * qty;
       // Items with gstEnabled=false are exempt from GST calculation
@@ -75,25 +79,33 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
     : 0;
 
   const discountedFood = foodSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (foodSubtotal / subtotal) : 0);
-  const gstExemptAfterDiscount = Math.max(0, gstExemptFood - (discountAmount > 0 && subtotal > 0 ? discountAmount * (gstExemptFood / subtotal) : 0));
-  const taxableFood = Math.max(0, discountedFood - gstExemptAfterDiscount);
+  const gstExemptTotal = gstExemptFood + gstExemptLiquor;
+  const gstExemptAfterDiscount = Math.max(0, gstExemptTotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (gstExemptTotal / subtotal) : 0));
+  const taxableFood = Math.max(0, discountedFood - (gstExemptAfterDiscount * (foodSubtotal / (foodSubtotal + liquorSubtotal || 1))));
 
   let baseAmount, cgst, sgst, taxes;
   if (pricesIncludeGst) {
     baseAmount = Math.round((taxableFood / (1 + totalGstRate)) * 100) / 100;
-    cgst = Math.round(baseAmount * cgstRate * 100) / 100;
-    sgst = Math.round(baseAmount * sgstRate * 100) / 100;
-    taxes = cgst + sgst;
+    const rawTax = Math.round(baseAmount * totalGstRate * 100) / 100;
+    cgst = Math.round(rawTax / 2 * 100) / 100;
+    sgst = Math.round((rawTax - cgst) * 100) / 100;
+    taxes = rawTax;
   } else {
     baseAmount = taxableFood;
-    cgst = Math.round(taxableFood * cgstRate * 100) / 100;
-    sgst = Math.round(taxableFood * sgstRate * 100) / 100;
-    taxes = cgst + sgst;
+    const rawTax = Math.round(taxableFood * totalGstRate * 100) / 100;
+    cgst = Math.round(rawTax / 2 * 100) / 100;
+    sgst = Math.round((rawTax - cgst) * 100) / 100;
+    taxes = rawTax;
   }
 
-  const liquorAfterDiscount = liquorSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (liquorSubtotal / subtotal) : 0);
+  const discountedLiquor = liquorSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (liquorSubtotal / subtotal) : 0);
+  const liquorAfterDiscount = discountedLiquor - (gstExemptAfterDiscount * (liquorSubtotal / (foodSubtotal + liquorSubtotal || 1)));
   const displayedSubtotal = Math.round((baseAmount + gstExemptAfterDiscount + liquorAfterDiscount) * 100) / 100;
-  const rawGrandTotal = Math.max(0, Math.round((displayedSubtotal + taxes) * 100) / 100);
+  const scPercent = Number(options.serviceChargePercent ?? 0);
+  const serviceChargeAmount = scPercent > 0
+    ? Math.round((displayedSubtotal + taxes) * (scPercent / 100) * 100) / 100
+    : 0;
+  const rawGrandTotal = Math.max(0, Math.round((displayedSubtotal + taxes + serviceChargeAmount) * 100) / 100);
   const grandTotal = Math.round(rawGrandTotal);
   const roundOff = Math.round((grandTotal - rawGrandTotal) * 100) / 100;
 
@@ -109,6 +121,8 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
     total: grandTotalRounded,
     grandTotal: grandTotalRounded,
     discountAmount: discountAmountRounded,
+    serviceCharge: scPercent > 0 ? { percent: scPercent, amount: serviceChargeAmount } : undefined,
+    serviceChargeAmount: serviceChargeAmount,
     roundOff,
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),

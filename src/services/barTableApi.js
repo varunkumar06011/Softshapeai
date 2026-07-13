@@ -26,7 +26,7 @@ async function parseResponse(res) {
   return res.json();
 }
 
-async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 45000 } = {}) {
+async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 10000 } = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 

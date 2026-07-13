@@ -225,7 +225,15 @@ export async function pruneOldPendingActions(maxAgeMs = 7 * 24 * 60 * 60 * 1000)
     const cutoff = Date.now() - maxAgeMs;
     const req = store.getAll();
     req.onsuccess = () => {
-      const toDelete = req.result.filter(a => a.createdAt < cutoff && a.status === 'synced');
+      const toDelete = req.result.filter(a =>
+        a.createdAt < cutoff && (
+          a.status === 'synced' ||
+          a.status === 'failed-permanent' ||
+          a.status === 'error' ||
+          a.status === 'conflict' ||
+          a.status === 'auth_error'
+        )
+      );
       for (const action of toDelete) {
         store.delete(action.id);
       }

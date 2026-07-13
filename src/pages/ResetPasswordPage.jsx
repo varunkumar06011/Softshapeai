@@ -15,11 +15,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Eye, EyeOff, CheckCircle } from 'lucide-react';
-
-// Resolves the backend base URL from Vite env vars
-function getApiBase() {
-  return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
-}
+import { API_BASE } from '../services/apiConfig';
 
 const ResetPasswordPage = () => {
   const navigate = useNavigate();
@@ -62,7 +58,7 @@ const ResetPasswordPage = () => {
     if (!validate()) return;
     setLoading(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/auth/reset-password`, {
+      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, password }),

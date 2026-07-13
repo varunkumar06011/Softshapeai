@@ -442,6 +442,19 @@ export async function syncPendingActions() {
           }
           await updatePendingAction(action.id, { status: 'failed-permanent' });
           console.warn(`[SyncEngine] Action ${action.requestId} permanently failed after ${newAttempts} attempts — inventory restored`);
+
+          // Cancel orphaned child actions that depend on this failed create-order
+          if (action.actionType === 'create-order' && action.offlineOrderId) {
+            const allPending = await getPendingActions();
+            const children = allPending.filter(a =>
+              a.dependsOnOrderId === action.offlineOrderId &&
+              a.id !== action.id
+            );
+            for (const child of children) {
+              await updatePendingAction(child.id, { status: 'failed-permanent', lastError: 'Parent order creation failed' });
+              console.warn(`[SyncEngine] Child action ${child.requestId} marked failed — parent ${action.offlineOrderId} permanently failed`);
+            }
+          }
         }
         failed++;
       }

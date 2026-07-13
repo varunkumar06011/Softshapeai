@@ -27,14 +27,10 @@ import {
   isNativePlatform,
   FirebaseAuthentication,
 } from '../../lib/phoneAuth';
-
-// Resolves the backend base URL from Vite env vars
-function getApiBase() {
-  return import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '';
-}
+import { API_BASE } from '../../services/apiConfig';
 
 async function apiFetch(path, options = {}) {
-  const res = await fetch(`${getApiBase()}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });

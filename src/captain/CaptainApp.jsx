@@ -3201,7 +3201,7 @@ export default function CaptainApp({ onLogout }) {
             ),
           } : t.activeOrder,
 
-          currentBill: (t.currentBill ?? 0) + (kotItem?.p ?? 0) * (kotItem?.q ?? 1),
+          currentBill: (t.currentBill ?? 0) + (kotItem?.p ?? 0) * cancelQty,
 
         };
 

@@ -14,21 +14,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
-
-// Resolves the backend base URL from Vite env vars
-function getApiBase() {
-  return (
-    import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
-  );
-}
+import { API_BASE } from './apiConfig';
 
 export const authService = {
   async login(email, password, restaurantCode) {
-    const baseUrl = getApiBase();
-    if (!baseUrl) {
-      throw new Error('Backend API URL is not configured (VITE_API_URL missing). Check app settings or rebuild the desktop app.');
-    }
-    const res = await fetch(`${baseUrl}/api/auth/login`, {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, restaurantCode }),
@@ -38,7 +28,7 @@ export const authService = {
       const text = await res.text();
       throw new Error(
         `Backend returned non-JSON response (HTTP ${res.status} ${res.statusText}). ` +
-        `URL: ${baseUrl}/api/auth/login. Response starts with: ${text.slice(0, 60).replace(/\n/g, ' ')}...`
+        `URL: ${API_BASE}/api/auth/login. Response starts with: ${text.slice(0, 60).replace(/\n/g, ' ')}...`
       );
     }
     const data = await res.json();
@@ -73,7 +63,7 @@ export const authService = {
 
   async captainLogin(restaurantId, userId, pin, restaurantCode, role) {
     try {
-      const res = await fetch(`${getApiBase()}/api/auth/captain-login`, {
+      const res = await fetch(`${API_BASE}/api/auth/captain-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ restaurantId, userId, pin, restaurantCode, role }),
@@ -135,7 +125,7 @@ export const authService = {
 
   async switchOutlet(outletId) {
     const token = localStorage.getItem('ss_token') || localStorage.getItem('ss_preauth_token');
-    const res = await fetch(`${getApiBase()}/api/auth/switch-outlet`, {
+    const res = await fetch(`${API_BASE}/api/auth/switch-outlet`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ outletId }),
@@ -159,7 +149,7 @@ export const authService = {
     const token = localStorage.getItem('ss_token');
     try {
       if (token) {
-        await fetch(`${getApiBase()}/api/auth/logout`, {
+        await fetch(`${API_BASE}/api/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -235,9 +225,17 @@ export const authService = {
   },
 
   async fetchCrew(restaurantId) {
-    const res = await fetch(`${getApiBase()}/api/auth/crew?restaurantId=${encodeURIComponent(restaurantId)}`, {
+    const res = await fetch(`${API_BASE}/api/auth/crew?restaurantId=${encodeURIComponent(restaurantId)}`, {
       headers: this.getAuthHeader(),
     });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(
+        `Backend returned a non-JSON response (HTTP ${res.status}). ` +
+        `URL: ${API_BASE}/api/auth/crew. Response starts with: ${text.slice(0, 80).replace(/\s+/g, ' ')}...`
+      );
+    }
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.error || 'Failed to fetch crew');

@@ -22,13 +22,6 @@ import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { reconnectSocket } from '../../hooks/useSocket';
 
-// Resolves the backend base URL from Vite env vars
-function getApiBase() {
-  return (
-    import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
-  );
-}
-
 const LoginScreen = ({ role, onLogin, onBack }) => {
   const navigate = useNavigate();
   const { setAuth } = useAuth();
@@ -123,11 +116,7 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${getApiBase()}/api/auth/crew?restaurantId=${encodeURIComponent(slug.trim())}`);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to load staff');
-      }
+      const data = await authService.fetchCrew(slug.trim());
       const staff = isCashier ? data.cashiers : role === 'manager' ? data.managers : data.captains;
       if (!staff || staff.length === 0) {
         const roleLabel = isCashier ? 'cashiers' : role === 'manager' ? 'managers' : 'captains';

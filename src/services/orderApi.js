@@ -154,7 +154,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing to offline queue');
     const offlineRequestId = requestId || generateRequestId();
-    const offlineOrderId = `offline-${Date.now()}`;
+    const offlineOrderId = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orderData.requestId = offlineRequestId;
     await addPendingAction({
       requestId: offlineRequestId,
@@ -210,7 +210,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
     if (!isBackendReachable()) {
       console.warn('[Offline] API failed, queuing order for sync:', apiErr.message);
       const offlineRequestId = requestId || generateRequestId();
-      const offlineOrderId = `offline-${Date.now()}`;
+      const offlineOrderId = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       orderData.requestId = offlineRequestId;
       await addPendingAction({
         requestId: offlineRequestId,
@@ -242,11 +242,17 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
 export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), status } = {}) {
   const qs = new URLSearchParams({ restaurantId });
   if (status) qs.set("status", status);
-  const res = await fetch(apiUrl(`/api/orders?${qs.toString()}`), {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...authService.getAuthHeader() },
-  });
-  return parseResponse(res);
+  return withRetry(
+    async () => {
+      const res = await fetch(apiUrl(`/api/orders?${qs.toString()}`), {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...authService.getAuthHeader() },
+        signal: AbortSignal.timeout(10000),
+      });
+      return parseResponse(res);
+    },
+    { ...RETRY_CONFIG.TABLE_UPDATE, retries: 2 }
+  );
 }
 
 export async function fetchTableOrder(tableId) {
@@ -399,17 +405,49 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
 }
 
 export async function updateOrderStatus(orderId, status) {
-  return withRetry(
-    async () => {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/status`), {
+  if (!isBackendReachable()) {
+    const requestId = generateRequestId();
+    await addPendingAction({
+      requestId,
+      entityId: orderId,
+      entityType: 'order',
+      actionType: 'update-status',
+      url: `/api/orders/${orderId}/status`,
+      method: 'PATCH',
+      body: { status },
+      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+    });
+    return { id: orderId, offline: true, status };
+  }
+  try {
+    return await withRetry(
+      async () => {
+        const res = await fetch(apiUrl(`/api/orders/${orderId}/status`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ status }),
+        });
+        return parseResponse(res);
+      },
+      RETRY_CONFIG.TABLE_UPDATE
+    );
+  } catch (apiErr) {
+    if (!isBackendReachable()) {
+      const requestId = generateRequestId();
+      await addPendingAction({
+        requestId,
+        entityId: orderId,
+        entityType: 'order',
+        actionType: 'update-status',
+        url: `/api/orders/${orderId}/status`,
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ status }),
+        body: { status },
+        dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
       });
-      return parseResponse(res);
-    },
-    RETRY_CONFIG.TABLE_UPDATE
-  );
+      return { id: orderId, offline: true, status };
+    }
+    throw apiErr;
+  }
 }
 
 export async function requestBilling(orderId) {

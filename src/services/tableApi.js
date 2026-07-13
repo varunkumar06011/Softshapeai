@@ -58,7 +58,8 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 4500
     if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
       console.warn(`[fetchWithRetry] Retrying ${url} after error:`, err.message);
       await new Promise(r => setTimeout(r, 1000));
-      return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
+      const { signal: _removed, ...retryOptions } = options;
+      return fetchWithRetry(url, retryOptions, { retries: retries - 1, timeoutMs });
     }
     throw err;
   }

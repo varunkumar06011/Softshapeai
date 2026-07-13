@@ -19,7 +19,7 @@ import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isEdgeAvailable, edgeFetch, getEdgeUrl } from '../services/edgeHealth.js';
-import { ChevronLeft, ChevronRight, Check, Store, Utensils, LayoutGrid, Printer, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Store, Utensils, LayoutGrid, Printer, Loader2, Wine, Coffee, Cloud, UtensilsCrossed } from 'lucide-react';
 
 // Menu templates — imported as raw JSON via Vite's ?raw suffix
 import dineInVeg from './templates/dine-in-veg.json';
@@ -39,11 +39,11 @@ const MENU_TEMPLATES = [
 ];
 
 const RESTAURANT_TYPES = [
-  { value: 'DINE_IN_VEG', label: 'Dine-In (Veg)' },
-  { value: 'DINE_IN_NON_VEG', label: 'Dine-In (Non-Veg)' },
-  { value: 'BAR', label: 'Bar & Restaurant' },
-  { value: 'CAFE', label: 'Cafe' },
-  { value: 'CLOUD_KITCHEN', label: 'Cloud Kitchen' },
+  { value: 'DINE_IN', label: 'Dine-in Restaurant', desc: 'Tables, food menu, KOT printing', icon: Utensils },
+  { value: 'BAR_LOUNGE', label: 'Bar & Lounge', desc: 'Bar menu, bottle tracking, ML pricing', icon: Wine },
+  { value: 'BAR_WITH_DINING', label: 'Bar with Dining', desc: 'Both food and bar under one roof', icon: UtensilsCrossed },
+  { value: 'CAFE', label: 'Cafe', desc: 'Counter billing, no table management', icon: Coffee },
+  { value: 'CLOUD_KITCHEN', label: 'Cloud Kitchen', desc: 'Online orders only, no dine-in', icon: Cloud },
 ];
 
 const STEPS = [
@@ -61,7 +61,7 @@ const QuickOnboarding = () => {
 
   // Form state
   const [restaurantName, setRestaurantName] = useState('');
-  const [restaurantType, setRestaurantType] = useState('DINE_IN_VEG');
+  const [restaurantType, setRestaurantType] = useState('DINE_IN');
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [ownerPin, setOwnerPin] = useState('');
@@ -192,13 +192,33 @@ const QuickOnboarding = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Restaurant Type *</label>
-                    <select
-                      value={restaurantType}
-                      onChange={e => setRestaurantType(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                    >
-                      {RESTAURANT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {RESTAURANT_TYPES.map(t => {
+                        const Icon = t.icon;
+                        const selected = restaurantType === t.value;
+                        return (
+                          <button
+                            key={t.value}
+                            type="button"
+                            onClick={() => setRestaurantType(t.value)}
+                            className={`relative flex items-start gap-3 p-4 rounded-lg border-2 text-left transition-all ${
+                              selected ? 'border-rose-500 bg-rose-50' : 'border-gray-200 hover:border-rose-300'
+                            }`}
+                          >
+                            {selected && (
+                              <div className="absolute top-2 right-2 w-5 h-5 bg-rose-600 rounded-full flex items-center justify-center">
+                                <Check size={12} className="text-white" />
+                              </div>
+                            )}
+                            <Icon size={24} className={selected ? 'text-rose-600' : 'text-gray-400'} />
+                            <div>
+                              <p className={`font-semibold text-sm ${selected ? 'text-rose-600' : 'text-gray-900'}`}>{t.label}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{t.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
