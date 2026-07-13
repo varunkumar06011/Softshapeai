@@ -1781,7 +1781,7 @@ function DeliveryPlatformsReport({ dateFilter, outletId }) {
   useEffect(() => {
     setLoading(true);
     // Fetch transactions and group by delivery platform
-    fetch(`${API_BASE}/api/transactions?date=${dateFilter.startDate}`, { credentials: 'include' })
+    fetch(`${API_BASE}/api/transactions?date=${dateFilter.startDate}`, { credentials: 'include', headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : [])
       .then(txns => {
         const platformMap = {};

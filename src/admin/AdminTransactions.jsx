@@ -74,7 +74,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include' })
+    fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include', headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
         const sections = (Array.isArray(data) ? data : data.sections || []).map(s => ({

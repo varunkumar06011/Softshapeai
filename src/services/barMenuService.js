@@ -329,12 +329,12 @@ async function fetchWithRetry(url, options, { retries = 3, timeoutMs = 60000 } =
 async function fetchRestaurantItemsRaw() {
   const res = await fetchWithRetry(apiUrl("/api/menu/items/admin"), {
     cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
   });
   if (!res.ok) {
     const fallback = await fetchWithRetry(apiUrl("/api/menu/items"), {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
     });
     if (!fallback.ok) return [];
     return fallback.json();

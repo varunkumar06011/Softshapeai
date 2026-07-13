@@ -321,7 +321,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Fallback: refresh restaurantType/enabledModules and live permissions for existing sessions
   const [userPermissions, setUserPermissions] = useState({});
   useEffect(() => {
-    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.permissions) setUserPermissions(data.permissions);
