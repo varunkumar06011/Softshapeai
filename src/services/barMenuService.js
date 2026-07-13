@@ -327,7 +327,7 @@ async function fetchWithRetry(url, options, { retries = 3, timeoutMs = 60000 } =
 }
 
 async function fetchRestaurantItemsRaw() {
-  const res = await fetchWithRetry(apiUrl("/api/menu/items/admin"), {
+  const res = await fetchWithRetry(apiUrl("/api/menu/image-index"), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
   });
