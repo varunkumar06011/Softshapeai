@@ -16,10 +16,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Printer, Download, RefreshCw, CheckCircle, Clock,
-  Copy, AlertTriangle, BookOpen, Save, Trash2, Plus
+  Copy, AlertTriangle, BookOpen, Save, Trash2, Plus, Server
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { apiUrl, getAuthHeaders } from '../../services/apiConfig.js';
+import { apiUrl, getAuthHeaders, API_BASE } from '../../services/apiConfig.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 // Poll interval for checking print agent connection status (30 seconds)
@@ -58,6 +58,8 @@ export default function PrinterSettingsPage() {
   const [printersConfig, setPrintersConfig] = useState([]);
   const [configSaving, setConfigSaving] = useState(false);
   const [configMessage, setConfigMessage] = useState(null);
+  const [edgeStatus, setEdgeStatus] = useState(null);
+  const [edgeLoading, setEdgeLoading] = useState(false);
   const pollRef = useRef(null);
 
   const fetchStatus = useCallback(async () => {
@@ -77,6 +79,53 @@ export default function PrinterSettingsPage() {
     }
   }, []);
 
+  const fetchEdgeStatus = useCallback(async () => {
+    if (!window.__TAURI__) return;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch('http://localhost:3100/api/edge/status', {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        setEdgeStatus(await res.json());
+        return;
+      }
+    } catch {
+      // edge server not reachable
+    }
+    setEdgeStatus(null);
+  }, []);
+
+  const registerEdgeServer = useCallback(async () => {
+    if (!setupToken?.token) {
+      setError('Generate a setup token first, then click Register.');
+      return;
+    }
+    setEdgeLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('http://localhost:3100/api/edge/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          setupToken: setupToken.token,
+          backendUrl: API_BASE,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Registration failed (${res.status})`);
+      }
+      await fetchEdgeStatus();
+    } catch (err) {
+      setError(err.message || 'Failed to register edge server');
+    } finally {
+      setEdgeLoading(false);
+    }
+  }, [setupToken, API_BASE, fetchEdgeStatus]);
+
   useEffect(() => {
     const printers = restaurant?.printerConfig?.printers || [];
     setPrintersConfig(Array.isArray(printers) ? printers : Object.values(printers));
@@ -84,9 +133,13 @@ export default function PrinterSettingsPage() {
 
   useEffect(() => {
     fetchStatus();
-    pollRef.current = setInterval(fetchStatus, POLL_INTERVAL_MS);
+    fetchEdgeStatus();
+    pollRef.current = setInterval(() => {
+      fetchStatus();
+      fetchEdgeStatus();
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
-  }, [fetchStatus]);
+  }, [fetchStatus, fetchEdgeStatus]);
 
   const generateToken = async () => {
     setTokenLoading(true);
@@ -366,6 +419,35 @@ export default function PrinterSettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Step 4 — Register bundled Edge Server (cashier-desktop only) */}
+        {window.__TAURI__ && (
+          <div>
+            <div className="font-bold text-base mb-1">Step 4 — Register Bundled Edge Server</div>
+            <p className="text-xs text-gray-500 mb-2">
+              The cashier desktop app includes a local edge server. Register it with this cloud restaurant so it can work offline.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={registerEdgeServer}
+                disabled={edgeLoading || !setupToken?.token}
+                className="rounded-xl bg-[#B71C1C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8B0000] disabled:opacity-50"
+              >
+                {edgeLoading ? 'Registering…' : 'Register This Device'}
+              </button>
+              <div className="flex items-center gap-1.5 text-xs">
+                <Server size={14} className={edgeStatus?.registered ? 'text-green-500' : 'text-gray-400'} />
+                <span className={edgeStatus?.registered ? 'text-green-600 font-bold' : 'text-gray-500'}>
+                  {edgeStatus?.registered
+                    ? `Registered — ${edgeStatus.restaurantName || edgeStatus.restaurantId || 'connected'}`
+                    : edgeStatus === null
+                    ? 'Edge server not detected'
+                    : 'Edge server detected but not registered'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Printer Config Editor */}
