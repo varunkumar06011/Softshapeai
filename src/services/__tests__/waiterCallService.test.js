@@ -18,6 +18,7 @@ const mockSocket = {
 vi.mock('../../hooks/useSocket', () => ({
   getSocket: () => mockSocket,
   getPublicSocket: () => mockSocket,
+  onSocketDisconnect: vi.fn(),
 }));
 
 vi.mock('./apiConfig', () => ({
@@ -30,6 +31,10 @@ vi.mock('../../utils/cacheKeys', () => ({
 
 vi.mock('../../utils/getCurrentRestaurantId', () => ({
   getCurrentRestaurantId: () => 'r-1',
+}));
+
+vi.mock('../../utils/safeParseJSON', () => ({
+  safeGetJSON: () => ({}),
 }));
 
 // Mock localStorage

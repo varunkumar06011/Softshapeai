@@ -5,6 +5,7 @@ import {
   setSettledTableIds as persistSettledTableIds,
 } from './offlineDB';
 import { getTenantScopedKey } from './cacheKeys';
+import { safeParseJSON } from './safeParseJSON';
 
 const SNAPSHOT_KEY = '__settlement_guard_snapshot__';
 const FLUSH_DELAY_MS = 300;

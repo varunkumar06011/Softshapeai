@@ -187,9 +187,9 @@ describe('authService', () => {
 
       global.fetch = vi.fn().mockResolvedValue({ ok: true });
 
-      const { disconnectSocket } = await import('../../hooks/useSocket');
       await authService.logout();
 
+      const { disconnectSocket } = await import('../../hooks/useSocket');
       expect(store['ss_token']).toBeUndefined();
       expect(store['ss_user']).toBeUndefined();
       expect(store['ss_restaurant']).toBeUndefined();

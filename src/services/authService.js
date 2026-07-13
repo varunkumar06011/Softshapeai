@@ -174,6 +174,12 @@ export const authService = {
     localStorage.removeItem('ss_restaurant');
     localStorage.removeItem('ss_accessible_outlets');
     clearTenantCaches(restaurantId);
+    try {
+      const { disconnectSocket } = await import('../hooks/useSocket');
+      disconnectSocket();
+    } catch {
+      // ignore if socket module fails to load
+    }
   },
 
   getToken() {
