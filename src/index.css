@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @theme {
-  --font-sans: 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  --font-heading: 'Manrope', 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --font-mono: 'Roboto Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
 :root {
@@ -51,7 +53,7 @@ button, a, [role="button"] {
 body {
   margin: 0;
   padding-top: env(safe-area-inset-top);
-  font-family: 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
   font-size: 16px;
   background: #fff5f5;
   color: #1a1a1a;
@@ -65,8 +67,13 @@ h3:not([class*="text-"]),
 h4:not([class*="text-"]),
 h5:not([class*="text-"]),
 h6:not([class*="text-"]) {
+  font-family: 'Manrope', 'Plus Jakarta Sans', 'Inter', sans-serif;
   font-size: 24pt;
   font-weight: normal;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Manrope', 'Plus Jakarta Sans', 'Inter', sans-serif;
 }
 
 /* Explicit POS Card Title Styles for guaranteed rendering */
