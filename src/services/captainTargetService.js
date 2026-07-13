@@ -9,7 +9,7 @@
 // Used by the admin TodaySpecials panel to set and view captain performance goals.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { API_BASE } from './apiConfig';
+import { API_BASE, getAuthHeaders } from './apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 /**
@@ -19,7 +19,7 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 export async function saveCaptainTarget(captainId, revenueTarget, discountLimit) {
   const res = await fetch(`${API_BASE}/api/captain-targets`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ restaurantId: getCurrentRestaurantId(), captainId, revenueTarget, discountLimit }),
   });
   if (!res.ok) throw new Error('Failed to save target');
@@ -33,7 +33,9 @@ export async function saveCaptainTarget(captainId, revenueTarget, discountLimit)
  */
 export async function fetchCaptainTarget(captainId) {
   try {
-    const res = await fetch(`${API_BASE}/api/captain-targets/${captainId}?restaurantId=${getCurrentRestaurantId()}`);
+    const res = await fetch(`${API_BASE}/api/captain-targets/${captainId}?restaurantId=${getCurrentRestaurantId()}`, {
+      headers: getAuthHeaders(),
+    });
     if (res.status === 404) return null;
     if (!res.ok) return null;
     return res.json();
@@ -49,7 +51,9 @@ export async function fetchCaptainTarget(captainId) {
  */
 export async function fetchAllCaptainTargets() {
   try {
-    const res = await fetch(`${API_BASE}/api/captain-targets?restaurantId=${getCurrentRestaurantId()}`);
+    const res = await fetch(`${API_BASE}/api/captain-targets?restaurantId=${getCurrentRestaurantId()}`, {
+      headers: getAuthHeaders(),
+    });
     if (!res.ok) return {};
     const list = await res.json();
     // Convert array to map keyed by captainId for easy lookup

@@ -36,7 +36,10 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   // Fetch existing categories in non-onboarding mode if not provided via props
   useEffect(() => {
     if (!onboardingMode && existingCategories.length === 0) {
-      fetch(`${API_BASE}/api/menu/categories`)
+      const restaurantId = getCurrentRestaurantId();
+      fetch(`${API_BASE}/api/menu/categories?restaurantId=${encodeURIComponent(restaurantId)}`, {
+        headers: getAuthHeaders(),
+      })
         .then(res => res.ok ? res.json() : [])
         .then(data => {
           if (Array.isArray(data)) {

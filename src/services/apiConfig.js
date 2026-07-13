@@ -25,12 +25,24 @@ const _rawApiBase =
 // (e.g. Android Capacitor app loading from https://www.softshape.in), use the
 // current origin as the API base. This prevents "failed to fetch backend"
 // errors on mobile when the build was done with a dev .env.
+//
+// Tauri desktop apps load from custom origins (tauri://localhost or
+// https://tauri.localhost) which are NOT the backend, so we must not use them
+// as the API base. Otherwise login requests hit the local app bundle and get
+// the SPA index.html back, producing the "<!DOCTYPE... is not valid JSON"
+// error seen on the cashier desktop terminal.
+function isTauriOrigin(origin) {
+  return /^tauri:\/\//i.test(origin) || /^https?:\/\/tauri\.localhost/i.test(origin);
+}
+
 function resolveApiBase(raw) {
   const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(raw);
   if (
     isLocalhost &&
     typeof window !== "undefined" &&
     window.location &&
+    /^https?:$/i.test(window.location.protocol) &&
+    !isTauriOrigin(window.location.origin) &&
     !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(window.location.origin)
   ) {
     return window.location.origin;
