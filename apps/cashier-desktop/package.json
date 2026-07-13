@@ -1,13 +1,13 @@
 {
   "name": "softshape-cashier-desktop",
-  "version": "11.1.0",
+  "version": "11.2.0",
   "description": "SoftShape Cashier Desktop App (Tauri)",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "cd ../.. && npx vite",
     "build": "cd ../.. && npx vite build",
-    "build:edge": "cd ../../../softshape-print-agent/softshape-print-agent/edge-server && bun install && bun build --compile server.ts --outfile edge-server.exe",
+    "build:edge": "cd ../../softshape-print-agent/softshape-print-agent/edge-server && bun install && bun build --compile server.ts --outfile edge-server.exe",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
