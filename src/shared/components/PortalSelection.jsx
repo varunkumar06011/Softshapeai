@@ -110,6 +110,7 @@ const PortalSelection = ({ onSelect }) => {
 
       <footer className="mt-16 flex flex-col items-center gap-4 z-10 text-center">
         <p className="text-[11px] font-black uppercase tracking-[0.5em] text-[#B71C1C] drop-shadow-sm">Powered by Vtech</p>
+<<<<<<< HEAD
 
         <h3 className="text-lg md:text-xl font-black text-[#B71C1C] tracking-tight">Contact Us</h3>
 
@@ -135,6 +136,23 @@ const PortalSelection = ({ onSelect }) => {
         >
           New Restaurant? Get Started →
         </a>
+=======
+        <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
+          <a
+            href="/onboarding"
+            className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors flex items-center gap-2"
+          >
+            New Restaurant? Get Started →
+          </a>
+          <span className="hidden sm:block text-gray-300">|</span>
+          <a
+            href="/edge-setup"
+            className="text-sm font-semibold text-gray-500 hover:text-[#E53935] transition-colors flex items-center gap-2"
+          >
+            Link Existing Restaurant →
+          </a>
+        </div>
+>>>>>>> 050cfae (end of the heain era)
       </footer>
     </div>
   );

@@ -17,12 +17,23 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Users, Download } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users, Download, Cloud } from 'lucide-react';
 import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { reconnectSocket } from '../../hooks/useSocket';
 
+<<<<<<< HEAD
 const LoginScreen = ({ role, onLogin, onBack }) => {
+=======
+// Resolves the backend base URL from Vite env vars
+function getApiBase() {
+  return (
+    import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
+  );
+}
+
+const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable }) => {
+>>>>>>> 050cfae (end of the heain era)
   const navigate = useNavigate();
   const { setAuth } = useAuth();
   const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
@@ -388,6 +399,24 @@ const LoginScreen = ({ role, onLogin, onBack }) => {
             </button>
           </div>
         </div>
+
+        {isCashier && onEdgeSetup && (
+          <div className="mt-6 flex flex-col items-center gap-2">
+            <button
+              onClick={onEdgeSetup}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border-2 border-gray-100 bg-gray-50 text-xs font-black uppercase tracking-widest text-gray-500 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+            >
+              <Cloud size={16} />
+              Link to Cloud Restaurant
+            </button>
+            {edgeAvailable && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-green-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                Edge server connected
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-8 sm:mt-12 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 opacity-40 sm:opacity-30 grayscale hover:grayscale-0 transition-all duration-700">
           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-900">

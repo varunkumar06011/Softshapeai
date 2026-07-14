@@ -34,6 +34,7 @@ import RepresentativeMenuLanding from "./user-menu/RepresentativeMenuLanding";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
 import QuickOnboarding from "./onboarding/QuickOnboarding";
+import EdgeSetupScreen from "./onboarding/EdgeSetupScreen";
 import SyncStatusIndicator from "./shared/components/SyncStatusIndicator";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -45,6 +46,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { SyncStatusProvider } from "./context/SyncStatusContext";
 import { ChefHat, Zap, Clock, ArrowLeft } from "lucide-react";
 import { fetchOrders, updateOrderStatus } from "./services/orderApi";
+import { isEdgeAvailable, edgeFetch } from "./services/edgeHealth";
 import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 import { purgeLegacyCaches } from "./utils/cacheKeys";
@@ -287,6 +289,7 @@ function AnimatedRoutes() {
         <Route path="/" element={<AnimatedPage><PortalSelectionWrapper /></AnimatedPage>} />
         <Route path="/onboarding" element={<AnimatedPage><QuickOnboarding /></AnimatedPage>} />
         <Route path="/onboarding/legacy" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
+        <Route path="/edge-setup" element={<AnimatedPage><EdgeSetupScreen /></AnimatedPage>} />
         <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
         <Route path="/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
         <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
@@ -364,10 +367,44 @@ function CaptainsGroupReportWrapper() {
 function CashierLoginWrapper() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const [edgeCheck, setEdgeCheck] = useState(null); // null = checking, true = registered, false = needs setup
   const isLoggedIn = user && token && isTokenValid(token) && ['CASHIER','OWNER','ADMIN'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
+
+  // Check edge server registration status on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const available = await isEdgeAvailable();
+        if (cancelled || !available) { setEdgeCheck(false); return; }
+        const status = await edgeFetch('/api/edge/status');
+        if (cancelled) return;
+        if (status.registered && status.sessionValid && status.localStats?.menuItems > 0) {
+          setEdgeCheck(true);
+        } else {
+          setEdgeCheck('setup');
+        }
+      } catch {
+        if (!cancelled) setEdgeCheck(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // If edge is available but not registered, redirect to setup
+  if (edgeCheck === 'setup') {
+    return <Navigate to="/edge-setup" replace />;
+  }
+
   return (
-    <LoginScreen role="cashier" onLogin={() => {}} onBack={() => navigate('/')} />
+    <LoginScreen
+      role="cashier"
+      onLogin={() => {}}
+      onBack={() => navigate('/')}
+      onEdgeSetup={() => navigate('/edge-setup')}
+      edgeAvailable={edgeCheck === true}
+    />
   );
 }
 

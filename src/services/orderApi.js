@@ -973,7 +973,7 @@ export async function deleteTransaction(transactionId, restaurantId, password) {
   } finally { clearTimeout(timeoutId); }
 }
 
-export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount, tipAmount } = {}) {
+export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount, tipAmount, cashTipAmount, cardTipAmount } = {}) {
   const body = { paymentMethod };
   if (paymentMethod === 'MIXED') {
     body.cashAmount = cashAmount != null ? Number(cashAmount) : 0;
@@ -982,6 +982,8 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
     body.cashAmount = Number(cashAmount);
   }
   if (tipAmount != null) body.tipAmount = Number(tipAmount);
+  if (cashTipAmount != null) body.cashTipAmount = Number(cashTipAmount);
+  if (cardTipAmount != null) body.cardTipAmount = Number(cardTipAmount);
 
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {

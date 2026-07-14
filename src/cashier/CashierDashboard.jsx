@@ -616,7 +616,13 @@ const CashierDashboard = ({ onLogout }) => {
       : tables;
   const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
-  const restaurantConfig = useMemo(() => getRestaurantConfig(), []);
+  const [configVersion, setConfigVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setConfigVersion(v => v + 1);
+    window.addEventListener('ss_restaurant_config_changed', handler);
+    return () => window.removeEventListener('ss_restaurant_config_changed', handler);
+  }, []);
+  const restaurantConfig = useMemo(() => getRestaurantConfig(), [configVersion]);
 
   // Refetch sections when the active restaurant/outlet changes
   useEffect(() => {
@@ -1237,6 +1243,8 @@ const CashierDashboard = ({ onLogout }) => {
         cashAmount: cashAmt,
         cardAmount: cardAmt,
         tipAmount: tipAmt,
+        cashTipAmount: effectiveMethod === 'CASH' ? tipAmt : 0,
+        cardTipAmount: effectiveMethod === 'CARD' ? tipAmt : 0,
       });
       if (result?.offline) {
         addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
@@ -3327,17 +3335,26 @@ const CashierDashboard = ({ onLogout }) => {
     // Validate transaction amount
     const txnAmount = Number(activeGrandTotal > 0 ? activeGrandTotal : fallbackTotal);
     if (txnAmount <= 0) {
-      addNotification(
-        'Cannot Settle',
-        'Bill amount is ₹0. Ensure KOT was sent before settling.',
-        'error'
-      );
-      setShowMethodPicker(false);
-      setShowSettleConfirm(false);
-      setShowTableModal(false);
-      setShowPaymentModal(false);
-      isSubmittingPaymentRef.current = false;
-      return;
+      // Bug 5 fix: Don't hard-block — the frontend may have stale table data causing a false zero.
+      // The backend recalculates totals from fresh DB data inside a transaction.
+      // If the backend also sees ₹0, it will reject. But if there are real items in the DB,
+      // the settlement will succeed and free the stuck table.
+      const billableItems = getBillableItems(selectedTable);
+      if (billableItems.length === 0) {
+        addNotification(
+          'Cannot Settle',
+          'No items found on this table. If the table is stuck, use "Force Free Table" from the table menu.',
+          'error'
+        );
+        setShowMethodPicker(false);
+        setShowSettleConfirm(false);
+        setShowTableModal(false);
+        setShowPaymentModal(false);
+        isSubmittingPaymentRef.current = false;
+        return;
+      }
+      // Items exist but total is 0 — proceed with settlement, backend will recalculate
+      console.warn('[handlePayment] Frontend shows ₹0 but items exist — proceeding with backend settlement to recalculate.');
     }
 
     // Guard: prevent double-settlement — use same broad resolution as handleFinalBill
@@ -3501,6 +3518,8 @@ const CashierDashboard = ({ onLogout }) => {
             {
               paymentMethod: method,
               tipAmount: Number(tipAmount) || 0,
+              cashTipAmount: method === 'CASH' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
+              cardTipAmount: method === 'CARD' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
               cashAmount: Number(cashAmount) || 0,
               cardAmount: Number(cardAmount) || 0,
               discountPercent: selectedTable.isExtra

@@ -13,9 +13,10 @@
 // Used by Cashier POS and Captain POS for table selection.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { getTableSectionLabel, getSectionBadgeColor } from '../../utils/tableHelpers';
 import { calculateTableBill, getBillableItems } from '../utils/billing';
+import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
 
 export default function VenueSectionView({
   sectionName,
@@ -177,6 +178,16 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
   const isBusy = !isFree && !isBilling && !isReady;
   const isExtra = table.isExtra;
 
+  // Bug 2 fix: Read fresh restaurant config so GST settings changes are reflected
+  // immediately without requiring logout. Re-reads on ss_restaurant_config_changed event.
+  const [, setConfigVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setConfigVersion(v => v + 1);
+    window.addEventListener('ss_restaurant_config_changed', handler);
+    return () => window.removeEventListener('ss_restaurant_config_changed', handler);
+  }, []);
+  const restaurantConfig = getRestaurantConfig();
+
   // Memoized bill — only recalculates when billable items actually change,
   // preventing flickering from socket re-renders that don't change items.
   const billSig = useMemo(() => {
@@ -186,7 +197,7 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
 
   const billCacheRef = useRef({ sig: null, bill: null });
   if (billCacheRef.current.sig !== billSig) {
-    billCacheRef.current = { sig: billSig, bill: calculateTableBill(table) };
+    billCacheRef.current = { sig: billSig, bill: calculateTableBill(table, restaurantConfig) };
   }
   const bill = billCacheRef.current.bill;
 

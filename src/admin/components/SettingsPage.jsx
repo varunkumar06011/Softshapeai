@@ -284,6 +284,27 @@ function SettingsPage({ onNavigate }) {
       if (sectionName === 'profile') {
         setProfileData(updated);
       }
+      // Bug 2 fix: When tax settings change, update localStorage ss_restaurant
+      // so cashier/POS components pick up the new GST config without requiring logout.
+      if (sectionName === 'tax') {
+        try {
+          const existing = safeGetJSON('ss_restaurant', null);
+          if (existing) {
+            const updatedConfig = {
+              ...existing,
+              gstRegistered: payload.gstRegistered,
+              gstCategory: payload.gstCategory,
+              gstRate: payload.gstRate,
+              pricesIncludeGst: payload.pricesIncludeGst,
+              serviceChargePercent: payload.serviceChargePercent,
+            };
+            localStorage.setItem('ss_restaurant', JSON.stringify(updatedConfig));
+            window.dispatchEvent(new CustomEvent('ss_restaurant_config_changed', { detail: updatedConfig }));
+          }
+        } catch (e) {
+          console.warn('[SettingsPage] Failed to update localStorage tax config:', e);
+        }
+      }
       setSavedSection(sectionName);
       setTimeout(() => setSavedSection(null), 3000);
     } catch (err) {
