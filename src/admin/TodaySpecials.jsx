@@ -12,10 +12,10 @@
 // Captain targets are used in reports to track performance vs goals.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame, Store, MapPin, Clock, Pause, Printer
+  Plus, Edit2, Trash2, Save, X, Target, Zap, CheckCircle2, ChevronRight, Image as ImageIcon, Users, Flame, Store, MapPin, Clock, Pause, Printer, Search, FileText, AlertCircle
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -32,7 +32,7 @@ import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig }
 
 export default function TodaySpecials() {
   const { shouldReduce } = useMotionConfig();
-  const { refreshMenu, categories: menuCategories } = useMenu();
+  const { refreshMenu, categories: menuCategories, menuItems: allMenuItems } = useMenu();
   const [specials, setSpecials] = useState([]);
 
   const fetchSpecials = useCallback(async () => {
@@ -40,7 +40,9 @@ export default function TodaySpecials() {
       const items = await apiFetch('/api/menu/items/admin/all-outlets');
       console.log('[TodaySpecials] /api/menu/items/admin/all-outlets returned', items?.length ?? 0, 'items');
       const mapped = mapFlatMenuItems(items);
-      const specialItems = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.id, i])).values());
+      const dedupById = Array.from(new Map(mapped.filter(i => i.isSpecial).map(i => [i.id, i])).values());
+      // Dedup by name+outletId so cross-outlet copies are collapsed but per-outlet filtering still works
+      const specialItems = Array.from(new Map(dedupById.map(i => [`${(i.n || '').toLowerCase()}::${i.outletId || ''}`, i])).values());
       console.log('[TodaySpecials] Mapped', mapped.length, 'items,', specialItems.length, 'specials');
       setSpecials(specialItems);
     } catch (err) {
@@ -92,12 +94,28 @@ export default function TodaySpecials() {
     unit: '',
     menuType: 'FOOD',
     outletSelection: 'all',
+    mappedMenuItemId: null,
   });
+  const [menuSearchQuery, setMenuSearchQuery] = useState('');
+  const [showMenuDropdown, setShowMenuDropdown] = useState(false);
+  const [selectedMenuItem, setSelectedMenuItem] = useState(null);
+  const [recipeStatus, setRecipeStatus] = useState(null); // null = unknown, 'loading', 'found', 'none'
+  const [recipeIngredients, setRecipeIngredients] = useState([]);
+  const menuSearchRef = useRef(null);
+  const [showManualRecipe, setShowManualRecipe] = useState(false);
+  const [manualIngredients, setManualIngredients] = useState([]); // [{ ingredientId, name, unit, quantity }]
+  const [ingredientSearchQuery, setIngredientSearchQuery] = useState('');
+  const [showIngredientDropdown, setShowIngredientDropdown] = useState(false);
+  const [allInventoryItems, setAllInventoryItems] = useState([]);
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [ingredientSearchLoading, setIngredientSearchLoading] = useState(false);
+  const ingredientSearchRef = useRef(null);
   const [staffSold, setStaffSold] = useState([]);
   const [specialsSold, setSpecialsSold] = useState([]);
   const [outletStats, setOutletStats] = useState([]);
   const [outlets, setOutlets] = useState([]);
   const [selectedOutletId, setSelectedOutletId] = useState('all');
+  const [specialSearchQuery, setSpecialSearchQuery] = useState('');
   const [leaderboardPeriod, setLeaderboardPeriod] = useState('Today');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -133,9 +151,22 @@ export default function TodaySpecials() {
   };
 
   const displayedSpecials = useMemo(() => {
-    if (selectedOutletId === 'all') return specials;
-    return specials.filter(s => s.outletId === selectedOutletId);
-  }, [specials, selectedOutletId]);
+    let filtered = selectedOutletId === 'all'
+      ? specials
+      : specials.filter(s => s.outletId === selectedOutletId);
+
+    const q = specialSearchQuery.trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter(s =>
+        (s.n || '').toLowerCase().includes(q) ||
+        (s.c || '').toLowerCase().includes(q)
+      );
+    }
+
+    return [...filtered].sort((a, b) =>
+      (a.n || '').toLowerCase().localeCompare((b.n || '').toLowerCase())
+    );
+  }, [specials, selectedOutletId, specialSearchQuery]);
 
   const displayedSpecialsCount = displayedSpecials.length;
 
@@ -145,6 +176,16 @@ export default function TodaySpecials() {
       .then(data => { setTargets(data); setTargetsLoading(false); })
       .catch(() => setTargetsLoading(false));
   }, [fetchSpecials]);
+
+  useEffect(() => {
+    apiFetch('/api/auth/staff')
+      .then(data => {
+        if (Array.isArray(data)) {
+          setCaptains(data.filter(s => s.role === 'CAPTAIN'));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     apiFetch('/api/restaurant/outlets-overview')
@@ -241,6 +282,135 @@ export default function TodaySpecials() {
     loadOutletStats();
   }, [selectedOutletId, outlets, specials, leaderboardPeriod, customStart, customEnd]);
 
+  const foodMenuItems = useMemo(() => {
+    return (allMenuItems || []).filter(item => 
+      (item.menuType || 'FOOD') !== 'LIQUOR' && !item.isSpecial
+    );
+  }, [allMenuItems]);
+
+  const filteredMenuItems = useMemo(() => {
+    if (!menuSearchQuery.trim()) return foodMenuItems.slice(0, 30);
+    const q = menuSearchQuery.toLowerCase().trim();
+    return foodMenuItems.filter(item =>
+      (item.n || item.name || '').toLowerCase().includes(q) ||
+      (item.c || item.category || '').toLowerCase().includes(q)
+    ).slice(0, 30);
+  }, [foodMenuItems, menuSearchQuery]);
+
+  const checkRecipe = useCallback(async (menuItemId, { populateManual = false } = {}) => {
+    if (!menuItemId) { setRecipeStatus(null); setRecipeIngredients([]); return; }
+    setRecipeStatus('loading');
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/recipes/${menuItemId}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data) && data.length > 0) {
+        setRecipeStatus('found');
+        setRecipeIngredients(data.map(r => ({ name: r.ingredient?.name || 'Unknown', quantity: Number(r.quantity), unit: r.ingredient?.unit || '' })));
+        if (populateManual) {
+          setManualIngredients(data.map(r => ({
+            ingredientId: r.ingredientId,
+            name: r.ingredient?.name || 'Unknown',
+            unit: r.ingredient?.unit || '',
+            quantity: String(r.quantity ?? ''),
+            scale: r.scale || '',
+          })));
+          setShowManualRecipe(true);
+        }
+      } else {
+        setRecipeStatus('none');
+        setRecipeIngredients([]);
+        if (populateManual) {
+          setManualIngredients([]);
+        }
+      }
+    } catch {
+      setRecipeStatus('none');
+      setRecipeIngredients([]);
+      if (populateManual) {
+        setManualIngredients([]);
+      }
+    }
+  }, []);
+
+  const handleSelectMenuItem = useCallback((item) => {
+    setSelectedMenuItem(item);
+    setShowMenuDropdown(false);
+    setMenuSearchQuery('');
+    setFormData(prev => ({
+      ...prev,
+      mappedMenuItemId: item.id,
+    }));
+    checkRecipe(item.id);
+  }, [checkRecipe]);
+
+  useEffect(() => {
+    if (!showMenuDropdown) return;
+    const handler = (e) => {
+      if (menuSearchRef.current && !menuSearchRef.current.contains(e.target)) {
+        setShowMenuDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenuDropdown]);
+
+  const fetchInventoryItems = useCallback(async () => {
+    if (inventoryLoaded) return;
+    setIngredientSearchLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen`, {
+        headers: { ...getAuthHeaders() },
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        setAllInventoryItems(data);
+        setInventoryLoaded(true);
+      }
+    } catch {
+      setAllInventoryItems([]);
+    } finally {
+      setIngredientSearchLoading(false);
+    }
+  }, [inventoryLoaded]);
+
+  const filteredInventoryItems = useMemo(() => {
+    if (!ingredientSearchQuery.trim()) return allInventoryItems.slice(0, 30);
+    const q = ingredientSearchQuery.toLowerCase().trim();
+    return allInventoryItems.filter(item =>
+      (item.name || '').toLowerCase().includes(q)
+    ).slice(0, 30);
+  }, [allInventoryItems, ingredientSearchQuery]);
+
+  useEffect(() => {
+    if (!showIngredientDropdown) return;
+    const handler = (e) => {
+      if (ingredientSearchRef.current && !ingredientSearchRef.current.contains(e.target)) {
+        setShowIngredientDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showIngredientDropdown]);
+
+  const handleAddIngredient = useCallback((item) => {
+    setManualIngredients(prev => {
+      if (prev.find(i => i.ingredientId === item.id)) return prev;
+      return [...prev, { ingredientId: item.id, name: item.name, unit: item.unit || '', quantity: '', scale: '' }];
+    });
+    setShowIngredientDropdown(false);
+    setIngredientSearchQuery('');
+  }, []);
+
+  const handleRemoveIngredient = useCallback((ingredientId) => {
+    setManualIngredients(prev => prev.filter(i => i.ingredientId !== ingredientId));
+  }, []);
+
+  const handleUpdateIngredientField = useCallback((ingredientId, field, value) => {
+    setManualIngredients(prev => prev.map(i => i.ingredientId === ingredientId ? { ...i, [field]: value } : i));
+  }, []);
+
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -271,7 +441,7 @@ export default function TodaySpecials() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        setFormData({ ...formData, img: canvas.toDataURL('image/jpeg', 0.8) });
+        setFormData(prev => ({ ...prev, img: canvas.toDataURL('image/jpeg', 0.8) }));
       };
       img.src = event.target.result;
     };
@@ -294,7 +464,7 @@ export default function TodaySpecials() {
       specialActive: formData.active !== false,
       specialExpiresAt: (() => {
         if (formData.expiresAt) return new Date(formData.expiresAt).toISOString();
-        if (formData.id) return null;
+        if (formData.id && !formData.mappedMenuItemId) return null;
         if (formData.duration === 'No Expiry') return null;
         const now = Date.now();
         if (formData.duration === '1 Week') return new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -309,6 +479,8 @@ export default function TodaySpecials() {
         ? { venuePrices: Object.fromEntries(Object.entries(formData.venuePrices).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)])) }
         : {}),
       ...(formData.unit ? { unit: formData.unit } : {}),
+      ...(formData.mappedMenuItemId ? { mappedMenuItemId: formData.mappedMenuItemId } : {}),
+      manualIngredients: manualIngredients.filter(i => i.ingredientId && Number(i.quantity) > 0).map(i => ({ ingredientId: i.ingredientId, quantity: Number(i.quantity), scale: i.scale || '' })),
       syncToAllOutlets: formData.outletSelection === 'all',
       ...(formData.outletSelection !== 'all' ? { targetOutletId: formData.outletSelection } : {}),
     };
@@ -320,21 +492,33 @@ export default function TodaySpecials() {
 
     setSaving(true);
     try {
-      if (formData.id) {
+      if (formData.id && !formData.mappedMenuItemId) {
         await updateMenuItem(formData.id, payload);
       } else {
         await createMenuItem(payload);
       }
-      await refreshMenu();
-      await fetchSpecials();
+
+      // Close modal and reset form immediately so the UI feels responsive
       setFormData({
-        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', outletPrinterNames: {}, venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all'
+        id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', outletPrinterNames: {}, venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all', mappedMenuItemId: null
       });
+      setSelectedMenuItem(null);
+      setRecipeStatus(null);
+      setRecipeIngredients([]);
+      setMenuSearchQuery('');
+      setShowManualRecipe(false);
+      setManualIngredients([]);
+      setIngredientSearchQuery('');
+      setAllInventoryItems([]);
+      setInventoryLoaded(false);
       setIsModalOpen(false);
       simulatePush();
+
+      // Refresh data in the background without blocking the save button
+      await Promise.all([refreshMenu(), fetchSpecials()]);
     } catch (err) {
       console.error('[TodaySpecials] Failed to save special:', err);
-      alert('Failed to save special. Please try again.');
+      alert('Failed to save special: ' + (err?.message || 'Unknown error'));
     } finally {
       setSaving(false);
     }
@@ -364,11 +548,13 @@ export default function TodaySpecials() {
         outletPrinterNames: r.outletPrinterNames || {},
       }));
       await bulkImportSpecials(payload, false);
-      await refreshMenu();
-      await fetchSpecials();
       setBulkRows([{ n: '', c: 'Main Course', p: '', t: 'veg', menuType: 'FOOD', channel: 'BOTH', gstEnabled: true, unit: '', targetOutletIds: [], outletPrinterNames: {} }]);
       setIsBulkModalOpen(false);
+      setBulkSaving(false);
       simulatePush();
+
+      // Refresh data in the background without blocking the modal close
+      Promise.all([refreshMenu(), fetchSpecials()]);
     } catch (err) {
       console.error('[TodaySpecials] Bulk import failed:', err);
       alert('Bulk import failed: ' + (err.message || 'Unknown error'));
@@ -378,14 +564,17 @@ export default function TodaySpecials() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this special?')) return;
+    // Optimistic removal so the UI updates instantly
+    setSpecials(prev => prev.filter(s => s.id !== id));
     try {
       await deleteMenuItem(id);
-      await refreshMenu();
-      await fetchSpecials();
+      // Refresh data in the background without blocking
+      Promise.all([refreshMenu(), fetchSpecials()]);
     } catch (err) {
       console.error('[TodaySpecials] Failed to delete special:', err);
       alert('Failed to delete special. Please try again.');
+      // Revert optimistic update on failure
+      fetchSpecials();
     }
   };
 
@@ -402,8 +591,7 @@ export default function TodaySpecials() {
         specialExpiresAt: newExpiry,
         syncToAllOutlets: true,
       });
-      await refreshMenu();
-      await fetchSpecials();
+      await Promise.all([refreshMenu(), fetchSpecials()]);
       simulatePush();
     } catch (err) {
       console.error('[TodaySpecials] Failed to activate special:', err);
@@ -414,12 +602,10 @@ export default function TodaySpecials() {
   const handleDeactivate = async (id) => {
     try {
       await updateMenuItem(id, {
-        isSpecial: false,
         specialActive: false,
         syncToAllOutlets: true,
       });
-      await refreshMenu();
-      await fetchSpecials();
+      await Promise.all([refreshMenu(), fetchSpecials()]);
       simulatePush();
     } catch (err) {
       console.error('[TodaySpecials] Failed to deactivate special:', err);
@@ -450,10 +636,11 @@ export default function TodaySpecials() {
           updateMenuItem(id, { isAvailable: true, isSpecial: true, syncToAllOutlets: true })
         )
       );
-      await refreshMenu();
-      await fetchSpecials();
       setSelectedSpecialIds(new Set());
       simulatePush();
+
+      // Refresh data in the background
+      Promise.all([refreshMenu(), fetchSpecials()]);
     } catch (err) {
       console.error('[TodaySpecials] Bulk make available failed:', err);
       alert('Failed to update items. Please try again.');
@@ -502,6 +689,16 @@ export default function TodaySpecials() {
           </p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+          <div className="relative flex-1 md:flex-none min-w-[200px]">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={specialSearchQuery}
+              onChange={(e) => setSpecialSearchQuery(e.target.value)}
+              placeholder="Search specials..."
+              className="w-full pl-9 pr-3 py-2.5 text-xs font-bold border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E53935] bg-white"
+            />
+          </div>
           {outlets.length > 1 && (
             <select
               value={selectedOutletId}
@@ -527,7 +724,7 @@ export default function TodaySpecials() {
             <Plus size={16} /> Bulk Import
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => { setFormData({ id: null, n: '', c: 'Main Course', p: '', t: 'veg', img: '', available: true, isCombo: false, active: true, specialChannel: 'BOTH', createdAt: null, expiresAt: null, swiggySynced: false, zomatoSynced: false, duration: '1 Day', gstEnabled: true, printerTarget: '', printerName: '', outletPrinterNames: {}, venuePrices: {}, unit: '', menuType: 'FOOD', outletSelection: 'all', mappedMenuItemId: null }); setSelectedMenuItem(null); setRecipeStatus(null); setRecipeIngredients([]); setMenuSearchQuery(''); setShowManualRecipe(false); setManualIngredients([]); setIngredientSearchQuery(''); setAllInventoryItems([]); setInventoryLoaded(false); setIsModalOpen(true); }}
             className="flex-1 md:flex-none px-5 py-2.5 bg-[#E53935] text-white rounded-xl text-sm font-black uppercase tracking-widest shadow-md shadow-red-100 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
           >
             <Plus size={16} /> New Special
@@ -754,27 +951,25 @@ export default function TodaySpecials() {
                         Activate
                       </button>
                     ) : (
-                      <>
-                        <button
-                          onClick={() => handleDeactivate(special.id)}
-                          className="px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-300 transition-colors flex items-center gap-1"
-                        >
-                          <Pause size={12} /> Deactivate
-                        </button>
-                        <button
-                          onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', outletPrinterNames: special.outletId ? { [special.outletId]: special.printerName || special.printerTarget || '' } : {}, venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD', outletSelection: special.outletId || 'all' }); setIsModalOpen(true); }}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(special.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </>
+                      <button
+                        onClick={() => handleDeactivate(special.id)}
+                        className="px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-300 transition-colors flex items-center gap-1"
+                      >
+                        <Pause size={12} /> Deactivate
+                      </button>
                     )}
+                    <button
+                      onClick={() => { setFormData({ ...special, available: special.isAvailable !== false, duration: '1 Day', gstEnabled: special.gstEnabled !== false, printerTarget: special.printerTarget || '', printerName: special.printerName || '', outletPrinterNames: special.outletId ? { [special.outletId]: special.printerName || special.printerTarget || '' } : {}, venuePrices: special.venuePrices || {}, unit: special.unit || '', menuType: special.menuType || 'FOOD', outletSelection: special.outletId || 'all', mappedMenuItemId: null }); setSelectedMenuItem(null); setRecipeStatus(null); setRecipeIngredients([]); setShowManualRecipe(false); setManualIngredients([]); setIngredientSearchQuery(''); setAllInventoryItems([]); setInventoryLoaded(false); setIsModalOpen(true); checkRecipe(special.id, { populateManual: true }); }}
+                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(special.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -785,8 +980,14 @@ export default function TodaySpecials() {
         {displayedSpecials.length === 0 && (
           <div className="col-span-full py-16 bg-white rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
             <StarIcon size={40} className="text-gray-300 mb-4" />
-            <h3 className="text-lg font-black text-gray-900 mb-2">No Specials Added</h3>
-            <p className="text-xs font-bold text-gray-500 max-w-sm">Create today's specials to instantly push recommendations to the Captain App.</p>
+            <h3 className="text-lg font-black text-gray-900 mb-2">
+              {specialSearchQuery.trim() ? 'No Matching Specials' : 'No Specials Added'}
+            </h3>
+            <p className="text-xs font-bold text-gray-500 max-w-sm">
+              {specialSearchQuery.trim()
+                ? 'Try a different search term or clear the filter.'
+                : "Create today's specials to instantly push recommendations to the Captain App."}
+            </p>
           </div>
         )}
       </div>
@@ -853,6 +1054,7 @@ export default function TodaySpecials() {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-4">
+              {/* Step 1: Item details */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Item Name</label>
@@ -872,11 +1074,17 @@ export default function TodaySpecials() {
                     onChange={e => setFormData({ ...formData, c: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
                   >
-                    {(menuCategories || [])
-                      .filter(c => c && c !== 'All')
-                      .map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
+                    {(() => {
+                      const cats = (menuCategories || []).filter(c => c && c !== 'All');
+                      if (cats.length === 0) {
+                        return ['Main Course', 'Starters', 'Biryani', 'Curries', 'Breads', 'Desserts', 'Beverages', 'Snacks', 'Combo', 'Specials']
+                          .map(cat => <option key={cat} value={cat}>{cat}</option>);
+                      }
+                      if (formData.c && !cats.includes(formData.c)) {
+                        return [<option key={formData.c} value={formData.c}>{formData.c}</option>, ...cats.map(cat => <option key={cat} value={cat}>{cat}</option>)];
+                      }
+                      return cats.map(cat => <option key={cat} value={cat}>{cat}</option>);
+                    })()}
                   </select>
                 </div>
 
@@ -888,17 +1096,6 @@ export default function TodaySpecials() {
                     onChange={e => setFormData({ ...formData, p: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
                     placeholder="e.g. 450"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Unit</label>
-                  <input
-                    type="text"
-                    value={formData.unit}
-                    onChange={e => setFormData({ ...formData, unit: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
-                    placeholder="e.g. plate, bowl, 500ml"
                   />
                 </div>
               </div>
@@ -932,6 +1129,220 @@ export default function TodaySpecials() {
                   <option value="LIQUOR">Liquor</option>
                 </select>
               </div>
+
+              {/* Step 2: Map to existing menu item for recipe */}
+              <div className="relative" ref={menuSearchRef}>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">
+                  Map to Menu Item (for recipe & inventory deduction)
+                </label>
+                {!selectedMenuItem ? (
+                  <>
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={menuSearchQuery}
+                        onChange={e => { setMenuSearchQuery(e.target.value); setShowMenuDropdown(true); }}
+                        onFocus={() => setShowMenuDropdown(true)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] outline-none transition-all"
+                        placeholder="Search existing food items to link recipe..."
+                      />
+                    </div>
+                    {showMenuDropdown && (
+                      <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                        {foodMenuItems.length === 0 ? (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-xs font-bold text-gray-400">No menu items available. Make sure menu is loaded.</p>
+                          </div>
+                        ) : filteredMenuItems.length > 0 ? (
+                          filteredMenuItems.map(item => (
+                            <button
+                              key={item.id}
+                              onClick={() => handleSelectMenuItem(item)}
+                              className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-b-0"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className={`w-2 h-2 rounded-full shrink-0 ${item.t === 'non-veg' ? 'bg-red-500' : 'bg-green-500'}`} />
+                                <div className="min-w-0">
+                                  <span className="text-sm font-bold text-gray-900 block truncate">{item.n || item.name}</span>
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{item.c || item.category}</span>
+                                </div>
+                              </div>
+                              <span className="text-sm font-black text-[#E53935] shrink-0 ml-2">₹{item.p || item.price}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-xs font-bold text-gray-400">No matching items found</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-sm font-black text-gray-900 block truncate">{selectedMenuItem.n || selectedMenuItem.name}</span>
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{selectedMenuItem.c || selectedMenuItem.category} · ₹{selectedMenuItem.p || selectedMenuItem.price}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setSelectedMenuItem(null); setRecipeStatus(null); setRecipeIngredients([]); setFormData(prev => ({ ...prev, mappedMenuItemId: null })); }}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Recipe Status Badge */}
+                {selectedMenuItem && recipeStatus && (
+                  <div className="mt-2">
+                    {recipeStatus === 'loading' && (
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                        <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                        Checking recipe...
+                      </div>
+                    )}
+                    {recipeStatus === 'found' && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <FileText size={14} className="text-green-600" />
+                          <span className="text-[11px] font-black text-green-800 uppercase tracking-wider">Recipe Linked — {recipeIngredients.length} ingredient{recipeIngredients.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {recipeIngredients.slice(0, 5).map((ing, i) => (
+                            <span key={i} className="text-[10px] font-bold text-green-700 bg-green-100 rounded-md px-2 py-0.5">
+                              {ing.name} ({ing.quantity}{ing.unit})
+                            </span>
+                          ))}
+                          {recipeIngredients.length > 5 && (
+                            <span className="text-[10px] font-bold text-green-600 bg-green-100 rounded-md px-2 py-0.5">
+                              +{recipeIngredients.length - 5} more
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-green-600 font-bold mt-1.5">Inventory will be deducted on settlement using this recipe.</p>
+                      </div>
+                    )}
+                    {recipeStatus === 'none' && (
+                      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                        <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-[11px] font-black text-amber-800 uppercase tracking-wider block">No Recipe Configured</span>
+                          <p className="text-[10px] font-bold text-amber-700 mt-0.5">Kitchen inventory will not be deducted. Set up a recipe in Menu Management for this item.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Or add ingredients manually */}
+              {!selectedMenuItem && (
+                <div>
+                  <button
+                    onClick={() => { setShowManualRecipe(!showManualRecipe); if (!showManualRecipe) fetchInventoryItems(); }}
+                    className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-100 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Plus size={12} /> Or Add Ingredients Manually
+                    </span>
+                    <ChevronRight size={14} className={`transition-transform ${showManualRecipe ? 'rotate-90' : ''}`} />
+                  </button>
+
+                  {showManualRecipe && (
+                    <div className="mt-3 space-y-3">
+                      {/* Ingredient Search */}
+                      <div className="relative" ref={ingredientSearchRef}>
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={ingredientSearchQuery}
+                            onChange={e => {
+                              setIngredientSearchQuery(e.target.value);
+                              setShowIngredientDropdown(true);
+                            }}
+                            onFocus={() => { setShowIngredientDropdown(true); fetchInventoryItems(); }}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] outline-none transition-all"
+                            placeholder="Search kitchen inventory ingredients..."
+                          />
+                          {ingredientSearchLoading && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                              <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                        {showIngredientDropdown && (
+                          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                            {filteredInventoryItems.length > 0 ? (
+                              filteredInventoryItems.map(item => (
+                                <button
+                                  key={item.id}
+                                  onClick={() => handleAddIngredient(item)}
+                                  className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-b-0"
+                                >
+                                  <span className="text-sm font-bold text-gray-900 block truncate">{item.name}</span>
+                                  <Plus size={14} className="text-[#E53935] shrink-0 ml-2" />
+                                </button>
+                              ))
+                            ) : (
+                              <div className="px-4 py-6 text-center">
+                                <p className="text-xs font-bold text-gray-400">{ingredientSearchLoading ? 'Loading...' : 'No ingredients found'}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Added Ingredients List */}
+                      {manualIngredients.length > 0 && (
+                        <div className="space-y-2">
+                          {manualIngredients.map(ing => (
+                            <div key={ing.ingredientId} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                              <span className="flex-1 text-sm font-bold text-gray-900 truncate">{ing.name}</span>
+                              <input
+                                type="number"
+                                value={ing.quantity}
+                                onChange={e => handleUpdateIngredientField(ing.ingredientId, 'quantity', e.target.value)}
+                                className="w-20 bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-bold text-center outline-none focus:border-[#E53935]"
+                                placeholder="Qty"
+                                min="0"
+                                step="0.01"
+                              />
+                              <select
+                                value={ing.scale}
+                                onChange={e => handleUpdateIngredientField(ing.ingredientId, 'scale', e.target.value)}
+                                className="w-16 bg-white border border-gray-200 rounded-lg px-1 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                              >
+                                <option value="">Unit</option>
+                                <option value="kg">kg</option>
+                                <option value="g">g</option>
+                                <option value="l">l</option>
+                                <option value="ml">ml</option>
+                                <option value="pcs">pcs</option>
+                                <option value="cup">cup</option>
+                                <option value="tbsp">tbsp</option>
+                                <option value="tsp">tsp</option>
+                              </select>
+                              <button
+                                onClick={() => handleRemoveIngredient(ing.ingredientId)}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <p className="text-[10px] text-green-600 font-bold">These ingredients will be deducted from kitchen inventory on order settlement.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Channel</label>
@@ -1457,6 +1868,12 @@ export default function TodaySpecials() {
                 </div>
 
                 <div className="p-4 grid grid-cols-2 gap-2.5 max-h-[65vh] overflow-y-auto">
+                  {captains.length === 0 && (
+                    <div className="col-span-2 py-10 text-center">
+                      <Users size={32} className="text-gray-300 mx-auto mb-3" />
+                      <p className="text-xs font-bold text-gray-400">No captains found. Add captains in Staff Management first.</p>
+                    </div>
+                  )}
                   {captains.map(cap => {
                     const initials = cap.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '';
                     const currentTarget = targets[cap.id]?.revenueTarget;
@@ -1493,8 +1910,8 @@ export default function TodaySpecials() {
                   >
                     <ChevronRight size={15} className="rotate-180" />
                   </button>
-                  <div className={`w-11 h-11 rounded-2xl ${selectedCaptain.color} flex items-center justify-center text-sm font-black shadow-sm shrink-0`}>
-                    {selectedCaptain.initials}
+                  <div className={`w-11 h-11 rounded-2xl bg-red-50 text-[#B71C1C] flex items-center justify-center text-sm font-black shadow-sm shrink-0`}>
+                    {selectedCaptain.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || ''}
                   </div>
                   <div className="flex-grow min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
