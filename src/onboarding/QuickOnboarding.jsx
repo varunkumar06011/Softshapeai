@@ -92,7 +92,7 @@ const QuickOnboarding = () => {
 
   const detectPrinters = useCallback(async () => {
     // Tauri desktop: use list_printers command
-    if (window.__TAURI__) {
+    if (window.__TAURI__ || window.__TAURI_INTERNALS__) {
       try {
         const result = await window.__TAURI__.core.invoke('list_printers');
         if (Array.isArray(result)) {
@@ -120,6 +120,13 @@ const QuickOnboarding = () => {
     };
 
     try {
+      if (!(window.__TAURI__ || window.__TAURI_INTERNALS__)) {
+        throw new Error(
+          'New Restaurant setup must be opened inside the SoftShape Cashier desktop app. ' +
+          'Use the installed Cashier application, not a browser tab.'
+        );
+      }
+
       // Edge server is the only path — it creates local SQLite records and
       // enqueues them for cloud sync. Cloud registration happens automatically
       // via POST /api/edge/register-offline when connectivity returns.

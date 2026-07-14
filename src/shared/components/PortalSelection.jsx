@@ -12,9 +12,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode } from 'lucide-react';
 
 const PortalSelection = ({ onSelect }) => {
+  const isDesktopApp = typeof window !== 'undefined' && !!window.__TAURI__;
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#FFF5F5] p-6 relative overflow-hidden font-['Inter',sans-serif]">
       {/* Abstract Background Elements */}
@@ -111,19 +114,19 @@ const PortalSelection = ({ onSelect }) => {
       <footer className="mt-16 flex flex-col items-center gap-4 z-10 text-center">
         <p className="text-[11px] font-black uppercase tracking-[0.5em] text-[#B71C1C] drop-shadow-sm">Powered by Vtech</p>
         <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
-          <a
-            href="/onboarding"
+          <Link
+            to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
             className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors flex items-center gap-2"
           >
             New Restaurant? Get Started →
-          </a>
+          </Link>
           <span className="hidden sm:block text-gray-300">|</span>
-          <a
-            href="/edge-setup"
+          <Link
+            to="/edge-setup"
             className="text-sm font-semibold text-gray-500 hover:text-[#E53935] transition-colors flex items-center gap-2"
           >
             Link Existing Restaurant →
-          </a>
+          </Link>
         </div>
       </footer>
     </div>

@@ -174,6 +174,8 @@ fn set_edge_server_error(message: String) {
 }
 
 fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
+    let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = None);
+
     // Resolve the edge-server binary path from bundled resources
     let resource_path = app
         .path()
@@ -229,24 +231,6 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                     }
                 });
             }
-            // Watch for unexpected exit and record the error
-            std::thread::spawn(move || {
-                let status = child.wait();
-                match status {
-                    Ok(code) if !code.success() => {
-                        let err = format!("Edge server process exited unexpectedly with code {:?}. Port 3100 may already be in use.", code.code());
-                        eprintln!("[EdgeServer] {}", err);
-                        set_edge_server_error(err);
-                    }
-                    Err(e) => {
-                        let err = format!("Edge server process wait error: {}", e);
-                        eprintln!("[EdgeServer] {}", err);
-                        set_edge_server_error(err);
-                    }
-                    _ => {}
-                }
-                let _ = EDGE_SERVER_CHILD.lock().map(|mut guard| *guard = None);
-            });
             eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
             *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
         }

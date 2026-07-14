@@ -20,6 +20,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isEdgeAvailable, edgeFetch, resetEdgeCache } from '../services/edgeHealth.js';
+import { API_BASE } from '../services/apiConfig.js';
 import {
   CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   Cloud, Database, Link2, Server, Utensils, LayoutGrid, Users,
@@ -32,7 +33,7 @@ const STATUS_POLL_MS = 2000;
 const EDGE_START_TIMEOUT_MS = 30_000;
 
 function isRunningInsideDesktopApp() {
-  return typeof window !== 'undefined' && !!window.__TAURI__;
+  return typeof window !== 'undefined' && !!(window.__TAURI__ || window.__TAURI_INTERNALS__);
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -53,9 +54,7 @@ export default function EdgeSetupScreen() {
   const [edgeChecking, setEdgeChecking] = useState(true);
 
   // ── Form state ───────────────────────────────────────────────────────────────
-  const [backendUrl, setBackendUrl] = useState(
-    import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || ''
-  );
+  const [backendUrl, setBackendUrl] = useState(API_BASE);
   const [restaurantCode, setRestaurantCode] = useState('');
   const [setupToken, setSetupToken] = useState('');
 
@@ -82,6 +81,15 @@ export default function EdgeSetupScreen() {
     const startTime = Date.now();
     setError(null);
     setEdgeChecking(true);
+
+    if (!isRunningInsideDesktopApp()) {
+      setEdgeChecking(false);
+      setError(
+        'Link Existing Restaurant must be opened inside the SoftShape Cashier desktop app. ' +
+        'Open Cashier from the installed desktop application, then choose Link Existing Restaurant again.'
+      );
+      return () => { cancelled = true; };
+    }
 
     const checkEdge = async () => {
       if (cancelled) return;
@@ -114,7 +122,7 @@ export default function EdgeSetupScreen() {
       } else if (Date.now() - startTime > EDGE_START_TIMEOUT_MS) {
         setEdgeChecking(false);
         const inDesktop = isRunningInsideDesktopApp();
-        if (inDesktop && window.__TAURI__) {
+        if (inDesktop && (window.__TAURI__ || window.__TAURI_INTERNALS__)) {
           try {
             const status = await window.__TAURI__.core.invoke('get_edge_server_status');
             if (status?.error) {
@@ -194,7 +202,14 @@ export default function EdgeSetupScreen() {
         setPhase('collect-info');
       }
     } catch (err) {
-      setRegisterError(err.message || 'Failed to connect to cloud backend');
+      const message = err.message || 'Failed to connect to cloud backend';
+      setRegisterError(
+        message === 'Restaurant not found'
+          ? 'This setup token belongs to a restaurant that was not found on this backend. Generate a new token from Admin → Printers and make sure the Backend URL is the same cloud account where the restaurant was created.'
+          : message.includes('Setup token') || message.includes('Invalid or expired')
+            ? `${message}. Generate a fresh setup token from Admin → Printers; tokens expire after 15 minutes.`
+            : message
+      );
       setPhase('collect-info');
     } finally {
       setRegistering(false);
