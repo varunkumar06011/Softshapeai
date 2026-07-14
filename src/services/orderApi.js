@@ -406,6 +406,19 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
 }
 
 export async function updateOrderStatus(orderId, status) {
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, status }),
+      });
+      if (result && result.success) return result.order || result;
+    } catch (edgeErr) {
+      console.warn('[Edge] updateOrderStatus failed, falling through:', edgeErr.message);
+    }
+  }
   if (!isBackendReachable()) {
     const requestId = generateRequestId();
     await addPendingAction({
@@ -452,6 +465,19 @@ export async function updateOrderStatus(orderId, status) {
 }
 
 export async function requestBilling(orderId) {
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/request-billing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      if (result && result.success) return result.order || result;
+    } catch (edgeErr) {
+      console.warn('[Edge] requestBilling failed, falling through:', edgeErr.message);
+    }
+  }
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing request-billing');
@@ -551,6 +577,20 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
   const body = { removedItemIds, removedBy, ...extraSettleData };
   const settleRequestId = requestId || generateRequestId();
   body.requestId = settleRequestId;
+
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, requestId: settleRequestId, ...extraSettleData }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] settleOrder failed, falling through:', edgeErr.message);
+    }
+  }
 
   // Fast path: if backend is known unreachable, queue instantly without API wait.
   if (!isBackendReachable()) {
@@ -734,6 +774,20 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null, localPrinted = false) {
   const cancelRequestId = requestId || generateRequestId();
 
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] cancelOrderItem failed, falling through:', edgeErr.message);
+    }
+  }
+
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing cancel-item');
@@ -791,6 +845,19 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
 }
 
 export async function swapTable(sourceTableBackendId, targetTableBackendId, swappedBy, restaurantId) {
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/swap-table', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceTableId: sourceTableBackendId, targetTableId: targetTableBackendId, swappedBy }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] swapTable failed, falling through:', edgeErr.message);
+    }
+  }
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing table swap');
@@ -843,6 +910,19 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
 }
 
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/edit-bill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, removedItemIds, editQuantities, addedItems, editedBy }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] editBill failed, falling through:', edgeErr.message);
+    }
+  }
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing bill edit');
@@ -896,6 +976,19 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
 }
 
 export async function transferItems(sourceTableBackendId, targetTableBackendId, itemIds, transferredBy, restaurantId) {
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/transfer-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceTableId: sourceTableBackendId, targetTableId: targetTableBackendId, orderItemIds: itemIds, transferredBy }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] transferItems failed, falling through:', edgeErr.message);
+    }
+  }
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing item transfer');
@@ -986,6 +1079,20 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
   if (cashTipAmount != null) body.cashTipAmount = Number(cashTipAmount);
   if (cardTipAmount != null) body.cardTipAmount = Number(cardTipAmount);
 
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/confirm-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId, ...body }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] confirmPayment failed, falling through:', edgeErr.message);
+    }
+  }
+
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing confirm-payment');
@@ -1039,6 +1146,20 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (kotNumbers) qs.set('kotNumbers', kotNumbers);
   if (localPrinted) qs.set('localPrinted', 'true');
   if (billEventId) qs.set('billEventId', billEventId);
+
+  // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/print-bill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, restaurantId, tableNumber, discountPercent, kotNumbers, localPrinted, billEventId }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] printBill failed, falling through:', edgeErr.message);
+    }
+  }
 
   // Fast path: if backend is known unreachable, queue instantly without API wait.
   if (!isBackendReachable()) {
@@ -1119,6 +1240,20 @@ export { generateRequestId };
 export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null, localPrinted = false) {
   // items: Array<{ orderItemId: string, cancelQuantity: number }>
   const cancelRequestId = requestId || generateRequestId();
+
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/cancel-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted }),
+      });
+      if (result && result.success) return result;
+    } catch (edgeErr) {
+      console.warn('[Edge] cancelOrderItems failed, falling through:', edgeErr.message);
+    }
+  }
 
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {

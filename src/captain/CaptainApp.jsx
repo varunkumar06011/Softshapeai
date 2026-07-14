@@ -53,7 +53,7 @@ import { calculateSessionBill, calculateOrderTotal, calculateTableBill, getTable
 import { filterMenuItems } from '../shared/utils/menuSearch';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { getRestaurantConfig } from '../utils/getRestaurantConfig.js';
+import { getRestaurantConfig, refreshOutletConfigFromEdge } from '../utils/getRestaurantConfig.js';
 import { getTenantScopedKey } from '../utils/cacheKeys';
 import { safeGetJSON } from '../utils/safeParseJSON';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -62,6 +62,7 @@ import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { useSyncStatus } from '../context/SyncStatusContext';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, discoverEdgeOnLAN } from '../services/edgeHealth';
 
 
 
@@ -438,7 +439,44 @@ export default function CaptainApp({ onLogout }) {
     : enabledModules.bar && !enabledModules.food ? 'bar'
     : 'restaurant';
 
+  // ── Edge server settings state ──────────────────────────────────────────────
+  const [showEdgeSettings, setShowEdgeSettings] = useState(false);
+  const [edgeUrlInput, setEdgeUrlInput] = useState('');
+  const [edgeStatus, setEdgeStatus] = useState({ checking: false, available: false, url: '' });
+  const [discoveryStatus, setDiscoveryStatus] = useState('');
+
+  const checkEdgeStatus = useCallback(async () => {
+    setEdgeStatus(prev => ({ ...prev, checking: true }));
+    const url = getEdgeUrl();
+    const available = await isEdgeAvailable();
+    setEdgeStatus({ checking: false, available, url });
+  }, []);
+
   // Fallback: refresh restaurantType/enabledModules for existing sessions
+  useEffect(() => {
+    // Periodically refresh outlet config from edge server
+    refreshOutletConfigFromEdge();
+    const interval = setInterval(refreshOutletConfigFromEdge, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Trigger LAN discovery on mount for captain devices ──────────────────────
+  useEffect(() => {
+    checkEdgeStatus();
+    // Always attempt LAN discovery on mount — checkEdgeStatus is async so
+    // edgeStatus.available won't be updated yet. discoverEdgeOnLAN internally
+    // skips if a manual URL is configured or if already discovered.
+    setDiscoveryStatus('Searching for edge server on LAN…');
+    discoverEdgeOnLAN().then((discovered) => {
+      if (discovered) {
+        setDiscoveryStatus(`Found edge server: ${discovered}`);
+        checkEdgeStatus();
+      } else {
+        setDiscoveryStatus('');
+      }
+    }).catch(() => setDiscoveryStatus(''));
+  }, []);
+
   useEffect(() => {
     if (!restaurant?.enabledModules) {
       fetch(`${API_BASE}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() })
@@ -3662,6 +3700,122 @@ export default function CaptainApp({ onLogout }) {
         <LogOut size={16} /> Logout
 
       </button>
+
+      {/* EDGE SERVER STATUS INDICATOR + SETTINGS BUTTON */}
+      <button
+        onClick={() => {
+          setEdgeUrlInput(getEdgeUrl());
+          setShowEdgeSettings(true);
+          checkEdgeStatus();
+        }}
+        className="fixed top-2 right-24 z-[60] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md border transition-colors"
+        style={{
+          background: edgeStatus.available ? '#dcfce7' : '#fef3c7',
+          color: edgeStatus.available ? '#166534' : '#92400e',
+          borderColor: edgeStatus.available ? '#86efac' : '#fcd34d',
+        }}
+      >
+        {edgeStatus.checking ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : edgeStatus.available ? (
+          <Wifi size={14} />
+        ) : (
+          <WifiOff size={14} />
+        )}
+        Edge
+      </button>
+
+      {/* EDGE SETTINGS MODAL */}
+      {showEdgeSettings && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowEdgeSettings(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Edge Server Settings</h2>
+              <button onClick={() => setShowEdgeSettings(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Status */}
+            <div className="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
+              <div className="flex items-center gap-2 mb-1">
+                {edgeStatus.checking ? (
+                  <Loader2 size={16} className="animate-spin text-blue-500" />
+                ) : edgeStatus.available ? (
+                  <Wifi size={16} className="text-green-600" />
+                ) : (
+                  <WifiOff size={16} className="text-amber-600" />
+                )}
+                <span className="text-sm font-bold">
+                  {edgeStatus.checking ? 'Checking…' : edgeStatus.available ? 'Connected' : 'Not connected'}
+                </span>
+              </div>
+              {edgeStatus.url && (
+                <div className="text-xs text-gray-500 font-mono">{edgeStatus.url}</div>
+              )}
+              {discoveryStatus && (
+                <div className="text-xs text-blue-600 mt-1">{discoveryStatus}</div>
+              )}
+            </div>
+
+            {/* Manual URL configuration */}
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-700 mb-1">Edge Server URL</label>
+              <input
+                type="text"
+                value={edgeUrlInput}
+                onChange={e => setEdgeUrlInput(e.target.value)}
+                placeholder="http://192.168.1.100:3100"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">Enter the hub machine's LAN IP and port (default: 3100)</p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setEdgeUrl(edgeUrlInput.trim() || null);
+                  await checkEdgeStatus();
+                }}
+                className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
+              >
+                Save & Test
+              </button>
+              <button
+                onClick={async () => {
+                  setDiscoveryStatus('Searching for edge server on LAN…');
+                  setEdgeUrl(null);
+                  const discovered = await discoverEdgeOnLAN();
+                  if (discovered) {
+                    setEdgeUrlInput(discovered);
+                    setDiscoveryStatus(`Found: ${discovered}`);
+                    await checkEdgeStatus();
+                  } else {
+                    setDiscoveryStatus('No edge server found on LAN');
+                  }
+                }}
+                className="flex-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200 transition-colors"
+              >
+                Auto-Discover
+              </button>
+            </div>
+
+            {/* Clear button */}
+            <button
+              onClick={async () => {
+                setEdgeUrl(null);
+                setEdgeUrlInput('');
+                setDiscoveryStatus('');
+                await checkEdgeStatus();
+              }}
+              className="w-full mt-2 px-4 py-2 rounded-lg text-red-600 text-xs font-bold hover:bg-red-50 transition-colors"
+            >
+              Reset to default
+            </button>
+          </div>
+        </div>
+      )}
 
 
 

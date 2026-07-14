@@ -38,6 +38,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
+import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
@@ -47,7 +48,7 @@ import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
 import LiveTimer from '../shared/components/LiveTimer';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
-import { getRestaurantConfig } from '../utils/getRestaurantConfig';
+import { getRestaurantConfig, refreshOutletConfigFromEdge } from '../utils/getRestaurantConfig';
 import { getTenantScopedKey, getTablesCacheKey, getBarTablesCacheKey } from '../utils/cacheKeys';
 import { safeGetJSON } from '../utils/safeParseJSON';
 import { useAuth } from '../context/AuthContext';
@@ -626,6 +627,14 @@ const CashierDashboard = ({ onLogout }) => {
     return () => window.removeEventListener('ss_restaurant_config_changed', handler);
   }, []);
   const restaurantConfig = useMemo(() => getRestaurantConfig(), [configVersion]);
+
+  // Periodically refresh outlet config from edge server so billing.js
+  // always uses current GST rates, printer config, etc.
+  useEffect(() => {
+    refreshOutletConfigFromEdge();
+    const interval = setInterval(refreshOutletConfigFromEdge, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Refetch sections when the active restaurant/outlet changes
   useEffect(() => {
@@ -3080,6 +3089,23 @@ const CashierDashboard = ({ onLogout }) => {
           addNotification('Offline KOT', 'Reprinted last KOT from local history.', 'warning');
         }
         return;
+      }
+
+      // ── Edge server first (local SQLite + direct printer) ─────────────────────
+      if (await isEdgeAvailable()) {
+        try {
+          const edgeResult = await edgeFetch('/api/edge/kot/reprint', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: selectedTable.activeOrder.id }),
+          });
+          if (edgeResult && edgeResult.success) {
+            addNotification('KOT Reprinted', 'Kitchen copy sent to printer via edge.', 'success');
+            return;
+          }
+        } catch (edgeErr) {
+          console.warn('[handleReprintKOT] Edge reprint failed, falling through to cloud:', edgeErr.message);
+        }
       }
 
       const response = await httpFetch(
