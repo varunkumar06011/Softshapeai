@@ -34,3 +34,11 @@ softshape-release.keystore
 .tauri/
 .vercel
 .env*
+
+# Rust/Tauri build artifacts
+apps/cashier-desktop/src-tauri/target/
+apps/cashier-desktop/src-tauri/gen/
+apps/admin-desktop/src-tauri/target/
+apps/admin-desktop/src-tauri/gen/
+apps/captain-android/src-tauri/target/
+apps/captain-android/src-tauri/gen/
