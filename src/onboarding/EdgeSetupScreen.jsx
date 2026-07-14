@@ -709,23 +709,3 @@ export default function EdgeSetupScreen() {
     </div>
   );
 }
-        {/* ── Footer ──────────────────────────────────────────────────────────── */}
-        <div className="mt-6 flex items-center justify-between px-2">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <ArrowLeft size={14} /> Back to portal
-          </button>
-
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <div className={`w-2 h-2 rounded-full ${edgeOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="font-medium">
-              {edgeOnline ? 'Edge server online' : edgeChecking ? 'Edge starting…' : 'Edge offline'}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
