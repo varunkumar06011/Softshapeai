@@ -1,6 +1,6 @@
 {
   "name": "softshape-cashier-desktop",
-  "version": "12.0.0",
+  "version": "12.1.0",
   "description": "SoftShape Cashier Desktop App (Tauri)",
   "private": true,
   "type": "module",
