@@ -15,6 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
+import { ensureEdgeApiKey } from './edgeHealth.js';
 
 export const authService = {
   async login(email, password, restaurantCode) {
@@ -38,6 +39,8 @@ export const authService = {
     if (data.token) {
       localStorage.setItem('ss_token', data.token);
       localStorage.setItem('ss_user', JSON.stringify(data.user));
+      // Pre-fetch the LAN edge API key while we have cloud access.
+      ensureEdgeApiKey().catch(() => {});
       if (data.restaurant) {
         localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
       }
@@ -74,6 +77,8 @@ export const authService = {
       }
       localStorage.setItem('ss_token', data.token);
       localStorage.setItem('ss_user', JSON.stringify(data.user));
+      // Pre-fetch the LAN edge API key while we have cloud access.
+      ensureEdgeApiKey().catch(() => {});
       if (data.restaurant) {
         localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
       }
@@ -137,6 +142,8 @@ export const authService = {
     localStorage.setItem('ss_token', data.token);
     localStorage.removeItem('ss_preauth_token');
     localStorage.setItem('ss_user', JSON.stringify(data.user));
+    // Pre-fetch the LAN edge API key for the new outlet.
+    ensureEdgeApiKey().catch(() => {});
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }

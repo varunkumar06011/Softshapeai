@@ -6,6 +6,10 @@
 // if the local edge server (Bun sidecar) is running.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { API_BASE, getAuthHeaders } from "./apiConfig";
+
+const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
+
 const EDGE_URL =
   import.meta.env.VITE_EDGE_URL ||
   (typeof window !== 'undefined' && window.__SOFTSHAPE_EDGE_URL__) ||
@@ -19,6 +23,40 @@ let _edgeLastCheck = 0;
 
 export function getEdgeUrl() {
   return EDGE_URL;
+}
+
+export function getStoredEdgeApiKey() {
+  try {
+    return localStorage.getItem(EDGE_API_KEY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredEdgeApiKey(key) {
+  try {
+    localStorage.setItem(EDGE_API_KEY_STORAGE_KEY, key);
+  } catch {
+    // Ignore storage errors (e.g., private mode)
+  }
+}
+
+export async function ensureEdgeApiKey() {
+  const cached = getStoredEdgeApiKey();
+  if (cached) return cached;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/edge/key`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { edgeApiKey } = await res.json();
+    setStoredEdgeApiKey(edgeApiKey);
+    return edgeApiKey;
+  } catch (err) {
+    console.warn("[Edge] Failed to fetch edge API key:", err.message);
+    return null;
+  }
 }
 
 export function resetEdgeCache() {
@@ -43,9 +81,18 @@ export async function isEdgeAvailable() {
 }
 
 export async function edgeFetch(path, options = {}) {
+  const edgeApiKey = getStoredEdgeApiKey();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+  if (edgeApiKey) {
+    headers['X-Edge-Key'] = edgeApiKey;
+  }
+
   const res = await fetch(`${EDGE_URL}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers,
   });
   if (!res.ok) {
     let message = `Edge request failed (${res.status})`;
