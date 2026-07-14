@@ -4,8 +4,8 @@
  */
 
 import {
-  Store, Calendar, ClipboardList, TrendingUp, ArrowDownCircle, SlidersHorizontal,
-  Wallet, Sofa, Wine, Users, ShoppingBag, Banknote, Utensils, Minus, CreditCard,
+  Store, Calendar, ClipboardList, TrendingUp, ArrowDownCircle,
+  Wallet, Banknote, CreditCard,
   Smartphone, Landmark,
 } from 'lucide-react';
 
@@ -185,13 +185,11 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           sub="After Aggregator Deduction" color="#0EA5E9" bg="#F0F9FF" />
         <KpiCard icon={ArrowDownCircle} label="Total Expenditure" value={data.totalExpenditure}
           sub={`from ${data.totalExpenditureCategoriesCount} categories`} color="#3B82F6" bg="#EFF6FF" />
-        <KpiCard icon={SlidersHorizontal} label="Total Adjustments" value={data.totalAdjustments}
-          sub={`from ${data.totalAdjustmentsEntriesCount} entries`} color="#7C3AED" bg="#F5F3FF" />
         <KpiCard icon={TrendingUp} label="Net Closing Balance" value={data.netClosingBalance}
-          sub="After Adjustments" color="#16A34A" bg="#F0FDF4" />
+          sub="After Expenditure" color="#16A34A" bg="#F0FDF4" />
       </div>
 
-      {/* ── Two-column: Venue Sales | Expenditures + Adjustments ─────── */}
+      {/* ── Two-column: Venue Sales | Expenditure ─────── */}
       <div className="mt-6 grid grid-cols-2 gap-5">
         {/* LEFT: Venue Sales Breakdown */}
         <div className="rounded-xl border p-4" style={{ borderColor: '#E5E7EB' }}>
@@ -207,23 +205,24 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           <TotalRow label="Net Sales (after Swiggy + Zomato deduction)" amount={data.netSales} />
         </div>
 
-        {/* RIGHT: Expenditures + Adjustments stacked */}
-        <div className="flex flex-col gap-5">
-          <div className="rounded-xl border p-4" style={{ borderColor: '#E5E7EB' }}>
-            <SectionBadge n={2}>EXPENDITURES</SectionBadge>
-            {data.expenditures.map((row, idx) => (
-              <TableRow key={idx} label={row.label} amount={row.amount} muted />
-            ))}
-            <TotalRow label="Total Expenditure" amount={data.totalExpenditure} />
+        {/* RIGHT: Expenditure (auto + manual combined) */}
+        <div className="rounded-xl border p-4" style={{ borderColor: '#E5E7EB' }}>
+          <SectionBadge n={2}>EXPENDITURE</SectionBadge>
+          <div className="flex justify-between pb-1 text-[10px] font-bold uppercase" style={{ color: '#9CA3AF' }}>
+            <span>Description</span><span>Amount (₹)</span>
           </div>
-
-          <div className="rounded-xl border p-4" style={{ borderColor: '#E5E7EB' }}>
-            <SectionBadge n={3}>ADJUSTMENTS</SectionBadge>
-            {data.adjustments.map((row, idx) => (
-              <TableRow key={idx} icon={Minus} iconColor="#E63946" label={row.label} amount={row.amount} />
-            ))}
-            <TotalRow label="Total Adjustments" amount={data.totalAdjustments} />
-          </div>
+          {data.expenditures.map((row, idx) => (
+            <div key={idx} className="flex items-start justify-between py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
+              <div className="flex-1">
+                <span className="text-sm font-semibold" style={{ color: '#334155' }}>{row.label}</span>
+                {row.narration && (
+                  <div className="text-[10px] font-medium" style={{ color: '#9CA3AF' }}>{row.narration}</div>
+                )}
+              </div>
+              <span className="text-sm font-bold leading-none" style={{ color: '#1E293B' }}>{inr(row.amount).replace('₹', '')}</span>
+            </div>
+          ))}
+          <TotalRow label="Total Expenditure" amount={data.totalExpenditure} />
         </div>
       </div>
 
@@ -247,15 +246,13 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
 
       {/* ── Calculation Summary ────────────────────────────────────── */}
       <div className="mt-6">
-        <SectionBadge n={4}>CALCULATION SUMMARY</SectionBadge>
+        <SectionBadge n={3}>CALCULATION SUMMARY</SectionBadge>
         <div className="flex items-center gap-2">
           <CalcBox label="Net Sales" value={data.netSales} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
           <CalcBox label="Other Income" value={data.otherIncome || 0} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>−</span>
           <CalcBox label="Total Expenditure" value={data.totalExpenditure} />
-          <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>−</span>
-          <CalcBox label="Total Adjustments" value={data.totalAdjustments} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>=</span>
           <CalcBox label="Net Closing Balance" value={data.netClosingBalance} highlight />
         </div>

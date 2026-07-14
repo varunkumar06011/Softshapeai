@@ -4,12 +4,13 @@
 // Core billing calculation utilities used by POS, cashier, and admin:
 //   - calculateOrderTotal(items, discountPercent, options) — computes subtotal,
 //     GST (CGST/SGST split), discount amount, service charge, and final total
-//   - Supports pricesIncludeGst mode (GST included in item price vs added on top)
+//   - GST always added on top of discounted subtotal (food + liquor combined)
 //   - GST rate determined by restaurant config (AC=18%, Non-AC=5%, Takeaway=5%)
+//   - CGST and SGST are NOT rounded — only grand total is rounded
 //   - Handles unregistered restaurants (0% GST)
 //   - Item shape: { p: price, q: quantity, ... }
 //
-// Returns: { subtotal, cgst, sgst, totalGst, discountAmount, serviceCharge, total }
+// Returns: { subtotal, cgst, sgst, taxes, discountAmount, serviceCharge, grandTotal }
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
@@ -20,114 +21,82 @@ import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
  * GST options default to the logged-in restaurant's configuration; pass `options` to override.
  */
 export const calculateOrderTotal = (items, discountPercent = 0, options = {}) => {
-  // Only read localStorage config when caller hasn't provided the needed fields
   const needsConfig =
     options.gstCategory == null ||
-    options.pricesIncludeGst == null ||
     options.gstRegistered == null;
   const config = needsConfig ? getRestaurantConfig() : {};
   const gstCategory = options.gstCategory ?? config.gstCategory ?? 'NON_AC';
-  const pricesIncludeGst = options.pricesIncludeGst ?? config.pricesIncludeGst ?? false;
   const gstRegistered = options.gstRegistered ?? config.gstRegistered ?? true;
   const isAc = String(gstCategory).toUpperCase() === 'AC';
   const ratePercent = gstRegistered === false ? 0 : (options.gstRate ?? config.gstRate ?? (isAc ? 18 : 5));
   const totalGstRate = ratePercent / 100;
-  const cgstRate = totalGstRate / 2;
-  const sgstRate = totalGstRate / 2;
+  const halfGstRate = totalGstRate / 2;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
-    return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, serviceCharge: undefined, serviceChargeAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0 };
+    return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, serviceCharge: undefined, serviceChargeAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0, roundOff: 0 };
   }
 
   let foodSubtotal = 0;
   let liquorSubtotal = 0;
-  let gstExemptFood = 0;
-  let gstExemptLiquor = 0;
+  let gstExemptTotal = 0;
 
   items.forEach((item) => {
     if (item.removedFromBill) return;
     const price = Number(item.p ?? item.price ?? 0);
     const qty = Number(item.q ?? item.quantity ?? 1);
 
-    // Detect liquor/bar items by checking all possible field shapes from captain cart,
-    // DB order items, and legacy kotHistory items.
-    // BAR items (water bottles, packaged drinks, beer) are treated same as LIQUOR — no food GST.
     const rawType = item.menuItem?.menuType || item.menuType || item.type || '';
     const typeUpper = rawType.toString().toUpperCase();
-    const type = (typeUpper === 'LIQUOR' || typeUpper === 'BAR') ? 'liquor' : 'food';
+    const isLiquor = (typeUpper === 'LIQUOR' || typeUpper === 'BAR');
 
-    if (type === 'liquor') {
+    if (isLiquor) {
       liquorSubtotal += price * qty;
-      if (item.gstEnabled === false) {
-        gstExemptLiquor += price * qty;
-      }
     } else {
       foodSubtotal += price * qty;
-      // Items with gstEnabled=false are exempt from GST calculation
-      if (item.gstEnabled === false) {
-        gstExemptFood += price * qty;
-      }
+    }
+    if (item.gstEnabled === false) {
+      gstExemptTotal += price * qty;
     }
   });
 
-  // GST Calculation: GST on food only (5%), liquor has 0% food GST.
-  // Discount is applied to raw subtotal FIRST (proportionally), then GST on discounted food.
-  // This matches the backend settleOrderService calculation exactly.
+  // Flow: subtotal → discount on subtotal → GST on discounted subtotal (minus exempt) → grand total rounded
   const subtotal = foodSubtotal + liquorSubtotal;
   const discountAmount = discountPercent > 0
     ? Math.round(subtotal * (discountPercent / 100) * 100) / 100
     : 0;
 
-  const discountedFood = foodSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (foodSubtotal / subtotal) : 0);
-  const gstExemptTotal = gstExemptFood + gstExemptLiquor;
+  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
   const gstExemptAfterDiscount = Math.max(0, gstExemptTotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (gstExemptTotal / subtotal) : 0));
-  const taxableFood = Math.max(0, discountedFood - (gstExemptAfterDiscount * (foodSubtotal / (foodSubtotal + liquorSubtotal || 1))));
+  const taxableAmount = Math.max(0, discountedSubtotal - gstExemptAfterDiscount);
 
-  let baseAmount, cgst, sgst, taxes;
-  if (pricesIncludeGst) {
-    baseAmount = Math.round((taxableFood / (1 + totalGstRate)) * 100) / 100;
-    const rawTax = Math.round(baseAmount * totalGstRate * 100) / 100;
-    cgst = Math.round(rawTax / 2 * 100) / 100;
-    sgst = Math.round((rawTax - cgst) * 100) / 100;
-    taxes = rawTax;
-  } else {
-    baseAmount = taxableFood;
-    const rawTax = Math.round(taxableFood * totalGstRate * 100) / 100;
-    cgst = Math.round(rawTax / 2 * 100) / 100;
-    sgst = Math.round((rawTax - cgst) * 100) / 100;
-    taxes = rawTax;
-  }
+  // GST: CGST and SGST are NOT rounded — only grand total is rounded
+  const cgst = taxableAmount * halfGstRate;
+  const sgst = taxableAmount * halfGstRate;
+  const taxes = cgst + sgst;
 
-  const discountedLiquor = liquorSubtotal - (discountAmount > 0 && subtotal > 0 ? discountAmount * (liquorSubtotal / subtotal) : 0);
-  const liquorAfterDiscount = discountedLiquor - (gstExemptAfterDiscount * (liquorSubtotal / (foodSubtotal + liquorSubtotal || 1)));
-  const displayedSubtotal = Math.round((baseAmount + gstExemptAfterDiscount + liquorAfterDiscount) * 100) / 100;
   const scPercent = Number(options.serviceChargePercent ?? 0);
   const serviceChargeAmount = scPercent > 0
-    ? Math.round((displayedSubtotal + taxes) * (scPercent / 100) * 100) / 100
+    ? (discountedSubtotal + taxes) * (scPercent / 100)
     : 0;
-  const rawGrandTotal = Math.max(0, Math.round((displayedSubtotal + taxes + serviceChargeAmount) * 100) / 100);
+
+  const rawGrandTotal = Math.max(0, discountedSubtotal + taxes + serviceChargeAmount);
   const grandTotal = Math.round(rawGrandTotal);
   const roundOff = Math.round((grandTotal - rawGrandTotal) * 100) / 100;
 
-  // Only round grand total to whole number; CGST/SGST keep 2-decimal precision
-  const rawSubtotalRounded = Math.round(subtotal);
-  const discountAmountRounded = Math.round(discountAmount);
-  const grandTotalRounded = Math.max(0, grandTotal);
-
   return {
-    subtotal: Math.round(displayedSubtotal),
-    rawSubtotal: rawSubtotalRounded,
-    taxes: Math.round(taxes * 100) / 100,
-    total: grandTotalRounded,
-    grandTotal: grandTotalRounded,
-    discountAmount: discountAmountRounded,
+    subtotal: Math.round(discountedSubtotal),
+    rawSubtotal: Math.round(subtotal),
+    taxes,
+    total: grandTotal,
+    grandTotal,
+    discountAmount: Math.round(discountAmount),
     serviceCharge: scPercent > 0 ? { percent: scPercent, amount: serviceChargeAmount } : undefined,
-    serviceChargeAmount: serviceChargeAmount,
+    serviceChargeAmount,
     roundOff,
     foodSubtotal: Number(foodSubtotal.toFixed(2)),
     liquorSubtotal: Number(liquorSubtotal.toFixed(2)),
-    cgst: Math.round(cgst * 100) / 100,
-    sgst: Math.round(sgst * 100) / 100
+    cgst,
+    sgst
   };
 };
 

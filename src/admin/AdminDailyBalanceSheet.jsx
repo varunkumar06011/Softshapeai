@@ -54,7 +54,7 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments,
     { label: '\u2212 Swiggy', amount: swiggy },
     { label: '\u2212 Zomato', amount: zomato },
     { label: '= Net Sales', amount: netSales },
-    { label: '\u2212 Expenditures', amount: effectiveExpenditures },
+    { label: '\u2212 Expenditure', amount: effectiveExpenditures },
   ];
 
   for (const adj of minusAdjustments) {
@@ -220,47 +220,58 @@ function AdjustmentPill({ adj, isLocked, onEdit, onDelete, onDragStart, onDragOv
   const [label, setLabel] = useState(adj.label);
   const [amount, setAmount] = useState(String(adj.amount));
   const [sign, setSign] = useState(adj.sign);
+  const [narration, setNarration] = useState(adj.narration || '');
 
   useEffect(() => {
     setLabel(adj.label);
     setAmount(String(adj.amount));
     setSign(adj.sign);
+    setNarration(adj.narration || '');
   }, [adj]);
 
   const handleSave = () => {
-    onEdit({ ...adj, label: label.trim(), amount: Number(amount) || 0, sign });
+    onEdit({ ...adj, label: label.trim(), amount: Number(amount) || 0, sign, narration: narration.trim() || null });
     setEditing(false);
   };
 
   if (editing) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 p-2">
+      <div className="flex flex-col gap-2 rounded-lg border border-blue-300 bg-blue-50 p-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
+            placeholder="Label"
+          />
+          <button
+            onClick={() => setSign(sign === 'PLUS' ? 'MINUS' : 'PLUS')}
+            className={`rounded px-2 py-1 text-sm font-bold ${sign === 'PLUS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+          >
+            {sign === 'PLUS' ? '+' : '−'}
+          </button>
+          <input
+            type="number"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-20 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
+          />
+          <button onClick={handleSave} className="rounded bg-[#E53935] p-1 text-white hover:bg-[#C62828]">
+            <CheckCircle size={16} />
+          </button>
+          <button onClick={() => setEditing(false)} className="rounded bg-gray-200 p-1 text-gray-600 hover:bg-gray-300">
+            <X size={16} />
+          </button>
+        </div>
         <input
           type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
-          placeholder="Label"
+          value={narration}
+          onChange={(e) => setNarration(e.target.value)}
+          className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none"
+          placeholder="Narration (optional)"
         />
-        <button
-          onClick={() => setSign(sign === 'PLUS' ? 'MINUS' : 'PLUS')}
-          className={`rounded px-2 py-1 text-sm font-bold ${sign === 'PLUS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-        >
-          {sign === 'PLUS' ? '+' : '−'}
-        </button>
-        <input
-          type="number"
-          min="0"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-20 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
-        />
-        <button onClick={handleSave} className="rounded bg-[#E53935] p-1 text-white hover:bg-[#C62828]">
-          <CheckCircle size={16} />
-        </button>
-        <button onClick={() => setEditing(false)} className="rounded bg-gray-200 p-1 text-gray-600 hover:bg-gray-300">
-          <X size={16} />
-        </button>
       </div>
     );
   }
@@ -278,6 +289,9 @@ function AdjustmentPill({ adj, isLocked, onEdit, onDelete, onDragStart, onDragOv
       </div>
       <div className="flex-1">
         <div className="text-sm font-bold text-gray-800">{adj.label}</div>
+        {adj.narration && (
+          <div className="text-xs text-gray-400">{adj.narration}</div>
+        )}
         <div className="text-xs text-gray-500">₹{Number(adj.amount).toLocaleString('en-IN')}</div>
       </div>
       {!isLocked && (
@@ -326,7 +340,7 @@ export default function AdminDailyBalanceSheet() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showAddAdj, setShowAddAdj] = useState(false);
-  const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS' });
+  const [newAdj, setNewAdj] = useState({ label: '', amount: '', sign: 'MINUS', narration: '' });
   const [statusLoading, setStatusLoading] = useState(false);
   const [ledgerActivity, setLedgerActivity] = useState(null);
   const [showLedgerActivity, setShowLedgerActivity] = useState(false);
@@ -397,7 +411,7 @@ export default function AdminDailyBalanceSheet() {
 
   const ADMIN_WHATSAPP_NUMBER = '919550237788';
 
-  const ADJUSTMENT_PRESETS = [
+  const EXPENDITURE_PRESETS = [
     { label: 'Daily Expenses', sign: 'MINUS' },
     { label: 'Cash Shortage', sign: 'MINUS' },
     { label: 'Cash Excess', sign: 'PLUS' },
@@ -568,9 +582,9 @@ export default function AdminDailyBalanceSheet() {
           label: a.label,
           amount: Number(a.amount),
           sign: a.sign,
+          narration: a.narration || null,
           sortOrder: a.sortOrder ?? i,
         })),
-        expectedUpdatedAt: sheet?.updatedAt,
       };
       const params = new URLSearchParams();
       if (outletId && outletId !== 'all') params.set('outletId', outletId);
@@ -617,18 +631,19 @@ export default function AdminDailyBalanceSheet() {
       label: newAdj.label.trim(),
       amount: Math.max(0, Number(newAdj.amount)),
       sign: newAdj.sign,
+      narration: newAdj.narration?.trim() || null,
       sortOrder: adjustmentsRef.current.length,
     };
     const updated = [...adjustmentsRef.current, adj];
     adjustmentsRef.current = updated;
     setAdjustments(updated);
-    setNewAdj({ label: '', amount: '', sign: 'MINUS' });
+    setNewAdj({ label: '', amount: '', sign: 'MINUS', narration: '' });
     setShowAddAdj(false);
     setDirty(true);
   };
 
   const applyAdjustmentPreset = (preset) => {
-    setNewAdj({ label: preset.label, amount: '', sign: preset.sign });
+    setNewAdj({ label: preset.label, amount: '', sign: preset.sign, narration: '' });
     setShowAddAdj(true);
   };
 
@@ -707,6 +722,7 @@ export default function AdminDailyBalanceSheet() {
     for (const v of expenditures) {
       if (v.status === 'VOIDED') continue;
       const cat = v.category || v.paidToType || 'Other';
+      if (cat.toUpperCase() === 'STAFF') continue;
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(v);
     }
@@ -802,13 +818,22 @@ export default function AdminDailyBalanceSheet() {
         { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
         { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
       ],
-      expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
-        label: cat,
-        amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
-      })),
+      expenditures: [
+        ...Object.entries(expenditureGroups).map(([cat, vlist]) => ({
+          label: cat,
+          amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
+          narration: null,
+        })),
+        ...adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
+          label: a.label,
+          amount: Number(a.amount),
+          narration: a.narration || null,
+        })),
+      ],
       adjustments: adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
         label: a.label,
         amount: Number(a.amount),
+        narration: a.narration || null,
       })),
       payment: paymentData,
     };
@@ -848,13 +873,32 @@ export default function AdminDailyBalanceSheet() {
       root.unmount();
       document.body.removeChild(container);
 
-      // Convert to PDF
+      // Convert to PDF — fit content to A4 with dynamic scaling
       const imgData = canvas.toDataURL('image/png');
-      const imgWidth = 190; // A4 width in mm (210mm - 20mm margin)
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pdfWidth = 210; // A4 width in mm
+      const pdfHeight = 297; // A4 height in mm
+      const margin = 10;
+      const usableWidth = pdfWidth - 2 * margin;
+      const imgHeight = (canvas.height * usableWidth) / canvas.width;
       
       const doc = new jsPDF('p', 'mm', 'a4');
-      doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+      if (imgHeight <= pdfHeight - 2 * margin) {
+        // Fits on one page
+        doc.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight);
+      } else {
+        // Multi-page: split the image across pages
+        let remainingHeight = imgHeight;
+        let yOffset = 0;
+        const pageContentHeight = pdfHeight - 2 * margin;
+        while (remainingHeight > 0) {
+          doc.addImage(imgData, 'PNG', margin, margin - yOffset, usableWidth, imgHeight);
+          remainingHeight -= pageContentHeight;
+          if (remainingHeight > 0) {
+            doc.addPage();
+            yOffset += pageContentHeight;
+          }
+        }
+      }
       
       return doc;
     } catch (err) {
@@ -1212,16 +1256,82 @@ export default function AdminDailyBalanceSheet() {
         </div>
       </div>
 
-      {/* ── Expenditures section ──────────────────────────────────────────── */}
+      {/* ── Expenditure section (auto + manual combined) ─────────────────── */}
       <div>
-        <h3 className="text-sm font-black text-gray-800 mb-2">Expenditures</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-black text-gray-800">Expenditure</h3>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1">
+              {EXPENDITURE_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  onClick={() => applyAdjustmentPreset(preset)}
+                  disabled={isLocked}
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-[#FFEBEE] hover:text-[#B71C1C] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={isLocked ? 'Unlock sheet to add' : `Add ${preset.label}`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowAddAdj(!showAddAdj)}
+              disabled={isLocked}
+              className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] disabled:opacity-40 disabled:cursor-not-allowed"
+              title={isLocked ? 'Unlock sheet to add' : 'Add expenditure'}
+            >
+              <Plus size={14} /> Add Expenditure
+            </button>
+          </div>
+        </div>
+
+        {showAddAdj && (
+          <div className="mb-2 flex flex-col gap-2 rounded-lg border border-blue-300 bg-blue-50 p-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="text"
+                value={newAdj.label}
+                onChange={(e) => setNewAdj({ ...newAdj, label: e.target.value })}
+                placeholder="Label (e.g. Daily expenses)"
+                className="w-full flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setNewAdj({ ...newAdj, sign: newAdj.sign === 'PLUS' ? 'MINUS' : 'PLUS' })}
+                  className={`rounded px-2 py-1 text-sm font-bold ${newAdj.sign === 'PLUS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                >
+                  {newAdj.sign === 'PLUS' ? '+' : '−'}
+                </button>
+                <input
+                  type="number"
+                  min="0"
+                  value={newAdj.amount}
+                  onChange={(e) => setNewAdj({ ...newAdj, amount: e.target.value })}
+                  placeholder="Amount"
+                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none sm:w-24"
+                />
+                <button onClick={handleAddAdjustment} className="rounded bg-[#E53935] px-3 py-1 text-sm font-bold text-white hover:bg-[#C62828]">
+                  Add
+                </button>
+                <button onClick={() => setShowAddAdj(false)} className="rounded bg-gray-200 px-2 py-1 text-sm text-gray-600">
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <input
+              type="text"
+              value={newAdj.narration}
+              onChange={(e) => setNewAdj({ ...newAdj, narration: e.target.value })}
+              placeholder="Narration (optional note about this expenditure)"
+              className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none"
+            />
+          </div>
+        )}
+
+        {/* Auto-added expenditures */}
         {expendituresLoading ? (
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Loader2 size={14} className="animate-spin" /> Loading expenditures...
-          </div>
-        ) : Object.keys(expenditureGroups).length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
-            No expenditures for this date
           </div>
         ) : (
           <div className="space-y-2">
@@ -1248,85 +1358,12 @@ export default function AdminDailyBalanceSheet() {
             ))}
           </div>
         )}
-        <div className="mt-3">
-          <SalesTile
-            label="Total Expenditures"
-            computedValue={expenditureSubtotal}
-            overrideValue={overrides.totalExpendituresOverride}
-            isManual={overrides.totalExpendituresOverride != null}
-            isLocked={isLocked}
-            onChange={(v) => handleFieldChange('totalExpendituresOverride', v)}
-          />
-        </div>
-      </div>
 
-      {/* ── Adjustments section ───────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-black text-gray-800">Adjustments</h3>
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1">
-              {ADJUSTMENT_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  onClick={() => applyAdjustmentPreset(preset)}
-                  disabled={isLocked}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-[#FFEBEE] hover:text-[#B71C1C] disabled:opacity-40 disabled:cursor-not-allowed"
-                  title={isLocked ? 'Unlock sheet to add' : `Add ${preset.label}`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowAddAdj(!showAddAdj)}
-              disabled={isLocked}
-              className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] disabled:opacity-40 disabled:cursor-not-allowed"
-              title={isLocked ? 'Unlock sheet to add adjustments' : 'Add adjustment'}
-            >
-              <Plus size={14} /> Add Adjustment
-            </button>
-          </div>
-        </div>
-
-        {showAddAdj && (
-          <div className="mb-2 flex flex-col gap-2 rounded-lg border border-blue-300 bg-blue-50 p-2 sm:flex-row sm:items-center">
-            <input
-              type="text"
-              value={newAdj.label}
-              onChange={(e) => setNewAdj({ ...newAdj, label: e.target.value })}
-              placeholder="Label (e.g. Daily expenses)"
-              className="w-full flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none"
-            />
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setNewAdj({ ...newAdj, sign: newAdj.sign === 'PLUS' ? 'MINUS' : 'PLUS' })}
-                className={`rounded px-2 py-1 text-sm font-bold ${newAdj.sign === 'PLUS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-              >
-                {newAdj.sign === 'PLUS' ? '+' : '−'}
-              </button>
-              <input
-                type="number"
-                min="0"
-                value={newAdj.amount}
-                onChange={(e) => setNewAdj({ ...newAdj, amount: e.target.value })}
-                placeholder="Amount"
-                className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none sm:w-24"
-              />
-              <button onClick={handleAddAdjustment} className="rounded bg-[#E53935] px-3 py-1 text-sm font-bold text-white hover:bg-[#C62828]">
-                Add
-              </button>
-              <button onClick={() => setShowAddAdj(false)} className="rounded bg-gray-200 px-2 py-1 text-sm text-gray-600">
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {adjustments.length === 0 && !showAddAdj && (
+        {/* Manually-added expenditures */}
+        <div className="mt-2 space-y-2">
+          {adjustments.length === 0 && !showAddAdj && Object.keys(expenditureGroups).length === 0 && !expendituresLoading && (
             <div className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-sm text-gray-400">
-              No adjustments
+              No expenditures for this date
             </div>
           )}
           {adjustments.map((adj) => (
@@ -1340,6 +1377,17 @@ export default function AdminDailyBalanceSheet() {
               onDrop={handleDrop}
             />
           ))}
+        </div>
+
+        <div className="mt-3">
+          <SalesTile
+            label="Total Expenditures"
+            computedValue={expenditureSubtotal}
+            overrideValue={overrides.totalExpendituresOverride}
+            isManual={overrides.totalExpendituresOverride != null}
+            isLocked={isLocked}
+            onChange={(v) => handleFieldChange('totalExpendituresOverride', v)}
+          />
         </div>
       </div>
 
