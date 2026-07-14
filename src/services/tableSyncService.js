@@ -307,11 +307,25 @@ function attachSocketLogging(socket) {
     socket.emit("join", getCurrentRestaurantId());
 
     // Re-fetch on every reconnect to recover orders missed during the gap.
+    // Skip if local mutations are in-flight to avoid clobbering unsaved changes.
     if (_reconnectRefetch && getCurrentRestaurantId() && localStorage.getItem('ss_token')) {
-      console.log("[Socket] Reconnected — refetching tables to recover missed events");
-      _reconnectRefetch().catch((err) =>
-        console.warn("[Socket] Reconnect refetch failed:", err.message)
-      );
+      if (_persistingCount > 0) {
+        console.log(`[Socket] Reconnected but ${_persistingCount} local mutation(s) in-flight — deferring refetch`);
+        // Retry refetch after a short delay to let in-flight mutations complete
+        setTimeout(() => {
+          if (_persistingCount === 0 && _reconnectRefetch) {
+            console.log("[Socket] In-flight mutations cleared — refetching tables");
+            _reconnectRefetch().catch((err) =>
+              console.warn("[Socket] Deferred reconnect refetch failed:", err.message)
+            );
+          }
+        }, 3000);
+      } else {
+        console.log("[Socket] Reconnected — refetching tables to recover missed events");
+        _reconnectRefetch().catch((err) =>
+          console.warn("[Socket] Reconnect refetch failed:", err.message)
+        );
+      }
     }
   });
 

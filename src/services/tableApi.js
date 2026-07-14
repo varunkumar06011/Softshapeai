@@ -99,7 +99,7 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
       console.debug('[tableApi] edge fetch sections failed, falling through to cloud:', e);
     }
   }
-  const res = await fetch(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/sections?restaurantId=${encodeURIComponent(restaurantId)}`), {
     headers: getAuthHeaders(),
   });
   return parseResponse(res);
@@ -157,7 +157,7 @@ export async function fetchTablesForOutlet(outletId, signal) {
 }
 
 export async function updateTableStatus(tableId, status) {
-  const res = await fetch(apiUrl(`/api/tables/${tableId}/status`), {
+  const res = await fetchWithRetry(apiUrl(`/api/tables/${tableId}/status`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ status }),
@@ -166,7 +166,7 @@ export async function updateTableStatus(tableId, status) {
 }
 
 export async function updateTableSession(tableId, session) {
-  const res = await fetch(apiUrl(`/api/tables/${tableId}/session`), {
+  const res = await fetchWithRetry(apiUrl(`/api/tables/${tableId}/session`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(session),
@@ -175,7 +175,7 @@ export async function updateTableSession(tableId, session) {
 }
 
 export async function createTable({ number, capacity, sectionId, restaurantId }) {
-  const res = await fetch(apiUrl("/api/tables"), {
+  const res = await fetchWithRetry(apiUrl("/api/tables"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ number, capacity, sectionId, restaurantId }),
@@ -184,7 +184,7 @@ export async function createTable({ number, capacity, sectionId, restaurantId })
 }
 
 export async function bulkCreateTables({ sectionId, count, capacity, startNumber }) {
-  const res = await fetch(apiUrl("/api/tables/bulk"), {
+  const res = await fetchWithRetry(apiUrl("/api/tables/bulk"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ sectionId, count, capacity, startNumber }),
@@ -193,7 +193,7 @@ export async function bulkCreateTables({ sectionId, count, capacity, startNumber
 }
 
 export async function deleteTable(tableId) {
-  const res = await fetch(apiUrl(`/api/tables/${tableId}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/tables/${tableId}`), {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
@@ -201,7 +201,7 @@ export async function deleteTable(tableId) {
 }
 
 export async function deleteAllTables() {
-  const res = await fetch(apiUrl("/api/tables/all"), {
+  const res = await fetchWithRetry(apiUrl("/api/tables/all"), {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
@@ -211,7 +211,7 @@ export async function deleteAllTables() {
 // ── Venue CRUD ──────────────────────────────────────────────────────────────
 
 export async function createVenue({ name, venueType, kotEnabled, sortOrder }) {
-  const res = await fetch(apiUrl("/api/venues"), {
+  const res = await fetchWithRetry(apiUrl("/api/venues"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ name, venueType, kotEnabled, sortOrder }),
@@ -220,7 +220,7 @@ export async function createVenue({ name, venueType, kotEnabled, sortOrder }) {
 }
 
 export async function updateVenue(id, { name, venueType, kotEnabled, sortOrder, isActive }) {
-  const res = await fetch(apiUrl(`/api/venues/${id}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/venues/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ name, venueType, kotEnabled, sortOrder, isActive }),
@@ -229,7 +229,7 @@ export async function updateVenue(id, { name, venueType, kotEnabled, sortOrder, 
 }
 
 export async function deleteVenue(id) {
-  const res = await fetch(apiUrl(`/api/venues/${id}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/venues/${id}`), {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
@@ -239,7 +239,7 @@ export async function deleteVenue(id) {
 // ── Section CRUD ────────────────────────────────────────────────────────────
 
 export async function createSection({ name, venueId }) {
-  const res = await fetch(apiUrl("/api/sections"), {
+  const res = await fetchWithRetry(apiUrl("/api/sections"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ name, venueId }),
@@ -248,7 +248,7 @@ export async function createSection({ name, venueId }) {
 }
 
 export async function updateSection(id, { name, venueId, sortOrder }) {
-  const res = await fetch(apiUrl(`/api/sections/${id}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/sections/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ name, venueId, sortOrder }),
@@ -257,7 +257,7 @@ export async function updateSection(id, { name, venueId, sortOrder }) {
 }
 
 export async function deleteSection(id) {
-  const res = await fetch(apiUrl(`/api/sections/${id}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/sections/${id}`), {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
@@ -267,7 +267,7 @@ export async function deleteSection(id) {
 // ── Table update (layout fields) ────────────────────────────────────────────
 
 export async function updateTable(id, { number, capacity, sectionId }) {
-  const res = await fetch(apiUrl(`/api/tables/${id}`), {
+  const res = await fetchWithRetry(apiUrl(`/api/tables/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ number, capacity, sectionId }),

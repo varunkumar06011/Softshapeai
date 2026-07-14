@@ -28,5 +28,15 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // Flag raw fetch() calls that lack a signal/timeout option.
+      // Allowed wrappers: httpFetch, fetchWithRetry, apiFetch, cloudFetch.
+      // Uses no-restricted-syntax to catch fetch( not preceded by an allowed wrapper.
+      'no-restricted-syntax': ['warn', {
+        // Match CallExpression where callee.name is 'fetch' (bare fetch, not a wrapper)
+        selector: "CallExpression[callee.type='Identifier'][callee.name='fetch']",
+        message: 'Use httpFetch/fetchWithRetry/apiFetch instead of raw fetch() to ensure timeout and retry protection. If this is intentional, add a signal or // eslint-disable-next-line comment.',
+      }],
+    },
   },
 ])

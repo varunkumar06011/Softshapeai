@@ -38,6 +38,7 @@ import {
   restoreLocalInventory,
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
+import { httpFetch } from './httpClient';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 import { finalizeSettlementAudit } from './settlementAuditLog';
 import { markKitchenItemsSynced } from './kitchenQueue';
@@ -179,11 +180,11 @@ async function bulkSync(actions) {
     }),
   };
 
-  const res = await fetch(`${API_BASE}/api/orders/offline-sync`, {
+  const res = await httpFetch(`${API_BASE}/api/orders/offline-sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(payload),
-  });
+  }, { timeoutMs: 30_000, retries: 1 });
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
@@ -212,11 +213,11 @@ async function syncSingleAction(action) {
     url = `${url}${sep}requestId=${encodeURIComponent(action.requestId)}`;
   }
 
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await httpFetch(`${API_BASE}${url}`, {
     method: action.method,
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: body ? JSON.stringify(body) : undefined,
-  });
+  }, { timeoutMs: 30_000, retries: 1 });
 
   if (res.ok) {
     return { requestId: action.requestId, status: 'success', statusCode: res.status, data: await res.json().catch(() => ({})) };

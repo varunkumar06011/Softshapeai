@@ -62,6 +62,7 @@ import ExpenditureModule from './ExpenditureModule';
 import XReportSection from './XReportSection';
 import VenueSectionView from '../shared/components/VenueSectionView';
 import { API_BASE, getAuthHeaders, apiFetch, isBackendReachable } from '../services/apiConfig';
+import { httpFetch } from '../utils/httpClient';
 import { getItemCategory } from '../utils/itemHelpers';
 import QuantityPicker from '../shared/components/LiquorQtyPicker';
 import DateInputButton from '../shared/components/DateInputButton';
@@ -321,7 +322,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Fallback: refresh restaurantType/enabledModules and live permissions for existing sessions
   const [userPermissions, setUserPermissions] = useState({});
   useEffect(() => {
-    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() })
+    httpFetch(`${API_BASE}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() }, { retries: 1 })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.permissions) setUserPermissions(data.permissions);
@@ -352,10 +353,10 @@ const CashierDashboard = ({ onLogout }) => {
   });
   const [sectionsFetchKey, setSectionsFetchKey] = useState(0);
   useEffect(() => {
-    fetch(`${API_BASE}/api/venue/sections`, {
+    httpFetch(`${API_BASE}/api/venue/sections`, {
       credentials: 'include',
       headers: getAuthHeaders(),
-    })
+    }, { retries: 1 })
       .then(r => {
         if (!r.ok) {
           console.error('[fetchedSections] API error:', r.status, r.statusText);
@@ -2053,7 +2054,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
-      const response = await fetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders() });
+      const response = await httpFetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders() }, { retries: 1 });
       if (response.ok) {
         const freshOrder = await response.json();
         return freshOrder || null;
@@ -2465,9 +2466,9 @@ const CashierDashboard = ({ onLogout }) => {
       }
       params.set('limit', '500');
 
-      const res = await fetch(`${API_BASE}/api/transactions?${params.toString()}`, {
+      const res = await httpFetch(`${API_BASE}/api/transactions?${params.toString()}`, {
         headers: { ...getAuthHeaders() },
-      });
+      }, { retries: 1 });
       if (!res.ok) throw new Error('Failed to fetch transactions');
       const allTxns = await res.json();
 
@@ -2536,11 +2537,11 @@ const CashierDashboard = ({ onLogout }) => {
     }
     setIsVerifyingReprintPin(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/verify-pin`, {
+      const res = await httpFetch(`${API_BASE}/api/auth/verify-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ pin: reprintPinInput }),
-      });
+      }, { retries: 0 });
       if (res.ok) {
         setShowReprintPinModal(false);
         setReprintPinError('');
@@ -2559,14 +2560,14 @@ const CashierDashboard = ({ onLogout }) => {
     if (!txn) return;
     setIsReprintingFoundBill(true);
     try {
-      const response = await fetch(`${API_BASE}/api/print/reprint-by-transaction`, {
+      const response = await httpFetch(`${API_BASE}/api/print/reprint-by-transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           orderId: txn.orderId,
           restaurantId: txn._sourceRestaurantId || txn.restaurantId || activeRestaurantId
         }),
-      });
+      }, { retries: 1 });
       if (!response.ok) throw new Error('Print request failed');
       addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
     } catch (error) {
@@ -2712,11 +2713,11 @@ const CashierDashboard = ({ onLogout }) => {
           }));
           if (!isOffline) {
             try {
-              await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+              await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
                 body: JSON.stringify({ discount: discountPercent })
-              });
+              }, { retries: 1 });
             } catch (discountErr) {
               // Non-fatal: the discount is already saved locally and will be
               // included in the queued bill/settle actions that sync later.
@@ -3081,9 +3082,10 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
 
-      const response = await fetch(
+      const response = await httpFetch(
         `${API_BASE}/api/orders/${selectedTable.activeOrder.id}/reprint-kot?restaurantId=${restaurantId}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
+        { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } },
+        { retries: 1 }
       );
       if (!response.ok) throw new Error('KOT reprint failed');
       addNotification('KOT Reprinted', 'Kitchen copy sent to printer.', 'success');
@@ -3243,7 +3245,7 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
 
-      const response = await fetch(`${API_BASE}/api/print/final-bill-emit`, {
+      const response = await httpFetch(`${API_BASE}/api/print/final-bill-emit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
@@ -3266,7 +3268,7 @@ const CashierDashboard = ({ onLogout }) => {
             requestId
           }
         })
-      });
+      }, { retries: 1 });
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
@@ -3312,11 +3314,11 @@ const CashierDashboard = ({ onLogout }) => {
       try {
         // Apply discount update before reprinting (always send, even 0, to reflect current input)
         if (!selectedTable.isExtra && selectedTable.backendId) {
-          await fetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+          await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ discount: discountPercent }),
-          });
+          }, { retries: 1 });
           // Persist discount so it survives modal close/reopen until settlement
           localStorage.setItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`), JSON.stringify({
             value: String(discountPercent),
@@ -3857,10 +3859,10 @@ const CashierDashboard = ({ onLogout }) => {
           ? `${API_BASE}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
           : `${API_BASE}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
 
-        const response = await fetch(terminateUrl, {
+        const response = await httpFetch(terminateUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        });
+        }, { retries: 1 });
 
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
